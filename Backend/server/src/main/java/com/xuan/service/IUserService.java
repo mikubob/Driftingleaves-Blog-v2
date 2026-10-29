@@ -27,7 +27,7 @@ public interface IUserService extends IService<SysUser> {
     void setPassword(PasswordSetDTO request);
     /** 保留至少一种配置可用的平台登录方式，提交前撤销全部会话。 */
     void clearPassword(PasswordClearDTO request);
-    /** 只返回平台和绑定时间。 */
+    /** 只返回当前配置可用的平台绑定及其创建时间。 */
     List<OAuthBindingVO> bindings();
     /** 用户行锁内保护最后登录方式，删除后撤销全部会话。 */
     void unbind(String source);

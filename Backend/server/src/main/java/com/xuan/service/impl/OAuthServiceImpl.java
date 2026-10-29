@@ -33,6 +33,15 @@ public class OAuthServiceImpl implements IOAuthService {
     private final JsonMapper json = JsonMapper.builder().build();
     private final Clock clock;
 
+    /**
+     * 创建与浏览器、平台和操作绑定的 300 秒一次性授权流程。
+     * <p>BIND 额外保存当前用户、原 Token 摘要和最近认证时间；不接受客户端指定目标身份。</p>
+     *
+     * @param source 服务端启用的平台标识
+     * @param operation 登录或绑定操作
+     * @param browser HTTP 入口提供的浏览器随机标识，仅用于关联流程
+     * @return 平台授权地址及流程有效秒数
+     */
     @Override
     public OAuthAuthorizeVO authorize(String source, Operation operation, String browser) {
         // 1. 只允许服务端配置完整的平台参与授权。
@@ -56,6 +65,18 @@ public class OAuthServiceImpl implements IOAuthService {
         return new OAuthAuthorizeVO(url, 300);
     }
 
+    /**
+     * 验证并原子消费授权流程，取得平台身份后执行本站注册、身份解析或绑定。
+     * <p>可信流程成功时签发 60 秒 ticket；消费后的业务或事务失败回跳固定错误页，
+     * 不可信浏览器或 state 关系直接报错。处理结束清理 JustAuth state，不恢复已消费流程。</p>
+     *
+     * @param source 回调路径中的平台标识
+     * @param state 平台返回的流程随机值
+     * @param code 平台授权码，取消或失败时可缺失
+     * @param error 平台取消或失败标记，仅判断是否存在，不透传其内容
+     * @param browser 当前浏览器 Cookie 中的随机标识
+     * @return 固定前端完成页地址，fragment 仅包含 ticket 或白名单业务错误码
+     */
     @Override
     public String callback(String source, String state, String code, String error, String browser) {
         // 1. 先校验平台、浏览器和流程关联，不匹配时不消费合法 state。
@@ -118,6 +139,15 @@ public class OAuthServiceImpl implements IOAuthService {
         }
     }
 
+    /**
+     * 校验浏览器并原子消费结果票据，按 LOGIN 或 BIND 返回对应结果。
+     * <p>BIND 必须携带发起时同一个有效 Token；LOGIN 在用户锁内重查绑定并签发会话。
+     * 票据消费后不因后续失败或响应丢失而恢复。</p>
+     *
+     * @param ticket 固定完成页交回的一次性结果票据
+     * @param browser 当前浏览器 Cookie 中的随机标识
+     * @return LOGIN 的本站会话结果，或 BIND 的绑定结果
+     */
     @Override
     public Object exchange(String ticket, String browser) {
         // 1. 读取尚未过期的票据并检查浏览器，错误浏览器不能消费他人的结果。
@@ -144,6 +174,13 @@ public class OAuthServiceImpl implements IOAuthService {
         return new OAuthBindResultVO("BIND", result.binding());
     }
 
+    /**
+     * 验证浏览器标识格式及其与服务端流程摘要的关联，不消费流程。
+     *
+     * @param expected 流程或票据保存的浏览器摘要
+     * @param browser 当前请求的浏览器随机标识
+     * @throws BusinessException 标识缺失、格式不合法或浏览器不匹配
+     */
     private void requireBrowser(String expected, String browser) {
         if (browser == null || !browser.matches("[A-Za-z0-9_-]{43}")
                 || !expected.equals(SessionService.digest(browser))) {

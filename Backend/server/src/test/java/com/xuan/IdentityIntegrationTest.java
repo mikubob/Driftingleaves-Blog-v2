@@ -58,6 +58,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -72,6 +73,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
@@ -79,6 +81,7 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
@@ -95,7 +98,7 @@ class IdentityIntegrationTest {
     @Autowired JsonMapper json;
     @Autowired JdbcTemplate jdbc;
     @Autowired StringRedisTemplate redis;
-    @Autowired IUserService users;
+    @MockitoSpyBean IUserService users;
     @Autowired AuthorizationService authorization;
     @Autowired RedisOAuthStore store;
     @Autowired AuthProperties properties;
@@ -138,7 +141,7 @@ class IdentityIntegrationTest {
 
     @BeforeEach
     void resetIsolatedData() {
-        reset(sessions);
+        reset(sessions, users);
         jdbc.update("DELETE FROM blog_article");
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
@@ -194,6 +197,19 @@ class IdentityIntegrationTest {
         String token = login("leaf");
         String original = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
         assertCode(call("PATCH", "/me/profile", token, "{\"intro\":\"hello\"}"), 428, "PRECONDITION_REQUIRED");
+        assertCode(patch(token, "*", "{\"intro\":\"hello\"}"), 400, "VALIDATION_ERROR");
+        for (String body : List.of("{}", "{\"nickname\":null}", "{\"nickname\":\" \"}",
+                "{\"userId\":\"1\"}", "{\"nickname\":12}", "{\"intro\":\"a\",\"intro\":\"b\"}")) {
+            assertCode(patch(token, original, body), 400, "VALIDATION_ERROR");
+        }
+        // 绝对 URL 也不能将本站附件 API 当头像，包括编码和路径归一化后的等价值。
+        for (String avatar : List.of("javascript:alert(1)", "https://user:password@example.test/a.png",
+                ORIGIN + "/api/v1/admin/files/1/content", ORIGIN + "/api/v1/blog/articles/1/files/2/content",
+                ORIGIN + "/api/v1/admin/articles/1/files/2/content",
+                ORIGIN + "/api/v1/%61dmin/files/1/content",
+                ORIGIN + "/api/v1/temp/%2e%2e/admin/files/1/content")) {
+            assertCode(patch(token, original, json.writeValueAsString(Map.of("avatar", avatar))), 400, "VALIDATION_ERROR");
+        }
         MvcResult patched = patch(token, original, "{\"intro\":\" hello \"}");
         assertCode(patched, 200, "OK");
         assertThat(data(patched).get("nickname").asString()).isEqualTo("叶");
@@ -202,6 +218,26 @@ class IdentityIntegrationTest {
         assertThat(revised).isNotEqualTo(original);
         assertCode(patch(token, original, "{\"intro\":null}"), 412, "REVISION_CONFLICT");
         assertCode(patch(token, revised, "{\"intro\":null}"), 200, "OK");
+        String current = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        MvcResult filled = patch(token, current, "{\"nickname\":\" 新昵称 \",\"email\":\" leaf@example.test \",\"avatar\":\" https://images.example.test/a.png \",\"intro\":\" 简介 \"}");
+        assertCode(filled, 200, "OK");
+        assertThat(data(filled).get("nickname").asString()).isEqualTo("新昵称");
+        assertThat(data(filled).get("email").asString()).isEqualTo("leaf@example.test");
+        assertThat(data(filled).get("avatar").asString()).isEqualTo("https://images.example.test/a.png");
+        long other = Long.parseLong(data(register("other")).get("userId").asString());
+        jdbc.update("UPDATE sys_user SET email='used@example.test' WHERE user_id=?", other);
+        String filledRevision = filled.getResponse().getHeader("X-Revision");
+        assertCode(patch(token, filledRevision, "{\"nickname\":\"不应保存\",\"email\":\"USED@example.test\"}"), 409, "UNIQUE_CONFLICT");
+        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(filledRevision);
+        MvcResult cleared = patch(token, filledRevision, "{\"email\":\" \",\"avatar\":null,\"intro\":\" \"}");
+        assertCode(cleared, 200, "OK");
+        assertThat(data(cleared).get("nickname").asString()).isEqualTo("新昵称");
+        for (String field : List.of("email", "avatar", "intro")) {
+            assertThat(data(cleared).get(field).isNull()).isTrue();
+        }
+        login("leaf");
+        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision"))
+                .isEqualTo(cleared.getResponse().getHeader("X-Revision"));
         String beforeRole = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES (?,2)", id);
         assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isNotEqualTo(beforeRole);
@@ -257,7 +293,11 @@ class IdentityIntegrationTest {
         assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
         OAuthFlow flow = start("LOGIN", null, null);
         String oauthToken = data(exchange(callbackTicket(flow, "verified"), flow.browser(), null)).get("session").get("accessToken").asString();
+        assertCode(call("DELETE", "/me/password", oauthToken, clearBody), 409, "STATE_CONFLICT");
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", oauthToken, null), 409, "LAST_LOGIN_METHOD");
+        StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "PASSWORD");
+        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 403, "REAUTH_REQUIRED");
+        StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "OAUTH");
         assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}"), 400, "VALIDATION_ERROR");
         assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 200, "OK");
         assertCode(call("GET", "/me", oauthToken, null), 401, "UNAUTHENTICATED");
@@ -343,6 +383,29 @@ class IdentityIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth", Integer.class)).isEqualTo(1);
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", sameUserOtherToken, null), 200, "OK");
         assertCode(call("GET", "/me", sameUserOtherToken, null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void trustedCallbackTransactionFailureRollsBackAndConsumesState() throws Exception {
+        long id = Long.parseLong(data(register("leaf")).get("userId").asString());
+        String token = login("leaf");
+        OAuthFlow bind = start("BIND", token, null);
+        // 在真实绑定写入后注入事务异常，验证回滚与回跳，保留会话校验和 Mapper 执行。
+        doAnswer(invocation -> {
+            invocation.callRealMethod();
+            throw new TransactionSystemException("injected transaction failure");
+        }).when(users).bindOAuth(id, SessionService.digest(token), "GITHUB", "transaction-failure-identity");
+
+        MvcResult failed = callback(bind, "transaction-failure-identity");
+        assertThat(failed.getResponse().getStatus()).isEqualTo(303);
+        assertThat(failed.getResponse().getHeader("Location"))
+                .isEqualTo(ORIGIN + "/oauth/complete#error=SERVICE_UNAVAILABLE");
+        assertThat(failed.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(failed.getResponse().getHeader("Referrer-Policy")).isEqualTo("no-referrer");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
+        assertThat(store.containsKey(bind.state())).isFalse();
+        assertThat(redis.keys("dl:test:oauth:ticket:*")).isEmpty();
+        assertCode(callback(bind, "transaction-failure-identity"), 400, "OAUTH_STATE_INVALID");
     }
 
     @Test
@@ -477,6 +540,147 @@ class IdentityIntegrationTest {
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
         assertCode(exchange(ticket, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
+    }
+
+    @Test
+    void concurrentProfilePatchesRejectTheStaleRevision() throws Exception {
+        register("leaf");
+        String token = login("leaf");
+        String revision = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Callable<MvcResult>> changes = List.of(
+                    () -> patch(token, revision, "{\"nickname\":\"first\"}"),
+                    () -> patch(token, revision, "{\"nickname\":\"second\"}"));
+            List<Integer> statuses = new ArrayList<>();
+            String saved = null;
+            for (var result : executor.invokeAll(changes)) {
+                MvcResult response = result.get();
+                statuses.add(response.getResponse().getStatus());
+                if (response.getResponse().getStatus() == 200) {
+                    saved = data(response).get("nickname").asString();
+                } else {
+                    assertCode(response, 412, "REVISION_CONFLICT");
+                }
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(200, 412);
+            assertThat(data(call("GET", "/me", token, null)).get("nickname").asString()).isEqualTo(saved);
+        }
+    }
+
+    @Test
+    void bindingListFiltersUnavailablePlatformsAndUnbindOnlyChangesTheCurrentUser() throws Exception {
+        long id = Long.parseLong(data(register("leaf")).get("userId").asString());
+        long otherId = Long.parseLong(data(register("other")).get("userId").asString());
+        String token = login("leaf");
+        String another = login("leaf");
+        String otherToken = login("other");
+        for (String source : List.of("GITHUB", "GITEE", "QQ", "UNKNOWN")) {
+            jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,?,?)", id, source, "own-identity");
+        }
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','other-identity')", otherId);
+        MvcResult listed = call("GET", "/me/oauth-bindings", token, null);
+        assertCode(listed, 200, "OK");
+        assertThat(data(listed).size()).isEqualTo(2);
+        assertThat(data(listed).get(0).get("source").asString()).isEqualTo("GITEE");
+        assertThat(data(listed).get(1).get("source").asString()).isEqualTo("GITHUB");
+        assertThat(data(listed).get(0).size()).isEqualTo(2);
+        assertThat(data(listed).get(0).get("createTime").asString()).matches(".*\\.\\d{3}Z");
+        assertThat(listed.getResponse().getContentAsString()).doesNotContain("uuid", "oauthId", "own-identity");
+        assertThat(listed.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+        var github = properties.getProviders().get("GITHUB");
+        var gitee = properties.getProviders().get("GITEE");
+        String giteeSecret = gitee.getClientSecret();
+        try {
+            github.setEnabled(false);
+            gitee.setClientSecret("");
+            assertThat(data(call("GET", "/me/oauth-bindings", token, null)).isEmpty()).isTrue();
+            assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 409, "LAST_LOGIN_METHOD");
+            assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 404, "NOT_FOUND");
+        } finally {
+            github.setEnabled(true);
+            gitee.setClientSecret(giteeSecret);
+        }
+        assertCode(call("DELETE", "/me/oauth-bindings/GITEE", otherToken, null), 404, "NOT_FOUND");
+        assertCode(call("DELETE", "/me/oauth-bindings/github", token, null), 404, "NOT_FOUND");
+        StpUtil.getStpLogic().getTokenSessionByToken(another).set("authenticatedAt", System.currentTimeMillis() - 301_000);
+        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", another, null), 403, "REAUTH_REQUIRED");
+        assertCode(call("DELETE", "/me/password", another, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 403, "REAUTH_REQUIRED");
+        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'", Integer.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'", Integer.class, otherId)).isEqualTo(1);
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", otherToken, null), 200, "OK");
+    }
+
+    @Test
+    void passwordChangesValidateCurrentCredentialAndRevokeAllSessions() throws Exception {
+        long id = Long.parseLong(data(register("leaf")).get("userId").asString());
+        String token = login("leaf");
+        String another = login("leaf");
+        String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
+        for (String body : List.of("{\"newPassword\":\"new-password-2026\"}",
+                "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}")) {
+            assertCode(call("PUT", "/me/password", token, body), 400, "VALIDATION_ERROR");
+        }
+        assertCode(call("PUT", "/me/password", token, "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(before);
+        assertCode(call("PUT", "/me/password", token, "{\"newPassword\":\" new-password-2026 \",\"currentPassword\":\"" + PASSWORD + "\"}"), 200, "OK");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
+        assertCode(call("POST", "/auth/login", null, loginBody("leaf", "new-password-2026")), 401, "AUTH_FAILED");
+        assertCode(call("POST", "/auth/login", null, loginBody("leaf", " new-password-2026 ")), 200, "OK");
+    }
+
+    @Test
+    void redisRevocationFailureRollsBackPasswordClearAndUnbind() throws Exception {
+        long id = Long.parseLong(data(register("leaf")).get("userId").asString());
+        String token = login("leaf");
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','rollback')", id);
+        String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
+        doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(id);
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(before);
+        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isEqualTo(1);
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+    }
+
+    @Test
+    void permissionsAndMenusCombineEffectiveRolesAndRequireTheWholeAncestorChain() throws Exception {
+        long id = Long.parseLong(data(register("leaf")).get("userId").asString());
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES (9,'pages','菜单','ALL'),(10,'access','权限','SELF')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES (?,9),(?,10)", id, id);
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (10,1),(10,10),(10,11)");
+        jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES (9,110),(9,1011)");
+        String token = login("leaf");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES (9,100),(9,200),(9,140)");
+        MvcResult menus = call("GET", "/me/menus", token, null);
+        assertCode(menus, 200, "OK");
+        assertThat(data(menus).size()).isEqualTo(1);
+        assertThat(data(menus).get(0).get("children").size()).isEqualTo(1);
+        assertThat(data(menus).get(0).get("children").get(0).get("children").get(0).get("menuId").asString()).isEqualTo("1011");
+        assertThat(menus.getResponse().getContentAsString()).contains("\"isVisible\":0").doesNotContain("system", "comment");
+        JsonNode capabilities = data(call("GET", "/me/capabilities", token, null));
+        assertThat(capabilities.get("roleCodes").toString()).isEqualTo("[\"access\",\"member\",\"pages\"]");
+        assertThat(capabilities.get("permissionCodes").toString())
+                .isEqualTo("[\"admin:access\",\"blog:article:create\",\"blog:article:like\",\"blog:article:query\",\"blog:comment:create\",\"blog:comment:deleteOwn\"]");
+        assertThat(capabilities.get("dataScopes").get("blog:article:query").asString()).isEqualTo("SELF");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (9,10)");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").get("blog:article:query").asString()).isEqualTo("ALL");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").has("blog:article:query")).isFalse();
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=10");
+        jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("ALL");
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
+        assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("SELF");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo("[\"access\",\"member\"]");
     }
 
     private MvcResult register(String username) throws Exception {

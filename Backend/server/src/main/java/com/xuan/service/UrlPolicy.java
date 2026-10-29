@@ -20,8 +20,11 @@ public final class UrlPolicy {
         }
         try {
             URI uri = new URI(value);
+            // 展示字段不能使用附件 API；先解码并归一化路径，等价绝对 URL 也须拒绝。
+            String path = new URI(null, null, uri.getPath(), null).normalize().getPath();
             return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && uri.getHost() != null && uri.getRawUserInfo() == null;
+                    && uri.getHost() != null && uri.getRawUserInfo() == null
+                    && !path.matches("/api/v1/(blog|admin)/(articles/[^/]+/)?files(/.*)?");
         } catch (URISyntaxException exception) {
             return false;
         }
