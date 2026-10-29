@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 角色与授权持久化；写入顺序和会话撤销由同一 Service 事务协调。 -->
+<mapper namespace="com.xuan.mapper.RoleMapper">
+    <!-- 列表及总数采用相同过滤，INSTR 不将百分号、下划线和反斜杠作为通配符。 -->
+    <select id="rolePage" resultType="com.xuan.entity.SysRole">
+        SELECT * FROM sys_role
+        <where>
+            <if test="query.keyword != null">
+                AND (INSTR(role_code, #{query.keyword}) > 0 OR INSTR(role_name, #{query.keyword}) > 0)
+            </if>
+            <if test="query.status != null">AND status = #{query.status}</if>
+        </where>
+        ORDER BY role_id ASC
+    </select>
+    <!-- 完整关联包含已禁用权限，并固定摘要顺序。 -->
+    <select id="permissionIds" resultType="long">
+        SELECT permission_id FROM sys_role_permission WHERE role_id = #{roleId} ORDER BY permission_id
+    </select>
+    <!-- 完整关联包含已禁用菜单，并固定摘要顺序。 -->
+    <select id="menuIds" resultType="long">
+        SELECT menu_id FROM sys_role_menu WHERE role_id = #{roleId} ORDER BY menu_id
+    </select>
+    <!-- 已持有固定保护锁，先枚举关联用户，随后由 Service 按 ID 顺序取得用户锁。 -->
+    <select id="userIds" resultType="long">
+        SELECT user_id FROM sys_user_role WHERE role_id = #{roleId} ORDER BY user_id
+    </select>
+    <!-- 用户锁之后取得目标角色锁，不按状态过滤。 -->
+    <select id="lockById" resultType="com.xuan.entity.SysRole">
+        SELECT * FROM sys_role WHERE role_id = #{roleId} FOR UPDATE
+    </select>
+    <!-- 只替换允许的业务字段，编码和关联集合不受此语句影响。 -->
+    <update id="updateRole">
+        UPDATE sys_role SET role_name = #{role.roleName}, description = #{role.description},
+            data_scope = #{role.dataScope}, status = #{role.status} WHERE role_id = #{role.roleId}
+    </update>
+    <!-- 角色锁之后升序锁权限；状态过滤使缺失和禁用均被整体拒绝。 -->
+    <select id="lockEnabledPermissions" resultType="long">
+        SELECT permission_id FROM sys_permission WHERE permission_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+        AND status = 1 ORDER BY permission_id FOR UPDATE
+    </select>
+    <!-- 结构修改共用固定保护锁，此处读取全部状态用于祖先和环检查。 -->
+    <select id="allMenus" resultType="com.xuan.entity.SysMenu">SELECT * FROM sys_menu ORDER BY menu_id</select>
+    <!-- 权限和菜单替换必须由同一事务包围。 -->
+    <delete id="deletePermissions">DELETE FROM sys_role_permission WHERE role_id = #{roleId}</delete>
+    <!-- 空集合允许清空；任一失败与权限替换共同回滚。 -->
+    <delete id="deleteMenus">DELETE FROM sys_role_menu WHERE role_id = #{roleId}</delete>
+    <!-- 只插入已存在且启用的明确权限，不根据菜单隐式扩权。 -->
+    <insert id="insertPermissions">
+        INSERT INTO sys_role_permission(role_id, permission_id) VALUES
+        <foreach collection="ids" item="id" separator=",">(#{roleId}, #{id})</foreach>
+    </insert>
+    <!-- 插入最终补齐祖先的集合，复合主键防止重复关联。 -->
+    <insert id="insertMenus">
+        INSERT INTO sys_role_menu(role_id, menu_id) VALUES
+        <foreach collection="ids" item="id" separator=",">(#{roleId}, #{id})</foreach>
+    </insert>
+</mapper>

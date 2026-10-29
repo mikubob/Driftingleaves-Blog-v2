@@ -28,6 +28,8 @@ import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
 import com.xuan.service.AuthorizationService;
 import com.xuan.service.IUserService;
+import com.xuan.service.IRoleService;
+import com.xuan.dto.RoleUpdateDTO;
 import com.xuan.service.JustAuthGateway;
 import com.xuan.service.OAuthProviderGateway;
 import com.xuan.service.RedisOAuthStore;
@@ -105,6 +107,7 @@ class IdentityIntegrationTest {
     @Autowired JdbcTemplate jdbc;
     @Autowired StringRedisTemplate redis;
     @MockitoSpyBean IUserService users;
+    @MockitoSpyBean IRoleService roles;
     @Autowired AuthorizationService authorization;
     @Autowired RedisOAuthStore store;
     @Autowired AuthProperties properties;
@@ -147,11 +150,12 @@ class IdentityIntegrationTest {
 
     @BeforeEach
     void resetIsolatedData() {
-        reset(sessions, users);
+        reset(sessions, users, roles);
         jdbc.update("DELETE FROM blog_article");
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
         jdbc.update("UPDATE sys_role SET status=1");
+        jdbc.update("UPDATE sys_role SET data_scope=CASE WHEN role_id=1 THEN 'ALL' ELSE 'SELF' END WHERE role_id IN (1,2,3)");
         jdbc.update("UPDATE sys_permission SET status=1");
         jdbc.update("DELETE FROM sys_role WHERE role_id > 3");
         jdbc.update("UPDATE sys_menu SET status=1");
@@ -993,6 +997,408 @@ class IdentityIntegrationTest {
         }
     }
 
+    @Test
+    void roleRoutesRequireBothEffectivePermissionsAndCurrentIdentity() throws Exception {
+        String id = data(register("operator")).get("userId").asString();
+        String token = login("operator");
+        List<String> paths = List.of("/admin/roles", "/admin/roles/2", "/admin/roles",
+                "/admin/roles/2", "/admin/roles/2", "/admin/roles/2/grants");
+        List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE", "PUT");
+        List<String> bodies = List.of("", "", roleCreateBody("editor"), roleBody("作者", "SELF", 1), "", grantBody(List.of(), List.of()));
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name) VALUES(9,'operator','操作员')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
+        for (int i = 0; i < paths.size(); i++) {
+            String body = bodies.get(i).isEmpty() ? null : bodies.get(i);
+            assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
+            assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:role:%'");
+        for (int i = 0; i < paths.size(); i++) {
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+        }
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=9");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
+        for (int i = 0; i < paths.size(); i++) {
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code='sys:role:query'");
+        assertCode(call("GET", "/admin/roles", token, null), 200, "OK");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_code='sys:role:query'");
+        assertCode(call("GET", "/admin/roles", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_code='sys:role:query'");
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
+        assertCode(call("GET", "/admin/roles", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", id);
+        assertCode(call("GET", "/admin/roles", token, null), 403, "ACCOUNT_DISABLED");
+    }
+
+    @Test
+    void roleCreateDefaultsWhitelistAndLiteralPagination() throws Exception {
+        String admin = adminLogin("adminroot");
+        MvcResult created = call("POST", "/admin/roles", admin, roleCreateBody("editor"));
+        assertCode(created, 201, "OK");
+        String id = data(created).get("roleId").asString();
+        assertThat(created.getResponse().getHeader("Location")).isEqualTo("/api/v1/admin/roles/" + id);
+        assertThat(created.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(data(created).get("dataScope").asString()).isEqualTo("SELF");
+        assertThat(data(created).get("status").asInt()).isEqualTo(1);
+        assertThat(data(created).get("description").isNull()).isTrue();
+        assertThat(data(created).get("permissionIds").isEmpty()).isTrue();
+        assertThat(data(created).get("menuIds").isEmpty()).isTrue();
+        assertThat(data(created).get("createTime").asString()).matches(".*\\.\\d{3}Z");
+        assertCode(call("POST", "/admin/roles", admin, roleCreateBody("editor")), 409, "UNIQUE_CONFLICT");
+        for (String body : List.of("{}", roleCreateBody("Editor"), roleCreateBody("a-b"),
+                roleCreateBody("a".repeat(65)), "{\"roleCode\":\"x\",\"roleName\":\" \"}",
+                "{\"roleCode\":\"x\",\"roleName\":\"😀\"}".replace("😀", "😀".repeat(65)),
+                roleCreateBody("x").replace("\"内容编辑\"", "12"),
+                roleCreateBody("x").replace("}", ",\"roleCode\":\"y\"}"))) {
+            assertCode(call("POST", "/admin/roles", admin, body), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"permissionIds\":[]", "\"menuIds\":[]", "\"roleId\":\"1\"",
+                "\"dataScope\":null", "\"dataScope\":\"all\"", "\"status\":null", "\"status\":1.2",
+                "\"status\":\"1\"", "\"status\":2", "\"description\":\"" + "中".repeat(256) + "\"")) {
+            assertCode(call("POST", "/admin/roles", admin, roleCreateBody("x").replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        call("POST", "/admin/roles", admin, roleCreateBody("under_score").replace("内容编辑", "字面%_\\\\匹配"));
+        MvcResult second = call("POST", "/admin/roles", admin, roleCreateBody("another").replace("内容编辑", "字面%_\\\\匹配").replace("}", ",\"status\":0}"));
+        MvcResult page = mvc.perform(req("GET", "/admin/roles").header("Authorization", "Bearer " + admin)
+                .param("keyword", " %_\\ ").param("pageSize", "1")).andReturn();
+        assertCode(page, 200, "OK");
+        assertThat(data(page).get("total").asString()).isEqualTo("2");
+        assertThat(data(page).get("totalPages").asString()).isEqualTo("2");
+        assertThat(data(page).get("records").get(0).get("roleCode").asString()).isEqualTo("under_score");
+        assertThat(page.getResponse().getHeader("X-Revision")).isNull();
+        MvcResult filtered = mvc.perform(req("GET", "/admin/roles").header("Authorization", "Bearer " + admin)
+                .param("keyword", "%_\\").param("status", "0")).andReturn();
+        assertThat(data(filtered).get("total").asString()).isEqualTo("1");
+        assertThat(data(filtered).get("records").get(0).get("roleId")).isEqualTo(data(second).get("roleId"));
+        MvcResult beyond = call("GET", "/admin/roles?page=100000", admin, null);
+        assertThat(data(beyond).get("page").asInt()).isEqualTo(100000);
+        assertThat(data(beyond).get("records").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/admin/roles?keyword=editor", admin, null)).get("total").asString()).isEqualTo("1");
+        for (String query : List.of("page=0", "page=100001", "pageSize=101", "pageSize=1.2", "status=2", "keyword= ")) {
+            String[] parameter = query.split("=", 2);
+            assertCode(mvc.perform(req("GET", "/admin/roles").header("Authorization", "Bearer " + admin)
+                    .param(parameter[0], parameter[1])).andReturn(), 400, "VALIDATION_ERROR");
+        }
+        for (String invalid : List.of("01", "0", "-1", "1.2", "9223372036854775808")) {
+            assertCode(call("GET", "/admin/roles/" + invalid, admin, null), 400, "VALIDATION_ERROR");
+        }
+        assertCode(call("GET", "/admin/roles/9223372036854775807", admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void roleUpdateReplacesFieldsAndRevokesOnlyAuthorizationChanges() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String user = data(register("role_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, id);
+        String first = login("role_user");
+        String second = login("role_user");
+        String path = "/admin/roles/" + id;
+        String revision = roleRevision(admin, id);
+        assertCode(call("PUT", path, admin, roleBody("编辑", "SELF", 1)), 428, "PRECONDITION_REQUIRED");
+        for (String invalid : List.of("*", "revision", revision + "," + revision)) {
+            assertCode(adminPut(path, admin, invalid, roleBody("编辑", "SELF", 1)), 400, "VALIDATION_ERROR");
+        }
+        for (String field : List.of("\"description\":null,", "\"dataScope\":\"SELF\",", ",\"status\":1")) {
+            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace(field, "")), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"roleCode\":\"changed\"", "\"permissionIds\":[]", "\"menuIds\":[]", "\"updateTime\":null")) {
+            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        MvcResult updated = adminPut(path, admin, revision, roleBody("  编辑  ", "SELF", 1).replace("null", "\"   \""));
+        assertCode(updated, 200, "OK");
+        assertThat(data(updated).get("roleName").asString()).isEqualTo("编辑");
+        assertThat(data(updated).get("roleCode").asString()).isEqualTo("editor");
+        assertThat(data(updated).get("description").isNull()).isTrue();
+        assertCode(call("GET", "/me", first, null), 200, "OK");
+        assertCode(call("GET", "/me", second, null), 200, "OK");
+        assertCode(adminPut(path, admin, revision, roleBody("旧版本", "ALL", 1)), 412, "REVISION_CONFLICT");
+        String current = updated.getResponse().getHeader("X-Revision");
+        assertThat(current).isNotEqualTo(revision);
+        assertCode(adminPut(path, admin, current, roleBody("编辑", "ALL", 1)), 200, "OK");
+        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", second, null), 401, "UNAUTHENTICATED");
+        first = login("role_user");
+        assertCode(adminPut(path, admin, roleRevision(admin, id), roleBody("编辑", "ALL", 0)), 200, "OK");
+        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(adminPut(path, admin, roleRevision(admin, id), roleBody("编辑", "ALL", 1)), 200, "OK");
+        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void roleGrantsValidateBothSetsAndCompleteAncestorsWithoutImplicitPermissions() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String path = "/admin/roles/" + id + "/grants";
+        String original = roleRevision(admin, id);
+        long button = jdbc.queryForObject("SELECT menu_id FROM sys_menu WHERE menu_type='B' AND permission_id=11", Long.class);
+        assertCode(call("PUT", path, admin, grantBody(List.of(), List.of())), 428, "PRECONDITION_REQUIRED");
+        for (String body : List.of("{}", "{\"permissionIds\":[],\"menuIds\":null}",
+                "{\"permissionIds\":[1],\"menuIds\":[]}", "{\"permissionIds\":[\"01\"],\"menuIds\":[]}",
+                "{\"permissionIds\":[null],\"menuIds\":[]}", "{\"permissionIds\":[\"1\",\"1\"],\"menuIds\":[]}",
+                "{\"permissionIds\":[],\"menuIds\":[\"100\",\"100\"]}",
+                grantBody(List.of(99999L), List.of()), grantBody(List.of(10L), List.of(99999L)),
+                grantBody(List.of(), List.of(110L)), grantBody(List.of(11L), List.of(button)),
+                grantBody(IntStream.rangeClosed(1, 1001).mapToObj(i -> (long) i).toList(), List.of()))) {
+            assertCode(adminPut(path, admin, original, body), 400, "VALIDATION_ERROR");
+            assertThat(roleRevision(admin, id)).isEqualTo(original);
+        }
+        jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
+        assertCode(adminPut(path, admin, original, grantBody(List.of(10L), List.of(110L))), 400, "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_menu SET status=1 WHERE menu_id=100");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
+        assertCode(adminPut(path, admin, original, grantBody(List.of(10L), List.of(110L))), 400, "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=10");
+        MvcResult granted = adminPut(path, admin, original, grantBody(List.of(11L, 10L, 1L, 45L), List.of(button)));
+        assertCode(granted, 200, "OK");
+        assertThat(data(granted).get("permissionIds").toString()).isEqualTo("[\"1\",\"10\",\"11\",\"45\"]");
+        assertThat(data(granted).get("menuIds").toString()).isEqualTo(json.writeValueAsString(List.of(100L, 110L, button).stream().sorted().toList()));
+        String current = granted.getResponse().getHeader("X-Revision");
+        assertThat(current).isNotEqualTo(original);
+        assertCode(adminPut("/admin/roles/" + id, admin, original, roleBody("旧资料", "SELF", 1)), 412, "REVISION_CONFLICT");
+        // 已禁用关联仍出现在详情和版本中，审计时间单独变化不改变摘要。
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=11");
+        jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=?", button);
+        assertThat(roleRevision(admin, id)).isEqualTo(current);
+        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").toString()).contains("\"11\"");
+        assertThat(data(call("GET", "/admin/roles", admin, null)).get("records").toString()).contains("\"" + button + "\"");
+        jdbc.update("UPDATE sys_role SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE role_id=?", id);
+        assertThat(roleRevision(admin, id)).isEqualTo(current);
+        assertCode(adminPut(path, admin, current, grantBody(List.of(), List.of())), 200, "OK");
+        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("menuIds").isEmpty()).isTrue();
+    }
+
+    @Test
+    void roleGrantsRevokeAllUsersAndAreIdempotentForEquivalentFinalSets() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String firstId = data(register("first_user")).get("userId").asString();
+        String secondId = data(register("second_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?),(?,?)", firstId, id, secondId, id);
+        String first = login("first_user");
+        String another = login("first_user");
+        String second = login("second_user");
+        String path = "/admin/roles/" + id + "/grants";
+        MvcResult saved = adminPut(path, admin, roleRevision(admin, id), grantBody(List.of(10L, 1L), List.of(110L)));
+        assertCode(saved, 200, "OK");
+        for (String token : List.of(first, another, second)) {
+            assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        }
+        first = login("first_user");
+        assertThat(authorization.requireScope(Long.parseLong(firstId), "blog:article:query")).isEqualTo("SELF");
+        assertThat(call("GET", "/me/menus", first, null).getResponse().getContentAsString()).contains("content/article/index");
+        String revision = saved.getResponse().getHeader("X-Revision");
+        MvcResult noop = adminPut(path, admin, revision, grantBody(List.of(1L, 10L), List.of(110L, 100L)));
+        assertCode(noop, 200, "OK");
+        assertThat(noop.getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        assertCode(call("GET", "/me", first, null), 200, "OK");
+        assertCode(adminPut(path, admin, revision, grantBody(List.of(), List.of())), 200, "OK");
+        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        first = login("first_user");
+        assertCode(call("GET", "/admin/test/query", first, null), 403, "FORBIDDEN");
+        assertThat(data(call("GET", "/me/menus", first, null)).isEmpty()).isTrue();
+    }
+
+    @Test
+    void roleDeletionCascadesUsedCustomRoleAndRollsBackOnRedisFailure() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String path = "/admin/roles/" + id;
+        assertCode(adminPut(path + "/grants", admin, roleRevision(admin, id), grantBody(List.of(1L, 10L), List.of(110L))), 200, "OK");
+        String user = data(register("role_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, id);
+        String token = login("role_user");
+        String second = login("role_user");
+        String userRevision = adminRevision(admin, user);
+        String revision = roleRevision(admin, id);
+        assertCode(call("DELETE", path, admin, null), 428, "PRECONDITION_REQUIRED");
+        assertCode(roleDelete(path, admin, "*"), 400, "VALIDATION_ERROR");
+        assertCode(roleDelete(path, admin, "\"" + "0".repeat(64) + "\""), 412, "REVISION_CONFLICT");
+        doThrow(new RedisConnectionFailureException("injected failure")).when(sessions).revokeAll(Long.parseLong(user));
+        assertCode(roleDelete(path, admin, revision), 503, "SERVICE_UNAVAILABLE");
+        assertThat(roleRevision(admin, id)).isEqualTo(revision);
+        assertThat(adminRevision(admin, user)).isEqualTo(userRevision);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id=?", Integer.class, id)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=?", Integer.class, id)).isEqualTo(2);
+        reset(sessions);
+        MvcResult deleted = roleDelete(path, admin, revision);
+        assertCode(deleted, 200, "OK");
+        assertThat(data(deleted).isNull()).isTrue();
+        assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
+        assertCode(call("GET", path, admin, null), 404, "NOT_FOUND");
+        for (String table : List.of("sys_role_permission", "sys_role_menu", "sys_user_role")) {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE role_id=?", Integer.class, id)).isZero();
+        }
+        assertThat(adminRevision(admin, user)).isNotEqualTo(userRevision);
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", second, null), 401, "UNAUTHENTICATED");
+        assertCode(roleDelete(path, admin, revision), 404, "NOT_FOUND");
+        for (String builtin : List.of("1", "2", "3")) {
+            assertCode(roleDelete("/admin/roles/" + builtin, admin, roleRevision(admin, builtin)), 409, "STATE_CONFLICT");
+        }
+    }
+
+    @Test
+    void roleProtectionRejectsAdminDisableScopeAndMissingInitialPermission() throws Exception {
+        String admin = adminLogin("adminroot");
+        String revision = roleRevision(admin, "1");
+        for (String body : List.of(roleBody("不可停用", "ALL", 0), roleBody("不可缩权", "SELF", 1))) {
+            assertCode(adminPut("/admin/roles/1", admin, revision, body), 409, "LAST_ADMIN");
+            assertThat(roleRevision(admin, "1")).isEqualTo(revision);
+        }
+        List<Long> permissions = jdbc.queryForList("SELECT permission_id FROM sys_role_permission WHERE role_id=1 ORDER BY permission_id", Long.class);
+        List<Long> menus = jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id", Long.class);
+        assertCode(adminPut("/admin/roles/1/grants", admin, revision, grantBody(List.of(), List.of())), 409, "LAST_ADMIN");
+        assertCode(adminPut("/admin/roles/1/grants", admin, revision,
+                grantBody(permissions.stream().filter(id -> id != 90L).toList(), List.of())), 409, "LAST_ADMIN");
+        assertThat(roleRevision(admin, "1")).isEqualTo(revision);
+        assertThat(jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id", Long.class)).isEqualTo(menus);
+        assertCode(call("GET", "/me", admin, null), 200, "OK");
+        assertCode(adminPut("/admin/roles/1", admin, revision, roleBody("管理员展示名", "ALL", 1)), 200, "OK");
+        assertCode(call("GET", "/me", admin, null), 200, "OK");
+    }
+
+    @Test
+    void roleRedisFailureRollsBackStatusScopeAndBothGrantCollections() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String user = data(register("role_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, id);
+        String token = login("role_user");
+        String revision = roleRevision(admin, id);
+        doThrow(new RedisConnectionFailureException("injected failure")).when(sessions).revokeAll(Long.parseLong(user));
+        assertCode(adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "ALL", 0)), 503, "SERVICE_UNAVAILABLE");
+        assertCode(adminPut("/admin/roles/" + id + "/grants", admin, revision, grantBody(List.of(1L, 10L), List.of(110L))), 503, "SERVICE_UNAVAILABLE");
+        assertThat(roleRevision(admin, id)).isEqualTo(revision);
+        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("menuIds").isEmpty()).isTrue();
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+    }
+
+    @Test
+    void concurrentRoleProfileAndGrantsShareOneRevision() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String revision = roleRevision(admin, id);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> writes = List.of(
+                    () -> adminPut("/admin/roles/" + id, admin, revision, roleBody("并发资料", "SELF", 1)),
+                    () -> adminPut("/admin/roles/" + id + "/grants", admin, revision, grantBody(List.of(1L), List.of())));
+            var results = executor.invokeAll(writes);
+            assertThat(results.stream().map(result -> {
+                try { return result.get().getResponse().getStatus(); }
+                catch (Exception exception) { throw new IllegalStateException(exception); }
+            }).sorted().toList()).containsExactly(200, 412);
+        }
+    }
+
+    @Test
+    void roleGrantsRejectDisabledNodesInvalidParentTypesAndCycles() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createRole(admin, "editor");
+        String path = "/admin/roles/" + id + "/grants";
+        String revision = roleRevision(admin, id);
+        jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=110");
+        assertCode(adminPut(path, admin, revision, grantBody(List.of(10L), List.of(110L))), 400, "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_menu SET status=1 WHERE menu_id=110");
+        try {
+            jdbc.update("UPDATE sys_menu SET parent_id=120 WHERE menu_id=110");
+            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L, 20L), List.of(110L))), 400, "VALIDATION_ERROR");
+        } finally {
+            jdbc.update("UPDATE sys_menu SET parent_id=100 WHERE menu_id=110");
+        }
+        try {
+            jdbc.update("UPDATE sys_menu SET parent_id=200 WHERE menu_id=100");
+            jdbc.update("UPDATE sys_menu SET parent_id=100 WHERE menu_id=200");
+            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L), List.of(110L))), 400, "VALIDATION_ERROR");
+        } finally {
+            jdbc.update("UPDATE sys_menu SET parent_id=NULL WHERE menu_id IN (100,200)");
+        }
+        assertThat(roleRevision(admin, id)).isEqualTo(revision);
+    }
+
+    @Test
+    void concurrentRoleAndUserChangesPreserveLastEffectiveAdmin() throws Exception {
+        String first = adminLogin("first_admin");
+        String second = adminLogin("second_admin");
+        String user = data(call("GET", "/me", first, null)).get("userId").asString();
+        String userRevision = adminRevision(first, user);
+        String roleRevision = roleRevision(second, "1");
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> writes = List.of(
+                    () -> adminPut("/admin/users/" + user, first, userRevision, userBody("叶", 0)),
+                    () -> adminPut("/admin/roles/1", second, roleRevision, roleBody("管理员", "SELF", 1)));
+            var results = executor.invokeAll(writes);
+            assertCode(results.get(0).get(), 200, "OK");
+            assertCode(results.get(1).get(), 409, "LAST_ADMIN");
+        }
+        assertThat(jdbc.queryForObject("SELECT data_scope FROM sys_role WHERE role_id=1", String.class)).isEqualTo("ALL");
+        assertCode(call("GET", "/admin/roles", second, null), 200, "OK");
+    }
+
+    @Test
+    void roleWriteRechecksIdentityAndPermissionsAfterWaitingForGuard() throws Exception {
+        String admin = adminLogin("adminroot");
+        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        String id = createRole(admin, "editor");
+        String revision = roleRevision(admin, id);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            for (boolean revoke : List.of(false, true)) {
+                CountDownLatch entered = new CountDownLatch(1);
+                doAnswer(invocation -> {
+                    entered.countDown();
+                    return invocation.callRealMethod();
+                }).when(roles).update(eq(Long.parseLong(id)), any(RoleUpdateDTO.class), eq(revision));
+                var pending = new TransactionTemplate(transactionManager).execute(status -> {
+                    jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
+                    var response = executor.submit(() -> adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "SELF", 1)));
+                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
+                    catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
+                    if (revoke) { sessions.revokeAll(actor); }
+                    return response;
+                });
+                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403, revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT role_name FROM sys_role WHERE role_id=?", String.class, id)).isEqualTo("内容编辑");
+                jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
+            }
+        }
+    }
+
+    private String roleCreateBody(String code) {
+        return "{\"roleCode\":\"" + code + "\",\"roleName\":\"内容编辑\"}";
+    }
+
+    private String roleBody(String name, String scope, int status) {
+        return "{\"roleName\":\"" + name + "\",\"description\":null,\"dataScope\":\"" + scope + "\",\"status\":" + status + "}";
+    }
+
+    private String grantBody(List<Long> permissions, List<Long> menus) {
+        return json.writeValueAsString(Map.of("permissionIds", permissions, "menuIds", menus));
+    }
+
+    private String createRole(String token, String code) throws Exception {
+        MvcResult created = call("POST", "/admin/roles", token, roleCreateBody(code));
+        assertCode(created, 201, "OK");
+        return data(created).get("roleId").asString();
+    }
+
+    private String roleRevision(String token, String id) throws Exception {
+        MvcResult result = call("GET", "/admin/roles/" + id, token, null);
+        assertCode(result, 200, "OK");
+        return result.getResponse().getHeader("X-Revision");
+    }
+
+    private MvcResult roleDelete(String path, String token, String revision) throws Exception {
+        return mvc.perform(req("DELETE", path).header("Authorization", "Bearer " + token)
+                .header("If-Revision", revision)).andReturn();
+    }
+
     private String adminLogin(String username) throws Exception {
         String id = data(register(username)).get("userId").asString();
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", id);
@@ -1049,7 +1455,7 @@ class IdentityIntegrationTest {
     }
 
     private MockHttpServletRequestBuilder req(String method, String path) {
-        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1").servletPath(path);
+        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1").servletPath(path.split("\\?", 2)[0]);
     }
 
     private JsonNode data(MvcResult result) throws Exception {

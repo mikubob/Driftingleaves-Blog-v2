@@ -48,12 +48,6 @@ import java.util.stream.LongStream;
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements IUserService {
-    /** 与初始化 SQL 固定权限一致，新增字典项不自动纳入管理员保护条件。 */
-    private static final List<String> ADMIN_PERMISSIONS = List.of("admin:access",
-            "sys:user:query", "sys:user:create", "sys:user:update", "sys:user:assignRole",
-            "sys:role:query", "sys:role:create", "sys:role:update", "sys:role:delete", "sys:role:grant",
-            "sys:menu:query", "sys:menu:create", "sys:menu:update", "sys:menu:delete",
-            "sys:permission:query", "sys:permission:create", "sys:permission:update", "sys:permission:delete");
     private final UserMapper users;
     private final OAuthBindingMapper oauth;
     private final AuthorizationMapper authorization;
@@ -230,7 +224,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @throws BusinessException 本次变更将失去最后有效管理员，触发数据库回滚
      */
     private void requireRemainingAdmin() {
-        if (users.effectiveAdminCount(ADMIN_PERMISSIONS) == 0) {
+        if (users.effectiveAdminCount(AuthorizationService.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
     }

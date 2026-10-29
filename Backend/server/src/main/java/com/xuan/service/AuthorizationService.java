@@ -23,6 +23,12 @@ import java.util.TreeMap;
 @Service
 @RequiredArgsConstructor
 public class AuthorizationService implements StpInterface {
+    /** 与初始化 SQL 固定权限一致，新增字典项不自动纳入管理员保护条件。 */
+    public static final List<String> ADMIN_PERMISSIONS = List.of("admin:access",
+            "sys:user:query", "sys:user:create", "sys:user:update", "sys:user:assignRole",
+            "sys:role:query", "sys:role:create", "sys:role:update", "sys:role:delete", "sys:role:grant",
+            "sys:menu:query", "sys:menu:create", "sys:menu:update", "sys:menu:delete",
+            "sys:permission:query", "sys:permission:create", "sys:permission:update", "sys:permission:delete");
     private final AuthorizationMapper mapper;
 
     @Override
