@@ -15,6 +15,7 @@ import com.xuan.vo.OAuthLoginResultVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionException;
 import tools.jackson.databind.json.JsonMapper;
 import java.time.Clock;
 import java.time.Duration;
@@ -108,7 +109,8 @@ public class OAuthServiceImpl implements IOAuthService {
             return properties.getFrontendCompleteUrl() + "#ticket=" + ticket;
         } catch (BusinessException exception) {
             return properties.getFrontendCompleteUrl() + "#error=" + exception.getCode();
-        } catch (DataAccessException exception) {
+        } catch (DataAccessException | TransactionException exception) {
+            // 已消费的可信流程包含事务提交失败，统一回跳固定完成页且不签发票据。
             return properties.getFrontendCompleteUrl() + "#error=SERVICE_UNAVAILABLE";
         } finally {
             // 7. 无论成功或失败均清理 JustAuth 校验值，不恢复已消费的本站流程。
