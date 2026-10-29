@@ -54,7 +54,9 @@ import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.RedisConnectionFailureException;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -183,7 +185,11 @@ class IdentityIntegrationTest {
         assertThat(StpUtil.getStpLogic().getTokenTimeout(token)).isBetween(7190L, 7200L);
         assertThat(redis.keys("dl:test:session:*")).isNotEmpty();
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").size()).isEqualTo(3);
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").size()).isEqualTo(8);
+        assertThat(authorization.capabilities(id).permissionCodes()).containsExactlyInAnyOrder(
+                "blog:comment:create", "blog:comment:deleteOwn", "blog:article:like",
+                "blog:message:create", "blog:message:updateOwn", "blog:message:deleteOwn",
+                "blog:rss:subscribe", "blog:rss:unsubscribe");
         assertCode(call("GET", "/me", null, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/blog/anything", null, null), 401, "UNAUTHENTICATED");
         assertCode(mvc.perform(req("GET", "/me").param("Authorization", "Bearer " + token)).andReturn(), 401, "UNAUTHENTICATED");
@@ -458,8 +464,12 @@ class IdentityIntegrationTest {
     }
 
     @Test
-    void eighteenMappingsAndUnsignedValuesMatchRealMysql() throws Exception {
+    void existingMappingsAndExpandedSchemaMatchRealMysql() throws Exception {
         List<String> tables = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()", String.class);
+        assertThat(tables).hasSize(28);
+        // 新增业务目前仅补数据库设计，既有18个实体仍逐列验证，避免暗中漏掉映射。
+        tables.removeAll(List.of("home_profile", "home_social_link", "cv_experience", "cv_skill",
+                "blog_message", "blog_music", "blog_rss_subscription", "blog_visitor", "blog_page_view", "sys_operation_log"));
         assertThat(tables).hasSize(18);
         for (String table : tables) {
             StringBuilder className = new StringBuilder();
@@ -496,6 +506,57 @@ class IdentityIntegrationTest {
             assertThat(session.getMapper(FileTestMapper.class).selectList(null).getFirst().getSizeBytes()).isEqualTo(new BigInteger("18446744073709551615"));
         }
         assertThat(jdbc.queryForObject("SELECT @@session.time_zone", String.class)).isEqualTo("+00:00");
+    }
+
+    /** 验证新增业务的真实MySQL约束、数据保留规则及默认菜单授权。 */
+    @Test
+    void expandedBusinessConstraintsAndGrantsMatchRealMysql() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            // 1. 测试数据随事务回滚，不影响身份用例的清理顺序。
+            status.setRollbackOnly();
+            jdbc.update("INSERT INTO sys_user(username,nickname) VALUES ('schema-check','schema-check')");
+            long userId = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-check'", Long.class);
+            jdbc.update("INSERT INTO home_profile(user_id,nickname) VALUES (?,'站点主人')", userId);
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO home_profile(profile_id,user_id,nickname) VALUES (2,?,'其他资料')", userId))
+                    .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_profile_singleton");
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO cv_experience(experience_type,title,content,start_date,end_date) VALUES (0,'学校','内容','2026-10-30','2025-10-30')"))
+                    .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_experience_dates");
+            jdbc.update("INSERT INTO blog_music(title,audio_url) VALUES ('音乐','https://example.test/audio.mp3')");
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_music(title,audio_url,lyric_url) VALUES ('音乐','https://example.test/audio.mp3','https://example.test/lyric.lrc')"))
+                    .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_music_lyric");
+
+            // 2. 留言只接受本站用户，删除父节点保留回复链，订阅邮箱必须确认且不能重复。
+            jdbc.update("INSERT INTO blog_message(user_id,content) VALUES (?,'根留言')", userId);
+            long parentId = jdbc.queryForObject("SELECT message_id FROM blog_message WHERE user_id=?", Long.class, userId);
+            jdbc.update("INSERT INTO blog_message(user_id,parent_id,content) VALUES (?,?,'回复')", userId, parentId);
+            assertThatThrownBy(() -> jdbc.update("DELETE FROM blog_message WHERE message_id=?", parentId))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_message(user_id,content) VALUES (-1,'未知账号')"))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email,status) VALUES (?,'leaf@example.test',1)", userId))
+                    .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_rss_active");
+            jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'leaf@example.test')", userId);
+            jdbc.update("INSERT INTO sys_user(username,nickname) VALUES ('schema-second','schema-second')");
+            long secondUser = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-second'", Long.class);
+            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'LEAF@example.test')", secondUser))
+                    .isInstanceOf(DataIntegrityViolationException.class);
+
+            // 3. 清理统计标识或账号时保留浏览、操作审计，不让统计记录承担身份鉴权。
+            jdbc.update("INSERT INTO blog_visitor(fingerprint) VALUES ('schema-visitor')");
+            long visitorId = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor WHERE fingerprint='schema-visitor'", Long.class);
+            jdbc.update("INSERT INTO blog_page_view(visitor_id,user_id,site_code,page_path) VALUES (?,?,'blog','/articles/test')", visitorId, secondUser);
+            jdbc.update("INSERT INTO sys_operation_log(user_id,operation_type,operation_target,result) VALUES (?,'update','schema-check',1)", secondUser);
+            jdbc.update("DELETE FROM blog_visitor WHERE visitor_id=?", visitorId);
+            jdbc.update("DELETE FROM sys_user WHERE user_id=?", secondUser);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL AND user_id IS NULL AND page_path='/articles/test'", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE user_id IS NULL AND operation_target='schema-check'", Integer.class)).isEqualTo(1);
+        });
+        // 4. 新权限全量显式授予管理员，作者和会员没有新增全局管理入口。
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission p LEFT JOIN sys_role_permission rp ON rp.permission_id=p.permission_id AND rp.role_id=1 WHERE rp.permission_id IS NULL", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu m LEFT JOIN sys_role_menu rm ON rm.menu_id=m.menu_id AND rm.role_id=1 WHERE rm.menu_id IS NULL", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id IN (2,3) AND permission_id>=120 AND permission_id NOT IN (163,164,165,183,184)", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=3", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu b JOIN sys_menu p ON p.menu_id=b.parent_id WHERE b.menu_type='B' AND p.menu_type<>'M'", Integer.class)).isZero();
     }
 
     @Test
@@ -677,7 +738,8 @@ class IdentityIntegrationTest {
         JsonNode capabilities = data(call("GET", "/me/capabilities", token, null));
         assertThat(capabilities.get("roleCodes").toString()).isEqualTo("[\"access\",\"member\",\"pages\"]");
         assertThat(capabilities.get("permissionCodes").toString())
-                .isEqualTo("[\"admin:access\",\"blog:article:create\",\"blog:article:like\",\"blog:article:query\",\"blog:comment:create\",\"blog:comment:deleteOwn\"]");
+                .isEqualTo("[\"admin:access\",\"blog:article:create\",\"blog:article:like\",\"blog:article:query\",\"blog:comment:create\",\"blog:comment:deleteOwn\","
+                        + "\"blog:message:create\",\"blog:message:deleteOwn\",\"blog:message:updateOwn\",\"blog:rss:subscribe\",\"blog:rss:unsubscribe\"]");
         assertThat(capabilities.get("dataScopes").get("blog:article:query").asString()).isEqualTo("SELF");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (9,10)");
         assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").get("blog:article:query").asString()).isEqualTo("ALL");
