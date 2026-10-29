@@ -68,6 +68,7 @@ public class WebJsonConfig {
                     .enable(EnumFeature.FAIL_ON_NUMBERS_FOR_ENUMS)
                     .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
                     .disable(MapperFeature.ALLOW_COERCION_OF_SCALARS)
+                    .disable(DeserializationFeature.ACCEPT_FLOAT_AS_INT)
                     .withCoercionConfig(LogicalType.Textual,
                             config -> config.setCoercion(CoercionInputShape.Integer, CoercionAction.Fail)
                                     .setCoercion(CoercionInputShape.Float, CoercionAction.Fail)

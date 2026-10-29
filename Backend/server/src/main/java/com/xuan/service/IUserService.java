@@ -2,6 +2,13 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.LoginDTO;
+import com.xuan.dto.AdminUserCreateDTO;
+import com.xuan.dto.AdminUserQueryDTO;
+import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.UserRolesDTO;
+import com.xuan.result.PageResult;
+import com.xuan.vo.AdminUserProfileVO;
+import com.xuan.vo.UserAdminVO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
 import com.xuan.dto.ProfilePatchDTO;
@@ -13,8 +20,18 @@ import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserProfileVO;
 import java.util.List;
 
-/** 本站身份业务；目标用户只从会话或已验证的 OAuth 身份取得。 */
+/** 本站身份及后台用户业务；操作者来自会话，后台目标 ID 不能充当身份。 */
 public interface IUserService extends IService<SysUser> {
+    /** 双权限检查后按相同过滤条件分页，完整返回已分配角色，不提供逐条版本。 */
+    PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId);
+    /** 双权限检查后从一致快照读取用户资料、角色和聚合版本，不存在返回 404。 */
+    AdminUserProfileVO adminDetail(long userId);
+    /** 后台创建密码账号，不分配默认角色；唯一冲突整笔回滚。 */
+    UserAdminVO adminCreate(AdminUserCreateDTO request);
+    /** 保护锁后按 ID 顺序锁用户，锁内复核身份、权限及版本；禁用前完成会话撤销。 */
+    AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision);
+    /** 同一保护锁事务完整替换启用角色集合，保护最后管理员并在提交前撤销目标全部会话。 */
+    AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision);
     /** 用户与 member 同事务创建；不自动登录。 */
     MeVO register(RegisterDTO request);
     /** 锁定用户后验证密码、签发独立 Token 并提交登录时间。 */

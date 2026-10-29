@@ -4,6 +4,56 @@
     用户身份持久化 SQL；行锁必须由 Service 事务持有，权限和版本检查不在 Mapper 中替代。
 -->
 <mapper namespace="com.xuan.mapper.UserMapper">
+    <!-- 列表和分页插件生成的总数使用相同条件，INSTR 不解释 SQL 通配符。 -->
+    <select id="adminPage" resultType="com.xuan.entity.SysUser">
+        SELECT u.* FROM sys_user u
+        <where>
+            <if test="query.keyword != null">
+                AND (INSTR(u.username, #{query.keyword}) > 0 OR INSTR(u.nickname, #{query.keyword}) > 0
+                     OR INSTR(u.email, #{query.keyword}) > 0)
+            </if>
+            <if test="query.status != null">AND u.status = #{query.status}</if>
+            <if test="roleId != null">
+                AND EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id = u.user_id AND ur.role_id = #{roleId})
+            </if>
+        </where>
+        ORDER BY u.create_time DESC, u.user_id DESC
+    </select>
+    <!-- 管理写事务第一把锁；不按角色状态过滤，避免保护检查点被禁用绕过。 -->
+    <select id="lockAdminGuard" resultType="long">
+        SELECT role_id FROM sys_role WHERE role_id = 1 FOR UPDATE
+    </select>
+    <!-- 用户锁后按角色 ID 升序加锁，存在性及状态由 Service 统一校验。 -->
+    <select id="lockRoles" resultType="com.xuan.entity.SysRole">
+        SELECT * FROM sys_role WHERE role_id IN
+        <foreach collection="roleIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY role_id FOR UPDATE
+    </select>
+    <!-- 仅后台资料及状态白名单，不修改用户名、密码、审计或角色关联。 -->
+    <update id="updateAdmin">
+        UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email}, avatar = #{user.avatar},
+            intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
+    </update>
+    <!-- 完整替换前删除全部关联，失败时与后续插入共同回滚。 -->
+    <delete id="deleteRoles">DELETE FROM sys_user_role WHERE user_id = #{userId}</delete>
+    <!-- 通过完整复合键写入已校验集合，空集合由 Service 跳过此语句。 -->
+    <insert id="insertRoles">
+        INSERT INTO sys_user_role (user_id, role_id) VALUES
+        <foreach collection="roleIds" item="id" separator=",">(#{userId}, #{id})</foreach>
+    </insert>
+    <!-- 检查写入后的管理员有效性；明确初始权限白名单，新权限不会自动扩大保护集合。 -->
+    <select id="effectiveAdminCount" resultType="long">
+        <bind name="requiredCount" value="permissions.size()"/>
+        SELECT COUNT(*) FROM sys_user u
+        JOIN sys_user_role ur ON ur.user_id = u.user_id AND ur.role_id = 1
+        JOIN sys_role r ON r.role_id = ur.role_id AND r.role_code = 'admin' AND r.status = 1 AND r.data_scope = 'ALL'
+        WHERE u.status = 1 AND (
+            SELECT COUNT(*) FROM sys_role_permission rp
+            JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
+            WHERE rp.role_id = 1 AND p.permission_code IN
+            <foreach collection="permissions" item="code" open="(" separator="," close=")">#{code}</foreach>
+        ) = #{requiredCount}
+    </select>
     <!-- 用户锁统一序列化登录、密码、绑定与解绑。时间只由数据库维护。 -->
     <!--
         按用户名读取完整内部用户实体并取得排他行锁。

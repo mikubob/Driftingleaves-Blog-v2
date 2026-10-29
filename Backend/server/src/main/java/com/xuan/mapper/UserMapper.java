@@ -2,10 +2,65 @@ package com.xuan.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.xuan.entity.SysUser;
+import com.xuan.entity.SysRole;
+import com.xuan.dto.AdminUserQueryDTO;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.apache.ibatis.annotations.Param;
+import java.util.List;
 
 /** 用户写入使用显式白名单，锁与会话撤销由 Service 协调。 */
 public interface UserMapper extends BaseMapper<SysUser> {
+    /**
+     * 按字面关键词、状态及完整角色关联分页，排序固定为创建时间及 ID 倒序。
+     * @param page 分页插件使用的请求页码和页大小
+     * @param query 已校验的关键词及状态
+     * @param roleId 可空角色过滤，不因角色禁用而忽略关联
+     * @return 内部用户分页，不直接序列化实体
+     */
+    IPage<SysUser> adminPage(IPage<SysUser> page, @Param("query") AdminUserQueryDTO query,
+                           @Param("roleId") Long roleId);
+
+    /**
+     * 取得初始化角色行作为所有管理写事务的第一把锁。
+     * @return role_id=1；缺失时为 null，调用方须拒绝写入
+     */
+    Long lockAdminGuard();
+
+    /**
+     * 在用户锁之后按 ID 升序锁角色，供整体替换校验存在性及启用状态。
+     * @param roleIds 非空且排序后的角色 ID
+     * @return 当前存在的角色实体，包含禁用项
+     */
+    List<SysRole> lockRoles(@Param("roleIds") List<Long> roleIds);
+
+    /**
+     * 替换后台资料和状态白名单，可空值明确写入 NULL。
+     * @param user 已锁定且通过版本与权限复核的目标用户
+     * @return 更新影响行数
+     */
+    int updateAdmin(@Param("user") SysUser user);
+
+    /**
+     * 删除用户的完整角色集合，须在保护锁和用户锁事务中调用。
+     * @param userId 已锁定的目标用户
+     * @return 删除关联数
+     */
+    int deleteRoles(@Param("userId") long userId);
+
+    /**
+     * 插入完整复合键集合，调用方已锁定用户及全部启用角色。
+     * @param userId 目标用户 ID
+     * @param roleIds 非空且不重复的已校验角色 ID
+     * @return 插入关联数
+     */
+    int insertRoles(@Param("userId") long userId, @Param("roleIds") List<Long> roleIds);
+
+    /**
+     * 检查事务写入后的有效管理员数量；必须持有固定保护锁。
+     * @param permissions 当前 SQL 的全部初始系统权限及后台入口码
+     * @return 启用且关联启用 ALL admin 角色、具有全部指定启用权限的用户数
+     */
+    long effectiveAdminCount(@Param("permissions") List<String> permissions);
     /**
      * 按用户名查询并锁定用户，供密码登录串行校验凭据。
      * <p>调用方须处于业务事务中；查询不提前过滤禁用用户，凭据确认后的状态检查由 Service 负责。</p>

@@ -48,9 +48,12 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 1. 注册 Sa-Token 路由及注解校验，让身份和权限检查真正进入 MVC 调用链。
-        registry.addInterceptor(new SaInterceptor(handler -> guard(requests.getObject(), handler))).addPathPatterns("/**");
-        // 2. 后台处理方法还必须声明业务权限，不能仅凭 admin:access 进入业务。
+        // 1. 先检查当前身份及后台入口；SaInterceptor 默认先执行注解，须拆开保证错误顺序。
+        registry.addInterceptor(new SaInterceptor(handler -> guard(requests.getObject(), handler))
+                .isAnnotation(false)).addPathPatterns("/**");
+        // 2. 身份有效后再执行具体业务权限注解，不让权限错误覆盖账号状态或会话失效。
+        registry.addInterceptor(new SaInterceptor()).addPathPatterns("/**");
+        // 3. 后台处理方法还必须声明业务权限，不能仅凭 admin:access 进入业务。
         registry.addInterceptor(new HandlerInterceptor() {
             @Override
             public boolean preHandle(HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response,

@@ -1,6 +1,7 @@
 package com.xuan;
 
 import com.xuan.exception.BusinessException;
+import com.xuan.mapper.UserMapper;
 
 import cn.dev33.satoken.SaManager;
 
@@ -20,6 +21,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.xuan.dto.LoginDTO;
+import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.entity.BlogArticle;
 import com.xuan.entity.BlogFile;
 import com.xuan.properties.AuthProperties;
@@ -76,13 +78,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
 /** 真实 MySQL/Redis、Service、Mapper 和 MVC 链；仅平台网络及确定性失败使用替身。 */
@@ -681,6 +687,335 @@ class IdentityIntegrationTest {
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
         assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("SELF");
         assertThat(data(call("GET", "/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo("[\"access\",\"member\"]");
+    }
+
+    @Test
+    void adminUserRoutesRequireBothCurrentPermissions() throws Exception {
+        long id = Long.parseLong(data(register("operator")).get("userId").asString());
+        String token = login("operator");
+        List<String> paths = List.of("/admin/users", "/admin/users/" + id,
+                "/admin/users", "/admin/users/" + id, "/admin/users/" + id + "/roles");
+        List<String> methods = List.of("GET", "GET", "POST", "PUT", "PUT");
+        List<String> bodies = List.of("", "", createUserBody("created"), userBody("叶", 1), "{\"roleIds\":[]}");
+        for (int i = 0; i < paths.size(); i++) {
+            String body = bodies.get(i).isEmpty() ? null : bodies.get(i);
+            assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
+            assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'operator','操作员','SELF')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,80)");
+        assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
+        assertCode(call("GET", "/admin/users", token, null), 200, "OK");
+        // 查询权限不能授予创建、修改和授权；入口身份与权限每次重新读取。
+        for (int i = 2; i < paths.size(); i++) {
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i)), 403, "FORBIDDEN");
+        }
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=80");
+        assertCode(call("GET", "/admin/users/" + id, token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=80");
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
+        assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_role SET status=1 WHERE role_id=9");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", id);
+        assertCode(call("GET", "/admin/users", token, null), 403, "ACCOUNT_DISABLED");
+    }
+
+    @Test
+    void adminCreatesPasswordUsersWithoutRolesAndRejectsInvalidFields() throws Exception {
+        String admin = adminLogin("adminroot");
+        MvcResult created = call("POST", "/admin/users", admin, createUserBody("new_user"));
+        assertCode(created, 201, "OK");
+        String id = data(created).get("userId").asString();
+        assertThat(created.getResponse().getHeader("Location")).isEqualTo("/api/v1/admin/users/" + id);
+        assertThat(data(created).get("roleIds").isEmpty()).isTrue();
+        assertThat(data(created).get("status").asInt()).isEqualTo(1);
+        assertThat(data(created).get("hasPassword").asBoolean()).isTrue();
+        assertThat(data(created).get("lastLoginTime").isNull()).isTrue();
+        assertThat(created.getResponse().getContentAsString()).doesNotContain("passwordHash", "uuid", "accessToken");
+        String userToken = login("new_user");
+        assertCode(call("GET", "/admin/users", userToken, null), 403, "FORBIDDEN");
+        String withEmail = createUserBody("email_user").replace("\"nickname\":\"叶\"", "\"nickname\":\"  昵称  \",\"email\":\" used@example.test \"");
+        MvcResult emailed = call("POST", "/admin/users", admin, withEmail);
+        assertCode(emailed, 201, "OK");
+        assertThat(data(emailed).get("nickname").asString()).isEqualTo("昵称");
+        assertThat(data(emailed).get("email").asString()).isEqualTo("used@example.test");
+        assertCode(call("POST", "/admin/users", admin, createUserBody("NEW_USER")), 409, "UNIQUE_CONFLICT");
+        assertCode(call("POST", "/admin/users", admin, withEmail.replace("email_user", "email_other")), 409, "UNIQUE_CONFLICT");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='email_other'", Integer.class)).isZero();
+        String valid = createUserBody("invalid_user");
+        for (String extra : List.of("\"roleIds\":[]", "\"status\":null", "\"status\":2", "\"status\":\"1\"", "\"status\":1.5",
+                "\"email\":\"bad\"", "\"avatar\":\"javascript:bad\"", "\"avatar\":\"" + ORIGIN + "/api/v1/admin/files/1/content\"",
+                "\"userId\":\"1\"", "\"nickname\":12")) {
+            assertCode(call("POST", "/admin/users", admin, valid.substring(0, valid.length() - 1) + "," + extra + "}"), 400, "VALIDATION_ERROR");
+        }
+        assertCode(call("POST", "/admin/users", admin, valid.replace(PASSWORD, "密".repeat(25))), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/users", admin, valid.replace(PASSWORD, "short")), 400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='invalid_user'", Integer.class)).isZero();
+        MvcResult disabled = call("POST", "/admin/users", admin, valid.substring(0, valid.length() - 1) + ",\"status\":0}");
+        assertCode(disabled, 201, "OK");
+        assertCode(call("POST", "/auth/login", null, loginBody("invalid_user", PASSWORD)), 403, "ACCOUNT_DISABLED");
+    }
+
+    @Test
+    void adminUserPaginationUsesLiteralFiltersAndStableOrder() throws Exception {
+        String admin = adminLogin("adminroot");
+        long first = Long.parseLong(data(register("first_user")).get("userId").asString());
+        long second = Long.parseLong(data(register("second_user")).get("userId").asString());
+        jdbc.update("UPDATE sys_user SET nickname='literal%_\\\\',create_time='2026-01-01' WHERE user_id IN (?,?)", first, second);
+        jdbc.update("UPDATE sys_user SET email='search@example.test',status=0 WHERE user_id=?", first);
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,2)", first);
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=3");
+        MvcResult page = mvc.perform(req("GET", "/admin/users").header("Authorization", "Bearer " + admin)
+                .param("keyword", "  literal%_  ").param("roleId", "3").param("pageSize", "1")).andReturn();
+        assertCode(page, 200, "OK");
+        assertThat(page.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(data(page).get("total").asString()).isEqualTo("2");
+        assertThat(data(page).get("totalPages").asString()).isEqualTo("2");
+        assertThat(data(page).get("records").get(0).get("userId").asString()).isEqualTo(Long.toString(second));
+        MvcResult filtered = mvc.perform(req("GET", "/admin/users").header("Authorization", "Bearer " + admin)
+                .param("keyword", "SEARCH@").param("status", "0").param("roleId", "2")).andReturn();
+        assertCode(filtered, 200, "OK");
+        assertThat(data(filtered).get("total").asString()).isEqualTo("1");
+        assertThat(data(filtered).get("records").get(0).get("roleIds").toString()).isEqualTo("[\"2\",\"3\"]");
+        MvcResult beyond = mvc.perform(req("GET", "/admin/users").header("Authorization", "Bearer " + admin)
+                .param("keyword", "literal%_").param("page", "100000")).andReturn();
+        assertCode(beyond, 200, "OK");
+        assertThat(data(beyond).get("page").asInt()).isEqualTo(100000);
+        assertThat(data(beyond).get("records").isEmpty()).isTrue();
+        MvcResult empty = mvc.perform(req("GET", "/admin/users").header("Authorization", "Bearer " + admin)
+                .param("keyword", "unmatched")).andReturn();
+        assertCode(empty, 200, "OK");
+        assertThat(data(empty).get("totalPages").asString()).isEqualTo("0");
+        for (String[] invalid : List.of(new String[]{"page", "0"}, new String[]{"page", "100001"},
+                new String[]{"pageSize", "101"}, new String[]{"pageSize", "-1"}, new String[]{"status", "2"},
+                new String[]{"roleId", "01"}, new String[]{"roleId", "9223372036854775808"},
+                new String[]{"keyword", " "}, new String[]{"keyword", "😀".repeat(101)})) {
+            assertCode(mvc.perform(req("GET", "/admin/users").header("Authorization", "Bearer " + admin)
+                    .param(invalid[0], invalid[1])).andReturn(), 400, "VALIDATION_ERROR");
+        }
+        for (String invalid : List.of("0", "01", "-1", "1.0", "9223372036854775808")) {
+            assertCode(call("GET", "/admin/users/" + invalid, admin, null), 400, "VALIDATION_ERROR");
+        }
+        assertCode(call("GET", "/admin/users/9223372036854775807", admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void adminUpdateReplacesOnlyProfileAndStatusWithSharedRevision() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = data(register("target_user")).get("userId").asString();
+        String token = login("target_user");
+        String another = login("target_user");
+        String path = "/admin/users/" + id;
+        String revision = adminRevision(admin, id);
+        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        assertCode(call("PUT", path, admin, userBody("叶", 1)), 428, "PRECONDITION_REQUIRED");
+        assertCode(adminPut(path, admin, "*", userBody("叶", 1)), 400, "VALIDATION_ERROR");
+        assertCode(adminPut(path, admin, revision + "," + revision, userBody("叶", 1)), 400, "VALIDATION_ERROR");
+        for (String field : List.of("email", "avatar", "intro")) {
+            assertCode(adminPut(path, admin, revision, userBody("叶", 1).replace("\"" + field + "\":null,", "")), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"username\":\"changed\"", "\"password\":\"12345678\"", "\"roleIds\":[]")) {
+            String body = userBody("叶", 1);
+            assertCode(adminPut(path, admin, revision, body.substring(0, body.length() - 1) + "," + extra + "}"), 400, "VALIDATION_ERROR");
+        }
+        MvcResult updated = adminPut(path, admin, revision, userBody("  修改昵称  ", 1).replace("\"intro\":null", "\"intro\":\"  \""));
+        assertCode(updated, 200, "OK");
+        assertThat(data(updated).get("nickname").asString()).isEqualTo("修改昵称");
+        assertThat(data(updated).get("intro").isNull()).isTrue();
+        assertThat(data(updated).get("username").asString()).isEqualTo("target_user");
+        assertThat(data(updated).get("roleIds").toString()).isEqualTo("[\"3\"]");
+        String current = updated.getResponse().getHeader("X-Revision");
+        assertThat(current).isNotEqualTo(revision);
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(adminPut(path, admin, revision, userBody("stale", 0)), 412, "REVISION_CONFLICT");
+        assertCode(adminPut(path, admin, current, userBody("修改昵称", 0)), 200, "OK");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(adminPut(path, admin, adminRevision(admin, id), userBody("修改昵称", 1)), 200, "OK");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", login("target_user"), null), 200, "OK");
+        assertCode(adminPut("/admin/users/9223372036854775807", admin, current, userBody("叶", 1)), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void adminRolesReplaceValidateAndRevokeAllTargetSessions() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = data(register("target_user")).get("userId").asString();
+        String token = login("target_user");
+        String another = login("target_user");
+        String revision = adminRevision(admin, id);
+        String path = "/admin/users/" + id + "/roles";
+        assertCode(call("PUT", path, admin, "{\"roleIds\":[]}"), 428, "PRECONDITION_REQUIRED");
+        for (String body : List.of("{}", "{\"roleIds\":null}", "{\"roleIds\":[null]}", "{\"roleIds\":[3]}",
+                "{\"roleIds\":[\"03\"]}", "{\"roleIds\":[\"9223372036854775808\"]}", "{\"roleIds\":[\"3\",\"3\"]}",
+                "{\"roleIds\":[\"3\",\"999999\"]}", "{\"roleIds\":[],\"status\":1}",
+                json.writeValueAsString(Map.of("roleIds", IntStream.range(1, 102).mapToObj(Integer::toString).toList())))) {
+            assertCode(adminPut(path, admin, revision, body), 400, "VALIDATION_ERROR");
+        }
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=2");
+        assertCode(adminPut(path, admin, revision, "{\"roleIds\":[\"2\",\"3\"]}"), 400, "VALIDATION_ERROR");
+        assertThat(adminRevision(admin, id)).isEqualTo(revision);
+        jdbc.update("UPDATE sys_role SET status=1 WHERE role_id=2");
+        MvcResult assigned = adminPut(path, admin, revision, "{\"roleIds\":[\"3\",\"2\"]}");
+        assertCode(assigned, 200, "OK");
+        assertThat(data(assigned).get("roleIds").toString()).isEqualTo("[\"2\",\"3\"]");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        token = login("target_user");
+        assertCode(call("GET", "/admin/test/query", token, null), 200, "OK");
+        String current = assigned.getResponse().getHeader("X-Revision");
+        MvcResult noop = adminPut(path, admin, current, "{\"roleIds\":[\"2\",\"3\"]}");
+        assertCode(noop, 200, "OK");
+        assertThat(noop.getResponse().getHeader("X-Revision")).isEqualTo(current);
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("stale", 1)), 412, "REVISION_CONFLICT");
+        assertCode(adminPut(path, admin, current, "{\"roleIds\":[]}"), 200, "OK");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        token = login("target_user");
+        assertCode(call("GET", "/admin/test/query", token, null), 403, "FORBIDDEN");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").isEmpty()).isTrue();
+    }
+
+    @Test
+    void adminLastAdministratorProtectionRollsBackBothKindsOfChange() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = data(call("GET", "/me", admin, null)).get("userId").asString();
+        String other = data(register("disabled_admin")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", other);
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", other);
+        String revision = adminRevision(admin, id);
+        try (var sql = sqlSessionFactory.openSession()) {
+            assertThat(sql.getMapper(UserMapper.class).effectiveAdminCount(jdbc.queryForList(
+                    "SELECT permission_code FROM sys_permission WHERE permission_code='admin:access' OR permission_code LIKE 'sys:%'", String.class))).isEqualTo(1);
+        }
+        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("不应保存", 0)), 409, "LAST_ADMIN");
+        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"3\"]}"), 409, "LAST_ADMIN");
+        assertThat(adminRevision(admin, id)).isEqualTo(revision);
+        assertThat(data(call("GET", "/me", admin, null)).get("nickname").asString()).isEqualTo("叶");
+        assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).contains("\"1\"");
+    }
+
+    @Test
+    void adminRedisFailureAndUniqueConflictRollBackUserAndRoleWrites() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = data(register("target_user")).get("userId").asString();
+        String token = login("target_user");
+        String revision = adminRevision(admin, id);
+        doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(Long.parseLong(id));
+        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("不应保存", 0)), 503, "SERVICE_UNAVAILABLE");
+        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"2\"]}"), 503, "SERVICE_UNAVAILABLE");
+        assertThat(adminRevision(admin, id)).isEqualTo(revision);
+        assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).isEqualTo("[\"3\"]");
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+        reset(sessions);
+        jdbc.update("UPDATE sys_user SET email='used@example.test' WHERE username='adminroot'");
+        assertCode(adminPut("/admin/users/" + id, admin, revision,
+                userBody("不应保存", 0).replace("\"email\":null", "\"email\":\"USED@example.test\"")), 409, "UNIQUE_CONFLICT");
+        assertThat(adminRevision(admin, id)).isEqualTo(revision);
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+    }
+
+    @Test
+    void concurrentAdminProfileAndRolesUseOneAggregateRevision() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = data(register("target_user")).get("userId").asString();
+        String revision = adminRevision(admin, id);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> changes = List.of(
+                    () -> adminPut("/admin/users/" + id, admin, revision, userBody("并发资料", 1)),
+                    () -> adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"2\"]}"));
+            List<Integer> statuses = new ArrayList<>();
+            for (var result : executor.invokeAll(changes)) {
+                statuses.add(result.get(10, TimeUnit.SECONDS).getResponse().getStatus());
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(200, 412);
+        }
+    }
+
+    @Test
+    void concurrentAdminDisableAndRoleRemovalCannotCloseManagement() throws Exception {
+        String first = adminLogin("first_admin");
+        String second = adminLogin("second_admin");
+        String firstId = data(call("GET", "/me", first, null)).get("userId").asString();
+        String secondId = data(call("GET", "/me", second, null)).get("userId").asString();
+        String firstRevision = adminRevision(first, firstId);
+        String secondRevision = adminRevision(second, secondId);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> changes = List.of(
+                    () -> adminPut("/admin/users/" + firstId, first, firstRevision, userBody("叶", 0)),
+                    () -> adminPut("/admin/users/" + secondId + "/roles", second, secondRevision, "{\"roleIds\":[]}"));
+            List<Integer> statuses = new ArrayList<>();
+            for (var result : executor.invokeAll(changes)) {
+                MvcResult response = result.get(10, TimeUnit.SECONDS);
+                statuses.add(response.getResponse().getStatus());
+                assertCode(response, response.getResponse().getStatus(), response.getResponse().getStatus() == 200 ? "OK" : "LAST_ADMIN");
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(200, 409);
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user u JOIN sys_user_role ur ON u.user_id=ur.user_id WHERE u.status=1 AND ur.role_id=1", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void adminWriteRechecksPermissionAndTokenAfterWaitingForGuard() throws Exception {
+        String admin = adminLogin("adminroot");
+        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        String target = data(register("target_user")).get("userId").asString();
+        String revision = adminRevision(admin, target);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            for (boolean revoke : List.of(false, true)) {
+                CountDownLatch entered = new CountDownLatch(1);
+                doAnswer(invocation -> {
+                    entered.countDown();
+                    return invocation.callRealMethod();
+                }).when(users).adminUpdate(eq(Long.parseLong(target)), any(AdminUserUpdateDTO.class), eq(revision));
+                // 主线程先持有真实保护锁；请求通过 MVC 鉴权后进入 Service，随后等待此锁。
+                var pending = new TransactionTemplate(transactionManager).execute(status -> {
+                    jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
+                    var response = executor.submit(() -> adminPut("/admin/users/" + target, admin, revision, userBody("不应保存", 1)));
+                    try {
+                        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
+                    if (revoke) {
+                        sessions.revokeAll(actor);
+                    }
+                    return response;
+                });
+                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403, revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT nickname FROM sys_user WHERE user_id=?", String.class, target)).isEqualTo("叶");
+                jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
+            }
+        }
+    }
+
+    private String adminLogin(String username) throws Exception {
+        String id = data(register(username)).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", id);
+        return login(username);
+    }
+
+    private String createUserBody(String username) {
+        return "{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\"}";
+    }
+
+    private String userBody(String nickname, int status) {
+        return "{\"nickname\":\"" + nickname + "\",\"email\":null,\"avatar\":null,\"intro\":null,\"status\":" + status + "}";
+    }
+
+    private String adminRevision(String token, String id) throws Exception {
+        MvcResult result = call("GET", "/admin/users/" + id, token, null);
+        assertCode(result, 200, "OK");
+        return result.getResponse().getHeader("X-Revision");
+    }
+
+    private MvcResult adminPut(String path, String token, String revision, String body) throws Exception {
+        return mvc.perform(req("PUT", path).header("Authorization", "Bearer " + token)
+                .header("If-Revision", revision).contentType("application/json").content(body)).andReturn();
     }
 
     private MvcResult register(String username) throws Exception {

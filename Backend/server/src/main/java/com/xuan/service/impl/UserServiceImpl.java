@@ -1,6 +1,16 @@
 package com.xuan.service.impl;
 
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.xuan.dto.AdminUserCreateDTO;
+import com.xuan.dto.AdminUserQueryDTO;
+import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.UserRolesDTO;
+import com.xuan.entity.SysRole;
+import com.xuan.result.PageResult;
+import com.xuan.service.AuthorizationService;
+import com.xuan.vo.AdminUserProfileVO;
+import com.xuan.vo.UserAdminVO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
@@ -32,20 +42,235 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.LongStream;
 
 /** 身份写入统一锁定 sys_user；Redis 撤销成功后数据库才能提交。 */
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements IUserService {
+    /** 与初始化 SQL 固定权限一致，新增字典项不自动纳入管理员保护条件。 */
+    private static final List<String> ADMIN_PERMISSIONS = List.of("admin:access",
+            "sys:user:query", "sys:user:create", "sys:user:update", "sys:user:assignRole",
+            "sys:role:query", "sys:role:create", "sys:role:update", "sys:role:delete", "sys:role:grant",
+            "sys:menu:query", "sys:menu:create", "sys:menu:update", "sys:menu:delete",
+            "sys:permission:query", "sys:permission:create", "sys:permission:update", "sys:permission:delete");
     private final UserMapper users;
     private final OAuthBindingMapper oauth;
     private final AuthorizationMapper authorization;
+    private final AuthorizationService permissions;
     private final BCryptPasswordEncoder encoder;
     private final SessionService sessions;
     private final OAuthProviderGateway providers;
     private final PlatformTransactionManager transactionManager;
     private final JsonMapper json;
     private final Clock clock;
+
+    /**
+     * 从一致快照分页查询全局用户并投影完整角色集合，不直接返回内部实体。
+     * @param query 已完成入口校验的分页、字面关键词和状态过滤
+     * @param roleId 已校验的可空角色 ID，包含禁用角色的关联
+     * @return 同过滤条件的分页统计和脱敏资料
+     */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId) {
+        requireAdmin("sys:user:query");
+        return PageResult.from(users.adminPage(new Page<>(query.page(), query.pageSize()), query, roleId)
+                .convert(this::adminView));
+    }
+
+    /**
+     * 在一致快照内读取详情与角色，确保返回资料与聚合版本相符。
+     * @param userId 全局目标用户 ID，不作为操作者身份
+     * @return 脱敏详情及带引号版本；不存在返回 404
+     */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public AdminUserProfileVO adminDetail(long userId) {
+        requireAdmin("sys:user:query");
+        SysUser user = users.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(404, "NOT_FOUND", "用户不存在");
+        }
+        return adminProfile(user);
+    }
+
+    /**
+     * 保护锁及操作者行锁内复核双权限，创建无角色的本站密码账号。
+     * @param request 已校验的创建字段；不接受授权和审计字段
+     * @return 回查数据库审计时间后的脱敏资料，不创建会话
+     */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public UserAdminVO adminCreate(AdminUserCreateDTO request) {
+        // 1. 管理写入统一先锁保护行，再锁操作者并复核当前身份和权限。
+        lockAdminTarget(sessions.currentUserId(), "sys:user:create");
+        UrlPolicy.requireValid(request.getAvatar());
+        // 2. 显式写入创建白名单，不沿用公开注册的 member 默认授权。
+        SysUser user = new SysUser();
+        user.setUsername(request.getUsername());
+        user.setPasswordHash(encoder.encode(request.getPassword()));
+        user.setNickname(request.getNickname());
+        user.setEmail(request.getEmail());
+        user.setAvatar(request.getAvatar());
+        user.setIntro(request.getIntro());
+        user.setStatus(request.getStatus());
+        users.insert(user);
+        return adminView(users.selectById(user.getUserId()));
+    }
+
+    /**
+     * 在保护锁和用户锁内完整替换资料及状态；禁用管理员需保留有效管理入口。
+     * @param userId 目标用户 ID
+     * @param request 已校验的完整资料，不含密码、用户名和角色
+     * @param revision 详情聚合版本，缺失、格式错误和过期分别返回 428、400、412
+     * @return 更新后的资料及版本；撤销失败时数据库整笔回滚
+     */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision) {
+        // 1. 串行保护管理入口，按 ID 顺序锁用户后复核身份、权限和版本。
+        SysUser user = lockAdminTarget(userId, "sys:user:update");
+        checkRevision(user, revision);
+        UrlPolicy.requireValid(request.getAvatar());
+        boolean disabling = user.getStatus() == 1 && request.getStatus() == 0;
+        boolean admin = authorization.roleIds(userId).contains(1L);
+        // 2. 只替换资料和状态，保留用户名、密码及所有角色关联。
+        user.setNickname(request.getNickname());
+        user.setEmail(request.getEmail());
+        user.setAvatar(request.getAvatar());
+        user.setIntro(request.getIntro());
+        user.setStatus(request.getStatus());
+        users.updateAdmin(user);
+        // 3. 先检查事务后管理员结果，再撤销会话；Redis 失败阻止数据库提交。
+        if (disabling) {
+            if (admin) {
+                requireRemainingAdmin();
+            }
+            sessions.revokeAll(userId);
+        }
+        return adminProfile(users.selectById(userId));
+    }
+
+    /**
+     * 同一事务内整体替换角色，校验所有角色存在且启用，不产生部分成功。
+     * @param userId 目标用户 ID
+     * @param request 已校验格式和重复项的完整集合，空集合清空
+     * @param revision 用户聚合版本，角色变更与本人资料共用此版本
+     * @return 新资料及版本；保护检查或 Redis 撤销失败使替换整笔回滚
+     */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision) {
+        // 1. 固定保护锁、升序用户锁，然后校验锁内权限和当前聚合版本。
+        SysUser user = lockAdminTarget(userId, "sys:user:assignRole");
+        checkRevision(user, revision);
+        List<Long> next = request.roleIds().stream().sorted().toList();
+        // 2. 用户锁之后按角色 ID 升序取得角色锁，缺失或禁用项使整笔请求失败。
+        if (!next.isEmpty()) {
+            List<SysRole> roles = users.lockRoles(next);
+            if (roles.size() != next.size() || roles.stream().anyMatch(role -> role.getStatus() != 1)) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "roleIds须全部存在且启用");
+            }
+        }
+        List<Long> previous = authorization.roleIds(userId);
+        if (!previous.equals(next)) {
+            // 3. 完整删除并插入关联，再检查最后管理员；同目标集合保持幂等。
+            users.deleteRoles(userId);
+            if (!next.isEmpty()) {
+                users.insertRoles(userId, next);
+            }
+            if (user.getStatus() == 1 && previous.contains(1L) && !next.contains(1L)) {
+                requireRemainingAdmin();
+            }
+            // 4. 授权实时查询，不缓存菜单权限；撤销全部会话成功后事务才可提交。
+            sessions.revokeAll(userId);
+        }
+        return adminProfile(users.selectById(userId));
+    }
+
+    /**
+     * 按最新数据库状态校验操作者启用、会话有效和后台双权限，不按角色名称放行。
+     * @param permission 当前操作所需业务权限，全局操作不按 SELF 收缩
+     */
+    private void requireAdmin(String permission) {
+        long actor = requireCurrent();
+        sessions.requireActive(sessions.currentToken(), actor);
+        permissions.requireScope(actor, "admin:access");
+        permissions.requireScope(actor, permission);
+    }
+
+    /**
+     * 管理写事务先锁固定保护行，再升序锁操作者及目标，最后复核身份与权限。
+     * @param userId 目标用户 ID，创建时传操作者自身
+     * @param permission 必须持有的具体业务权限
+     * @return 已锁定的目标用户，不存在时在鉴权后返回 404
+     */
+    private SysUser lockAdminTarget(long userId, String permission) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        long actor = sessions.currentUserId();
+        SysUser target = null;
+        for (long id : LongStream.of(actor, userId).distinct().sorted().toArray()) {
+            SysUser locked = users.lockById(id);
+            if (id == userId) {
+                target = locked;
+            }
+        }
+        requireAdmin(permission);
+        if (target == null) {
+            throw new BusinessException(404, "NOT_FOUND", "用户不存在");
+        }
+        return target;
+    }
+
+    /**
+     * 检查事务写入后的有效管理员，调用方必须持有固定角色保护锁。
+     * @throws BusinessException 本次变更将失去最后有效管理员，触发数据库回滚
+     */
+    private void requireRemainingAdmin() {
+        if (users.effectiveAdminCount(ADMIN_PERMISSIONS) == 0) {
+            throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
+        }
+    }
+
+    /**
+     * 在目标用户锁内校验聚合版本，先于状态变更和 Redis 撤销。
+     * @param user 已锁定的当前用户
+     * @param revision 客户端原样携带的版本
+     */
+    private void checkRevision(SysUser user, String revision) {
+        if (revision == null) {
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+        }
+        if (!revision.matches("\"[0-9a-f]{64}\"")) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+        }
+        if (!revision.equals(profile(user).revision())) {
+            throw new BusinessException(412, "REVISION_CONFLICT", "资料已修改，请重新获取");
+        }
+    }
+
+    /**
+     * 从同一事务快照或用户锁中读取后台资料及与本人接口共用的版本。
+     * @param user 当前内部实体
+     * @return 脱敏资料及仅由业务字段和完整角色集合生成的版本
+     */
+    private AdminUserProfileVO adminProfile(SysUser user) {
+        return new AdminUserProfileVO(adminView(user), profile(user).revision());
+    }
+
+    /**
+     * 投影后台用户白名单，完整角色集合包含已分配但禁用的角色。
+     * @param user 当前内部用户实体
+     * @return 不含密码哈希、第三方身份和 Token 的后台资料
+     */
+    private UserAdminVO adminView(SysUser user) {
+        return new UserAdminVO(user.getUserId(), user.getUsername(), user.getNickname(), user.getEmail(),
+                user.getAvatar(), user.getIntro(), user.getStatus(), user.getPasswordHash() != null,
+                user.getLastLoginTime(), user.getCreateTime(), user.getUpdateTime(), authorization.roleIds(user.getUserId()));
+    }
 
     /**
      * 注册启用用户并分配 member 角色，用户与角色关联共同提交。
@@ -130,15 +355,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 1. 先确认本人身份并取得用户行锁，再读取本次写入所用的版本。
         SysUser user = lockCurrent();
         // 2. 区分缺失、格式错误和版本过期，防止资料被静默覆盖。
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
-        }
-        if (!revision.equals(profile(user).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "资料已修改，请重新获取");
-        }
+        checkRevision(user, revision);
         // 3. 只更新明确出现的白名单字段；缺失保持，null 清空可空字段。
         if (request.hasNickname()) {
             user.setNickname(request.getNickname());
