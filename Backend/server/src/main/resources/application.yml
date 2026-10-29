@@ -1,0 +1,86 @@
+# 公共安全约定。环境差异通过环境变量或外部 application 配置覆盖，不默认激活 profile。
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /api/v1
+  forward-headers-strategy: none
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+spring:
+  application:
+    name: drifting-leaves-v2
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    hikari:
+      connection-init-sql: SET time_zone = '+00:00'
+      transaction-isolation: TRANSACTION_READ_COMMITTED
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: ${REDIS_DATABASE:0}
+      connect-timeout: 2s
+      timeout: 2s
+  sql:
+    init:
+      mode: never
+mybatis-plus:
+  mapper-locations: classpath:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+sa-token:
+  token-name: Authorization
+  token-prefix: Bearer
+  timeout: 7200
+  active-timeout: -1
+  auto-renew: false
+  is-concurrent: true
+  is-share: false
+  is-read-body: false
+  is-read-header: true
+  is-read-cookie: false
+  is-write-header: false
+  is-log: false
+  is-print: false
+  right-now-create-token-session: true
+app:
+  auth:
+    allowed-origins: ${FRONTEND_ORIGINS:}
+    frontend-complete-url: ${OAUTH_COMPLETE_URL:}
+    redis-prefix: ${REDIS_KEY_PREFIX:dl:v2:}
+    bcrypt-strength: ${BCRYPT_STRENGTH:12}
+    trusted-proxies: ${TRUSTED_PROXIES:}
+    rate:
+      window-seconds: ${AUTH_RATE_WINDOW_SECONDS:60}
+      login-failures: ${AUTH_RATE_LOGIN_FAILURES:10}
+      register: ${AUTH_RATE_REGISTER:5}
+      oauth: ${AUTH_RATE_OAUTH:20}
+    providers:
+      GITHUB:
+        enabled: ${OAUTH_GITHUB_ENABLED:false}
+        client-id: ${OAUTH_GITHUB_CLIENT_ID:}
+        client-secret: ${OAUTH_GITHUB_CLIENT_SECRET:}
+        redirect-uri: ${OAUTH_GITHUB_REDIRECT_URI:}
+      GITEE:
+        enabled: ${OAUTH_GITEE_ENABLED:false}
+        client-id: ${OAUTH_GITEE_CLIENT_ID:}
+        client-secret: ${OAUTH_GITEE_CLIENT_SECRET:}
+        redirect-uri: ${OAUTH_GITEE_REDIRECT_URI:}
+      QQ:
+        enabled: ${OAUTH_QQ_ENABLED:false}
+        client-id: ${OAUTH_QQ_CLIENT_ID:}
+        client-secret: ${OAUTH_QQ_CLIENT_SECRET:}
+        redirect-uri: ${OAUTH_QQ_REDIRECT_URI:}
+# 禁止框架和第三方客户端在调试日志中展开请求、回调查询和平台响应。
+logging:
+  level:
+    org.springframework.web: WARN
+    me.zhyd.oauth: OFF
+    com.xkcoding.http: OFF

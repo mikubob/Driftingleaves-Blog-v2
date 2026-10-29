@@ -1,0 +1,24 @@
+# 本地协作规范，不加入版本控制。
+AGENTS.md
+AGENT.md
+
+# 后端构建与前端依赖/产物。
+**/target/
+**/node_modules/
+/Front/dist/
+/Front/coverage/
+
+# 本地秘密与环境覆盖，允许提交不含秘密的示例。
+.env
+.env.*
+!.env.example
+!.env.*.example
+/Backend/server/src/main/resources/application-local.yml
+/Backend/server/src/main/resources/application-local.yaml
+
+# 个人编辑器和操作系统文件。
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db

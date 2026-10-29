@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    后端唯一 Spring Boot 应用模块。
+    <p>组合 common、entity，承载接口、业务、持久化和鉴权接入。</p>
+    @see ../pom.xml
+    @see ../common/pom.xml
+    @see ../entity/pom.xml
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.xuan</groupId>
+        <artifactId>DriftingLeavesV2</artifactId>
+        <version>2.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>server</artifactId>
+
+    <dependencies>
+        <!--
+            引用共享工具，内部模块版本由父 POM 统一管理。
+        -->
+        <dependency>
+            <groupId>com.xuan</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <!--
+            引用实体、DTO 和 VO，模型模块不反向依赖应用模块。
+        -->
+        <dependency>
+            <groupId>com.xuan</groupId>
+            <artifactId>entity</artifactId>
+        </dependency>
+        <!--
+            提供 Servlet MVC、REST、文件上传和默认 Jackson 3 JSON 集成。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc</artifactId>
+        </dependency>
+        <!--
+            提供 Jakarta Validation 执行器，执行请求模型声明的校验规则。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <!--
+            接入 Boot 4 的 MyBatis-Plus，并传递提供 JDBC、事务和 HikariCP。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+        </dependency>
+        <!--
+            提供分页拦截器所需的独立 SQL 解析支持，分页插件仍需应用注册。
+        -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+        </dependency>
+        <!--
+            提供运行时 MySQL JDBC 驱动，版本跟随 Boot BOM。
+        -->
+        <dependency>
+            <groupId>com.mysql</groupId>
+            <artifactId>mysql-connector-j</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!--
+            提供 Redis 模板及 Lettuce 客户端，供 state、限流和缓存失效逻辑使用。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <!--
+            提供本站会话与权限校验的 Boot 4 MVC 接入，已携带 Jackson 3 插件。
+        -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot4-starter</artifactId>
+        </dependency>
+        <!--
+            提供 Sa-Token Redis 会话存储，避免额外引入 Jackson 2 会话插件。
+        -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-template</artifactId>
+        </dependency>
+        <!--
+            提供第三方 OAuth 授权客户端；账号绑定与本站登录流程由应用实现。
+        -->
+        <dependency>
+            <groupId>me.zhyd.oauth</groupId>
+            <artifactId>JustAuth</artifactId>
+        </dependency>
+        <!--
+            显式使用父 POM 锁定的 Fastjson 1.x API 兼容包，满足 JustAuth 内部解析需求。
+            <p>此依赖不接管 MVC JSON，也不代表授权响应的兼容性已实测。</p>
+        -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
+        <!--
+            仅使用 BCrypt 等密码编码能力，本站鉴权仍由 Sa-Token 负责。
+        -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-crypto</artifactId>
+        </dependency>
+        <!--
+            在编译期生成样板代码，打包时排除 Lombok 本体。
+        -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!--
+            提供应用层基础测试工具，仅进入测试类路径。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!--
+            提供 Boot 4 MVC 和 MockMvc 测试支持。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webmvc-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <!--
+                仅为应用模块声明 Boot 打包插件，沿用父级管理的 repackage 执行。
+                <p>通过真实启动入口生成可执行 jar，排除编译期 Lombok 依赖。</p>
+            -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                        </exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

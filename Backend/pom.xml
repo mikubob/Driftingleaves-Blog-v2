@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    后端 Maven 聚合父模块。
+    <p>统一管理依赖版本和编译约定；具体依赖由各子模块按职责声明。</p>
+    @see common/pom.xml
+    @see entity/pom.xml
+    @see server/pom.xml
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!--
+        继承 Spring Boot 的依赖和构建插件版本管理。
+        <p>Boot BOM 已管理的组件沿用其版本，不在本项目重复锁定。</p>
+    -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.xuan</groupId>
+    <artifactId>DriftingLeavesV2</artifactId>
+    <version>2.0.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <!--
+        聚合共享工具、数据模型和唯一应用模块。
+        <p>业务依赖仅为 server 指向 common、entity，两者不相互依赖。</p>
+    -->
+    <modules>
+        <module>common</module>
+        <module>entity</module>
+        <module>server</module>
+    </modules>
+
+    <!--
+        统一 Java 21、UTF-8 及 Boot BOM 未管理的第三方版本。
+        <p>MyBatis-Plus、Sa-Token 和 CommonMark 各家族的组件保持同版。</p>
+    -->
+    <properties>
+        <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <sa-token.version>1.46.0</sa-token.version>
+        <justauth.version>1.16.7</justauth.version>
+        <fastjson-compatible.version>2.0.66</fastjson-compatible.version>
+        <commonmark.version>0.31.0</commonmark.version>
+        <jsoup.version>1.23.2</jsoup.version>
+    </properties>
+
+    <!--
+        管理内部模块和额外第三方依赖的版本。
+        <p>此处仅提供版本约束，不会自动向子模块添加运行依赖。</p>
+    -->
+    <dependencyManagement>
+        <dependencies>
+            <!--
+                内部模块统一使用当前项目版本，避免引用老项目构件。
+            -->
+            <dependency>
+                <groupId>com.xuan</groupId>
+                <artifactId>common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.xuan</groupId>
+                <artifactId>entity</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <!--
+                统一 MyBatis-Plus 注解、核心、Boot 4 接入和分页组件版本。
+            -->
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-annotation</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-core</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <!--
+                统一 Sa-Token 的 Boot 4 MVC 接入和 Redis 会话组件版本。
+            -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-spring-boot4-starter</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-redis-template</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
+            <!--
+                固定 JustAuth 第三方授权客户端版本，本站会话仍由 Sa-Token 管理。
+            -->
+            <dependency>
+                <groupId>me.zhyd.oauth</groupId>
+                <artifactId>JustAuth</artifactId>
+                <version>${justauth.version}</version>
+            </dependency>
+            <!--
+                使用 Fastjson2 的 1.x API 兼容包覆盖 JustAuth 的旧依赖。
+                <p>必须保留 com.alibaba:fastjson 坐标，不能用不同包名的 fastjson2 核心直接替换。</p>
+            -->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>fastjson</artifactId>
+                <version>${fastjson-compatible.version}</version>
+            </dependency>
+            <!--
+                统一 Markdown 核心与表格、自动链接、任务列表三个扩展的版本。
+            -->
+            <dependency>
+                <groupId>org.commonmark</groupId>
+                <artifactId>commonmark</artifactId>
+                <version>${commonmark.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.commonmark</groupId>
+                <artifactId>commonmark-ext-gfm-tables</artifactId>
+                <version>${commonmark.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.commonmark</groupId>
+                <artifactId>commonmark-ext-autolink</artifactId>
+                <version>${commonmark.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.commonmark</groupId>
+                <artifactId>commonmark-ext-task-list-items</artifactId>
+                <version>${commonmark.version}</version>
+            </dependency>
+            <!--
+                管理 HTML 白名单清理库，补足 Markdown 渲染本身的安全边界。
+            -->
+            <dependency>
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${jsoup.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <!--
+                    为子模块统一配置 Lombok 注解处理器。
+                    <p>处理器与 provided 依赖都使用 Boot BOM 的 lombok.version，避免版本分叉。</p>
+                -->
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                                <version>${lombok.version}</version>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

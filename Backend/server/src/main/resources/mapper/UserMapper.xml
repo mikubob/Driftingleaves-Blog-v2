@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    用户身份持久化 SQL；行锁必须由 Service 事务持有，权限和版本检查不在 Mapper 中替代。
+-->
+<mapper namespace="com.xuan.mapper.UserMapper">
+    <!-- 用户锁统一序列化登录、密码、绑定与解绑。时间只由数据库维护。 -->
+    <!--
+        按用户名读取完整内部用户实体并取得排他行锁。
+        不按 status 提前过滤；密码验证后的启用检查及统一认证失败响应由 Service 完成。
+    -->
+    <select id="lockByUsername" resultType="com.xuan.entity.SysUser">
+        SELECT * FROM sys_user WHERE username = #{username} FOR UPDATE
+    </select>
+    <!--
+        按用户 ID 取得与登录、密码变更和绑定操作共用的行锁。
+        同一用户的安全方式变更在该锁下串行处理；不存在的记录由调用方按业务场景处理。
+    -->
+    <select id="lockById" resultType="com.xuan.entity.SysUser">
+        SELECT * FROM sys_user WHERE user_id = #{userId} FOR UPDATE
+    </select>
+    <!--
+        仅更新本人资料允许写入的四个字段。
+        PATCH 缺失保持已由 Service 合并，传入 NULL 在此明确清空；不更新账号、密码或角色。
+    -->
+    <update id="updateProfile">
+        UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email},
+            avatar = #{user.avatar}, intro = #{user.intro} WHERE user_id = #{user.userId}
+    </update>
+    <!--
+        仅更新指定用户的本站密码哈希，NULL 表示清除密码。
+        Service 须先校验最近认证、现有凭据和剩余登录方式，并在提交前完成 Redis 会话撤销。
+    -->
+    <update id="updatePassword">
+        UPDATE sys_user SET password_hash = #{hash} WHERE user_id = #{userId}
+    </update>
+    <!--
+        使用数据库当前毫秒时间记录本次成功登录。
+        连接时区由配置固定为 UTC；与用户锁和会话签发共同参与登录事务。
+    -->
+    <update id="updateLastLogin">
+        UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3) WHERE user_id = #{userId}
+    </update>
+    <!--
+        仅为新用户插入启用 member 角色的关联。
+        user_id 与 role_id 是完整复合键；未找到可用角色时插入零行，由 Service 回滚注册事务。
+    -->
+    <insert id="assignMember">
+        INSERT INTO sys_user_role (user_id, role_id)
+        SELECT #{userId}, role_id FROM sys_role WHERE role_code = 'member' AND status = 1
+    </insert>
+</mapper>

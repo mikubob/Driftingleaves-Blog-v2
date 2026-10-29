@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!--
+    第三方身份绑定 SQL；source 与 uuid 按数据库身份字段原样匹配，不保存平台 Token。
+-->
+<mapper namespace="com.xuan.mapper.OAuthBindingMapper">
+    <!--
+        按 source + uuid 唯一身份查询绑定，不按昵称或邮箱合并账号。
+        平台与 uuid 必须来自服务端验证；查询结果不代表用户已启用，必要时在用户锁后重新查询。
+    -->
+    <select id="findIdentity" resultType="com.xuan.entity.SysUserOauth">
+        SELECT * FROM sys_user_oauth WHERE source = #{source} AND uuid = #{uuid}
+    </select>
+    <!--
+        读取用户全部绑定，按 source 升序返回。
+        不按平台配置过滤；可用方式判断和去除 uuid 等内部字段由 Service 完成。
+    -->
+    <select id="findByUser" resultType="com.xuan.entity.SysUserOauth">
+        SELECT * FROM sys_user_oauth WHERE user_id = #{userId} ORDER BY source
+    </select>
+    <!--
+        同时限定用户与平台删除绑定，不能仅按 source 操作。
+        最近认证和最后登录方式检查须在同一用户行锁事务中先行完成。
+    -->
+    <delete id="deleteBinding">
+        DELETE FROM sys_user_oauth WHERE user_id = #{userId} AND source = #{source}
+    </delete>
+</mapper>
