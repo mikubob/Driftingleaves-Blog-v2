@@ -1,0 +1,120 @@
+package com.xuan.controller.admin;
+
+import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.MenuCreateDTO;
+import com.xuan.dto.MenuUpdateDTO;
+import com.xuan.exception.BusinessException;
+import com.xuan.result.Result;
+import com.xuan.service.IMenuService;
+import com.xuan.vo.MenuNodeVO;
+import com.xuan.vo.MenuProfileVO;
+import com.xuan.vo.MenuVO;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import java.net.URI;
+import java.util.List;
+
+/** 菜单管理入口；拦截器先校验有效身份和后台入口，再检查对应菜单操作权限。 */
+@RestController
+@RequestMapping("/admin/menus")
+@RequiredArgsConstructor
+public class MenuController {
+    private final IMenuService menus;
+
+    /**
+     * 双权限校验后读取完整后台树，与本人可访问树职责分离。
+     * @return 200 全状态 MenuNode 列表，无逐条 X-Revision
+     */
+    @GetMapping
+    @SaCheckPermission("sys:menu:query")
+    public Result<List<MenuNodeVO>> tree() {
+        return Result.ok(menus.tree());
+    }
+
+    /**
+     * 双权限校验后读取菜单详情和业务版本。
+     * @param menuId 正十进制菜单 ID
+     * @return 200 详情及 X-Revision，不存在返回 404
+     */
+    @GetMapping("/{menuId}")
+    @SaCheckPermission("sys:menu:query")
+    public ResponseEntity<Result<MenuVO>> detail(@PathVariable String menuId) {
+        return profile(menus.detail(id(menuId)));
+    }
+
+    /**
+     * 双权限校验后创建菜单，不隐式授予角色或接口权限。
+     * @param body 已校验创建白名单和默认值，不接受客户端审计字段
+     * @return 201 资料和详情 Location，无 X-Revision
+     */
+    @PostMapping
+    @SaCheckPermission("sys:menu:create")
+    public ResponseEntity<Result<MenuVO>> create(@Valid @RequestBody MenuCreateDTO body) {
+        MenuVO menu = menus.create(body);
+        return ResponseEntity.created(URI.create("/api/v1/admin/menus/" + menu.menuId())).body(Result.ok(menu));
+    }
+
+    /**
+     * 双权限校验后完整替换节点，menuCode 创建后不可改。
+     * @param menuId 目标菜单 ID
+     * @param body 全部可写字段，可空字段不可省略
+     * @param revision 当前详情版本；缺失交由锁事务返回 428
+     * @return 200 详情和新 X-Revision，结构或版本冲突拒绝全部写入
+     */
+    @PutMapping("/{menuId}")
+    @SaCheckPermission("sys:menu:update")
+    public ResponseEntity<Result<MenuVO>> update(@PathVariable String menuId,
+            @Valid @RequestBody MenuUpdateDTO body,
+            @RequestHeader(value = "If-Revision", required = false) String revision) {
+        return profile(menus.update(id(menuId), body, revision));
+    }
+
+    /**
+     * 双权限校验后删除叶子菜单，由锁事务检查引用和版本。
+     * @param menuId 目标菜单 ID
+     * @param revision 当前详情版本
+     * @return 200 空结果，无 X-Revision；有子节点返回 RESOURCE_IN_USE
+     */
+    @DeleteMapping("/{menuId}")
+    @SaCheckPermission("sys:menu:delete")
+    public Result<Void> delete(@PathVariable String menuId,
+            @RequestHeader(value = "If-Revision", required = false) String revision) {
+        menus.delete(id(menuId), revision);
+        return Result.ok(null);
+    }
+
+    /**
+     * 校验路径 ID，拒绝前导零、符号、小数及 Long 溢出。
+     * @param value 原始路径文本
+     * @return 内部菜单 ID
+     */
+    private long id(String value) {
+        if (value.matches("[1-9][0-9]{0,18}")) {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException exception) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "ID超出范围");
+            }
+        }
+        throw new BusinessException(400, "VALIDATION_ERROR", "ID须为正十进制字符串");
+    }
+
+    /**
+     * 版本只写响应头，响应体使用 Menu 白名单。
+     * @param result 同一事务得到的详情及版本
+     * @return 200 详情及 X-Revision
+     */
+    private ResponseEntity<Result<MenuVO>> profile(MenuProfileVO result) {
+        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.menu()));
+    }
+}

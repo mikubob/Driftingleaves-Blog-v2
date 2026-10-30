@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 菜单结构 SQL；所有结构写入与角色 grants 共用固定检查点，不依赖菜单路径鉴权。 -->
+<mapper namespace="com.xuan.mapper.MenuMapper">
+    <!-- 完整树保留禁用、隐藏及空目录，权限码直接取字典，包括禁用权限。 -->
+    <select id="allMenus" resultType="com.xuan.mapper.AuthorizationMapper$MenuGrant">
+        SELECT m.*, p.permission_code FROM sys_menu m
+        LEFT JOIN sys_permission p ON p.permission_id = m.permission_id
+        ORDER BY m.sort_order ASC, m.menu_id ASC
+    </select>
+    <!-- 关联保持原样；锁住分支所影响用户，与登录及授权写入遵循相同锁顺序。 -->
+    <select id="userIds" resultType="long">
+        SELECT DISTINCT ur.user_id FROM sys_user_role ur
+        JOIN sys_role_menu rm ON rm.role_id = ur.role_id
+        WHERE rm.menu_id IN
+        <foreach collection="menuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+        ORDER BY ur.user_id
+    </select>
+    <!-- 先结构检查点、用户锁后取得节点锁；版本和结构检查基于当前已提交状态。 -->
+    <select id="lockById" resultType="com.xuan.entity.SysMenu">
+        SELECT * FROM sys_menu WHERE menu_id = #{menuId} FOR UPDATE
+    </select>
+    <!-- 不使用忽略 NULL 的通用更新；类型转换可以清空路由、组件及门禁字段。 -->
+    <update id="updateMenu">
+        UPDATE sys_menu SET parent_id = #{menu.parentId}, menu_name = #{menu.menuName},
+            menu_type = #{menu.menuType}, route_name = #{menu.routeName}, path = #{menu.path},
+            component = #{menu.component}, icon = #{menu.icon}, permission_id = #{menu.permissionId},
+            sort_order = #{menu.sortOrder}, is_visible = #{menu.isVisible}, keep_alive = #{menu.keepAlive},
+            status = #{menu.status}
+        WHERE menu_id = #{menu.menuId}
+    </update>
+</mapper>

@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.dto.RoleCreateDTO;
@@ -12,10 +13,10 @@ import com.xuan.exception.BusinessException;
 import com.xuan.mapper.RoleMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.result.PageResult;
-import com.xuan.service.AuthorizationService;
+import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IRoleService;
 import com.xuan.service.IUserService;
-import com.xuan.service.SessionService;
+import com.xuan.session.SessionManager;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import lombok.RequiredArgsConstructor;
@@ -38,8 +39,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     private final RoleMapper roles;
     private final UserMapper users;
     private final IUserService identities;
-    private final AuthorizationService authorization;
-    private final SessionService sessions;
+    private final AuthorizationProvider authorization;
+    private final SessionManager sessions;
     private final JsonMapper json;
 
     /**
@@ -246,7 +247,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      * @throws BusinessException 最后管理员将失效，数据库写入必须回滚
      */
     private void protectAdmin(long roleId) {
-        if (roleId == 1 && users.effectiveAdminCount(AuthorizationService.ADMIN_PERMISSIONS) == 0) {
+        if (roleId == 1 && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
     }
@@ -299,7 +300,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         RoleVO value = view(role);
         String canonical = json.writeValueAsString(Arrays.asList(value.roleId(), value.roleCode(), value.roleName(),
                 value.description(), value.dataScope(), value.status(), value.permissionIds(), value.menuIds()));
-        return new RoleProfileVO(value, "\"" + SessionService.digest(canonical) + "\"");
+        return new RoleProfileVO(value, "\"" + TokenUtils.digest(canonical) + "\"");
     }
 
     /**

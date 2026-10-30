@@ -7,7 +7,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.result.Result;
 import com.xuan.properties.AuthProperties;
 import com.xuan.service.IUserService;
-import com.xuan.service.OAuthProviderGateway;
+import com.xuan.client.OAuthProviderClient;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -42,7 +42,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     private static final Set<String> PUBLIC = Set.of("POST /auth/register", "POST /auth/login", "POST /auth/logout",
             "GET /auth/oauth/providers", "POST /auth/oauth/exchange");
     private final IUserService users;
-    private final OAuthProviderGateway providers;
+    private final OAuthProviderClient providers;
     private final AuthProperties properties;
     private final ObjectProvider<HttpServletRequest> requests;
 

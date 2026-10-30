@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.xuan.dto.AdminUserCreateDTO;
@@ -8,7 +9,7 @@ import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.UserRolesDTO;
 import com.xuan.entity.SysRole;
 import com.xuan.result.PageResult;
-import com.xuan.service.AuthorizationService;
+import com.xuan.security.AuthorizationProvider;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.UserAdminVO;
 import com.xuan.dto.LoginDTO;
@@ -23,9 +24,9 @@ import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.OAuthBindingMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.service.IUserService;
-import com.xuan.service.OAuthProviderGateway;
-import com.xuan.service.SessionService;
-import com.xuan.service.UrlPolicy;
+import com.xuan.client.OAuthProviderClient;
+import com.xuan.session.SessionManager;
+import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.SessionVO;
@@ -51,10 +52,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final UserMapper users;
     private final OAuthBindingMapper oauth;
     private final AuthorizationMapper authorization;
-    private final AuthorizationService permissions;
+    private final AuthorizationProvider permissions;
     private final BCryptPasswordEncoder encoder;
-    private final SessionService sessions;
-    private final OAuthProviderGateway providers;
+    private final SessionManager sessions;
+    private final OAuthProviderClient providers;
     private final PlatformTransactionManager transactionManager;
     private final JsonMapper json;
     private final Clock clock;
@@ -224,7 +225,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @throws BusinessException 本次变更将失去最后有效管理员，触发数据库回滚
      */
     private void requireRemainingAdmin() {
-        if (users.effectiveAdminCount(AuthorizationService.ADMIN_PERMISSIONS) == 0) {
+        if (users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
     }
@@ -490,7 +491,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                     }
                     // 2.2 首次注册生成本站用户名，密码和邮箱保持 NULL，仅初始化展示资料。
                     SysUser user = new SysUser();
-                    user.setUsername("oauth_" + SessionService.random().replace('-', '_'));
+                    user.setUsername("oauth_" + TokenUtils.random().replace('-', '_'));
                     // 按 Unicode 字符截取昵称；无效头像丢弃，不能改变平台身份标识。
                     String display = nickname == null ? "" : nickname.strip();
                     user.setNickname(display.isEmpty() ? "用户" : display.substring(0,
@@ -694,7 +695,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                 user.getNickname(), user.getEmail(), user.getAvatar(), user.getIntro(), user.getStatus(),
                 authorization.roleIds(user.getUserId())));
         // 2. 将版本保留为带引号的具体值，供客户端原样用于 If-Revision。
-        return new UserProfileVO(view(user), "\"" + SessionService.digest(canonical) + "\"");
+        return new UserProfileVO(view(user), "\"" + TokenUtils.digest(canonical) + "\"");
     }
 
     /**

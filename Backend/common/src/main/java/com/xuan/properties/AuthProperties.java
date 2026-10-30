@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 身份基础设施参数；凭据只来自环境或外部配置。 */
+/** 共享身份基础设施参数；由应用扫描绑定，凭据只来自环境或外部配置。 */
 @Data
 @Validated
 @ConfigurationProperties("app.auth")

@@ -1,8 +1,9 @@
-package com.xuan.service;
+package com.xuan.client;
 
 import com.xuan.exception.BusinessException;
+import com.xuan.store.RedisOAuthStore;
 import com.xuan.properties.AuthProperties;
-import com.xuan.vo.ProviderVO;
+import com.xuan.utils.UrlPolicy;
 import lombok.RequiredArgsConstructor;
 import me.zhyd.oauth.config.AuthConfig;
 import me.zhyd.oauth.config.AuthDefaultSource;
@@ -23,14 +24,14 @@ import java.util.stream.Collectors;
 /** 固定普通 GET 回调平台白名单；默认全关闭，缺配置的平台不能用于登录方式保护。 */
 @Component
 @RequiredArgsConstructor
-public class JustAuthGateway implements OAuthProviderGateway {
+public class JustAuthClient implements OAuthProviderClient {
     private static final Map<String, String> SOURCES = Map.of("GITHUB", "GitHub", "GITEE", "Gitee", "QQ", "QQ");
     private final AuthProperties properties;
     private final RedisOAuthStore states;
 
     @Override
-    public List<ProviderVO> providers() {
-        return enabledSources().stream().sorted().map(source -> new ProviderVO(source, SOURCES.get(source))).toList();
+    public List<Provider> providers() {
+        return enabledSources().stream().sorted().map(source -> new Provider(source, SOURCES.get(source))).toList();
     }
 
     @Override

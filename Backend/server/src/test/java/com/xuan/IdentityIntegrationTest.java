@@ -1,5 +1,6 @@
 package com.xuan;
 
+import com.xuan.utils.TokenUtils;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.UserMapper;
 
@@ -26,15 +27,18 @@ import com.xuan.entity.BlogArticle;
 import com.xuan.entity.BlogFile;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
-import com.xuan.service.AuthorizationService;
+import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.service.IRoleService;
+import com.xuan.service.IPermissionService;
+import com.xuan.service.IMenuService;
+import com.xuan.dto.MenuUpdateDTO;
+import com.xuan.dto.PermissionUpdateDTO;
 import com.xuan.dto.RoleUpdateDTO;
-import com.xuan.service.JustAuthGateway;
-import com.xuan.service.OAuthProviderGateway;
-import com.xuan.service.RedisOAuthStore;
-import com.xuan.service.SessionService;
-import com.xuan.vo.ProviderVO;
+import com.xuan.client.JustAuthClient;
+import com.xuan.client.OAuthProviderClient;
+import com.xuan.store.RedisOAuthStore;
+import com.xuan.session.SessionManager;
 import com.xuan.vo.SessionVO;
 import jakarta.servlet.http.Cookie;
 import me.zhyd.oauth.config.AuthDefaultSource;
@@ -71,6 +75,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 import java.math.BigInteger;
 import java.net.URLDecoder;
@@ -79,6 +84,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -91,7 +97,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
@@ -110,12 +119,14 @@ class IdentityIntegrationTest {
     @Autowired StringRedisTemplate redis;
     @MockitoSpyBean IUserService users;
     @MockitoSpyBean IRoleService roles;
-    @Autowired AuthorizationService authorization;
+    @MockitoSpyBean IPermissionService permissions;
+    @MockitoSpyBean IMenuService menus;
+    @Autowired AuthorizationProvider authorization;
     @Autowired RedisOAuthStore store;
     @Autowired AuthProperties properties;
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired SqlSessionFactory sqlSessionFactory;
-    @MockitoSpyBean SessionService sessions;
+    @MockitoSpyBean SessionManager sessions;
 
     @DynamicPropertySource
     static void isolated(DynamicPropertyRegistry registry) throws Exception {
@@ -152,10 +163,13 @@ class IdentityIntegrationTest {
 
     @BeforeEach
     void resetIsolatedData() {
-        reset(sessions, users, roles);
+        reset(sessions, users, roles, permissions, menus);
         jdbc.update("DELETE FROM blog_article");
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
+        // 自建菜单按叶子清理，先释放权限 RESTRICT 引用；不触碰初始化菜单及既有授权。
+        while (jdbc.update("DELETE m FROM sys_menu m LEFT JOIN sys_menu c ON c.parent_id=m.menu_id WHERE m.menu_code LIKE 'test:%' AND c.menu_id IS NULL") > 0) { }
+        jdbc.update("DELETE FROM sys_permission WHERE permission_code LIKE 'test:%'");
         jdbc.update("UPDATE sys_role SET status=1");
         jdbc.update("UPDATE sys_role SET data_scope=CASE WHEN role_id=1 THEN 'ALL' ELSE 'SELF' END WHERE role_id IN (1,2,3)");
         jdbc.update("UPDATE sys_permission SET status=1");
@@ -166,6 +180,12 @@ class IdentityIntegrationTest {
 
     @Test
     void registrationLoginSessionsWhitelistAndValidation() throws Exception {
+        MvcResult providerList = call("GET", "/auth/oauth/providers", null, null);
+        assertCode(providerList, 200, "OK");
+        assertThat(data(providerList).size()).isEqualTo(2);
+        assertThat(data(providerList).get(0).get("source").asString()).isEqualTo("GITEE");
+        assertThat(data(providerList).get(1).get("displayName").asString()).isEqualTo("GitHub");
+        assertThat(data(providerList).get(0).properties()).hasSize(2);
         assertCode(call("POST", "/auth/oauth/github/authorize", null, "{\"operation\":\"LOGIN\"}"), 404, "NOT_FOUND");
         assertCode(call("GET", "/auth/oauth/UNKNOWN/callback", null, null), 404, "NOT_FOUND");
         MvcResult created = register("leaf");
@@ -351,10 +371,10 @@ class IdentityIntegrationTest {
     void oauthBrowserReplayExpiryAndVerifiedIdentity() throws Exception {
         OAuthFlow flow = start("LOGIN", null, null);
         assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
-                .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", SessionService.random()))).andReturn(), 400, "OAUTH_STATE_INVALID");
+                .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", TokenUtils.random()))).andReturn(), 400, "OAUTH_STATE_INVALID");
         String ticket = callbackTicket(flow, " SameIdentity ");
         assertCode(callback(flow, "same"), 400, "OAUTH_STATE_INVALID");
-        assertCode(exchange(ticket, SessionService.random(), null), 400, "OAUTH_STATE_INVALID");
+        assertCode(exchange(ticket, TokenUtils.random(), null), 400, "OAUTH_STATE_INVALID");
         MvcResult result = exchange(ticket, flow.browser(), null);
         assertCode(result, 200, "OK");
         assertThat(data(result).has("binding")).isFalse();
@@ -362,12 +382,12 @@ class IdentityIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT uuid FROM sys_user_oauth", String.class)).isEqualTo(" SameIdentity ");
         assertCode(exchange(ticket, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
         OAuthFlow expiring = start("LOGIN", null, flow.browser());
-        redis.expire("dl:test:oauth:state:" + SessionService.digest(expiring.state()), Duration.ofMillis(1));
+        redis.expire("dl:test:oauth:state:" + TokenUtils.digest(expiring.state()), Duration.ofMillis(1));
         Thread.sleep(5);
         assertCode(callback(expiring, "same"), 400, "OAUTH_STATE_INVALID");
         OAuthFlow next = start("LOGIN", null, flow.browser());
         String expires = callbackTicket(next, "another");
-        redis.expire("dl:test:oauth:ticket:" + SessionService.digest(expires), Duration.ofMillis(1));
+        redis.expire("dl:test:oauth:ticket:" + TokenUtils.digest(expires), Duration.ofMillis(1));
         Thread.sleep(5);
         assertCode(exchange(expires, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
         OAuthFlow denied = start("LOGIN", null, flow.browser());
@@ -410,7 +430,7 @@ class IdentityIntegrationTest {
         doAnswer(invocation -> {
             invocation.callRealMethod();
             throw new TransactionSystemException("injected transaction failure");
-        }).when(users).bindOAuth(id, SessionService.digest(token), "GITHUB", "transaction-failure-identity");
+        }).when(users).bindOAuth(id, TokenUtils.digest(token), "GITHUB", "transaction-failure-identity");
 
         MvcResult failed = callback(bind, "transaction-failure-identity");
         assertThat(failed.getResponse().getStatus()).isEqualTo(303);
@@ -426,7 +446,7 @@ class IdentityIntegrationTest {
 
     @Test
     void redisAtomicConsumeMillisecondTimeoutAndRateLimit() throws Exception {
-        String state = SessionService.random();
+        String state = TokenUtils.random();
         store.save("state", state, "value", Duration.ofSeconds(30));
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<Boolean>> consumers = new ArrayList<>();
@@ -449,7 +469,7 @@ class IdentityIntegrationTest {
             assertThat(winners).isEqualTo(1);
         }
         store.cache(state, state, 30);
-        assertThat(redis.getExpire("dl:test:oauth:justauth:" + SessionService.digest(state), TimeUnit.MILLISECONDS)).isBetween(1L, 30L);
+        assertThat(redis.getExpire("dl:test:oauth:justauth:" + TokenUtils.digest(state), TimeUnit.MILLISECONDS)).isBetween(1L, 30L);
         Thread.sleep(45);
         assertThat(store.containsKey(state)).isFalse();
         properties.getRate().setLoginFailures(1);
@@ -1432,6 +1452,780 @@ class IdentityIntegrationTest {
         }
     }
 
+    @Test
+    void permissionRoutesRequireBothEffectivePermissionsAndCurrentIdentity() throws Exception {
+        String id = data(register("operator")).get("userId").asString();
+        String token = login("operator");
+        List<String> paths = List.of("/admin/permissions", "/admin/permissions/10", "/admin/permissions",
+                "/admin/permissions/10", "/admin/permissions/10");
+        List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE");
+        List<String> bodies = List.of("", "", permissionCreateBody("test:article:export"), permissionBody("文章", "blog", 1), "");
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name) VALUES(9,'operator','操作员')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
+        for (int i = 0; i < paths.size(); i++) {
+            String body = bodies.get(i).isEmpty() ? null : bodies.get(i);
+            assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
+            assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:permission:%'");
+        for (int i = 0; i < paths.size(); i++) {
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+        }
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=9");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
+        for (int i = 0; i < paths.size(); i++) {
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,110)");
+        assertCode(call("GET", "/admin/permissions", token, null), 200, "OK");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=110");
+        assertCode(call("GET", "/admin/permissions", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=110");
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
+        assertCode(call("GET", "/admin/permissions", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", id);
+        assertCode(call("GET", "/admin/permissions", token, null), 403, "ACCOUNT_DISABLED");
+    }
+
+    @Test
+    void permissionCreationDefaultsWhitelistAndStrictInput() throws Exception {
+        String admin = adminLogin("adminroot");
+        MvcResult created = call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:deleteOwn"));
+        assertCode(created, 201, "OK");
+        String id = data(created).get("permissionId").asString();
+        assertThat(created.getResponse().getHeader("Location")).isEqualTo("/api/v1/admin/permissions/" + id);
+        assertThat(created.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(created.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+        assertThat(data(created).get("description").isNull()).isTrue();
+        assertThat(data(created).get("status").asInt()).isEqualTo(1);
+        assertThat(data(created).get("createTime").asString()).matches(".*\\.\\d{3}Z");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isZero();
+        assertThat(data(call("GET", "/me/capabilities", admin, null)).get("permissionCodes").toString()).doesNotContain("test:article:deleteOwn");
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:deleteOwn")), 409, "UNIQUE_CONFLICT");
+        for (String code : List.of("test", "test:access", "Test:article:query", "test:a_b:query", "test:article:Query", "test:资源:query", "test:a:" + "a".repeat(100))) {
+            assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody(code)), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"permissionId\":\"999\"", "\"roleIds\":[]", "\"createTime\":null",
+                "\"status\":null", "\"status\":\"1\"", "\"status\":1.5", "\"status\":true", "\"status\":2",
+                "\"module\":\"Test\"", "\"module\":\"test\"")) {
+            assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:other").replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        for (String missing : List.of("\"permissionCode\":\"test:article:other\",", "\"permissionName\":\"导出文章\",", ",\"module\":\"test\"")) {
+            assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:other").replace(missing, "")), 400, "VALIDATION_ERROR");
+        }
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:unicode")
+                .replace("导出文章", "😀".repeat(64))), 201, "OK");
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:long")
+                .replace("导出文章", "😀".repeat(65))), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:blank")
+                .replace("导出文章", "  ")), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:description")
+                .replace("}", ",\"description\":\"" + "字".repeat(256) + "\"}")), 400, "VALIDATION_ERROR");
+        assertCode(call("GET", "/admin/permissions/01", admin, null), 400, "VALIDATION_ERROR");
+        assertCode(call("GET", "/admin/permissions/9223372036854775808", admin, null), 400, "VALIDATION_ERROR");
+        assertCode(call("GET", "/admin/permissions/9223372036854775807", admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void permissionListUsesLiteralFiltersStablePaginationAndCompleteShape() throws Exception {
+        String admin = adminLogin("adminroot");
+        String first = createPermission(admin, "test:article:first");
+        String second = createPermission(admin, "test:article:second");
+        String third = createPermission(admin, "test:article:third");
+        jdbc.update("UPDATE sys_permission SET permission_name='literal%_字', module='test_other', status=0 WHERE permission_id=?", second);
+        MvcResult page = mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
+                .param("keyword", " test:article: ").param("module", "test").param("status", "1")
+                .param("page", "2").param("pageSize", "1")).andReturn();
+        assertCode(page, 200, "OK");
+        assertThat(data(page).get("page").asInt()).isEqualTo(2);
+        assertThat(data(page).get("total").asString()).isEqualTo("2");
+        assertThat(data(page).get("totalPages").asString()).isEqualTo("2");
+        assertThat(data(page).get("records").get(0).get("permissionId").asString()).isEqualTo(third);
+        assertThat(page.getResponse().getHeader("X-Revision")).isNull();
+        for (String keyword : List.of("%", "_")) {
+            MvcResult literal = mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
+                    .param("keyword", keyword).param("module", "test_other").param("status", "0")).andReturn();
+            assertCode(literal, 200, "OK");
+            assertThat(data(literal).get("total").asString()).isEqualTo("1");
+            assertThat(data(literal).get("records").get(0).get("permissionId").asString()).isEqualTo(second);
+        }
+        MvcResult empty = mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
+                .param("keyword", "\\")).andReturn();
+        assertThat(data(empty).get("records").isEmpty()).isTrue();
+        assertThat(data(empty).get("totalPages").asString()).isEqualTo("0");
+        MvcResult beyond = mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
+                .param("module", "test").param("page", "100000")).andReturn();
+        assertThat(data(beyond).get("page").asInt()).isEqualTo(100000);
+        assertThat(data(beyond).get("records").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/admin/permissions/" + first, admin, null)).properties()).hasSize(8);
+        for (Map.Entry<String, String> invalid : Map.of("page", "0", "pageSize", "101", "status", "2", "module", "Test", "keyword", " ").entrySet()) {
+            assertCode(mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
+                    .param(invalid.getKey(), invalid.getValue())).andReturn(), 400, "VALIDATION_ERROR");
+        }
+    }
+
+    @Test
+    void permissionPutIsCompleteImmutableAndVersionedWithoutUnnecessaryRevocation() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createPermission(admin, "test:article:export");
+        String path = "/admin/permissions/" + id;
+        String revision = permissionRevision(admin, id);
+        assertCode(call("PUT", path, admin, permissionBody("导出", "test", 1)), 428, "PRECONDITION_REQUIRED");
+        for (String invalid : List.of("*", "abc", revision + "," + revision, revision.replace("\"", ""))) {
+            assertCode(adminPut(path, admin, invalid, permissionBody("导出", "test", 1)), 400, "VALIDATION_ERROR");
+        }
+        for (String field : List.of("\"permissionName\":\"导出\",", "\"module\":\"test\",", "\"description\":null,", ",\"status\":1")) {
+            assertCode(adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace(field, "")), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"permissionCode\":\"test:article:changed\"", "\"permissionId\":\"1\"", "\"roleIds\":[]", "\"updateTime\":null")) {
+            assertCode(adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,?)", id);
+        MvcResult updated = adminPut(path, admin, revision, permissionBody("  导出  ", " other_module ", 1).replace("null", "\"   \""));
+        assertCode(updated, 200, "OK");
+        assertThat(data(updated).get("permissionCode").asString()).isEqualTo("test:article:export");
+        assertThat(data(updated).get("permissionName").asString()).isEqualTo("导出");
+        assertThat(data(updated).get("module").asString()).isEqualTo("other_module");
+        assertThat(data(updated).get("description").isNull()).isTrue();
+        String current = updated.getResponse().getHeader("X-Revision");
+        assertThat(current).matches("\"[0-9a-f]{64}\"").isNotEqualTo(revision);
+        assertCode(call("GET", "/me", admin, null), 200, "OK");
+        assertCode(adminPut(path, admin, revision, permissionBody("旧版本", "test", 1)), 412, "REVISION_CONFLICT");
+        jdbc.update("UPDATE sys_permission SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE permission_id=?", id);
+        assertThat(permissionRevision(admin, id)).isEqualTo(current);
+        MvcResult unchanged = adminPut(path, admin, current, permissionBody("导出", "other_module", 1));
+        assertCode(unchanged, 200, "OK");
+        assertThat(unchanged.getResponse().getHeader("X-Revision")).isEqualTo(current);
+        verify(sessions, times(0)).revokeAll(anyLong());
+    }
+
+    @Test
+    void permissionStatusPreservesGrantsAndMenusAndRevokesEveryAffectedSession() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createPermission(admin, "test:article:export");
+        String role = createRole(admin, "editor");
+        String disabledRole = createRole(admin, "disabled_editor");
+        String firstId = data(register("first_user")).get("userId").asString();
+        String secondId = data(register("second_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(?,?),(?,?),(?,1)", role, id, disabledRole, id, role);
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?),(?,?),(?,?)", firstId, role, firstId, disabledRole, secondId, disabledRole);
+        jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,100),(?,110)", role, role);
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=?", disabledRole);
+        String first = login("first_user");
+        String another = login("first_user");
+        String second = login("second_user");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", secondId);
+        try {
+            jdbc.update("UPDATE sys_menu SET permission_id=? WHERE menu_id=110", id);
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains("test:article:export");
+            assertThat(authorization.menus(Long.parseLong(firstId))).hasSize(1);
+            MvcResult disabled = adminPut("/admin/permissions/" + id, admin, permissionRevision(admin, id), permissionBody("导出", "test", 0));
+            assertCode(disabled, 200, "OK");
+            for (String token : List.of(first, another, second)) {
+                assertThat(StpUtil.getStpLogic().getLoginIdByToken(token)).isNull();
+            }
+            verify(sessions, times(1)).revokeAll(Long.parseLong(firstId));
+            verify(sessions, times(1)).revokeAll(Long.parseLong(secondId));
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).doesNotContain("test:article:export");
+            assertThat(authorization.menus(Long.parseLong(firstId))).isEmpty();
+            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(Long.parseLong(id));
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isEqualTo(2);
+            String whileDisabled = login("first_user");
+            assertCode(adminPut("/admin/permissions/" + id, admin, disabled.getResponse().getHeader("X-Revision"), permissionBody("导出", "test", 1)), 200, "OK");
+            assertCode(call("GET", "/me", whileDisabled, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains("test:article:export");
+            assertThat(authorization.menus(Long.parseLong(firstId))).hasSize(1);
+            assertCode(call("GET", "/me", login("first_user"), null), 200, "OK");
+        } finally {
+            jdbc.update("UPDATE sys_menu SET permission_id=10 WHERE menu_id=110");
+        }
+    }
+
+    @Test
+    void permissionDeletionRejectsFixedCodesAndAnyMenuReference() throws Exception {
+        String admin = adminLogin("adminroot");
+        for (String code : AuthorizationProvider.ADMIN_PERMISSIONS) {
+            String id = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?", String.class, code);
+            assertCode(roleDelete("/admin/permissions/" + id, admin, permissionRevision(admin, id)), 409, "STATE_CONFLICT");
+        }
+        String id = createPermission(admin, "test:article:export");
+        String revision = permissionRevision(admin, id);
+        try {
+            jdbc.update("UPDATE sys_menu SET permission_id=?, status=0 WHERE menu_id=110", id);
+            assertCode(roleDelete("/admin/permissions/" + id, admin, revision), 409, "RESOURCE_IN_USE");
+            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(Long.parseLong(id));
+            assertThat(permissionRevision(admin, id)).isEqualTo(revision);
+        } finally {
+            jdbc.update("UPDATE sys_menu SET permission_id=10, status=1 WHERE menu_id=110");
+        }
+        assertCode(roleDelete("/admin/permissions/" + id, admin, revision), 200, "OK");
+    }
+
+    @Test
+    void permissionDeleteCascadesRoleGrantsRevokesAllSessionsAndRollsBackOnRedisFailure() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createPermission(admin, "test:article:export");
+        String role = createRole(admin, "editor");
+        String user = data(register("permission_user")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(?,?)", role, id);
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, role);
+        String first = login("permission_user");
+        String second = login("permission_user");
+        String revision = permissionRevision(admin, id);
+        String roleRevision = roleRevision(admin, role);
+        String path = "/admin/permissions/" + id;
+        assertCode(call("DELETE", path, admin, null), 428, "PRECONDITION_REQUIRED");
+        assertCode(roleDelete(path, admin, "*"), 400, "VALIDATION_ERROR");
+        assertCode(roleDelete(path, admin, "\"" + "0".repeat(64) + "\""), 412, "REVISION_CONFLICT");
+        doThrow(new RedisConnectionFailureException("injected")).when(sessions).revokeAll(Long.parseLong(user));
+        assertCode(roleDelete(path, admin, revision), 503, "SERVICE_UNAVAILABLE");
+        assertThat(permissionRevision(admin, id)).isEqualTo(revision);
+        assertThat(roleRevision(admin, role)).isEqualTo(roleRevision);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isEqualTo(1);
+        assertCode(call("GET", "/me", first, null), 200, "OK");
+        reset(sessions);
+        MvcResult deleted = roleDelete(path, admin, revision);
+        assertCode(deleted, 200, "OK");
+        assertThat(data(deleted).isNull()).isTrue();
+        assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isZero();
+        assertThat(roleRevision(admin, role)).isNotEqualTo(roleRevision);
+        for (String token : List.of(first, second)) {
+            assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        }
+        assertCode(roleDelete(path, admin, revision), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void permissionStatusRollbackAndLastAdminUseFixedWhitelist() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createPermission(admin, "test:article:export");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,?)", id);
+        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        String revision = permissionRevision(admin, id);
+        doThrow(new RedisConnectionFailureException("injected")).when(sessions).revokeAll(actor);
+        assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "other", 0)), 503, "SERVICE_UNAVAILABLE");
+        assertThat(permissionRevision(admin, id)).isEqualTo(revision);
+        assertThat(data(call("GET", "/admin/permissions/" + id, admin, null)).get("status").asInt()).isEqualTo(1);
+        reset(sessions);
+        for (String code : AuthorizationProvider.ADMIN_PERMISSIONS) {
+            String fixedId = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?", String.class, code);
+            String fixedRevision = permissionRevision(admin, fixedId);
+            assertCode(adminPut("/admin/permissions/" + fixedId, admin, fixedRevision, permissionBody("不可停用", "sys", 0)), 409, "LAST_ADMIN");
+            assertThat(permissionRevision(admin, fixedId)).isEqualTo(fixedRevision);
+        }
+        assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("导出", "test", 0)), 200, "OK");
+        assertCode(call("GET", "/me", admin, null), 401, "UNAUTHENTICATED");
+        admin = login("adminroot");
+        assertCode(call("GET", "/admin/permissions", admin, null), 200, "OK");
+        assertThat(AuthorizationProvider.ADMIN_PERMISSIONS).doesNotContain("sys:log:query", "home:profile:query");
+        assertCode(call("GET", "/admin/logs", admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void concurrentPermissionWritesShareRevisionAndPreserveAdminWithUserChanges() throws Exception {
+        String first = adminLogin("first_admin");
+        String second = adminLogin("second_admin");
+        String id = createPermission(first, "test:article:export");
+        String revision = permissionRevision(first, id);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> writes = List.of(
+                    () -> adminPut("/admin/permissions/" + id, first, revision, permissionBody("并发甲", "test", 1)),
+                    () -> adminPut("/admin/permissions/" + id, second, revision, permissionBody("并发乙", "test", 1)));
+            var results = executor.invokeAll(writes);
+            assertThat(results.stream().map(result -> {
+                try { return result.get().getResponse().getStatus(); }
+                catch (Exception exception) { throw new IllegalStateException(exception); }
+            }).sorted().toList()).containsExactly(200, 412);
+            String user = data(call("GET", "/me", first, null)).get("userId").asString();
+            String userRevision = adminRevision(second, user);
+            String protectedRevision = permissionRevision(second, "80");
+            List<Callable<MvcResult>> protectedWrites = List.of(
+                    () -> adminPut("/admin/users/" + user, second, userRevision, userBody("叶", 0)),
+                    () -> adminPut("/admin/permissions/80", second, protectedRevision, permissionBody("不可停用", "sys", 0)));
+            var protectedResults = executor.invokeAll(protectedWrites);
+            assertCode(protectedResults.get(0).get(), 200, "OK");
+            assertCode(protectedResults.get(1).get(), 409, "LAST_ADMIN");
+        }
+        assertCode(call("GET", "/admin/permissions", second, null), 200, "OK");
+    }
+
+    @Test
+    void permissionWriteRechecksIdentityAndPermissionsAfterGuardWait() throws Exception {
+        String admin = adminLogin("adminroot");
+        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        String id = createPermission(admin, "test:article:export");
+        String revision = permissionRevision(admin, id);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            for (String change : List.of("permission", "disabled", "token")) {
+                CountDownLatch entered = new CountDownLatch(1);
+                doAnswer(invocation -> {
+                    entered.countDown();
+                    return invocation.callRealMethod();
+                }).when(permissions).update(eq(Long.parseLong(id)), any(PermissionUpdateDTO.class), eq(revision));
+                var pending = new TransactionTemplate(transactionManager).execute(status -> {
+                    jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
+                    var response = executor.submit(() -> adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "test", 1)));
+                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
+                    catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    if ("disabled".equals(change)) {
+                        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", actor);
+                    } else {
+                        jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
+                        if ("token".equals(change)) { sessions.revokeAll(actor); }
+                    }
+                    return response;
+                });
+                assertCode(pending.get(10, TimeUnit.SECONDS), "token".equals(change) ? 401 : 403,
+                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT permission_name FROM sys_permission WHERE permission_id=?", String.class, id)).isEqualTo("导出文章");
+                if ("disabled".equals(change)) {
+                    jdbc.update("UPDATE sys_user SET status=1 WHERE user_id=?", actor);
+                } else {
+                    jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
+                }
+            }
+        }
+    }
+
+    @Test
+    void menuRoutesRequireBothEffectivePermissionsAndCurrentIdentity() throws Exception {
+        String user = data(register("menu_operator")).get("userId").asString();
+        String token = login("menu_operator");
+        List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE");
+        List<String> paths = List.of("/admin/menus", "/admin/menus/110", "/admin/menus", "/admin/menus/110", "/admin/menus/110");
+        List<String> bodies = List.of("", "", menuCreateBody("Auth", null, "D", null), menuBody("Auth", null, "D", null), "");
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'menu_operator','菜单管理','SELF')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", user);
+        for (int index = 0; index < methods.size(); index++) {
+            assertCode(call(methods.get(index), paths.get(index), null, bodies.get(index)), 401, "UNAUTHENTICATED");
+            assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:menu:%'");
+        for (int index = 0; index < methods.size(); index++) {
+            assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
+        }
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=9");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
+        for (int index = 0; index < methods.size(); index++) {
+            assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
+        }
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,100)");
+        assertCode(call("GET", "/admin/menus", token, null), 200, "OK");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=100");
+        assertCode(call("GET", "/admin/menus", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=100");
+        jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
+        assertCode(call("GET", "/admin/menus", token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", user);
+        assertCode(call("GET", "/admin/menus", token, null), 403, "ACCOUNT_DISABLED");
+    }
+
+    @Test
+    void menuCreationDefaultsShapeUnicodeAndImmutableUniqueCodes() throws Exception {
+        String admin = adminLogin("adminroot");
+        String body = "{\"parentId\":null,\"menuCode\":\"test:Defaults\",\"menuName\":\"  " + "🌿".repeat(64)
+                + "  \",\"menuType\":\"D\",\"routeName\":\"TestDefaults\",\"path\":\"/test/defaults\",\"component\":\"Layout\"}";
+        MvcResult created = call("POST", "/admin/menus", admin, body);
+        assertCode(created, 201, "OK");
+        JsonNode value = data(created);
+        String id = value.get("menuId").asString();
+        assertThat(created.getResponse().getHeader("Location")).isEqualTo("/api/v1/admin/menus/" + id);
+        assertThat(created.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(value.properties()).hasSize(16);
+        assertThat(value.get("menuName").asString()).isEqualTo("🌿".repeat(64));
+        assertThat(value.get("parentId").isNull()).isTrue();
+        assertThat(value.get("permissionId").isNull()).isTrue();
+        assertThat(value.get("icon").isNull()).isTrue();
+        assertThat(value.get("sortOrder").asInt()).isZero();
+        assertThat(value.get("keepAlive").asInt()).isZero();
+        assertThat(value.get("isVisible").asInt()).isEqualTo(1);
+        assertThat(value.get("status").asInt()).isEqualTo(1);
+        assertThat(value.get("createTime").asString()).matches(".*\\.\\d{3}Z");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class, id)).isZero();
+        assertCode(call("POST", "/admin/menus", admin, body), 409, "UNIQUE_CONFLICT");
+        assertCode(call("POST", "/admin/menus", admin, body.replace("test:Defaults", "test:DuplicateRoute")
+                .replace("/test/defaults", "/test/duplicate")), 409, "UNIQUE_CONFLICT");
+        assertCode(call("POST", "/admin/menus", admin, body.replace("test:Defaults", "test:DuplicatePath")
+                .replace("TestDefaults", "TestDuplicate")), 409, "UNIQUE_CONFLICT");
+        assertCode(call("POST", "/admin/menus", admin, body.replace("test:Defaults", "test:defaults")
+                .replace("TestDefaults", "Testdefaults").replace("/test/defaults", "/test/Defaults")), 201, "OK");
+        assertCode(call("POST", "/admin/menus", admin, body.replace("🌿".repeat(64), "🌿".repeat(65))
+                .replace("test:Defaults", "test:Long")), 400, "VALIDATION_ERROR");
+        String button = "{\"parentId\":\"110\",\"menuCode\":\"test:Button\",\"menuName\":\"按钮\",\"menuType\":\"B\",\"permissionId\":\"11\"}";
+        MvcResult action = call("POST", "/admin/menus", admin, button);
+        assertCode(action, 201, "OK");
+        assertThat(data(action).get("isVisible").asInt()).isZero();
+        assertThat(data(action).get("routeName").isNull()).isTrue();
+        for (String field : List.of("sortOrder", "isVisible", "keepAlive", "status")) {
+            assertCode(call("POST", "/admin/menus", admin, body.replace("}", ",\"" + field + "\":null}")), 400, "VALIDATION_ERROR");
+        }
+    }
+
+    @Test
+    void menuInputRejectsUnknownFieldsWrongTypesInvalidIdsAndUnregisteredKeys() throws Exception {
+        String admin = adminLogin("adminroot");
+        String body = menuCreateBody("Strict", "100", "M", "10");
+        for (String extra : List.of("\"menuId\":\"9\"", "\"roleIds\":[]", "\"createTime\":null", "\"updateTime\":null",
+                "\"parentPresent\":true", "\"visiblePresent\":true", "\"completeCreate\":true", "\"menuName\":\"重复\"")) {
+            assertCode(call("POST", "/admin/menus", admin, body.replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        Map<String, List<String>> invalid = Map.ofEntries(
+                Map.entry("menuCode", List.of("null", "12", "\"菜单\"", "\"test.bad\"", "\"" + "a".repeat(65) + "\"")),
+                Map.entry("menuName", List.of("null", "12", "\"  \"")),
+                Map.entry("menuType", List.of("null", "1", "\"m\"", "\"X\"")),
+                Map.entry("routeName", List.of("null", "12", "\"1Name\"", "\"A-B\"", "\"中文\"", "\"" + "a".repeat(65) + "\"")),
+                Map.entry("parentId", List.of("100", "\"0\"", "\"01\"", "\"-1\"", "\"1.0\"", "\"9223372036854775808\"")),
+                Map.entry("permissionId", List.of("10", "null", "\"01\"", "\"9223372036854775807\"")),
+                Map.entry("component", List.of("null", "\"Unknown\"", "\"https://remote.test/a.js\"", "\"alert(1)\"")),
+                Map.entry("icon", List.of("12", "\"unknown\"", "\"<svg>\"")),
+                Map.entry("sortOrder", List.of("\"1\"", "true", "1.5", "2147483648")),
+                Map.entry("status", List.of("\"1\"", "true", "2", "-1", "1.1")),
+                Map.entry("isVisible", List.of("2", "true", "\"1\"")),
+                Map.entry("keepAlive", List.of("2", "true", "\"1\"")));
+        Map<String, Object> fields = json.readValue(body, new TypeReference<>() { });
+        for (var entry : invalid.entrySet()) {
+            for (String value : entry.getValue()) {
+                Map<String, Object> changed = new LinkedHashMap<>(fields);
+                changed.remove(entry.getKey());
+                String replaced = json.writeValueAsString(changed).replace("}", ",\"" + entry.getKey() + "\":" + value + "}");
+                assertCode(call("POST", "/admin/menus", admin, replaced), 400, "VALIDATION_ERROR");
+            }
+        }
+        for (String key : List.of("parentId", "menuCode", "menuName", "menuType", "routeName", "component", "path", "permissionId")) {
+            Map<String, Object> missing = new LinkedHashMap<>(fields);
+            missing.remove(key);
+            assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(missing)), 400, "VALIDATION_ERROR");
+        }
+        for (String path : List.of("01", "0", "-1", "1.0", "9223372036854775808")) {
+            for (String method : List.of("GET", "PUT", "DELETE")) {
+                assertCode(call(method, "/admin/menus/" + path, admin, "PUT".equals(method) ? menuBody("Strict", "100", "M", "10") : null), 400, "VALIDATION_ERROR");
+            }
+        }
+        assertCode(call("GET", "/admin/menus/9223372036854775807", admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void menuPathsAndTypeShapesAreValidatedBeforePersistence() throws Exception {
+        String admin = adminLogin("adminroot");
+        Map<String, Object> fields = json.readValue(menuCreateBody("Path", null, "M", "10"), new TypeReference<>() { });
+        for (String path : List.of("https://remote.test/a", "//remote.test/a", "relative", "/a/../b", "/a..b", "/a\\b",
+                "/a?b=1", "/a#b", "/a:b", "/中文", "/a b", "/a\nb", "/%2e%2e/a", "/%5c/a", "/%3f/a", "/%ff", "/" + "a".repeat(255))) {
+            fields.put("path", path);
+            assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(fields)), 400, "VALIDATION_ERROR");
+        }
+        for (String type : List.of("D", "M", "B")) {
+            Map<String, Object> shape = json.readValue(menuCreateBody("Shape" + type, "B".equals(type) ? "110" : null, type, "D".equals(type) ? null : "10"), new TypeReference<>() { });
+            if ("B".equals(type)) {
+                for (String field : List.of("routeName", "path", "component", "isVisible", "keepAlive")) {
+                    Map<String, Object> wrong = new LinkedHashMap<>(shape);
+                    wrong.put(field, field.equals("isVisible") || field.equals("keepAlive") ? 1 : field.equals("routeName") ? "TestShapeB" : field.equals("path") ? "/test/shape" : "Layout");
+                    assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(wrong)), 400, "VALIDATION_ERROR");
+                }
+            } else if ("D".equals(type)) {
+                shape.put("permissionId", "10");
+                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400, "VALIDATION_ERROR");
+                shape.put("permissionId", null);
+                shape.put("keepAlive", 1);
+                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400, "VALIDATION_ERROR");
+            }
+        }
+        for (String type : List.of("D", "M", "B")) {
+            for (String parent : List.of("9223372036854775807", "110", "1011")) {
+                if ("B".equals(type) && "110".equals(parent)) { continue; }
+                assertCode(call("POST", "/admin/menus", admin, menuCreateBody("Parent" + type, parent, type, "D".equals(type) ? null : "10")), 400, "VALIDATION_ERROR");
+            }
+        }
+        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("RootB", null, "B", "10")), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("DirectoryB", "100", "B", "10")), 400, "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
+        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("DisabledGate", "100", "M", "10")), 201, "OK");
+    }
+
+    @Test
+    void menuFullTreeKeepsAllStatesEmptyDirectoriesAndStableOrder() throws Exception {
+        String admin = adminLogin("adminroot");
+        String root = createMenu(admin, "Tree", null, "D", null);
+        String first = createMenu(admin, "TreeFirst", root, "M", "10");
+        String second = createMenu(admin, "TreeSecond", root, "M", "20");
+        String button = createMenu(admin, "TreeButton", first, "B", "11");
+        String empty = createMenu(admin, "TreeEmpty", root, "D", null);
+        jdbc.update("UPDATE sys_menu SET is_visible=0,status=0,sort_order=-10 WHERE menu_id=?", second);
+        jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=?", root);
+        jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=20");
+        MvcResult tree = call("GET", "/admin/menus", admin, null);
+        assertCode(tree, 200, "OK");
+        assertThat(tree.getResponse().getHeader("X-Revision")).isNull();
+        JsonNode branch = findMenu(data(tree), root);
+        assertThat(branch).isNotNull();
+        assertThat(branch.get("children").get(0).get("menuId").asString()).isEqualTo(second);
+        assertThat(branch.get("children").get(1).get("menuId").asString()).isEqualTo(first);
+        assertThat(branch.get("children").get(2).get("menuId").asString()).isEqualTo(empty);
+        assertThat(findMenu(branch.get("children"), button).get("children").isEmpty()).isTrue();
+        assertThat(findMenu(branch.get("children"), second).get("permissionCode").asString()).isEqualTo("blog:category:query");
+        assertThat(branch.properties()).hasSize(18);
+        assertThat(findMenu(data(call("GET", "/me/menus", admin, null)), root)).isNull();
+        MvcResult detail = call("GET", "/admin/menus/" + root, admin, null);
+        assertThat(data(detail).properties()).hasSize(16);
+        assertThat(detail.getResponse().getHeader("X-Revision")).matches("\"[0-9a-f]{64}\"");
+    }
+
+    @Test
+    void menuPutRequiresCompleteBodyAndVersionIncludingNoOpAndNullClearing() throws Exception {
+        String admin = adminLogin("adminroot");
+        String id = createMenu(admin, "Replace", "100", "M", "10");
+        String path = "/admin/menus/" + id;
+        String revision = menuRevision(admin, id);
+        String body = menuBody("Replace", "100", "M", "10");
+        assertCode(call("PUT", path, admin, body), 428, "PRECONDITION_REQUIRED");
+        assertCode(call("DELETE", path, admin, null), 428, "PRECONDITION_REQUIRED");
+        for (String invalid : List.of("*", "abc", revision + "," + revision, revision.replace("\"", ""))) {
+            assertCode(adminPut(path, admin, invalid, body), 400, "VALIDATION_ERROR");
+            assertCode(roleDelete(path, admin, invalid), 400, "VALIDATION_ERROR");
+        }
+        Map<String, Object> fields = json.readValue(body, new TypeReference<>() { });
+        for (String key : fields.keySet()) {
+            Map<String, Object> incomplete = new LinkedHashMap<>(fields);
+            incomplete.remove(key);
+            assertCode(adminPut(path, admin, revision, json.writeValueAsString(incomplete)), 400, "VALIDATION_ERROR");
+        }
+        for (String extra : List.of("\"menuCode\":\"test:Other\"", "\"menuId\":\"9\"", "\"roleIds\":[]", "\"present\":[\"icon\"]",
+                "\"completeReplace\":true", "\"createTime\":null", "\"updateTime\":null")) {
+            assertCode(adminPut(path, admin, revision, body.replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        }
+        MvcResult same = adminPut(path, admin, revision, body);
+        assertCode(same, 200, "OK");
+        assertThat(same.getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        assertCode(adminPut(path, admin, revision, body.replace("TestReplace", "Content")), 409, "UNIQUE_CONFLICT");
+        assertCode(adminPut(path, admin, revision, body.replace("/test/Replace", "/content")), 409, "UNIQUE_CONFLICT");
+        assertThat(menuRevision(admin, id)).isEqualTo(revision);
+        jdbc.update("UPDATE sys_menu SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE menu_id=?", id);
+        assertThat(menuRevision(admin, id)).isEqualTo(revision);
+        MvcResult changed = adminPut(path, admin, revision, menuBody("Replace", "110", "B", "11"));
+        assertCode(changed, 200, "OK");
+        assertThat(data(changed).get("menuCode").asString()).isEqualTo("test:Replace");
+        for (String key : List.of("routeName", "path", "component", "icon")) {
+            assertThat(data(changed).get(key).isNull()).isTrue();
+        }
+        String current = changed.getResponse().getHeader("X-Revision");
+        assertThat(current).isNotEqualTo(revision);
+        assertCode(adminPut(path, admin, revision, menuBody("Replace", "110", "B", "11")), 412, "REVISION_CONFLICT");
+        assertCode(roleDelete(path, admin, revision), 412, "REVISION_CONFLICT");
+        MvcResult directory = adminPut(path, admin, current, menuBody("Replace", null, "D", null));
+        assertCode(directory, 200, "OK");
+        assertThat(data(directory).get("parentId").isNull()).isTrue();
+        assertThat(data(directory).get("permissionId").isNull()).isTrue();
+    }
+
+    @Test
+    void menuMovesAndTypeChangesValidateEntireDescendantBranch() throws Exception {
+        String admin = adminLogin("adminroot");
+        String root = createMenu(admin, "Ancestor", null, "D", null);
+        String directory = createMenu(admin, "Nested", root, "D", null);
+        String page = createMenu(admin, "NestedPage", directory, "M", "10");
+        String button = createMenu(admin, "NestedButton", page, "B", "11");
+        String revision = menuRevision(admin, root);
+        for (String parent : List.of(root, directory, page, button)) {
+            assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", parent, "D", null)), 400, "VALIDATION_ERROR");
+        }
+        assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", null, "M", "10")), 400, "VALIDATION_ERROR");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", directory, "D", null)), 400, "VALIDATION_ERROR");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", "110", "B", "11")), 400, "VALIDATION_ERROR");
+        assertThat(menuRevision(admin, root)).isEqualTo(revision);
+        assertCode(roleDelete("/admin/menus/" + root, admin, revision), 409, "RESOURCE_IN_USE");
+        assertCode(roleDelete("/admin/menus/" + page, admin, menuRevision(admin, page)), 409, "RESOURCE_IN_USE");
+        assertCode(roleDelete("/admin/menus/" + button, admin, menuRevision(admin, button)), 200, "OK");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", directory, "D", null)), 200, "OK");
+    }
+
+    @Test
+    void menuStateVisibilityGatesMovesAndDeletePreserveIndependentGrantsAndSessions() throws Exception {
+        String admin = adminLogin("adminroot");
+        String role = createRole(admin, "menu_viewer");
+        String user = data(register("menu_viewer")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, role);
+        String root = createMenu(admin, "GrantedRoot", null, "D", null);
+        String other = createMenu(admin, "OtherRoot", null, "D", null);
+        String page = createMenu(admin, "GrantedPage", root, "M", "10");
+        String button = createMenu(admin, "GrantedButton", page, "B", "11");
+        assertCode(adminPut("/admin/roles/" + role + "/grants", admin, roleRevision(admin, role),
+                grantBody(List.of(1L, 10L, 11L), List.of(Long.parseLong(button)))), 200, "OK");
+        String token = login("menu_viewer");
+        String second = login("menu_viewer");
+        String roleVersion = roleRevision(admin, role);
+        String grants = data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString();
+        Map<String, Object> fields = json.readValue(menuBody("GrantedPage", root, "M", "10"), new TypeReference<>() { });
+        fields.put("isVisible", 0);
+        fields.put("keepAlive", 1);
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)), 200, "OK");
+        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page).get("isVisible").asInt()).isZero();
+        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), button)).isNotNull();
+        fields.put("status", 0);
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)), 200, "OK");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").toString()).contains("blog:article:query");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("GrantedPage", root, "M", "20")), 200, "OK");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(grants);
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("GrantedPage", other, "M", "10")), 200, "OK");
+        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(roleRevision(admin, role)).isEqualTo(roleVersion);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=? AND menu_id=?", Integer.class, role, other)).isZero();
+        assertCode(adminPut("/admin/roles/" + role + "/grants", admin, roleVersion,
+                grantBody(List.of(1L, 10L, 11L), List.of(Long.parseLong(button)))), 200, "OK");
+        token = login("menu_viewer");
+        second = login("menu_viewer");
+        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page)).isNotNull();
+        String beforeDelete = roleRevision(admin, role);
+        doThrow(new RedisConnectionFailureException("must not revoke menu sessions")).when(sessions).revokeAll(Long.parseLong(user));
+        MvcResult deleted = roleDelete("/admin/menus/" + button, admin, menuRevision(admin, button));
+        assertCode(deleted, 200, "OK");
+        assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(data(deleted).isNull()).isTrue();
+        assertThat(roleRevision(admin, role)).isNotEqualTo(beforeDelete);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class, button)).isZero();
+        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(grants);
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/me", second, null), 200, "OK");
+        assertCode(roleDelete("/admin/menus/" + button, admin, "\"" + "0".repeat(64) + "\""), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void concurrentMenuMovesCannotCreateCycleAndSharedRevisionRejectsLostUpdate() throws Exception {
+        String admin = adminLogin("adminroot");
+        String left = createMenu(admin, "Left", null, "D", null);
+        String right = createMenu(admin, "Right", null, "D", null);
+        String firstRevision = menuRevision(admin, left);
+        String secondRevision = menuRevision(admin, right);
+        try (var executor = Executors.newFixedThreadPool(2)) {
+            List<Callable<MvcResult>> moves = List.of(
+                    () -> adminPut("/admin/menus/" + left, admin, firstRevision, menuBody("Left", right, "D", null)),
+                    () -> adminPut("/admin/menus/" + right, admin, secondRevision, menuBody("Right", left, "D", null)));
+            var results = executor.invokeAll(moves);
+            assertThat(List.of(results.get(0).get().getResponse().getStatus(), results.get(1).get().getResponse().getStatus()))
+                    .containsExactlyInAnyOrder(200, 400);
+            String revision = menuRevision(admin, left);
+            String parent = data(call("GET", "/admin/menus/" + left, admin, null)).get("parentId").isNull() ? null : right;
+            List<Callable<MvcResult>> writes = List.of(
+                    () -> adminPut("/admin/menus/" + left, admin, revision, menuBody("Left", parent, "D", null).replace("菜单", "甲")),
+                    () -> adminPut("/admin/menus/" + left, admin, revision, menuBody("Left", parent, "D", null).replace("菜单", "乙")));
+            var changed = executor.invokeAll(writes);
+            assertThat(List.of(changed.get(0).get().getResponse().getStatus(), changed.get(1).get().getResponse().getStatus()))
+                    .containsExactlyInAnyOrder(200, 412);
+        }
+    }
+
+    @Test
+    void menuWriteRechecksIdentityPermissionAndTokenAfterGuardWaitAndRedisFailureRollsBack() throws Exception {
+        String admin = adminLogin("adminroot");
+        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        String id = createMenu(admin, "Guarded", null, "D", null);
+        String revision = menuRevision(admin, id);
+        doThrow(new RedisConnectionFailureException("injected active check failure")).when(sessions).requireActive(admin, actor);
+        assertCode(adminPut("/admin/menus/" + id, admin, revision, menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")), 503, "SERVICE_UNAVAILABLE");
+        reset(sessions);
+        assertThat(menuRevision(admin, id)).isEqualTo(revision);
+        try (var executor = Executors.newSingleThreadExecutor()) {
+            for (String change : List.of("permission", "disabled", "token")) {
+                CountDownLatch entered = new CountDownLatch(1);
+                doAnswer(invocation -> {
+                    entered.countDown();
+                    return invocation.callRealMethod();
+                }).when(menus).update(eq(Long.parseLong(id)), any(MenuUpdateDTO.class), eq(revision));
+                var pending = new TransactionTemplate(transactionManager).execute(status -> {
+                    jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
+                    var response = executor.submit(() -> adminPut("/admin/menus/" + id, admin, revision, menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")));
+                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
+                    catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        throw new IllegalStateException(exception);
+                    }
+                    if ("disabled".equals(change)) {
+                        jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", actor);
+                    } else {
+                        jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
+                        if ("token".equals(change)) { sessions.revokeAll(actor); }
+                    }
+                    return response;
+                });
+                assertCode(pending.get(10, TimeUnit.SECONDS), "token".equals(change) ? 401 : 403,
+                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT menu_name FROM sys_menu WHERE menu_id=?", String.class, id)).isEqualTo("菜单");
+                if ("disabled".equals(change)) {
+                    jdbc.update("UPDATE sys_user SET status=1 WHERE user_id=?", actor);
+                } else {
+                    jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
+                }
+            }
+        }
+    }
+
+    private String menuBody(String key, String parent, String type, String permission) {
+        Map<String, Object> fields = new LinkedHashMap<>();
+        fields.put("parentId", parent);
+        fields.put("menuName", "菜单");
+        fields.put("menuType", type);
+        fields.put("routeName", "B".equals(type) ? null : "Test" + key);
+        fields.put("path", "B".equals(type) ? null : "/test/" + key);
+        fields.put("component", "B".equals(type) ? null : "D".equals(type) ? "Layout" : "content/article/index");
+        fields.put("icon", null);
+        fields.put("permissionId", permission);
+        fields.put("sortOrder", 0);
+        fields.put("isVisible", "B".equals(type) ? 0 : 1);
+        fields.put("keepAlive", 0);
+        fields.put("status", 1);
+        return json.writeValueAsString(fields);
+    }
+
+    private String menuCreateBody(String key, String parent, String type, String permission) {
+        return menuBody(key, parent, type, permission).replace("{", "{\"menuCode\":\"test:" + key + "\",");
+    }
+
+    private String createMenu(String token, String key, String parent, String type, String permission) throws Exception {
+        MvcResult result = call("POST", "/admin/menus", token, menuCreateBody(key, parent, type, permission));
+        assertCode(result, 201, "OK");
+        return data(result).get("menuId").asString();
+    }
+
+    private String menuRevision(String token, String id) throws Exception {
+        MvcResult result = call("GET", "/admin/menus/" + id, token, null);
+        assertCode(result, 200, "OK");
+        return result.getResponse().getHeader("X-Revision");
+    }
+
+    private JsonNode findMenu(JsonNode nodes, String id) {
+        for (JsonNode node : nodes) {
+            if (node.get("menuId").asString().equals(id)) { return node; }
+            JsonNode found = findMenu(node.get("children"), id);
+            if (found != null) { return found; }
+        }
+        return null;
+    }
+
+    private String permissionCreateBody(String code) {
+        return "{\"permissionCode\":\"" + code + "\",\"permissionName\":\"导出文章\",\"module\":\"test\"}";
+    }
+
+    private String permissionBody(String name, String module, int status) {
+        return "{\"permissionName\":\"" + name + "\",\"module\":\"" + module + "\",\"description\":null,\"status\":" + status + "}";
+    }
+
+    private String createPermission(String token, String code) throws Exception {
+        MvcResult result = call("POST", "/admin/permissions", token, permissionCreateBody(code));
+        assertCode(result, 201, "OK");
+        return data(result).get("permissionId").asString();
+    }
+
+    private String permissionRevision(String token, String id) throws Exception {
+        MvcResult result = call("GET", "/admin/permissions/" + id, token, null);
+        assertCode(result, 200, "OK");
+        return result.getResponse().getHeader("X-Revision");
+    }
+
     private String roleCreateBody(String code) {
         return "{\"roleCode\":\"" + code + "\",\"roleName\":\"内容编辑\"}";
     }
@@ -1579,10 +2373,10 @@ class IdentityIntegrationTest {
     static class Boundaries {
         @Bean
         @Primary
-        OAuthProviderGateway platform(JustAuthGateway actual, RedisOAuthStore cache) {
-            return new OAuthProviderGateway() {
+        OAuthProviderClient platform(JustAuthClient actual, RedisOAuthStore cache) {
+            return new OAuthProviderClient() {
                 @Override
-                public List<ProviderVO> providers() { return actual.providers(); }
+                public List<Provider> providers() { return actual.providers(); }
                 @Override
                 public Set<String> enabledSources() { return actual.enabledSources(); }
                 @Override

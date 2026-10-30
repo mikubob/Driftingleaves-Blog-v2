@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     后端数据模型模块，产出普通 jar，对应老项目的 pojo 职责。
-    <p>承载实体、请求 DTO 和响应 VO，不依赖 common 或 server。</p>
+    <p>承载实体、请求 DTO、响应 VO 和业务传输模型，不依赖 common 或 server。</p>
     @see ../pom.xml
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"

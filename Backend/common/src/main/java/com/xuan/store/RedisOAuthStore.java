@@ -1,7 +1,8 @@
-package com.xuan.service;
+package com.xuan.store;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
+import com.xuan.utils.TokenUtils;
 import lombok.RequiredArgsConstructor;
 import me.zhyd.oauth.cache.AuthStateCache;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -72,7 +73,7 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     private String key(String kind, String secret) {
-        return properties.getRedisPrefix() + "oauth:" + kind + ":" + SessionService.digest(secret);
+        return properties.getRedisPrefix() + "oauth:" + kind + ":" + TokenUtils.digest(secret);
     }
 
     public static BusinessException invalid() {

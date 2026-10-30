@@ -1,13 +1,16 @@
 package com.xuan.service.impl;
 
+import com.xuan.utils.TokenUtils;
 import com.xuan.dto.OAuthAuthorizeDTO.Operation;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
-import com.xuan.service.OAuthProviderGateway;
-import com.xuan.service.RedisOAuthStore;
-import com.xuan.service.SessionService;
+import com.xuan.model.OAuthFlow;
+import com.xuan.model.OAuthTicket;
+import com.xuan.client.OAuthProviderClient;
+import com.xuan.store.RedisOAuthStore;
+import com.xuan.session.SessionManager;
 import com.xuan.vo.OAuthAuthorizeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.OAuthBindResultVO;
@@ -25,10 +28,10 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class OAuthServiceImpl implements IOAuthService {
-    private final OAuthProviderGateway providers;
+    private final OAuthProviderClient providers;
     private final RedisOAuthStore store;
     private final IUserService users;
-    private final SessionService sessions;
+    private final SessionManager sessions;
     private final AuthProperties properties;
     private final JsonMapper json = JsonMapper.builder().build();
     private final Clock clock;
@@ -53,11 +56,11 @@ public class OAuthServiceImpl implements IOAuthService {
         if (operation == Operation.BIND) {
             userId = users.requireCurrent();
             authenticatedAt = sessions.requireRecent(sessions.currentToken(), userId, false);
-            tokenHash = SessionService.digest(sessions.currentToken());
+            tokenHash = TokenUtils.digest(sessions.currentToken());
         }
         // 3. 生成不可预测的 state，并关联当前浏览器和操作，支持同浏览器多流程。
-        String state = SessionService.random();
-        Flow flow = new Flow(SessionService.digest(browser), source, operation, userId, tokenHash,
+        String state = TokenUtils.random();
+        OAuthFlow flow = new OAuthFlow(TokenUtils.digest(browser), source, operation, userId, tokenHash,
                 authenticatedAt, clock.millis());
         // 4. 保留 JustAuth 自身的 state 校验缓存，另存 300 秒的本站一次性流程。
         String url = providers.authorize(source, state);
@@ -82,7 +85,7 @@ public class OAuthServiceImpl implements IOAuthService {
         // 1. 先校验平台、浏览器和流程关联，不匹配时不消费合法 state。
         providers.requireEnabled(source);
         String raw = store.read("state", state);
-        Flow flow = json.readValue(raw, Flow.class);
+        OAuthFlow flow = json.readValue(raw, OAuthFlow.class);
         requireBrowser(flow.browserHash(), browser);
         if (!source.equals(flow.source())) {
             throw RedisOAuthStore.invalid();
@@ -99,7 +102,7 @@ public class OAuthServiceImpl implements IOAuthService {
                 throw new BusinessException(400, "OAUTH_DENIED", "平台授权已取消");
             }
             // 4.2 由平台验证授权码并取得身份，异常只转换为脱敏业务错误。
-            OAuthProviderGateway.Identity identity;
+            OAuthProviderClient.Identity identity;
             try {
                 identity = providers.verify(source, state, code);
             } catch (DataAccessException exception) {
@@ -123,8 +126,8 @@ public class OAuthServiceImpl implements IOAuthService {
                 binding = users.bindOAuth(userId, flow.tokenHash(), source, identity.uuid());
             }
             // 6. 只签发 60 秒结果票据并回跳固定完成页，不在 URL 中返回本站 Token。
-            String ticket = SessionService.random();
-            Ticket result = new Ticket(flow.browserHash(), flow.source(), flow.operation(), userId,
+            String ticket = TokenUtils.random();
+            OAuthTicket result = new OAuthTicket(flow.browserHash(), flow.source(), flow.operation(), userId,
                     flow.tokenHash(), flow.operation() == Operation.LOGIN ? at : flow.authenticatedAt(), binding, identity.uuid());
             store.save("ticket", ticket, json.writeValueAsString(result), Duration.ofSeconds(60));
             return properties.getFrontendCompleteUrl() + "#ticket=" + ticket;
@@ -152,12 +155,12 @@ public class OAuthServiceImpl implements IOAuthService {
     public Object exchange(String ticket, String browser) {
         // 1. 读取尚未过期的票据并检查浏览器，错误浏览器不能消费他人的结果。
         String raw = store.read("ticket", ticket);
-        Ticket result = json.readValue(raw, Ticket.class);
+        OAuthTicket result = json.readValue(raw, OAuthTicket.class);
         requireBrowser(result.browserHash(), browser);
         // 2. BIND 必须携带发起时同一个 Token，相同用户的其他 Token 也不能替代。
         if (result.operation() == Operation.BIND) {
             String token = sessions.currentToken();
-            if (token == null || !Objects.equals(result.tokenHash(), SessionService.digest(token))) {
+            if (token == null || !Objects.equals(result.tokenHash(), TokenUtils.digest(token))) {
                 throw RedisOAuthStore.invalid();
             }
             sessions.requireActive(token, result.userId());
@@ -183,16 +186,9 @@ public class OAuthServiceImpl implements IOAuthService {
      */
     private void requireBrowser(String expected, String browser) {
         if (browser == null || !browser.matches("[A-Za-z0-9_-]{43}")
-                || !expected.equals(SessionService.digest(browser))) {
+                || !expected.equals(TokenUtils.digest(browser))) {
             throw RedisOAuthStore.invalid();
         }
     }
 
-    /** 服务端流程不保存原始 Token，只保存关联摘要；创建时间由 Redis TTL 约束。 */
-    public record Flow(String browserHash, String source, Operation operation, Long userId,
-                       String tokenHash, long authenticatedAt, long createdAt) { }
-
-    /** 结果只含已验证身份与绑定投影，不含平台 Token/code。 */
-    public record Ticket(String browserHash, String source, Operation operation, Long userId,
-                         String tokenHash, long authenticatedAt, OAuthBindingVO binding, String uuid) { }
 }

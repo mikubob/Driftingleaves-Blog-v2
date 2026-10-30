@@ -1,33 +1,27 @@
-package com.xuan.service;
+package com.xuan.session;
 
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.stp.parameter.SaLoginParameter;
 import com.xuan.exception.BusinessException;
+import com.xuan.utils.TokenUtils;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Clock;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Objects;
 
-/** Token 级最近认证和会话撤销；数据库失败时补偿本次签发。 */
-@Service
+/** 本站会话生命周期管理器；维护 Token 级最近认证、会话撤销及数据库失败时的签发补偿。 */
+@Component
 @RequiredArgsConstructor
-public class SessionService {
-    private static final SecureRandom RANDOM = new SecureRandom();
+public class SessionManager {
     private final Clock clock;
 
     /** 需在用户行锁事务中调用；提交失败时撤销已创建 Token。 */
     public String create(long userId, long authenticatedAt, String method) {
         // 1. 预先生成本次 Token，使后续签发或数据库提交失败时能定位并清理。
-        String token = random();
+        String token = TokenUtils.random();
         // 2. 在签发前登记事务完成回调，数据库未提交则撤销本次会话。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
@@ -86,7 +80,7 @@ public class SessionService {
     public String originalToken(long userId, String tokenHash) {
         // 1. 只在目标用户现存会话中匹配摘要，不从 Cookie 或客户端 userId 恢复身份。
         for (String token : StpUtil.getTokenValueListByLoginId(userId)) {
-            if (digest(token).equals(tokenHash)) {
+            if (TokenUtils.digest(token).equals(tokenHash)) {
                 // 2. 命中后仍重查归属和最近认证，摘要匹配不能代替会话有效性检查。
                 requireRecent(token, userId, false);
                 return token;
@@ -107,20 +101,4 @@ public class SessionService {
         }
     }
 
-    /** 256 bit 随机值用于 Token、浏览器、state 和 ticket。 */
-    public static String random() {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    /** Redis 流程键和关联只保存不可逆摘要。 */
-    public static String digest(String value) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
-            throw new IllegalStateException("JDK缺少SHA-256", exception);
-        }
-    }
 }

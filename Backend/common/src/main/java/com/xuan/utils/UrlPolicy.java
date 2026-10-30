@@ -1,4 +1,4 @@
-package com.xuan.service;
+package com.xuan.utils;
 
 import com.xuan.exception.BusinessException;
 import java.net.URI;
@@ -8,6 +8,11 @@ import java.net.URISyntaxException;
 public final class UrlPolicy {
     private UrlPolicy() { }
 
+    /**
+     * 校验公开展示地址，不抓取远程资源，也不允许附件 API 路径用于公开展示。
+     * @param value 待校验地址；null 交由字段必填约束处理
+     * @return 是否为长度和结构合法的绝对 HTTP(S) 地址，null 返回 true
+     */
     public static boolean valid(String value) {
         // 1. 空值交由字段的可空约束决定，这里只校验实际提供的地址。
         if (value == null) {
@@ -30,6 +35,11 @@ public final class UrlPolicy {
         }
     }
 
+    /**
+     * 校验头像地址，无效时保留统一业务错误，不包含被拒绝的输入内容。
+     * @param value 待校验头像地址，可为 null
+     * @throws BusinessException 地址无效时返回 VALIDATION_ERROR
+     */
     public static void requireValid(String value) {
         if (!valid(value)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "avatar须为合法的公开HTTP(S)地址");

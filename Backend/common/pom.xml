@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
     后端共享工具模块，产出普通 jar。
-    <p>承载公共结果、异常、分页与正文处理能力，不依赖 entity 或 server。</p>
+    <p>承载公共结果、工具、配置和共享基础设施，不依赖 entity 或 server。</p>
     @see ../pom.xml
 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -17,6 +17,48 @@
     <artifactId>common</artifactId>
 
     <dependencies>
+        <!-- 配置属性声明及校验注解；属性扫描和校验执行由 server 应用负责。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-context</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
+        </dependency>
+        <!-- Redis 存储与会话事务同步仅使用 API，连接工厂和驱动仍由 server 装配。 -->
+        <dependency>
+            <groupId>org.springframework.data</groupId>
+            <artifactId>spring-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework</groupId>
+            <artifactId>spring-tx</artifactId>
+        </dependency>
+        <!-- 请求限流只引用 Servlet API，不向 common 引入 MVC 或内嵌服务器。 -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- 会话共享组件使用核心 API，Boot 适配和 Redis DAO 留在 server。 -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-core</artifactId>
+        </dependency>
+        <!-- 平台客户端和固定的 Fastjson 1.x API 兼容包随共享组件下沉，不接管 MVC JSON。 -->
+        <dependency>
+            <groupId>me.zhyd.oauth</groupId>
+            <artifactId>JustAuth</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
         <!--
             在编译期生成样板代码，运行时无需 Lombok。
         -->

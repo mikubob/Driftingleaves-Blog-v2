@@ -1,7 +1,8 @@
-package com.xuan.service;
+package com.xuan.ratelimit;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
+import com.xuan.utils.TokenUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -68,8 +69,8 @@ public class AuthRateLimiter {
         // 2. 分别构建 IP 与身份维度的键，身份缺失时退为 IP，摘要避免暴露原值。
         String prefix = properties.getRedisPrefix() + "rate:" + operation + ":";
         String dimension = identity == null ? ip : identity;
-        return List.of(prefix + "ip:" + SessionService.digest(ip),
-                prefix + "identity:" + SessionService.digest("login".equals(operation) ? ip + ":" + dimension : dimension));
+        return List.of(prefix + "ip:" + TokenUtils.digest(ip),
+                prefix + "identity:" + TokenUtils.digest("login".equals(operation) ? ip + ":" + dimension : dimension));
     }
 
     private void reject(Long retryAfter) {

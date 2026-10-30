@@ -1,5 +1,5 @@
 -- DriftingLeavesV2 全新数据库设计，MySQL >= 8.0.16（CHECK 约束必须生效）。
--- 2026-10-29；参考来源、权限规则及导入方法见同目录 README.md。
+-- 2026-10-30；参考来源、权限规则及导入方法见同目录 README.md。
 -- 在空库中执行；不迁移旧数据，不包含 DROP DATABASE/TABLE，不创建默认密码账号。
 CREATE DATABASE IF NOT EXISTS drifting_leaves_v2
   CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -290,12 +290,227 @@ CREATE TABLE blog_site_config (
   CONSTRAINT ck_config_public CHECK (is_public IN (0, 1))
 ) ENGINE=InnoDB COMMENT='站点展示与业务开关；不保存数据库/邮件/对象存储密码';
 
--- 三、基础角色、权限与菜单。无用户、文章、外部SQL业务数据。
+-- 三、主页与简历。展示资料独立于登录资料，公开邮箱不直接读取sys_user.email。
+CREATE TABLE home_profile (
+  profile_id BIGINT NOT NULL DEFAULT 1 COMMENT '单站展示资料固定为1，不按登录用户切换',
+  user_id BIGINT NOT NULL COMMENT '站点主人账号，不影响公开资料的独立编辑',
+  nickname VARCHAR(64) NOT NULL COMMENT '公开展示昵称',
+  tagline VARCHAR(100) NOT NULL DEFAULT '' COMMENT '个人标签或一句话介绍',
+  description VARCHAR(500) DEFAULT NULL COMMENT '公开个人简介',
+  avatar VARCHAR(2048) DEFAULT NULL COMMENT '公开头像URL',
+  website VARCHAR(2048) DEFAULT NULL COMMENT '个人网站URL',
+  public_email VARCHAR(254) DEFAULT NULL COMMENT '自愿公开的联系邮箱，不作为登录邮箱',
+  github_url VARCHAR(2048) DEFAULT NULL COMMENT 'GitHub主页URL',
+  location VARCHAR(100) DEFAULT NULL COMMENT '公开所在地',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (profile_id),
+  CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
+  CONSTRAINT ck_profile_singleton CHECK (profile_id = 1),
+  CONSTRAINT ck_profile_nickname CHECK (CHAR_LENGTH(TRIM(nickname)) > 0)
+) ENGINE=InnoDB COMMENT='主页、博客侧栏与简历共用的站点主人展示资料';
+
+CREATE TABLE home_social_link (
+  social_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '社交链接ID',
+  name VARCHAR(64) NOT NULL COMMENT '平台或链接名称',
+  icon VARCHAR(2048) DEFAULT NULL COMMENT '图标URL或前端白名单图标键，不存任意HTML',
+  url VARCHAR(2048) NOT NULL COMMENT '社交链接；应用校验允许的协议',
+  sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值，数值越小越靠前',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '0隐藏 1展示',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (social_id),
+  KEY idx_social_status_sort (status, sort_order, social_id),
+  CONSTRAINT ck_social_status CHECK (status IN (0, 1)),
+  CONSTRAINT ck_social_name CHECK (CHAR_LENGTH(TRIM(name)) > 0),
+  CONSTRAINT ck_social_url CHECK (CHAR_LENGTH(TRIM(url)) > 0)
+) ENGINE=InnoDB COMMENT='站点社交媒体链接，与OAuth登录平台配置无关';
+
+CREATE TABLE cv_experience (
+  experience_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '经历ID',
+  experience_type TINYINT NOT NULL COMMENT '0教育 1工作或实习 2项目',
+  title VARCHAR(200) NOT NULL COMMENT '学校、公司或项目名称',
+  subtitle VARCHAR(200) DEFAULT NULL COMMENT '专业、职位或项目角色',
+  logo_url VARCHAR(2048) DEFAULT NULL COMMENT '校徽或公司、项目图标URL',
+  content TEXT NOT NULL COMMENT 'Markdown内容；渲染后由应用过滤不安全HTML',
+  start_date DATE NOT NULL COMMENT '开始日期',
+  end_date DATE DEFAULT NULL COMMENT '结束日期；NULL表示至今',
+  sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值，数值越小越靠前',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '0隐藏 1展示',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (experience_id),
+  KEY idx_experience_public (status, experience_type, sort_order, start_date DESC, experience_id),
+  CONSTRAINT ck_experience_type CHECK (experience_type IN (0, 1, 2)),
+  CONSTRAINT ck_experience_status CHECK (status IN (0, 1)),
+  CONSTRAINT ck_experience_dates CHECK (end_date IS NULL OR end_date >= start_date),
+  CONSTRAINT ck_experience_title CHECK (CHAR_LENGTH(TRIM(title)) > 0)
+) ENGINE=InnoDB COMMENT='站点主人教育、工作和项目经历';
+
+CREATE TABLE cv_skill (
+  skill_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '技能ID',
+  name VARCHAR(64) NOT NULL COMMENT '技能名称',
+  description VARCHAR(500) DEFAULT NULL COMMENT '技能描述',
+  icon VARCHAR(2048) DEFAULT NULL COMMENT '图标URL或前端白名单图标键',
+  sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值，数值越小越靠前',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '0隐藏 1展示',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (skill_id),
+  KEY idx_skill_status_sort (status, sort_order, skill_id),
+  CONSTRAINT ck_skill_status CHECK (status IN (0, 1)),
+  CONSTRAINT ck_skill_name CHECK (CHAR_LENGTH(TRIM(name)) > 0)
+) ENGINE=InnoDB COMMENT='简历技能展示';
+
+-- 四、留言、音乐与订阅。互动统一使用本站用户，不复制旧访客Token或管理员账号。
+CREATE TABLE blog_message (
+  message_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '留言ID',
+  user_id BIGINT NOT NULL COMMENT '留言或回复作者，从当前登录会话读取',
+  parent_id BIGINT DEFAULT NULL COMMENT '被回复的留言ID；创建后不可修改，应用防止环',
+  content TEXT NOT NULL COMMENT '纯文本或Markdown原文',
+  content_format TINYINT NOT NULL DEFAULT 0 COMMENT '0纯文本 1Markdown；输出由应用安全渲染',
+  is_secret TINYINT NOT NULL DEFAULT 0 COMMENT '0公开 1悄悄话；仅本人及获授ALL管理权限者可读，回复继承私密范围',
+  notify_reply TINYINT NOT NULL DEFAULT 0 COMMENT '是否请求回复邮件通知；应用另行验证收件邮箱',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回 3作者删除占位',
+  edited_at DATETIME(3) DEFAULT NULL COMMENT '作者最近编辑时间；编辑后重新审核',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (message_id),
+  KEY idx_message_public (parent_id, status, is_secret, create_time, message_id),
+  KEY idx_message_user (user_id, create_time DESC, message_id),
+  KEY idx_message_review (status, create_time, message_id),
+  CONSTRAINT fk_message_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_message_parent FOREIGN KEY (parent_id) REFERENCES blog_message (message_id) ON DELETE RESTRICT,
+  CONSTRAINT ck_message_status CHECK (status IN (0, 1, 2, 3)),
+  CONSTRAINT ck_message_format CHECK (content_format IN (0, 1)),
+  CONSTRAINT ck_message_secret CHECK (is_secret IN (0, 1)),
+  CONSTRAINT ck_message_notify CHECK (notify_reply IN (0, 1)),
+  CONSTRAINT ck_message_content CHECK (CHAR_LENGTH(TRIM(content)) BETWEEN 1 AND 2000)
+) ENGINE=InnoDB COMMENT='独立留言板与回复；删除采用占位文案保留回复链，管理员身份实时鉴权';
+
+CREATE TABLE blog_music (
+  music_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '音乐ID',
+  title VARCHAR(200) NOT NULL COMMENT '音乐标题',
+  artist VARCHAR(200) DEFAULT NULL COMMENT '歌手或作者',
+  duration_seconds INT UNSIGNED DEFAULT NULL COMMENT '时长，单位秒；未知为NULL',
+  cover_url VARCHAR(2048) DEFAULT NULL COMMENT '封面URL',
+  audio_url VARCHAR(2048) NOT NULL COMMENT '音频URL；应用校验协议与文件访问权限',
+  lyric_url VARCHAR(2048) DEFAULT NULL COMMENT '歌词URL；无歌词为NULL',
+  lyric_type VARCHAR(10) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT 'lrc、json或txt；无歌词为NULL',
+  sort_order INT NOT NULL DEFAULT 0 COMMENT '排序值，数值越小越靠前',
+  status TINYINT NOT NULL DEFAULT 1 COMMENT '0隐藏 1展示',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (music_id),
+  KEY idx_music_status_sort (status, sort_order, music_id),
+  CONSTRAINT ck_music_status CHECK (status IN (0, 1)),
+  CONSTRAINT ck_music_title CHECK (CHAR_LENGTH(TRIM(title)) > 0),
+  CONSTRAINT ck_music_audio CHECK (CHAR_LENGTH(TRIM(audio_url)) > 0),
+  CONSTRAINT ck_music_lyric CHECK (
+    (lyric_url IS NULL AND lyric_type IS NULL)
+    OR (lyric_url IS NOT NULL AND CHAR_LENGTH(TRIM(lyric_url)) > 0 AND lyric_type IS NOT NULL AND lyric_type IN ('lrc', 'json', 'txt'))
+  )
+) ENGINE=InnoDB COMMENT='站点背景音乐播放列表；是否有歌词由lyric_url判断';
+
+CREATE TABLE blog_rss_subscription (
+  subscription_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '订阅ID',
+  user_id BIGINT NOT NULL COMMENT '订阅用户，从当前登录会话读取',
+  email VARCHAR(254) NOT NULL COMMENT '订阅邮箱；应用归一化并通过邮件验证，不直接信任登录资料邮箱',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待验证 1已订阅 2已退订；换邮箱必须重新验证',
+  verified_at DATETIME(3) DEFAULT NULL COMMENT '当前邮箱验证成功时间',
+  subscribe_time DATETIME(3) DEFAULT NULL COMMENT '最近激活订阅时间',
+  unsubscribe_time DATETIME(3) DEFAULT NULL COMMENT '最近退订时间',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (subscription_id),
+  UNIQUE KEY uk_rss_user (user_id),
+  UNIQUE KEY uk_rss_email (email),
+  KEY idx_rss_delivery (status, subscription_id),
+  CONSTRAINT fk_rss_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE CASCADE,
+  CONSTRAINT ck_rss_status CHECK (status IN (0, 1, 2)),
+  CONSTRAINT ck_rss_email CHECK (CHAR_LENGTH(TRIM(email)) > 0),
+  CONSTRAINT ck_rss_active CHECK (status <> 1 OR (verified_at IS NOT NULL AND subscribe_time IS NOT NULL AND unsubscribe_time IS NULL)),
+  CONSTRAINT ck_rss_unsubscribe CHECK (status <> 2 OR unsubscribe_time IS NOT NULL)
+) ENGINE=InnoDB COMMENT='RSS邮件推送订阅；XML Feed直接由公开文章生成；确认及退订票据由Redis管理';
+
+-- 五、访问统计与操作审计。统计标识不授予登录、评论、点赞或订阅权限。
+CREATE TABLE blog_visitor (
+  visitor_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '统计访客ID，不是本站用户ID',
+  fingerprint VARCHAR(150) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '匿名统计标识，不作为可信身份或账号封禁依据',
+  ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '最近访问IP；仅从可信代理链提取',
+  user_agent VARCHAR(1024) DEFAULT NULL COMMENT '最近访问的User-Agent，应用限制长度',
+  country VARCHAR(64) DEFAULT NULL COMMENT '国家',
+  province VARCHAR(64) DEFAULT NULL COMMENT '省份',
+  city VARCHAR(64) DEFAULT NULL COMMENT '城市',
+  is_blocked TINYINT NOT NULL DEFAULT 0 COMMENT '0正常 1限制此统计标识；不能替代sys_user.status',
+  blocked_until DATETIME(3) DEFAULT NULL COMMENT '封禁到期时间；已封禁且NULL表示不自动到期',
+  first_visit_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '首次访问时间',
+  last_visit_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '最近访问时间',
+  create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
+  PRIMARY KEY (visitor_id),
+  UNIQUE KEY uk_visitor_fingerprint (fingerprint),
+  KEY idx_visitor_first_visit (first_visit_time, visitor_id),
+  KEY idx_visitor_last_visit (last_visit_time DESC, visitor_id),
+  KEY idx_visitor_blocked (is_blocked, blocked_until, visitor_id),
+  CONSTRAINT ck_visitor_fingerprint CHECK (CHAR_LENGTH(TRIM(fingerprint)) > 0),
+  CONSTRAINT ck_visitor_blocked CHECK (is_blocked IN (0, 1)),
+  CONSTRAINT ck_visitor_block_time CHECK (is_blocked = 1 OR blocked_until IS NULL),
+  CONSTRAINT ck_visitor_times CHECK (last_visit_time >= first_visit_time)
+) ENGINE=InnoDB COMMENT='跨主页、博客和简历的匿名访客统计；访问次数按浏览明细聚合';
+
+CREATE TABLE blog_page_view (
+  view_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '浏览记录ID',
+  visitor_id BIGINT DEFAULT NULL COMMENT '匿名访客ID；访客统计记录清理后为NULL',
+  user_id BIGINT DEFAULT NULL COMMENT '访问时已登录的本站用户ID，由服务端读取；匿名为NULL',
+  article_id BIGINT DEFAULT NULL COMMENT '文章详情访问对应的文章ID；其他页面为NULL',
+  site_code VARCHAR(16) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT 'home、blog或cv；由服务端核验站点',
+  page_path VARCHAR(2048) NOT NULL COMMENT '页面路径；不记录Token等敏感查询参数',
+  page_title VARCHAR(200) DEFAULT NULL COMMENT '访问时的页面标题',
+  referer VARCHAR(2048) DEFAULT NULL COMMENT '来源URL；应用去除敏感查询参数',
+  ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '访问IP；仅从可信代理链提取',
+  user_agent VARCHAR(1024) DEFAULT NULL COMMENT '访问时的User-Agent',
+  view_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '访问时间',
+  PRIMARY KEY (view_id),
+  KEY idx_view_time (view_time DESC, view_id),
+  KEY idx_view_visitor (visitor_id, view_time DESC, view_id),
+  KEY idx_view_user (user_id, view_time DESC),
+  KEY idx_view_article (article_id, view_time DESC),
+  KEY idx_view_site_path (site_code, page_path(191), view_time),
+  CONSTRAINT fk_view_visitor FOREIGN KEY (visitor_id) REFERENCES blog_visitor (visitor_id) ON DELETE SET NULL,
+  CONSTRAINT fk_view_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE SET NULL,
+  CONSTRAINT fk_view_article FOREIGN KEY (article_id) REFERENCES blog_article (article_id) ON DELETE SET NULL,
+  CONSTRAINT ck_view_site CHECK (site_code IN ('home', 'blog', 'cv')),
+  CONSTRAINT ck_view_path CHECK (CHAR_LENGTH(TRIM(page_path)) > 0)
+) ENGINE=InnoDB COMMENT='页面浏览明细；支持站点趋势、访客记录及按时间段文章排行';
+
+CREATE TABLE sys_operation_log (
+  log_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '操作日志ID',
+  user_id BIGINT DEFAULT NULL COMMENT '操作人本站用户ID；账号物理清理后为NULL',
+  operation_type VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '操作类型，如create、update、delete、grant',
+  operation_target VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '目标模块或资源',
+  target_id BIGINT DEFAULT NULL COMMENT '目标资源ID；批量或无数字ID的操作可为空',
+  permission_code VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '本次检查的权限码快照，不授予权限',
+  operation_data JSON DEFAULT NULL COMMENT '应用按白名单记录的脱敏操作摘要；禁止密码、Token及第三方密钥',
+  result TINYINT NOT NULL COMMENT '0失败 1成功',
+  error_message VARCHAR(500) DEFAULT NULL COMMENT '脱敏错误摘要；不保存原始异常堆栈或SQL',
+  ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '操作IP；仅从可信代理链提取',
+  operation_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '操作时间',
+  PRIMARY KEY (log_id),
+  KEY idx_log_time (operation_time DESC, log_id),
+  KEY idx_log_user (user_id, operation_time DESC),
+  KEY idx_log_target (operation_target, target_id, operation_time DESC),
+  KEY idx_log_type (operation_type, operation_time DESC),
+  CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE SET NULL,
+  CONSTRAINT ck_log_result CHECK (result IN (0, 1))
+) ENGINE=InnoDB COMMENT='管理操作审计，使用现有本站账号与权限码；不复制旧admin表';
+
+-- 六、基础角色、权限与菜单。无用户、文章、外部SQL业务数据。
 START TRANSACTION;
 INSERT INTO sys_role (role_id, role_code, role_name, description, data_scope) VALUES
   (1, 'admin', '管理员', '全部内容及系统授权管理；新增权限需要显式授权', 'ALL'),
   (2, 'author', '作者', '后台写作、管理本人文章与上传文件', 'SELF'),
-  (3, 'member', '注册用户', '前台评论、点赞及删除本人评论，无后台菜单', 'SELF');
+  (3, 'member', '注册用户', '前台评论、点赞、本人留言及邮件订阅，无后台菜单', 'SELF');
 
 INSERT INTO sys_permission (permission_id, permission_code, permission_name, module) VALUES
   (1, 'admin:access', '进入管理后台', 'admin'),
@@ -344,21 +559,62 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (110, 'sys:permission:query', '查询权限字典', 'sys'),
   (111, 'sys:permission:create', '创建权限', 'sys'),
   (112, 'sys:permission:update', '编辑及启停权限', 'sys'),
-  (113, 'sys:permission:delete', '删除权限', 'sys');
+  (113, 'sys:permission:delete', '删除权限', 'sys'),
+  (120, 'home:profile:query', '查询主页资料', 'home'),
+  (121, 'home:profile:update', '设置主页资料', 'home'),
+  (130, 'home:social:query', '查询社交链接', 'home'),
+  (131, 'home:social:create', '创建社交链接', 'home'),
+  (132, 'home:social:update', '编辑社交链接', 'home'),
+  (133, 'home:social:delete', '删除社交链接', 'home'),
+  (140, 'cv:experience:query', '查询简历经历', 'cv'),
+  (141, 'cv:experience:create', '创建简历经历', 'cv'),
+  (142, 'cv:experience:update', '编辑简历经历', 'cv'),
+  (143, 'cv:experience:delete', '删除简历经历', 'cv'),
+  (150, 'cv:skill:query', '查询简历技能', 'cv'),
+  (151, 'cv:skill:create', '创建简历技能', 'cv'),
+  (152, 'cv:skill:update', '编辑简历技能', 'cv'),
+  (153, 'cv:skill:delete', '删除简历技能', 'cv'),
+  (160, 'blog:message:query', '查询管理留言', 'blog'),
+  (161, 'blog:message:review', '审核留言', 'blog'),
+  (162, 'blog:message:moderate', '管理删除留言', 'blog'),
+  (163, 'blog:message:create', '前台发表或回复留言', 'blog'),
+  (164, 'blog:message:updateOwn', '编辑本人留言', 'blog'),
+  (165, 'blog:message:deleteOwn', '删除本人留言', 'blog'),
+  (170, 'blog:music:query', '查询管理音乐', 'blog'),
+  (171, 'blog:music:create', '创建音乐', 'blog'),
+  (172, 'blog:music:update', '编辑音乐', 'blog'),
+  (173, 'blog:music:delete', '删除音乐', 'blog'),
+  (180, 'blog:rss:query', '查询邮件订阅', 'blog'),
+  (181, 'blog:rss:update', '管理邮件订阅状态', 'blog'),
+  (182, 'blog:rss:delete', '删除邮件订阅', 'blog'),
+  (183, 'blog:rss:subscribe', '管理本人邮件订阅及邮箱确认', 'blog'),
+  (184, 'blog:rss:unsubscribe', '取消本人邮件订阅', 'blog'),
+  (190, 'blog:visitor:query', '查询访客统计', 'blog'),
+  (191, 'blog:visitor:block', '封禁访客统计标识', 'blog'),
+  (192, 'blog:visitor:unblock', '解封访客统计标识', 'blog'),
+  (193, 'blog:visitor:delete', '删除访客统计记录', 'blog'),
+  (200, 'blog:view:query', '查询浏览记录', 'blog'),
+  (201, 'blog:view:delete', '删除浏览记录', 'blog'),
+  (210, 'blog:statistics:query', '查询访问统计报表', 'blog'),
+  (220, 'sys:log:query', '查询操作日志', 'sys'),
+  (221, 'sys:log:delete', '清理操作日志', 'sys');
 
 -- 管理员显式获得当前全部权限，作者及会员按白名单授权。
 INSERT INTO sys_role_permission (role_id, permission_id)
   SELECT 1, permission_id FROM sys_permission;
 INSERT INTO sys_role_permission (role_id, permission_id)
   SELECT 2, permission_id FROM sys_permission
-  WHERE permission_id IN (1, 10, 11, 12, 13, 14, 15, 20, 30, 43, 44, 45, 60, 61, 62);
+  WHERE permission_id IN (1, 10, 11, 12, 13, 14, 15, 20, 30, 43, 44, 45, 60, 61, 62, 163, 164, 165, 183, 184);
 INSERT INTO sys_role_permission (role_id, permission_id)
-  SELECT 3, permission_id FROM sys_permission WHERE permission_id IN (43, 44, 45);
+  SELECT 3, permission_id FROM sys_permission WHERE permission_id IN (43, 44, 45, 163, 164, 165, 183, 184);
 
 -- component均为未来前端的约定键，当前工作区没有对应组件实现。
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route_name, path, component, icon, permission_id, sort_order) VALUES
   (100, NULL, 'content', '内容管理', 'D', 'Content', '/content', 'Layout', 'document', NULL, 10),
-  (200, NULL, 'system', '系统管理', 'D', 'System', '/system', 'Layout', 'setting', NULL, 20);
+  (200, NULL, 'system', '系统管理', 'D', 'System', '/system', 'Layout', 'setting', NULL, 20),
+  (300, NULL, 'home', '主页管理', 'D', 'Home', '/home', 'Layout', 'home', NULL, 30),
+  (400, NULL, 'cv', '简历管理', 'D', 'Cv', '/cv', 'Layout', 'document', NULL, 40),
+  (500, NULL, 'statistics', '访问统计', 'D', 'Statistics', '/statistics', 'Layout', 'chart', NULL, 50);
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route_name, path, component, icon, permission_id, sort_order) VALUES
   (110, 100, 'article', '文章管理', 'M', 'Article', '/content/articles', 'content/article/index', 'document', 10, 10),
   (120, 100, 'category', '分类管理', 'M', 'Category', '/content/categories', 'content/category/index', 'folder', 20, 20),
@@ -366,13 +622,24 @@ INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route
   (140, 100, 'comment', '评论管理', 'M', 'Comment', '/content/comments', 'content/comment/index', 'chat', 40, 40),
   (150, 100, 'link', '友链管理', 'M', 'FriendLink', '/content/links', 'content/link/index', 'link', 50, 50),
   (160, 100, 'file', '文件管理', 'M', 'File', '/content/files', 'content/file/index', 'picture', 60, 60),
+  (170, 100, 'message', '留言管理', 'M', 'Message', '/content/messages', 'content/message/index', 'chat', 160, 70),
+  (180, 100, 'music', '音乐管理', 'M', 'Music', '/content/music', 'content/music/index', 'music', 170, 80),
+  (190, 100, 'rss', '邮件订阅', 'M', 'RssSubscription', '/content/subscriptions', 'content/rss/index', 'mail', 180, 90),
   (210, 200, 'user', '用户管理', 'M', 'User', '/system/users', 'system/user/index', 'user', 80, 10),
   (220, 200, 'role', '角色管理', 'M', 'Role', '/system/roles', 'system/role/index', 'lock', 90, 20),
   (230, 200, 'menu', '菜单管理', 'M', 'Menu', '/system/menus', 'system/menu/index', 'menu', 100, 30),
   (240, 200, 'permission', '权限管理', 'M', 'Permission', '/system/permissions', 'system/permission/index', 'key', 110, 40),
-  (250, 200, 'config', '站点配置', 'M', 'SiteConfig', '/system/config', 'system/config/index', 'setting', 70, 50);
+  (250, 200, 'config', '站点配置', 'M', 'SiteConfig', '/system/config', 'system/config/index', 'setting', 70, 50),
+  (260, 200, 'operationLog', '操作日志', 'M', 'OperationLog', '/system/logs', 'system/log/index', 'document', 220, 60),
+  (310, 300, 'homeProfile', '主页资料', 'M', 'HomeProfile', '/home/profile', 'home/profile/index', 'user', 120, 10),
+  (320, 300, 'socialLink', '社交链接', 'M', 'SocialLink', '/home/social-links', 'home/social/index', 'link', 130, 20),
+  (410, 400, 'experience', '简历经历', 'M', 'Experience', '/cv/experiences', 'cv/experience/index', 'document', 140, 10),
+  (420, 400, 'skill', '简历技能', 'M', 'Skill', '/cv/skills', 'cv/skill/index', 'tag', 150, 20),
+  (510, 500, 'statisticsOverview', '统计报表', 'M', 'StatisticsOverview', '/statistics/overview', 'statistics/overview/index', 'chart', 210, 10),
+  (520, 500, 'visitor', '访客管理', 'M', 'Visitor', '/statistics/visitors', 'statistics/visitor/index', 'user', 190, 20),
+  (530, 500, 'pageView', '浏览记录', 'M', 'PageView', '/statistics/views', 'statistics/view/index', 'document', 200, 30);
 
--- 每个后台操作生成对应按钮；前台评论/点赞无需后台按钮。
+-- 每个后台操作生成对应按钮；前台评论/点赞/本人留言/订阅无需后台按钮。
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, permission_id, sort_order, is_visible)
 SELECT 1000 + p.permission_id,
   CASE
@@ -387,10 +654,21 @@ SELECT 1000 + p.permission_id,
     WHEN p.permission_id BETWEEN 91 AND 94 THEN 220
     WHEN p.permission_id BETWEEN 101 AND 103 THEN 230
     WHEN p.permission_id BETWEEN 111 AND 113 THEN 240
+    WHEN p.permission_id = 121 THEN 310
+    WHEN p.permission_id BETWEEN 131 AND 133 THEN 320
+    WHEN p.permission_id BETWEEN 141 AND 143 THEN 410
+    WHEN p.permission_id BETWEEN 151 AND 153 THEN 420
+    WHEN p.permission_id BETWEEN 161 AND 162 THEN 170
+    WHEN p.permission_id BETWEEN 171 AND 173 THEN 180
+    WHEN p.permission_id BETWEEN 181 AND 182 THEN 190
+    WHEN p.permission_id BETWEEN 191 AND 193 THEN 520
+    WHEN p.permission_id = 201 THEN 530
+    WHEN p.permission_id = 221 THEN 260
   END,
   p.permission_code, p.permission_name, 'B', p.permission_id, p.permission_id, 0
 FROM sys_permission p
-WHERE p.permission_id IN (11,12,13,14,15,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,91,92,93,94,101,102,103,111,112,113);
+WHERE p.permission_id IN (11,12,13,14,15,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,91,92,93,94,101,102,103,111,112,113,
+  121,131,132,133,141,142,143,151,152,153,161,162,171,172,173,181,182,191,192,193,201,221);
 
 INSERT INTO sys_role_menu (role_id, menu_id) SELECT 1, menu_id FROM sys_menu;
 INSERT INTO sys_role_menu (role_id, menu_id)
@@ -400,6 +678,7 @@ WHERE m.menu_id = 100 OR EXISTS (
 );
 
 INSERT INTO blog_site_config (config_key, config_value, description, is_public) VALUES
-  ('site', JSON_OBJECT('title', 'DriftingLeaves', 'description', '记录与分享', 'icp', ''), '公开站点信息', 1),
-  ('comment', JSON_OBJECT('enabled', TRUE, 'reviewRequired', TRUE), '评论默认开启并审核；前端不得用本配置绕过服务端校验', 0);
+  ('site', JSON_OBJECT('title', 'DriftingLeaves', 'description', '记录与分享', 'icp', '', 'publicSecurityRecord', '', 'startDate', NULL), '公开站点信息；备案及建站日期由站点管理者填写', 1),
+  ('comment', JSON_OBJECT('enabled', TRUE, 'reviewRequired', TRUE), '评论默认开启并审核；前端不得用本配置绕过服务端校验', 0),
+  ('message', JSON_OBJECT('enabled', TRUE, 'reviewRequired', TRUE), '留言默认开启并审核；私密范围由服务端校验', 0);
 COMMIT;

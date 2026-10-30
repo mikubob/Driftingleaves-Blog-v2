@@ -4,7 +4,7 @@ import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
 import com.xuan.dto.ProfilePatchDTO;
 import com.xuan.result.Result;
-import com.xuan.service.AuthorizationService;
+import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.vo.CapabilitiesVO;
 import com.xuan.vo.MeVO;
@@ -31,7 +31,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class MeController {
     private final IUserService users;
-    private final AuthorizationService authorization;
+    private final AuthorizationProvider authorization;
 
     /**
      * 查询当前登录用户资料，并返回聚合版本响应头。

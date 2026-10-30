@@ -2,7 +2,7 @@
 
 核查日期：2026-10-29（Asia/Shanghai）。适用项目：`D:/CodingFiles/Blog/DriftingLeavesV2`。
 
-本文件保留 2026-10-29 的依赖规划及核查记录。2026-10-30 已落地初始身份后端、18 表实体、配置与测试，版本沿用四份 POM；当前运行与验证以 [后端运行说明](后端运行说明.md) 为准，下面第 9 节早期无源码结果是历史记录。
+本文件保留 2026-10-29 的依赖规划及核查记录。2026-10-30 已落地身份与系统管理、18 表实体、配置与测试，版本沿用四份 POM；共享配置、平台客户端、Redis 授权存储、会话和限流已下沉 common，第 4 节及依赖落点随之更新。当前运行与验证以 [后端运行说明](后端运行说明.md) 为准，下面第 9 节早期无源码结果是历史记录。
 
 ## 1. 建议基线与结论
 
@@ -109,9 +109,9 @@ DriftingLeavesV2/Backend/
 | 模块 | 职责边界 | 直接内部依赖 | 第三方依赖落点 |
 | --- | --- | --- | --- |
 | Backend 根 POM | 继承 Boot parent；统一 Java 21、UTF-8、版本属性、dependencyManagement/pluginManagement；聚合三个模块 | 无 | 仅版本管理，不把全部 starter 写进父 `<dependencies>` |
-| entity | 18 表实体、请求 DTO、响应 VO；字段校验声明与持久化映射注解 | 无 | Lombok、Jakarta Validation API、MyBatis-Plus annotation |
-| common | Result/PageResult、业务异常/常量/枚举、Markdown 渲染及 HTML 清理等共享能力 | 无 | Lombok、MyBatis-Plus core（现有 IPage 用法）、CommonMark 四件、jsoup |
-| server | 启动入口，admin/blog/auth 等 Java 包，Controller/Service/Mapper/XML；Sa-Token 配置与 StpInterface；JustAuth 回调与 Redis state；事务、数据范围、上传及 JSON 配置 | common、entity | 所有 Web/数据库/Redis/鉴权/密码编码 starter 与运行组件；测试组件 |
+| entity | 18 表实体、请求 DTO、响应 VO、内部业务传输模型；字段校验声明与持久化映射注解 | 无 | Lombok、Jakarta Validation API、MyBatis-Plus annotation |
+| common | 结果、异常、纯工具、properties 配置、client 平台网关、cache 授权存储、session 会话及 ratelimit 限流 | 无 | 共享源码需要的 Spring Boot/Context/事务、Redis、Servlet、Validation、Sa-Token 核心 API，JustAuth 及 Fastjson 兼容包；保留原有分页、正文处理依赖 |
+| server | 启动入口、Controller/业务 Service/Mapper/XML，业务授权、回调与事务协调、数据范围及 JSON 配置；组件扫描和连接装配 | common、entity | Web/数据库/Redis/鉴权 starter、驱动、密码编码及应用测试组件；集成测试直接使用的 JustAuth API |
 
 ```mermaid
 flowchart LR
@@ -141,7 +141,7 @@ flowchart LR
 | com.xuan | common | 2.0.0-SNAPSHOT | 引用共享结果、异常、正文工具 | server | I |
 | com.xuan | entity | 2.0.0-SNAPSHOT | 引用实体、DTO、VO | server | I |
 | org.projectlombok | lombok | 1.18.48 | 延续模型、构造器和日志注解 | entity、common、server / provided | B |
-| jakarta.validation | jakarta.validation-api | 3.1.1 | DTO 的 Jakarta 校验注解；不是校验执行器 | entity | B |
+| jakarta.validation | jakarta.validation-api | 3.1.1 | DTO 与共享配置属性的 Jakarta 校验注解；不是校验执行器 | entity、common | B |
 | com.baomidou | mybatis-plus-annotation | 3.5.17 | 实体表、主键、字段注解，避免 entity 引入整个 starter | entity | E |
 | com.baomidou | mybatis-plus-core | 3.5.17 | 沿用分页结果的 IPage API；不引入数据源自动配置 | common | E |
 | org.commonmark | commonmark | 0.31.0 | Markdown 解析与 HTML 渲染 | common | E |
@@ -157,13 +157,15 @@ flowchart LR
 | org.springframework.boot | spring-boot-starter-data-redis | 4.1.2 | StringRedisTemplate，用于 state、限流及缓存失效 | server | B |
 | cn.dev33 | sa-token-spring-boot4-starter | 1.46.0 | 本站登录会话、登录/角色/权限校验；Boot 4/Jakarta 适配 | server | E |
 | cn.dev33 | sa-token-redis-template | 1.46.0 | Sa-Token 会话数据持久化到 Redis；与 starter 的 Jackson 3 插件配合 | server | E |
-| me.zhyd.oauth | JustAuth | 1.16.7 | 第三方授权、换取经平台验证的 AuthUser | server | E |
-| com.alibaba | fastjson | 2.0.66 | Fastjson2 提供的 **1.x API 兼容包**，替换 JustAuth 的 Fastjson 1.2.83；不接管 MVC JSON | server | E |
+| me.zhyd.oauth | JustAuth | 1.16.7 | 第三方平台客户端；server 集成测试直接验证 state 与身份解析 | common、server | E |
+| com.alibaba | fastjson | 2.0.66 | Fastjson2 提供的 **1.x API 兼容包**，替换 JustAuth 的 Fastjson 1.2.83；不接管 MVC JSON | common | E |
 | org.springframework.security | spring-security-crypto | 7.1.2 | 仅使用 BCryptPasswordEncoder 处理本站密码哈希 | server | B |
 | org.springframework.boot | spring-boot-starter-test | 4.1.2 | JUnit、断言、Mock 等基础测试工具 | entity、common、server / test | B |
 | org.springframework.boot | spring-boot-starter-webmvc-test | 4.1.2 | Boot 4 MVC/MockMvc 测试支持 | server / test | B |
 
 Boot 管理的精确版本来自 [Boot 4.1.2 依赖坐标表](https://docs.spring.io/spring-boot/appendix/dependency-versions/coordinates.html)。同一库经多个路径到达应用不会安装多个副本；仍对源码直接引用的 API 显式声明：例如 server 自己使用 Redis API，所以即使 Sa-Token Redis 插件传递带入该 starter，也直接声明它。
+
+2026-10-30 共享基础设施下沉后，common 另按源码直接引用声明 `spring-boot`、`spring-context`、`spring-tx`、`spring-data-redis`、`jakarta.servlet-api`（provided）及 `sa-token-core`，前五项由 Boot BOM 管理，Sa-Token 核心由父 POM 按既有 `${sa-token.version}` 统一管理。未引入新的框架或升级版本；common 不添加应用 starter、连接驱动或对 entity/server 的依赖，运行装配仍由 server 负责。
 
 **crypto 不改变鉴权决定。** Spring 官方说明该密码编码模块不依赖其他 Spring Security 或 Spring 代码。这里不引入 `spring-boot-starter-security`、`spring-security-web`、SecurityFilterChain 或 Spring OAuth2 Client；所有本站登录、路由和权限校验仍由 Sa-Token 负责。[独立 Crypto 模块说明](https://docs.spring.io/spring-security/reference/features/integrations/cryptography.html)
 

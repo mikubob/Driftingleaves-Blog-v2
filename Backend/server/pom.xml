@@ -91,19 +91,11 @@
             <artifactId>sa-token-redis-template</artifactId>
         </dependency>
         <!--
-            提供第三方 OAuth 授权客户端；账号绑定与本站登录流程由应用实现。
+            共享平台客户端的运行依赖；应用集成测试也直接核验 JustAuth state 和身份解析 API。
         -->
         <dependency>
             <groupId>me.zhyd.oauth</groupId>
             <artifactId>JustAuth</artifactId>
-        </dependency>
-        <!--
-            显式使用父 POM 锁定的 Fastjson 1.x API 兼容包，满足 JustAuth 内部解析需求。
-            <p>此依赖不接管 MVC JSON，也不代表授权响应的兼容性已实测。</p>
-        -->
-        <dependency>
-            <groupId>com.alibaba</groupId>
-            <artifactId>fastjson</artifactId>
         </dependency>
         <!--
             仅使用 BCrypt 等密码编码能力，本站鉴权仍由 Sa-Token 负责。

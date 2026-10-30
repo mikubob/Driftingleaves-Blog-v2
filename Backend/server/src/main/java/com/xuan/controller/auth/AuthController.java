@@ -1,5 +1,6 @@
 package com.xuan.controller.auth;
 
+import com.xuan.utils.TokenUtils;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
@@ -7,11 +8,11 @@ import com.xuan.dto.RegisterDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
-import com.xuan.service.AuthRateLimiter;
+import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
-import com.xuan.service.OAuthProviderGateway;
-import com.xuan.service.SessionService;
+import com.xuan.client.OAuthProviderClient;
+import com.xuan.session.SessionManager;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthAuthorizeVO;
 import com.xuan.vo.ProviderVO;
@@ -41,9 +42,9 @@ public class AuthController {
     /** 仅用于 OAuth 浏览器关联的安全 Cookie 名，不承载本站登录凭据。 */
     public static final String BROWSER_COOKIE = "__Host-dl-oauth-browser";
     private final IUserService users;
-    private final SessionService sessions;
+    private final SessionManager sessions;
     private final IOAuthService oauth;
-    private final OAuthProviderGateway providers;
+    private final OAuthProviderClient providers;
     private final AuthRateLimiter limiter;
     private final AuthProperties properties;
 
@@ -109,7 +110,8 @@ public class AuthController {
      */
     @GetMapping("/oauth/providers")
     public Result<List<ProviderVO>> providers() {
-        return Result.ok(providers.providers());
+        return Result.ok(providers.providers().stream()
+                .map(provider -> new ProviderVO(provider.source(), provider.displayName())).toList());
     }
 
     /**
@@ -128,7 +130,7 @@ public class AuthController {
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
         // 1. 校验前端 Origin，再复用或生成浏览器标识；该 Cookie 不承载登录身份。
         requireOrigin(request);
-        String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : SessionService.random();
+        String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : TokenUtils.random();
         // 2. 限流后发起授权，BIND 的原会话和最近认证由协调服务检查。
         limiter.oauth(request, id);
         OAuthAuthorizeVO result = oauth.authorize(source, body.operation(), id);

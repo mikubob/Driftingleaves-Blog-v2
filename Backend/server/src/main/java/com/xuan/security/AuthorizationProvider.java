@@ -1,4 +1,4 @@
-package com.xuan.service;
+package com.xuan.security;
 
 import cn.dev33.satoken.stp.StpInterface;
 import com.xuan.exception.BusinessException;
@@ -7,7 +7,7 @@ import com.xuan.mapper.AuthorizationMapper.MenuGrant;
 import com.xuan.vo.CapabilitiesVO;
 import com.xuan.vo.MenuNodeVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.ArrayList;
@@ -20,9 +20,9 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /** 实时授权提供者；同一读取事务中的角色、权限和菜单使用一致快照。 */
-@Service
+@Component
 @RequiredArgsConstructor
-public class AuthorizationService implements StpInterface {
+public class AuthorizationProvider implements StpInterface {
     /** 与初始化 SQL 固定权限一致，新增字典项不自动纳入管理员保护条件。 */
     public static final List<String> ADMIN_PERMISSIONS = List.of("admin:access",
             "sys:user:query", "sys:user:create", "sys:user:update", "sys:user:assignRole",

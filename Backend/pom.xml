@@ -96,8 +96,13 @@
                 <version>${mybatis-plus.version}</version>
             </dependency>
             <!--
-                统一 Sa-Token 的 Boot 4 MVC 接入和 Redis 会话组件版本。
+                统一 Sa-Token 核心、Boot 4 MVC 接入和 Redis 会话组件版本。
             -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-core</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
             <dependency>
                 <groupId>cn.dev33</groupId>
                 <artifactId>sa-token-spring-boot4-starter</artifactId>

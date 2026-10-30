@@ -4,7 +4,7 @@ import com.xkcoding.http.HttpUtil;
 import com.xkcoding.http.support.HttpHeader;
 import com.xkcoding.http.support.SimpleHttpResponse;
 import com.xuan.properties.AuthProperties;
-import com.xuan.service.JustAuthGateway;
+import com.xuan.client.JustAuthClient;
 import me.zhyd.oauth.config.AuthConfig;
 import me.zhyd.oauth.exception.AuthException;
 import me.zhyd.oauth.model.AuthCallback;
@@ -53,7 +53,7 @@ class JustAuthParsingTest {
     @Test
     void providersAreDisabledUntilEveryRequiredSettingIsPresent() {
         AuthProperties properties = new AuthProperties();
-        JustAuthGateway gateway = new JustAuthGateway(properties, null);
+        JustAuthClient gateway = new JustAuthClient(properties, null);
         assertThat(gateway.providers()).isEmpty();
         AuthProperties.Provider github = new AuthProperties.Provider();
         github.setEnabled(true);

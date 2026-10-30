@@ -1,6 +1,6 @@
 # DriftingLeavesV2 总接口文档
 
-> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-30（Asia/Shanghai）。当前已实现第 1..4 章的 26 个身份、本人安全、后台用户及角色授权接口和基础设施；其余接口均为待实现契约。隔离测试不代表真实平台已联调或新增业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
+> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-30（Asia/Shanghai）。当前已实现第 1..6 章的 36 个身份、本人安全、后台用户、角色授权、权限字典及菜单管理接口和基础设施；其余接口均为待实现契约。隔离测试不代表真实平台已联调或新增业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
 >
 > **扩充范围**：第 15..20 章补充主页、简历、留言、音乐、邮件订阅、访问统计及操作日志；第 7、10、12..14 章同步文章导航/热门榜、配置白名单、共享模型、业务一致性和错误码。新增 10 表尚无实体和业务接口；来源与迁移取舍见第 21 章，数据库约束见 [数据库说明](../sql/README.md)。保留原有章节编号和 api-1..api-86 锚点。
 >
@@ -99,7 +99,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 分类、标签、友链、配置、用户、角色、权限和菜单为全局资源，SELF 不生成虚构的“本人版本”；相应权限一经授予即有全局影响。`deleteOwn` 始终校验评论 userId，不被 ALL 扩大。所有请求都拒绝未声明的 authorId/uploaderId/userId/roleIds/status 等身份或授权字段，授权专用接口除外。
 
-设计决定：保护“最后有效管理员”指至少一个启用用户关联启用的 `admin` 角色（ALL），该角色仍拥有启用的 `admin:access` 及 `AuthorizationService.ADMIN_PERMISSIONS` 固定列出的用户、角色、菜单、权限管理能力；新增日志权限不自动扩大保护白名单。影响此条件的用户/角色/权限/授权写入，统一先锁定初始化 `sys_role(role_id=1)` 作为串行检查点，再检查事务后的结果；并发不能各自通过检查而合计清空管理入口。初始化 admin/author/member 角色码及所有已由后端使用的权限码不可改名或删除；状态/授权仍受此保护。普通显示名称可编辑。新增字典权限不会自动产生后端能力，也不会自动授予管理员。
+设计决定：保护“最后有效管理员”指至少一个启用用户关联启用的 `admin` 角色（ALL），该角色仍拥有启用的 `admin:access` 及 `AuthorizationProvider.ADMIN_PERMISSIONS` 固定列出的用户、角色、菜单、权限管理能力；新增日志权限不自动扩大保护白名单。影响此条件的用户/角色/权限/授权写入，统一先锁定初始化 `sys_role(role_id=1)` 作为串行检查点，再检查事务后的结果；并发不能各自通过检查而合计清空管理入口。初始化 admin/author/member 角色码及所有已由后端使用的权限码不可改名或删除；状态/授权仍受此保护。普通显示名称可编辑。新增字典权限不会自动产生后端能力，也不会自动授予管理员。
 
 ### 0.6 请求保护与跨域
 
@@ -132,7 +132,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ### 0.8 业务范围与接口索引
 
-共 **153 个不重复的 HTTP 方法与路径组合**，其中第 1..4 章 26 个已实现，其余为待实现契约。本次新增 67 个方法与路径组合；公开查询不等于已经加入当前运行配置的白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
+共 **153 个不重复的 HTTP 方法与路径组合**，其中第 1..6 章 36 个已实现，其余为待实现契约。本次新增 67 个方法与路径组合；公开查询不等于已经加入当前运行配置的白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
 
 | 模块 | 接口数 | 方法与完整路径索引 |
 | --- | --- | --- |
@@ -2527,11 +2527,11 @@ Authorization: Bearer <site-token>
 | `data.total` | string | 同过滤条件的总条数，字符串 |
 | `data.totalPages` | string | 总页数，字符串 |
 | `data.records` | array | 本页数据，无记录为 [] |
-| `data.records[].permissionId` | ID | 权限 ID；目录节点为 null |
-| `data.records[].permissionCode` | string | 稳定接口权限码，目录节点为 null |
+| `data.records[].permissionId` | ID | 权限 ID |
+| `data.records[].permissionCode` | string | 稳定接口权限码 |
 | `data.records[].permissionName` | string | 权限显示名 |
 | `data.records[].module` | string | 权限模块 |
-| `data.records[].description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
+| `data.records[].description` | string&#124;null | 说明，可 null；空白归一为 null |
 | `data.records[].status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `data.records[].createTime` | Time | 创建 UTC 时间 |
 | `data.records[].updateTime` | Time | 修改 UTC 时间 |
@@ -2572,7 +2572,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-按 permissionId ASC。
+按 permissionId ASC。keyword 去首尾空白后按 permissionCode、permissionName 字面包含匹配，遵循对应列的数据库排序规则；`%`、`_`、反斜杠均不作为 SQL 通配符。module 精确匹配，所有过滤 AND 组合；列表与总数使用相同条件，包含禁用项。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -2614,11 +2614,11 @@ Authorization: Bearer <site-token>
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
 | `data` | Permission | 本接口业务结果 |
-| `data.permissionId` | ID | 权限 ID；目录节点为 null |
-| `data.permissionCode` | string | 稳定接口权限码，目录节点为 null |
+| `data.permissionId` | ID | 权限 ID |
+| `data.permissionCode` | string | 稳定接口权限码 |
 | `data.permissionName` | string | 权限显示名 |
 | `data.module` | string | 权限模块 |
-| `data.description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
+| `data.description` | string&#124;null | 说明，可 null；空白归一为 null |
 | `data.status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.updateTime` | Time | 修改 UTC 时间 |
@@ -2708,11 +2708,11 @@ Content-Type: application/json
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
 | `data` | Permission | 本接口业务结果 |
-| `data.permissionId` | ID | 权限 ID；目录节点为 null |
-| `data.permissionCode` | string | 稳定接口权限码，目录节点为 null |
+| `data.permissionId` | ID | 权限 ID |
+| `data.permissionCode` | string | 稳定接口权限码 |
 | `data.permissionName` | string | 权限显示名 |
 | `data.module` | string | 权限模块 |
-| `data.description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
+| `data.description` | string&#124;null | 说明，可 null；空白归一为 null |
 | `data.status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.updateTime` | Time | 修改 UTC 时间 |
@@ -2802,11 +2802,11 @@ Content-Type: application/json
 | 字段名 | 类型 | 说明 |
 | --- | --- | --- |
 | `data` | Permission | 本接口业务结果 |
-| `data.permissionId` | ID | 权限 ID；目录节点为 null |
-| `data.permissionCode` | string | 稳定接口权限码，目录节点为 null |
+| `data.permissionId` | ID | 权限 ID |
+| `data.permissionCode` | string | 稳定接口权限码 |
 | `data.permissionName` | string | 权限显示名 |
 | `data.module` | string | 权限模块 |
-| `data.description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
+| `data.description` | string&#124;null | 说明，可 null；空白归一为 null |
 | `data.status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.updateTime` | Time | 修改 UTC 时间 |
@@ -2841,7 +2841,9 @@ Cache-Control: no-store
 
 #### 业务说明
 
-permissionCode 不可改；停用需撤销受影响授权。
+permissionCode 创建后不可改，PUT 不接受该字段。仅名称、模块或说明变化不撤销会话；status 实际变化（停用或重新启用）撤销经任意角色关联该权限的全部用户的所有会话，包含禁用用户、禁用角色的关联，同一用户去重。停用保留 sys_role_permission 和菜单门禁引用；实时授权和菜单查询排除禁用权限，重新启用不恢复旧 Token。同值 PUT 仍须校验版本，业务值相同可保留版本和会话。
+
+写事务复用固定 sys_role(role_id=1) 保护锁，再按 ID 升序锁操作者及全部受影响用户，最后锁目标权限；锁内复核原 Token、当前启用身份及双权限，然后校验版本。固定管理员保护权限停用受 LAST_ADMIN 约束。会话撤销成功后才提交数据库，Redis 失败返回 503 并回滚资料、状态；授权和菜单每次实时读库，无旧授权缓存。
 
 先检查权限及资源范围，再在同一事务内验证聚合版本并修改；缺失返回 428，不匹配返回 412，不自动覆盖。
 
@@ -2907,7 +2909,9 @@ Cache-Control: no-store
 
 #### 业务说明
 
-固定后端权限禁止删除；菜单引用时 409/RESOURCE_IN_USE，不能静默移除门禁。
+固定后端权限（当前 AuthorizationProvider.ADMIN_PERMISSIONS 明确列出的后台入口、用户、角色、菜单及权限管理权限）禁止删除，返回 409/STATE_CONFLICT。此白名单不随 SQL 新增字典项自动扩大。任何菜单引用（含禁用或隐藏节点）均返回 409/RESOURCE_IN_USE，不能静默移除门禁。
+
+其他字典项可物理删除，已授权给角色不是额外删除限制；角色权限关联由现有外键 CASCADE 清理，菜单外键保持 RESTRICT。采用与修改相同的保护锁、升序用户锁和目标权限锁，先锁内复核身份、双权限及版本，再检查删除限制。删除前枚举并锁定全部关联用户，撤销所有会话后提交；Redis 失败回滚字典及角色关联，返回 503。数据库最终提交失败时会话可能已撤销，MySQL 与 Redis 无共同事务。
 
 先检查权限及资源范围，再在同一事务内验证聚合版本并修改；缺失返回 428，不匹配返回 412，不自动覆盖。
 
@@ -3072,7 +3076,7 @@ Cache-Control: no-store
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `sys:menu:query`；按对应操作校验范围 |
 | 成功状态 | 200 OK |
-| 并发校验 | 无 If-Revision 要求 |
+| 并发校验 | 返回 X-Revision，读取不要求 If-Revision |
 
 #### 请求参数
 
@@ -3150,7 +3154,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-后台(sys:menu:query)
+返回完整持久化菜单字段和 X-Revision，不按启用、可见性或本人菜单授权过滤。摘要覆盖 MenuWrite 全部业务字段（含稳定 menuCode），不包含审计时间、子节点及 role_menu 集合。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -3275,7 +3279,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-验证父类型、组件白名单及页面/按钮权限；后端菜单 path 不作为 API 鉴权规则。
+在同一 READ COMMITTED 事务先锁固定菜单结构检查点（sys_role.role_id=1），再锁操作者，锁内复核原 Token、启用身份及双权限后，验证父类型、完整祖先链、组件/图标白名单及页面/按钮权限引用。M/B 仅要求门禁权限存在，允许引用停用权限，此时本人树不返回该节点；不隐式授予任何角色。允许在禁用父节点下维护结构，本人树仍截断禁用分支。后端菜单 path 不作为 API 鉴权规则。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -3402,7 +3406,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-检查自引用、移入后代、类型变化及后代约束，禁止并发移动产生环；menuCode 不可改。
+先锁固定菜单结构检查点，再按 ID 升序锁操作者及受影响分支关联用户，最后锁目标节点并复核身份、双权限与版本。检查自引用、移入后代、完整祖先链和类型变化对全部后代的约束，禁止并发移动产生环；menuCode 不可改。字段与门禁校验同创建，NULL 必须实际清空。停用、隐藏、移动及修改门禁均保留角色关联及会话；菜单实时读库，无旧菜单缓存。移动不自动授予新祖先，修改门禁不自动授予新权限；需显式重新保存角色 grants。
 
 先检查权限及资源范围，再在同一事务内验证聚合版本并修改；缺失返回 428，不匹配返回 412，不自动覆盖。
 
@@ -3468,7 +3472,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-有子节点 409；叶子删除级联 role_menu，独立接口权限不因此撤销。
+沿用修改的结构锁、升序用户锁和目标节点锁，锁内复核原 Token、身份、双权限及版本。有任意状态子节点返回 409/RESOURCE_IN_USE；叶子删除级联 role_menu，使关联角色聚合版本变化，独立 role_permission、用户及会话均保留。菜单和权限实时读库；Redis 身份校验不可用返回 503，不能跳过身份校验提交写入。
 
 先检查权限及资源范围，再在同一事务内验证聚合版本并修改；缺失返回 428，不匹配返回 412，不自动覆盖。
 
@@ -8122,6 +8126,8 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 
 `Menu` = menuId:ID + MenuWrite 全部字段 + createTime/updateTime:Time。`MenuNode` = Menu + permissionCode:string? + children:MenuNode[]。permissionCode 从字典取，目录为 null。树接口按 sortOrder ASC,menuId ASC 逐层排序。初始 SQL 的 Layout 等组件键属于将来前端注册约定，当前未实现；后端/前端必须维护一致白名单。
 
+当前后端组件白名单与 SQL 种子一致：`Layout`；`content/{article,category,tag,comment,link,file,message,music,rss}/index`；`system/{user,role,menu,permission,config,log}/index`；`home/{profile,social}/index`；`cv/{experience,skill}/index`；`statistics/{overview,visitor,view}/index`（花括号表示枚举展开，提交时使用单个完整键）。图标白名单为 `document/setting/home/chart/folder/tag/chat/link/picture/music/mail/user/lock/menu/key` 中的单个键，或 null。组件键注册约定不代表对应后续业务已实现；前端新增注册键时需同步后端白名单。路径校验同时检查原始 ASCII URI 与解码后的内部路径，不接受控制字符或编码后的父目录、反斜线、协议、查询串及 fragment。
+
 ### 12.4 文章模型与状态
 
 **所有前台读取统一使用 PUBLIC 条件**：`status=1 AND visibility=1 AND deleted_at IS NULL AND publish_time IS NOT NULL AND publish_time<=服务端当前UTC时间`。详情、列表、搜索、分类/标签筛选、归档、评论列表、点赞和文件文章上下文均如此，持有管理员 Token 不放宽前台过滤。隐藏分类不改变文章发布状态；前台分类列表和按分类筛选不暴露隐藏分类，文章仍可通过公开列表/详情读到，category 返回 null。非公开文章通过后台详情预览。
@@ -8509,7 +8515,7 @@ Cache-Control: no-store
 
 后续验收覆盖 Sa-Token 过期/注销/撤权，按权限 ALL/SELF，OAuth LOGIN/BIND 弹窗与原会话、state/ticket 一次性及重放，纯第三方无密码与最后登录方式，最后管理员，文章可见性/聚合版本，评论审核与占位，点赞幂等，文件私密访问、引用竞态与存储失败。
 
-第 1..4 章已实现，并通过真实隔离 MySQL/Redis 与 MVC 链验证；用户及角色管理已落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 5..11、15..20 章及第7.11节均为待实现契约，不提供成功空壳，其管理写入和资源SQL授权仍随对应业务实现。配置、命令和测试边界见 [后端运行说明](后端运行说明.md)。
+第 1..6 章已实现，并通过真实隔离 MySQL/Redis 与 MVC 链验证；用户、角色及权限字典管理已落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先，权限禁用保留关联及门禁、删除遵守菜单引用限制。菜单管理落实完整树与本人树职责、结构锁防环、类型及后代约束、前端键白名单、完整替换及业务版本；菜单变化不静默扩大角色授权或撤销独立权限与会话。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 7..11、15..20 章及第7.11节均为待实现契约，不提供成功空壳，其管理写入和资源SQL授权仍随对应业务实现。配置、命令和测试边界见 [后端运行说明](后端运行说明.md)。
 
 <a id="group-15"></a>
 
