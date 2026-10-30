@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.annotation.OperationLog;
 import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
@@ -74,6 +75,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "create", target = "sys:role", permission = "sys:role:create")
     public RoleVO create(RoleCreateDTO request) {
         lockUsers(null, "sys:role:create");
         SysRole role = new SysRole();
@@ -95,6 +97,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "update", target = "sys:role", permission = "sys:role:update", targetIdArgument = 0)
     public RoleProfileVO update(long roleId, RoleUpdateDTO request, String revision) {
         // 1. 先锁受影响用户再锁目标角色，锁内确认当前身份、双权限和版本。
         List<Long> affected = lockUsers(roleId, "sys:role:update");
@@ -124,6 +127,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "delete", target = "sys:role", permission = "sys:role:delete", targetIdArgument = 0)
     public void delete(long roleId, String revision) {
         List<Long> affected = lockUsers(roleId, "sys:role:delete");
         SysRole role = requireRole(roles.lockById(roleId));
@@ -144,6 +148,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "grant", target = "sys:role", permission = "sys:role:grant", targetIdArgument = 0)
     public RoleProfileVO grants(long roleId, RoleGrantDTO request, String revision) {
         // 1. 固定保护锁及升序用户锁之后锁角色，复核身份与聚合版本。
         List<Long> affected = lockUsers(roleId, "sys:role:grant");

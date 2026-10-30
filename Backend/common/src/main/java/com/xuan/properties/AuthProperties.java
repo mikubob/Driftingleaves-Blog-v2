@@ -19,7 +19,7 @@ import java.util.Map;
 public class AuthProperties {
     private List<String> allowedOrigins = new ArrayList<>();
     private String frontendCompleteUrl;
-    /** 仅这些精确地址可以提供 X-Forwarded-For，不接受任意代理。 */
+    /** 从右向左剥离这些精确代理地址，不信任任意转发头或最左地址。 */
     private List<String> trustedProxies = new ArrayList<>();
     @NotBlank
     private String redisPrefix = "dl:v2:";

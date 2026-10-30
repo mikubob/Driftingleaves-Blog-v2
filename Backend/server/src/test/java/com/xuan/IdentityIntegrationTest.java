@@ -1,5 +1,17 @@
 package com.xuan;
 
+import com.xuan.annotation.RateLimit;
+import com.xuan.audit.FailureAuditWriter;
+import com.xuan.entity.SysOperationLog;
+import com.xuan.mapper.OperationLogMapper;
+import com.xuan.ratelimit.RedisRateLimiter;
+import org.junit.jupiter.api.AfterEach;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.test.util.AopTestUtils;
+import org.mybatis.spring.SqlSessionTemplate;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import com.xuan.utils.TokenUtils;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.UserMapper;
@@ -127,6 +139,10 @@ class IdentityIntegrationTest {
     @Autowired PlatformTransactionManager transactionManager;
     @Autowired SqlSessionFactory sqlSessionFactory;
     @MockitoSpyBean SessionManager sessions;
+    @MockitoSpyBean OperationLogMapper auditLogs;
+    @MockitoSpyBean FailureAuditWriter failureAudits;
+    @Autowired RedisRateLimiter rateLimiter;
+    private final List<CompletableFuture<Void>> pendingAudits = new CopyOnWriteArrayList<>();
 
     @DynamicPropertySource
     static void isolated(DynamicPropertyRegistry registry) throws Exception {
@@ -163,7 +179,14 @@ class IdentityIntegrationTest {
 
     @BeforeEach
     void resetIsolatedData() {
-        reset(sessions, users, roles, permissions, menus);
+        reset(sessions, users, roles, permissions, menus, auditLogs, failureAudits);
+        doAnswer(invocation -> {
+            @SuppressWarnings("unchecked")
+            CompletableFuture<Void> result = (CompletableFuture<Void>) invocation.callRealMethod();
+            pendingAudits.add(result);
+            return result;
+        }).when(failureAudits).write(any(SysOperationLog.class));
+        jdbc.update("DELETE FROM sys_operation_log");
         jdbc.update("DELETE FROM blog_article");
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
@@ -176,6 +199,140 @@ class IdentityIntegrationTest {
         jdbc.update("DELETE FROM sys_role WHERE role_id > 3");
         jdbc.update("UPDATE sys_menu SET status=1");
         redis.delete(redis.keys("dl:test:*"));
+    }
+
+    @Test
+    void annotationRateLimitUsesUserTokenAndTrustedIpWithoutDoubleCountingAuth() throws Exception {
+        String token = adminLogin("rate_admin");
+        String another = login("rate_admin");
+        for (int index = 1; index <= 2; index++) {
+            final int address = index;
+            assertCode(mvc.perform(req("GET", "/admin/test/rate-user")
+                    .header("Authorization", "Bearer " + (index == 1 ? token : another))
+                    .with(request -> { request.setRemoteAddr("192.0.2." + address); return request; })).andReturn(), 200, "OK");
+        }
+        MvcResult limited = mvc.perform(req("GET", "/admin/test/rate-user").header("Authorization", "Bearer " + token)
+                .with(request -> { request.setRemoteAddr("192.0.2.3"); return request; })).andReturn();
+        assertCode(limited, 429, "RATE_LIMITED");
+        assertThat(Integer.parseInt(limited.getResponse().getHeader("Retry-After"))).isPositive();
+        for (int index = 1; index <= 3; index++) {
+            final int address = index;
+            MvcResult result = mvc.perform(req("GET", "/admin/test/rate-token").header("Authorization", "Bearer " + token)
+                    .with(request -> { request.setRemoteAddr("198.51.100." + address); return request; })).andReturn();
+            assertCode(result, index <= 2 ? 200 : 429, index <= 2 ? "OK" : "RATE_LIMITED");
+        }
+        assertCode(mvc.perform(req("GET", "/admin/test/rate-token").header("Authorization", "Bearer " + another)
+                .with(request -> { request.setRemoteAddr("198.51.100.4"); return request; })).andReturn(), 200, "OK");
+        assertThat(redis.keys("dl:test:rate:interface:*")).allMatch(key -> !key.contains(token) && !key.contains(another));
+        assertThat(redis.keys("dl:test:rate:register:*")).hasSize(2);
+        for (String key : redis.keys("dl:test:rate:register:*")) {
+            assertThat(redis.opsForValue().get(key)).isEqualTo("1");
+        }
+    }
+
+    @Test
+    void passwordEndpointsShareTheirRealAnnotatedWindowAndRedisLimitsAreAtomic() throws Exception {
+        register("rate_leaf");
+        String token = login("rate_leaf");
+        for (int index = 0; index < 10; index++) {
+            assertCode(call(index % 2 == 0 ? "PUT" : "DELETE", "/me/password", token,
+                    index % 2 == 0 ? "{\"currentPassword\":\"incorrect-password\",\"newPassword\":\"another-password\"}"
+                            : "{\"currentPassword\":\"incorrect-password\"}"), 401, "AUTH_FAILED");
+        }
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"incorrect-password\"}"), 429, "RATE_LIMITED");
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            List<Callable<Boolean>> requests = IntStream.range(0, 12).mapToObj(index -> (Callable<Boolean>) () -> {
+                try {
+                    rateLimiter.hit(List.of("dl:test:rate:atomic:ip", "dl:test:rate:atomic:user"), 60, 3);
+                    return true;
+                } catch (BusinessException exception) {
+                    assertThat(exception.getCode()).isEqualTo("RATE_LIMITED");
+                    return false;
+                }
+            }).toList();
+            long allowed = 0;
+            for (var future : executor.invokeAll(requests)) {
+                if (future.get()) {
+                    allowed++;
+                }
+            }
+            assertThat(allowed).isEqualTo(3);
+        }
+    }
+
+    @Test
+    void successfulAuditSharesBusinessTransactionAndOuterRollbackCreatesOnlyFailure() throws Exception {
+        String token = adminLogin("audit_admin");
+        AtomicBoolean visibleInTransaction = new AtomicBoolean();
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            try {
+                String role = createRole(token, "audit_rollback");
+                visibleInTransaction.set(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
+                        Integer.class, role) == 1);
+                status.setRollbackOnly();
+            } catch (Exception exception) {
+                throw new AssertionError(exception);
+            }
+        });
+        awaitAudits();
+        assertThat(visibleInTransaction).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_rollback'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=1", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT error_message FROM sys_operation_log", String.class)).isEqualTo("TRANSACTION_NOT_COMMITTED");
+    }
+
+    @Test
+    void auditInsertFailureRollsBackBusinessThenWritesRedactedFailureOnVirtualThread() throws Exception {
+        String token = adminLogin("audit_admin");
+        AtomicBoolean independentVirtualTransaction = new AtomicBoolean();
+        doAnswer(invocation -> {
+            SysOperationLog log = invocation.getArgument(0);
+            if (log.getResult() == 1) {
+                throw new DataIntegrityViolationException("password=secret Bearer raw-token SQL-internal");
+            }
+            independentVirtualTransaction.set(Thread.currentThread().isVirtual()
+                    && TransactionSynchronizationManager.isActualTransactionActive()
+                    && RequestContextHolder.getRequestAttributes() == null);
+            return new SqlSessionTemplate(sqlSessionFactory).getMapper(OperationLogMapper.class).insertLog(log);
+        }).when(auditLogs).insertLog(any(SysOperationLog.class));
+        assertCode(call("POST", "/admin/roles", token, roleCreateBody("audit_fail")), 503, "SERVICE_UNAVAILABLE");
+        awaitAudits();
+        assertThat(independentVirtualTransaction).isTrue();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_fail'", Integer.class)).isZero();
+        assertThat(jdbc.queryForMap("SELECT result,error_message,operation_data FROM sys_operation_log"))
+                .containsEntry("result", 0).containsEntry("error_message", "SERVICE_UNAVAILABLE").containsEntry("operation_data", null);
+    }
+
+    @Test
+    void auditRecordsActorTargetPermissionAndTrustedIpWithoutRequestSecrets() throws Exception {
+        String token = adminLogin("audit_admin");
+        Long actor = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='audit_admin'", Long.class);
+        properties.setTrustedProxies(List.of("192.0.2.1", "192.0.2.2"));
+        try {
+            MvcResult result = mvc.perform(req("POST", "/admin/users").header("Authorization", "Bearer " + token)
+                    .header("X-Forwarded-For", "1.1.1.1, 198.51.100.9, 192.0.2.2")
+                    .with(request -> { request.setRemoteAddr("192.0.2.1"); return request; })
+                    .contentType("application/json").content(createUserBody("audit_created"))).andReturn();
+            assertCode(result, 201, "OK");
+            Map<String, Object> log = jdbc.queryForMap("SELECT * FROM sys_operation_log");
+            assertThat(log).containsEntry("user_id", actor).containsEntry("operation_type", "create")
+                    .containsEntry("operation_target", "sys:user").containsEntry("permission_code", "sys:user:create")
+                    .containsEntry("target_id", Long.parseLong(data(result).get("userId").asString()))
+                    .containsEntry("ip_address", "198.51.100.9").containsEntry("result", 1)
+                    .containsEntry("operation_data", null).containsEntry("error_message", null);
+            assertThat(log.toString()).doesNotContain(PASSWORD, token, "audit_created", "Authorization", "Bearer");
+        } finally {
+            properties.setTrustedProxies(List.of());
+        }
+    }
+
+    /** 等待实际失败审计完成后再清理隔离数据，避免测试之间遗留后台写入。 */
+    @AfterEach
+    void awaitAudits() throws Exception {
+        for (CompletableFuture<Void> pending : pendingAudits) {
+            pending.get(10, TimeUnit.SECONDS);
+        }
+        pendingAudits.clear();
     }
 
     @Test
@@ -487,10 +644,10 @@ class IdentityIntegrationTest {
     void existingMappingsAndExpandedSchemaMatchRealMysql() throws Exception {
         List<String> tables = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()", String.class);
         assertThat(tables).hasSize(28);
-        // 新增业务目前仅补数据库设计，既有18个实体仍逐列验证，避免暗中漏掉映射。
+        // 已实现的19个实体逐列核对；其余业务仍仅有数据库设计。
         tables.removeAll(List.of("home_profile", "home_social_link", "cv_experience", "cv_skill",
-                "blog_message", "blog_music", "blog_rss_subscription", "blog_visitor", "blog_page_view", "sys_operation_log"));
-        assertThat(tables).hasSize(18);
+                "blog_message", "blog_music", "blog_rss_subscription", "blog_visitor", "blog_page_view"));
+        assertThat(tables).hasSize(19);
         for (String table : tables) {
             StringBuilder className = new StringBuilder();
             for (String part : table.split("_")) {
@@ -1055,7 +1212,8 @@ class IdentityIntegrationTest {
                 doAnswer(invocation -> {
                     entered.countDown();
                     return invocation.callRealMethod();
-                }).when(users).adminUpdate(eq(Long.parseLong(target)), any(AdminUserUpdateDTO.class), eq(revision));
+                }).when(AopTestUtils.<IUserService>getUltimateTargetObject(users))
+                        .adminUpdate(eq(Long.parseLong(target)), any(AdminUserUpdateDTO.class), eq(revision));
                 // 主线程先持有真实保护锁；请求通过 MVC 鉴权后进入 Service，随后等待此锁。
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
@@ -1432,7 +1590,8 @@ class IdentityIntegrationTest {
                 doAnswer(invocation -> {
                     entered.countDown();
                     return invocation.callRealMethod();
-                }).when(roles).update(eq(Long.parseLong(id)), any(RoleUpdateDTO.class), eq(revision));
+                }).when(AopTestUtils.<IRoleService>getUltimateTargetObject(roles))
+                        .update(eq(Long.parseLong(id)), any(RoleUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
                     var response = executor.submit(() -> adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "SELF", 1)));
@@ -1763,7 +1922,8 @@ class IdentityIntegrationTest {
                 doAnswer(invocation -> {
                     entered.countDown();
                     return invocation.callRealMethod();
-                }).when(permissions).update(eq(Long.parseLong(id)), any(PermissionUpdateDTO.class), eq(revision));
+                }).when(AopTestUtils.<IPermissionService>getUltimateTargetObject(permissions))
+                        .update(eq(Long.parseLong(id)), any(PermissionUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
                     var response = executor.submit(() -> adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "test", 1)));
@@ -2135,7 +2295,8 @@ class IdentityIntegrationTest {
                 doAnswer(invocation -> {
                     entered.countDown();
                     return invocation.callRealMethod();
-                }).when(menus).update(eq(Long.parseLong(id)), any(MenuUpdateDTO.class), eq(revision));
+                }).when(AopTestUtils.<IMenuService>getUltimateTargetObject(menus))
+                        .update(eq(Long.parseLong(id)), any(MenuUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
                     var response = executor.submit(() -> adminPut("/admin/menus/" + id, admin, revision, menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")));
@@ -2398,6 +2559,14 @@ class IdentityIntegrationTest {
     /** 仅测试 classpath 的入口，检验真实 Sa-Token 过滤和注解组合。 */
     @RestController
     static class TestAdminController {
+        @GetMapping("/admin/test/rate-user")
+        @SaCheckPermission("sys:user:query")
+        @RateLimit(value = "test.user", limit = 2, dimension = RateLimit.Dimension.USER)
+        public Result<Void> rateUser() { return Result.ok(null); }
+        @GetMapping("/admin/test/rate-token")
+        @SaCheckPermission("sys:user:query")
+        @RateLimit(value = "test.token", limit = 2, dimension = RateLimit.Dimension.TOKEN)
+        public Result<Void> rateToken() { return Result.ok(null); }
         @GetMapping("/admin/test/query")
         @SaCheckPermission("blog:article:query")
         Result<Void> query() { return Result.ok(null); }

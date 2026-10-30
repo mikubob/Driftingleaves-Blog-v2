@@ -11,11 +11,13 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.time.Clock;
 import java.util.List;
 
-/** 注册实际使用的分页、密码和时钟能力，不启用定时、缓存或异步。 */
+/** 装配分页、密码、时钟和事务顺序；虚拟线程与独立失败审计由专用配置协调。 */
 @Configuration
+@EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
     /** 复用官方 Redis DAO 的键包装扩展，隔离本站会话命名空间。 */
     @Bean

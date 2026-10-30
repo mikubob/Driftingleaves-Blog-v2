@@ -2,7 +2,7 @@
 
 核查日期：2026-10-29（Asia/Shanghai）。适用项目：`D:/CodingFiles/Blog/DriftingLeavesV2`。
 
-本文件保留 2026-10-29 的依赖规划及核查记录。2026-10-30 已落地身份与系统管理、18 表实体、配置与测试，版本沿用四份 POM；共享配置、平台客户端、Redis 授权存储、会话和限流已下沉 common，第 4 节及依赖落点随之更新。当前运行与验证以 [后端运行说明](后端运行说明.md) 为准，下面第 9 节早期无源码结果是历史记录。
+本文件保留 2026-10-29 的依赖规划及核查记录。2026-10-30 已落地身份与系统管理、19表实体（原18表加操作日志）、配置与测试，版本以四份POM为准。共享配置、平台客户端、Redis授权存储、会话和限流已下沉common；本次进一步按明确需求加入OSS客户端、注解/切面、IP/Markdown工具和虚拟线程，第4节及依赖落点随之更新。当前运行与验证以 [后端运行说明](后端运行说明.md) 为准，下面第9节早期无源码结果是历史记录。
 
 ## 1. 建议基线与结论
 
@@ -53,12 +53,12 @@ Backend/
 | Redis、Spring Cache | `RedisConfiguration.java`；会话/验证码/计数/业务缓存及监控采集使用 Redis；多个 Service 使用缓存注解 | 保留 Redis 客户端，供 Sa-Token/state/限流；首期不复制业务缓存和计数同步体系 |
 | Fastjson2 2.0.54，在三个模块声明 | pojo 的 `JSONField`，server 的日志/RSS JSON 处理；common 的 JSON 配置实际使用 Jackson | API JSON 统一 Boot 的 Jackson 3；不把旧 Fastjson 注解带入新 DTO。JustAuth 的内部兼容依赖单独处理 |
 | Hutool-all 5.8.32 | 多个 server Service 的 BeanUtil、HTTP、随机值等；common POM 也声明 | 不继承整包；新代码优先 JDK/Spring。JustAuth HTTP 可用 JDK 客户端，无需为它加 Hutool |
-| Aliyun OSS 3.17.4 | common `utils/AliOssUtil.java` 与 `properties/AliOssProperties.java`，server `OssConfiguration.java` | 当前 `blog_file` 默认 local，未指定云存储上线要求，首期用本地存储；OSS SDK 暂不列入必装清单 |
+| Aliyun OSS 3.17.4 | common `utils/AliOssUtil.java` 与 `properties/AliOssProperties.java`，server `OssConfiguration.java` | 本次明确授权OSS，使用父POM统一管理的3.18.5；共享AliOssClient、外部属性、条件装配及生命周期。文件HTTP业务仍待实现，不自动迁移文件或改变已有ACL |
 | Thumbnailator 0.4.20、TwelveMonkeys WebP 3.9.4、Sejda WebP 0.1.6 | common `ImageCompressUtil.java` 用 Thumbnailator/ImageIO；模板要求转 WebP，两个 provider 没有普通 import 也可能通过 ImageIO SPI 生效 | 上传文件不等于必须压缩转码；暂不加入。后续确定 WebP 编码需求时再选 provider，不将两套编解码实现一起复制 |
 | CommonMark 核心 + 表格/自动链接/任务列表，均 0.21.0；jsoup 1.16.1 | common `utils/MarkdownUtil.java` 实际启用三个扩展并清理 HTML；server 有 `MarkdownUtilTest` | 保留这四个 CommonMark 组件及 jsoup，升级版本；对应新表的 Markdown 正文和可选 HTML 缓存 |
 | Bucket4j 8.3.0、Caffeine 3.1.6 | server `RateLimitConfiguration.java` 使用本地令牌桶和 Caffeine 缓存；`RateLimitAspect.java` 负责调用 | 不复制本地限流缓存；登录/评论等保护使用已有 Redis 原子操作，无需第二套客户端或限流系统 |
-| AspectJ runtime/weaver | server `OperationLogAspect.java`、`RateLimitAspect.java` | 当前无操作日志表，也不复刻旧 AOP 限流；不直接引入 AspectJ。Spring 事务支持继续由 JDBC/Spring 管理 |
-| IP2Region 3.3.7 | common `utils/IpUtil.java` 提供地域查询；旧访客统计使用 | 新 18 表无访客地域统计，暂不加入；这不表示不需要处理请求 IP 或登录限流 |
+| AspectJ runtime/weaver | server `OperationLogAspect.java`、`RateLimitAspect.java` | server声明Boot4的spring-boot-starter-aspectj，由BOM管理；日志适配V2同事务成功/回滚后失败契约，限流复用Redis，不复制旧本地桶和敏感对象序列化 |
+| IP2Region 3.3.7 | common `utils/IpUtil.java` 提供地域查询；旧访客统计使用 | 后续明确需求已引入官方3.3.7客户端及旧项目双协议公共xdb；common/location/IpLocationResolver负责查询与字段归一化，server装配并关闭，IpUtils继续负责可信取址，不引入旧访客业务 |
 | OSHI 7.1.0、WebSocket starter | server 的 `service/impl/monitor`、`ServerMonitorCollectTask.java`、`websocket/OnlineCount.java`、`WebSocketConfiguration.java` | 新库未规划服务器监控、在线人数功能，省略 |
 | Mail starter | server `EmailServiceImpl.java`、验证码/RSS 订阅流程 | 新库未规划邮箱验证码、找回密码或 RSS 邮件订阅，暂不加入 |
 | Lombok，处理器属性 `lombok=1.18.40` | 三模块模型/日志/构造器使用；模块依赖未写版本，仍受 Boot BOM 管理 | 保留 provided；处理器与依赖统一使用新 BOM 的 `lombok.version`，不沿用独立的旧处理器版本 |
@@ -109,8 +109,8 @@ DriftingLeavesV2/Backend/
 | 模块 | 职责边界 | 直接内部依赖 | 第三方依赖落点 |
 | --- | --- | --- | --- |
 | Backend 根 POM | 继承 Boot parent；统一 Java 21、UTF-8、版本属性、dependencyManagement/pluginManagement；聚合三个模块 | 无 | 仅版本管理，不把全部 starter 写进父 `<dependencies>` |
-| entity | 18 表实体、请求 DTO、响应 VO、内部业务传输模型；字段校验声明与持久化映射注解 | 无 | Lombok、Jakarta Validation API、MyBatis-Plus annotation |
-| common | 结果、异常、纯工具、properties 配置、client 平台网关、cache 授权存储、session 会话及 ratelimit 限流 | 无 | 共享源码需要的 Spring Boot/Context/事务、Redis、Servlet、Validation、Sa-Token 核心 API，JustAuth 及 Fastjson 兼容包；保留原有分页、正文处理依赖 |
+| entity | 19表实体、请求DTO、响应VO、内部业务传输模型；字段校验声明与持久化映射注解 | 无 | Lombok、Jakarta Validation API、MyBatis-Plus annotation |
+| common | 结果、异常、纯工具、annotation声明、properties配置、client平台/OSS客户端、store授权存储、session会话及ratelimit限流 | 无 | 共享源码需要的Spring Boot/Context/事务、Redis、Servlet、Validation、Sa-Token核心API，JustAuth、Fastjson兼容包、OSS SDK及既有分页/正文依赖 |
 | server | 启动入口、Controller/业务 Service/Mapper/XML，业务授权、回调与事务协调、数据范围及 JSON 配置；组件扫描和连接装配 | common、entity | Web/数据库/Redis/鉴权 starter、驱动、密码编码及应用测试组件；集成测试直接使用的 JustAuth API |
 
 ```mermaid
@@ -149,6 +149,9 @@ flowchart LR
 | org.commonmark | commonmark-ext-autolink | 0.31.0 | 延续正文裸链接解析 | common | E |
 | org.commonmark | commonmark-ext-task-list-items | 0.31.0 | 延续正文任务列表 | common | E |
 | org.jsoup | jsoup | 1.23.2 | 对渲染结果做 HTML 白名单清理 | common | E |
+| com.aliyun.oss | aliyun-sdk-oss | 3.18.5 | 受限前缀私有对象上传/打开/删除；条件装配，无默认云凭据 | common | E |
+| org.lionsoul | ip2region | 3.3.7 | 双协议离线地域解析；配套xdb随common资源打包，单例全内存查询 | common | E |
+| org.springframework.boot | spring-boot-starter-aspectj | 4.1.2 | Redis注解限流与业务写事务审计 | server | B |
 | org.springframework.boot | spring-boot-starter-webmvc | 4.1.2 | Servlet MVC、REST、文件上传、内嵌服务器及默认 JSON 集成 | server | B |
 | org.springframework.boot | spring-boot-starter-validation | 4.1.2 | 实际执行请求校验，提供校验实现 | server | B |
 | com.baomidou | mybatis-plus-spring-boot4-starter | 3.5.17 | Mapper、事务/JDBC 自动配置、HikariCP 接入 | server | E |
@@ -236,7 +239,7 @@ Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了
 2. **独立 RBAC 和菜单**：菜单与接口权限分别取表计算；`admin` 不是无条件绕过所有权限的通配角色，新增权限显式授权。禁用用户/角色/权限、调整授权必须刷新相关会话/权限/菜单缓存。Sa-Token 注解/路由规则要真正注册，不是仅安装 starter。
 3. **内容范围**：文章、文件及评论管理落实 ALL/SELF 和归属条件；前台公开查询统一检查发布、可见性、回收站和发布时间。不能拿菜单可见性或客户端 author_id 作为授权依据。
 4. **事务和复合键**：用户+第三方绑定+角色、文章+正文+标签、角色权限+菜单授权均需要业务事务；点赞和各关联表通过复合主键去重。JDBC/Spring 事务已有支持，不增加分布式事务框架。
-5. **正文和文件**：CommonMark 不提供完整 HTML 清理，必须保留 jsoup。首期文件存储用 JDK NIO/现有 MultipartFile 能力，对类型、大小、路径、私密附件访问和存储失败做服务端处理；表有 storage_type 不意味着必须同时接入 local、OSS、S3 多套 SDK。
+5. **正文和文件**：MarkdownUtils实际调用既有CommonMark与jsoup，并提供稳定锚点、字数及阅读时长。用户本次明确授权可选OSS基础设施，新增OSS SDK；文件HTTP业务仍待实现，默认local契约保留，不扩展S3、多存储切换或自动迁移。
 6. **缓存与限流**：Sa-Token Session 和 OAuth state 必须使用 Redis；登录、评论等限流复用其原子计数/短 TTL。首期不增加 Spring Cache/Caffeine 双层业务缓存，不复制旧的点赞计数副本/异步回写体系；SQL 已要求点赞、评论数按明细统计。
 
 ## 8. 首期明确省略的依赖与系统
@@ -247,9 +250,9 @@ Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了
 | JJWT 三件套 | 旧会话方案被替换；不为未选定的特殊 OAuth 平台预装 |
 | Druid starter | 当前只需单数据源连接池，HikariCP 已由 JDBC starter 提供；没有 Druid 监控需求 |
 | Hutool-all、业务 Fastjson2/Web 转换器 | JDK/Spring + Jackson 已覆盖当前业务；仅保留 JustAuth 所需兼容包 |
-| Aliyun OSS SDK、Thumbnailator、两套 WebP provider | 有文件元数据不等于已经决定对象存储或自动压缩；确定这些产品行为后再给相应实现选版，当前不列假装必需的版本 |
-| Mail、WebSocket、OSHI、IP2Region | 新数据库/当前需求没有验证码与找回密码、邮件订阅、在线人数、机器监控或地域统计 |
-| Bucket4j、Caffeine、Spring Cache、独立 AspectJ | 首期复用 Redis；未保留旧日志切面、本地令牌桶和业务缓存设计；Spring 事务功能不因此省略 |
+| Thumbnailator、两套 WebP provider | 本次明确需求只有OSS客户端，无自动压缩转码要求；不引入 |
+| Mail、WebSocket、OSHI | 本次需求未要求验证码与找回密码、邮件订阅、在线人数或机器监控实现 |
+| Bucket4j、Caffeine、Spring Cache、单独锁版的AspectJ | 限流复用Redis，AspectJ由Boot4 starter/BOM统一管理；不复制本地桶和额外业务缓存 |
 | Flyway/Liquibase | 当前 SQL 是人工执行的空库基线，不是可重放迁移；本次不执行、不接入自动建库。以后进入持续演进再制定迁移策略 |
 | Knife4j/Springdoc、MapStruct、代码生成器、动态数据源 | 当前没有明确需求，不为规划阶段预装 |
 | MQ、Elasticsearch、Quartz、Spring Cloud、组织/多租户/工作流等 | 18 表博客核心业务不需要这些系统；菜单权限不等于必须复制通用企业后台技术栈 |

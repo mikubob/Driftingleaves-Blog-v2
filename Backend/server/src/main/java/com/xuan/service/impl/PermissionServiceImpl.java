@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.annotation.OperationLog;
 import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
@@ -70,6 +71,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "create", target = "sys:permission", permission = "sys:permission:create")
     public PermissionVO create(PermissionCreateDTO request) {
         lockUsers(null, "sys:permission:create");
         SysPermission permission = new SysPermission();
@@ -91,6 +93,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "update", target = "sys:permission", permission = "sys:permission:update", targetIdArgument = 0)
     public PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision) {
         // 1. 锁内复核原会话、当前有效身份、双权限和版本，不能以等待前的授权写入。
         List<Long> affected = lockUsers(permissionId, "sys:permission:update");
@@ -122,6 +125,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument = 0)
     public void delete(long permissionId, String revision) {
         List<Long> affected = lockUsers(permissionId, "sys:permission:delete");
         SysPermission permission = requirePermission(permissions.lockById(permissionId));

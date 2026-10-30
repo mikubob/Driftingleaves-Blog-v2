@@ -9,6 +9,11 @@ server:
     include-stacktrace: never
     include-binding-errors: never
 spring:
+  threads:
+    virtual:
+      enabled: true
+  main:
+    keep-alive: true
   application:
     name: drifting-leaves-v2
   datasource:
@@ -51,6 +56,15 @@ sa-token:
   is-print: false
   right-now-create-token-session: true
 app:
+  oss:
+    enabled: ${OSS_ENABLED:false}
+    endpoint: ${OSS_ENDPOINT:}
+    region: ${OSS_REGION:}
+    bucket: ${OSS_BUCKET:}
+    access-key-id: ${OSS_ACCESS_KEY_ID:}
+    access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    security-token: ${OSS_SECURITY_TOKEN:}
+    key-prefix: ${OSS_KEY_PREFIX:drifting-leaves-v2/}
   auth:
     allowed-origins: ${FRONTEND_ORIGINS:}
     frontend-complete-url: ${OAUTH_COMPLETE_URL:}
@@ -84,3 +98,4 @@ logging:
     org.springframework.web: WARN
     me.zhyd.oauth: OFF
     com.xkcoding.http: OFF
+    com.aliyun.oss: OFF

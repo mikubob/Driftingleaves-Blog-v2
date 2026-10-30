@@ -19,6 +19,11 @@
     <artifactId>server</artifactId>
 
     <dependencies>
+        <!-- Boot 4 的 AspectJ 自动代理，用于限流和业务事务审计协调。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
+        </dependency>
         <!--
             引用共享工具，内部模块版本由父 POM 统一管理。
         -->

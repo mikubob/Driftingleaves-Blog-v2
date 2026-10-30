@@ -17,6 +17,16 @@
     <artifactId>common</artifactId>
 
     <dependencies>
+        <!-- IP 地域解析及双协议内存数据库查询，由 server 装配并管理生命周期。 -->
+        <dependency>
+            <groupId>org.lionsoul</groupId>
+            <artifactId>ip2region</artifactId>
+        </dependency>
+        <!-- 共享对象存储客户端；凭据、启用条件和生命周期由应用装配。 -->
+        <dependency>
+            <groupId>com.aliyun.oss</groupId>
+            <artifactId>aliyun-sdk-oss</artifactId>
+        </dependency>
         <!-- 配置属性声明及校验注解；属性扫描和校验执行由 server 应用负责。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

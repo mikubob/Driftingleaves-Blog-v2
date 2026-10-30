@@ -51,6 +51,8 @@
         <fastjson-compatible.version>2.0.66</fastjson-compatible.version>
         <commonmark.version>0.31.0</commonmark.version>
         <jsoup.version>1.23.2</jsoup.version>
+        <aliyun-oss.version>3.18.5</aliyun-oss.version>
+        <ip2region.version>3.3.7</ip2region.version>
     </properties>
 
     <!--
@@ -59,6 +61,18 @@
     -->
     <dependencyManagement>
         <dependencies>
+            <!-- 离线 IPv4/IPv6 地域查询，使用不依赖 Spring/Jackson 的官方 Java 客户端。 -->
+            <dependency>
+                <groupId>org.lionsoul</groupId>
+                <artifactId>ip2region</artifactId>
+                <version>${ip2region.version}</version>
+            </dependency>
+            <!-- OSS 客户端由 common 使用，版本统一管理，不沿用旧项目版本。 -->
+            <dependency>
+                <groupId>com.aliyun.oss</groupId>
+                <artifactId>aliyun-sdk-oss</artifactId>
+                <version>${aliyun-oss.version}</version>
+            </dependency>
             <!--
                 内部模块统一使用当前项目版本，避免引用老项目构件。
             -->

@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.annotation.OperationLog;
 import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.dto.MenuCreateDTO;
@@ -89,6 +90,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "create", target = "sys:menu", permission = "sys:menu:create")
     public MenuVO create(MenuCreateDTO request) {
         Map<Long, SysMenu> nodes = lockStructure(null);
         requireAdmin("sys:menu:create");
@@ -121,6 +123,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "update", target = "sys:menu", permission = "sys:menu:update", targetIdArgument = 0)
     public MenuProfileVO update(long menuId, MenuUpdateDTO request, String revision) {
         // 1. 固定结构锁、升序用户锁之后锁目标，基于最新提交的树检查版本与结构。
         Map<Long, SysMenu> nodes = lockStructure(menuId);
@@ -159,6 +162,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "delete", target = "sys:menu", permission = "sys:menu:delete", targetIdArgument = 0)
     public void delete(long menuId, String revision) {
         Map<Long, SysMenu> nodes = lockStructure(menuId);
         SysMenu menu = menus.lockById(menuId);

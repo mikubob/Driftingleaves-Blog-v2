@@ -1,5 +1,6 @@
 package com.xuan.controller.me;
 
+import com.xuan.annotation.RateLimit;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
 import com.xuan.dto.ProfilePatchDTO;
@@ -66,6 +67,7 @@ public class MeController {
      * @return data 为 null 的成功结果
      */
     @PutMapping("/password")
+    @RateLimit(value = "me.password", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<Void> password(@Valid @RequestBody PasswordSetDTO body) {
         users.setPassword(body);
         return Result.ok(null);
@@ -79,6 +81,7 @@ public class MeController {
      * @return data 为 null 的成功结果
      */
     @DeleteMapping("/password")
+    @RateLimit(value = "me.password", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<Void> clearPassword(@Valid @RequestBody PasswordClearDTO body) {
         users.clearPassword(body);
         return Result.ok(null);

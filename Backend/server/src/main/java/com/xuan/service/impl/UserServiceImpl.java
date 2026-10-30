@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.annotation.OperationLog;
 import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -97,6 +98,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "create", target = "sys:user", permission = "sys:user:create")
     public UserAdminVO adminCreate(AdminUserCreateDTO request) {
         // 1. 管理写入统一先锁保护行，再锁操作者并复核当前身份和权限。
         lockAdminTarget(sessions.currentUserId(), "sys:user:create");
@@ -123,6 +125,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "update", target = "sys:user", permission = "sys:user:update", targetIdArgument = 0)
     public AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision) {
         // 1. 串行保护管理入口，按 ID 顺序锁用户后复核身份、权限和版本。
         SysUser user = lockAdminTarget(userId, "sys:user:update");
@@ -156,6 +159,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "grant", target = "sys:user", permission = "sys:user:assignRole", targetIdArgument = 0)
     public AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision) {
         // 1. 固定保护锁、升序用户锁，然后校验锁内权限和当前聚合版本。
         SysUser user = lockAdminTarget(userId, "sys:user:assignRole");
