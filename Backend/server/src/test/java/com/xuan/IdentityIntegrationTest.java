@@ -147,6 +147,8 @@ class IdentityIntegrationTest {
     @DynamicPropertySource
     static void isolated(DynamicPropertyRegistry registry) throws Exception {
         services = new IsolatedServices();
+        // 隔离业务测试使用临时本地文件，不加载部署OSS或访问真实Bucket。
+        registry.add("app.oss.enabled", () -> false);
         registry.add("spring.datasource.url", () -> services.jdbcUrl);
         registry.add("spring.datasource.username", () -> "root");
         registry.add("spring.datasource.password", () -> "");
@@ -2482,6 +2484,107 @@ class IdentityIntegrationTest {
     private void assertCode(MvcResult result, int status, String code) throws Exception {
         assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).isEqualTo(status);
         assertThat(json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).get("code").asString()).isEqualTo(code);
+    }
+
+    @Test
+    void identityModelsRejectUndeclaredRepeatedAndBlankQueryInputs() throws Exception {
+        String token = adminLogin("model_queries");
+        String id = data(call("GET", "/me", token, null)).get("userId").asString();
+        for (String path : List.of("/auth/oauth/providers", "/me", "/me/capabilities", "/me/menus", "/me/oauth-bindings",
+                "/admin/users", "/admin/users/" + id, "/admin/roles", "/admin/roles/1",
+                "/admin/permissions", "/admin/permissions/1", "/admin/menus", "/admin/menus/100")) {
+            assertCode(call("GET", path + "?userId=1", token, null), 400, "VALIDATION_ERROR");
+            assertCode(call("GET", path, token, "{}"), 400, "VALIDATION_ERROR");
+        }
+        for (String path : List.of("/admin/users", "/admin/roles", "/admin/permissions")) {
+            for (String query : List.of("page=", "page=1&page=2", "pageSize=10&pageSize=20", "status=")) {
+                assertCode(call("GET", path + "?" + query, token, null), 400, "VALIDATION_ERROR");
+            }
+            assertCode(mvc.perform(req("GET", path).header("Authorization", "Bearer " + token)
+                    .param("keyword", " \t ")).andReturn(), 400, "VALIDATION_ERROR");
+            assertCode(call("GET", path + "?page=1&pageSize=5&keyword=model&status=1", token, null), 200, "OK");
+        }
+        assertCode(call("GET", "/admin/users?roleId=1", token, null), 200, "OK");
+        assertCode(call("GET", "/admin/permissions?module=sys", token, null), 200, "OK");
+    }
+
+    @Test
+    void rejectedIdentityInputsDoNotCreateUsersLogoutOrUnbind() throws Exception {
+        String token = adminLogin("model_writes");
+        assertCode(call("POST", "/auth/register?status=0", null, createUserBody("must_not_exist")), 400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='must_not_exist'", Integer.class)).isZero();
+        assertCode(call("POST", "/auth/login?userId=1", null, loginBody("model_writes", PASSWORD)), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/auth/logout?userId=1", token, null), 400, "VALIDATION_ERROR");
+        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, "{}"), 400, "VALIDATION_ERROR");
+        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
+        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void invalidCallbackParametersDoNotConsumeTheOAuthFlow() throws Exception {
+        OAuthFlow flow = start("LOGIN", null, null);
+        for (String extra : List.of("userId", "state", "code")) {
+            assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
+                    .param("code", "model_identity").param(extra, "unexpected")
+                    .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400, "VALIDATION_ERROR");
+            assertThat(store.containsKey(flow.state())).isTrue();
+        }
+        String ticket = callbackTicket(flow, "model_identity");
+        assertCode(exchange(ticket, flow.browser(), null), 200, "OK");
+    }
+
+    @Test
+    void roleAndPermissionWritesRecheckOriginalTokenAfterTheirTargetLock() throws Exception {
+        String token = adminLogin("model_target_lock");
+        long actor = Long.parseLong(data(call("GET", "/me", token, null)).get("userId").asString());
+        for (String kind : List.of("roles", "permissions")) {
+            String id = kind.equals("roles") ? createRole(token, "model_lock") : createPermission(token, "test:model:lock");
+            String path = "/admin/" + kind + "/" + id;
+            String version = call("GET", path, token, null).getResponse().getHeader("X-Revision");
+            String table = kind.equals("roles") ? "sys_role" : "sys_permission";
+            String key = kind.equals("roles") ? "role_id" : "permission_id";
+            for (String operation : kind.equals("roles") ? List.of("update", "delete", "grant", "grantPermission") : List.of("update", "delete")) {
+                String active = login("model_target_lock");
+                boolean grant = operation.startsWith("grant");
+                String body = grant ? grantBody(operation.equals("grantPermission") ? List.of(1L) : List.of(), List.of())
+                        : kind.equals("roles") ? roleBody("不能保存", "SELF", 1) : permissionBody("不能保存", "test", 1);
+                String lockedTable = operation.equals("grantPermission") ? "sys_permission" : table;
+                String lockedKey = operation.equals("grantPermission") ? "permission_id" : key;
+                String lockedId = operation.equals("grantPermission") ? "1" : id;
+                try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+                    var pending = new TransactionTemplate(transactionManager).execute(state -> {
+                        jdbc.queryForList("SELECT " + lockedKey + " FROM " + lockedTable + " WHERE " + lockedKey + "=? FOR UPDATE", lockedId);
+                        var writer = executor.submit(() -> operation.equals("delete")
+                                ? roleDelete(path, active, version)
+                                : adminPut(path + (grant ? "/grants" : ""), active, version, body));
+                        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+                        boolean waiting = false;
+                        while (System.nanoTime() < deadline) {
+                            if (jdbc.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID WHERE l.OBJECT_NAME=?", Integer.class, lockedTable) > 0) {
+                                waiting = true;
+                                break;
+                            }
+                            try {
+                                Thread.sleep(10);
+                            } catch (InterruptedException exception) {
+                                Thread.currentThread().interrupt();
+                                throw new IllegalStateException(exception);
+                            }
+                        }
+                        assertThat(waiting).as("实际等到目标行锁后再撤销Token").isTrue();
+                        sessions.revokeAll(actor);
+                        return writer;
+                    });
+                    assertCode(pending.get(10, TimeUnit.SECONDS), 401, "UNAUTHENTICATED");
+                }
+                token = login("model_target_lock");
+                assertThat(call("GET", path, token, null).getResponse().getHeader("X-Revision")).isEqualTo(version);
+            }
+        }
+        awaitAudits();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=0 AND error_message='UNAUTHENTICATED'", Integer.class)).isEqualTo(6);
     }
 
     private OAuthFlow start(String operation, String token, String browser) throws Exception {

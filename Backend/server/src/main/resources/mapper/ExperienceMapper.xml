@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 全站资源由Service检查ALL权限，公开列表过滤隐藏记录。 -->
+<mapper namespace="com.xuan.mapper.ExperienceMapper">
+    <select id="resourcePage" resultType="com.xuan.entity.CvExperience">
+        SELECT * FROM cv_experience
+        <where>
+            <if test="publicOnly">AND status = 1</if>
+            <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
+            <if test="!publicOnly and query.keyword != null">AND (INSTR(title, #{query.keyword}) &gt; 0)</if>
+            <if test="query.experienceType != null">AND experience_type = #{query.experienceType}</if>
+        </where>
+        ORDER BY sort_order ASC, start_date DESC, experience_id DESC
+    </select>
+    <select id="lockById" resultType="com.xuan.entity.CvExperience">
+        SELECT * FROM cv_experience WHERE experience_id = #{id} FOR UPDATE
+    </select>
+    <update id="replace">
+        UPDATE cv_experience SET experience_type=#{row.experienceType}, title=#{row.title}, subtitle=#{row.subtitle}, logo_url=#{row.logoUrl}, content=#{row.content}, start_date=#{row.startDate}, end_date=#{row.endDate}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE experience_id = #{row.experienceId}
+    </update>
+</mapper>

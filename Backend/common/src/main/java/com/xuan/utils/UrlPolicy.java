@@ -3,10 +3,29 @@ package com.xuan.utils;
 import com.xuan.exception.BusinessException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Set;
+import java.util.regex.Pattern;
 
 /** 这里只检查展示 URL，不抓取资源；只收不带凭据和控制字符的绝对 HTTP(S) 地址。 */
 public final class UrlPolicy {
+    /** 与当前前端约定使用的图标键一致，其他图标可直接使用外部URL。 */
+    private static final Set<String> ICONS = Set.of("document", "setting", "home", "chart", "folder", "tag", "chat",
+            "link", "picture", "music", "mail", "user", "lock", "menu", "key", "github");
+    private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+");
     private UrlPolicy() { }
+
+    /** 展示图标只能是已登记键或外部HTTP(S)地址。 */
+    public static boolean validIcon(String value) { return value == null || ICONS.contains(value) || valid(value); }
+
+    /** 社交邮箱链接只收单个邮箱，不收查询参数、fragment或控制字符。 */
+    public static boolean validSocial(String value) {
+        if (value != null && value.startsWith("mailto:")) {
+            String email = value.substring(7);
+            return email.length() <= 254 && EMAIL.matcher(email).matches()
+                    && email.indexOf('?') < 0 && email.indexOf('#') < 0;
+        }
+        return valid(value);
+    }
 
     /**
      * 检查公开展示地址，不访问远端，也不能把附件 API 路径当公开图片地址。

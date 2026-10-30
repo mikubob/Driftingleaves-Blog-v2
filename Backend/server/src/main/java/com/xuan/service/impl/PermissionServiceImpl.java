@@ -97,7 +97,9 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     public PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision) {
         // 1. 锁内重查原会话、启用身份、后台和业务权限、版本，不能拿等待前的授权继续写。
         List<Long> affected = lockUsers(permissionId, "sys:permission:update");
-        SysPermission permission = requirePermission(permissions.lockById(permissionId));
+        SysPermission permission = permissions.lockById(permissionId);
+        requireAdmin("sys:permission:update");
+        permission = requirePermission(permission);
         checkRevision(permission, revision);
         boolean changed = !permission.getStatus().equals(request.getStatus());
         // 2. 禁用只让授权暂时无效，不删除角色关联或菜单访问限制。
@@ -128,14 +130,17 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument = 0)
     public void delete(long permissionId, String revision) {
         List<Long> affected = lockUsers(permissionId, "sys:permission:delete");
-        SysPermission permission = requirePermission(permissions.lockById(permissionId));
+        SysPermission permission = permissions.lockById(permissionId);
+        requireAdmin("sys:permission:delete");
+        permission = requirePermission(permission);
         checkRevision(permission, revision);
         if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
                 || AuthorizationProvider.ARTICLE_PERMISSIONS.contains(permission.getPermissionCode())
                 || AuthorizationProvider.TAXONOMY_PERMISSIONS.contains(permission.getPermissionCode())
                 || AuthorizationProvider.INTERACTION_PERMISSIONS.contains(permission.getPermissionCode())
                 || AuthorizationProvider.SITE_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.FILE_PERMISSIONS.contains(permission.getPermissionCode())) {
+                || AuthorizationProvider.FILE_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.EXTENDED_PERMISSIONS.contains(permission.getPermissionCode())) {
             throw new BusinessException(409, "STATE_CONFLICT", "固定后端权限禁止删除");
         }
         if (permissions.menuReferences(permissionId) != 0) {

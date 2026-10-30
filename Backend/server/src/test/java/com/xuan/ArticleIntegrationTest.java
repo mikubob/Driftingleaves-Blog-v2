@@ -1,6 +1,18 @@
 package com.xuan;
 
 import com.xuan.audit.FailureAuditWriter;
+import com.xuan.client.MailClient;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.mockito.ArgumentCaptor;
+import java.util.concurrent.ExecutorService;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.timeout;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verifyNoInteractions;
 import com.xuan.entity.SysOperationLog;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.properties.FileProperties;
@@ -74,12 +86,18 @@ class ArticleIntegrationTest {
     @Autowired FileProperties files;
     @Autowired ArticleMapper articles;
     @Autowired SessionManager sessions;
+    @Autowired com.xuan.properties.PublicSiteProperties sites;
     @MockitoSpyBean FailureAuditWriter failures;
+    @MockitoBean MailClient mail;
+    @MockitoSpyBean(name = "mailExecutor") ExecutorService mailTasks;
+    private final List<Future<?>> pendingMail = new CopyOnWriteArrayList<>();
     private final List<CompletableFuture<Void>> pending = new CopyOnWriteArrayList<>();
 
     @DynamicPropertySource
     static void isolated(DynamicPropertyRegistry registry) throws Exception {
         services = new IsolatedServices();
+        // 隔离业务测试使用临时本地文件，不加载部署OSS或访问真实Bucket。
+        registry.add("app.oss.enabled", () -> false);
         registry.add("spring.datasource.url", () -> services.jdbcUrl);
         registry.add("spring.datasource.username", () -> "root");
         registry.add("spring.datasource.password", () -> "");
@@ -91,12 +109,19 @@ class ArticleIntegrationTest {
         registry.add("app.auth.bcrypt-strength", () -> 4);
         registry.add("app.auth.allowed-origins", () -> ORIGIN);
         registry.add("app.auth.frontend-complete-url", () -> ORIGIN + "/oauth/complete");
+        registry.add("app.sites.blog-base-url", () -> ORIGIN);
+        registry.add("app.sites.home-base-url", () -> "https://home.example.test");
+        registry.add("app.sites.cv-base-url", () -> "https://cv.example.test");
+        registry.add("app.sites.api-base-url", () -> ORIGIN + "/api/v1");
+        registry.add("app.mail.confirm-url", () -> ORIGIN + "/subscription/confirm");
+        registry.add("app.mail.unsubscribe-url", () -> ORIGIN + "/subscription/unsubscribe");
         registry.add("app.auth.rate.register", () -> 200);
         registry.add("app.files.local-root", () -> services.directory.resolve("uploads").toString());
     }
 
     @AfterAll
     static void stop(@Autowired ConfigurableApplicationContext context) {
+        context.getBean("mailExecutor", ExecutorService.class).close();
         context.getBean(LettuceConnectionFactory.class).destroy();
         context.getBean(HikariDataSource.class).close();
         if (services != null) {
@@ -106,7 +131,10 @@ class ArticleIntegrationTest {
 
     @BeforeEach
     void resetData() throws Exception {
-        reset(failures);
+        reset(failures, mail, mailTasks);
+        doAnswer(invocation -> {
+            Future<?> future = (Future<?>) invocation.callRealMethod(); pendingMail.add(future); return future;
+        }).when(mailTasks).submit(any(Runnable.class));
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
             CompletableFuture<Void> result = (CompletableFuture<Void>) invocation.callRealMethod();
@@ -120,6 +148,15 @@ class ArticleIntegrationTest {
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM blog_category");
         jdbc.update("DELETE FROM blog_tag");
+        while (jdbc.update("DELETE m FROM blog_message m LEFT JOIN blog_message child ON child.parent_id=m.message_id WHERE child.message_id IS NULL") > 0) { }
+        jdbc.update("DELETE FROM blog_page_view");
+        jdbc.update("DELETE FROM blog_visitor");
+        jdbc.update("DELETE FROM blog_rss_subscription");
+        jdbc.update("DELETE FROM home_profile");
+        jdbc.update("DELETE FROM home_social_link");
+        jdbc.update("DELETE FROM cv_experience");
+        jdbc.update("DELETE FROM cv_skill");
+        jdbc.update("DELETE FROM blog_music");
         jdbc.update("DELETE FROM sys_user");
         jdbc.update("DELETE FROM sys_role WHERE role_id > 3");
         jdbc.update("UPDATE sys_role SET status=1, data_scope=CASE WHEN role_id=1 THEN 'ALL' ELSE 'SELF' END");
@@ -147,6 +184,8 @@ class ArticleIntegrationTest {
             audit.get(10, TimeUnit.SECONDS);
         }
         pending.clear();
+        for (Future<?> task : pendingMail) { task.get(10, TimeUnit.SECONDS); }
+        pendingMail.clear();
     }
 
     @Test
@@ -3079,6 +3118,604 @@ class ArticleIntegrationTest {
             return paths.filter(path -> path.getFileName().toString().startsWith(".upload-")
                     || path.getFileName().toString().matches("[A-Za-z0-9_-]{40,}\\.(png|jpg|jpeg)")).sorted().toList();
         }
+    }
+
+    @Test
+    void contentModelsRejectUnknownRepeatedAndEmptyQueryFields() throws Exception {
+        String token = actor("model_content", 1);
+        seedDictionary();
+        String article = published(token, "Model-Content");
+        for (String path : List.of("/blog/articles", "/blog/archives", "/blog/article-rankings", "/blog/categories", "/blog/tags",
+                "/admin/articles", "/admin/categories", "/admin/tags")) {
+            for (String query : List.of("uploaderId=1", "page=1&page=2", "page=")) {
+                code(call("GET", path + "?" + query, token, null), 400, "VALIDATION_ERROR");
+            }
+        }
+        for (String path : List.of("/blog/articles/Model-Content", "/admin/articles/" + article,
+                "/admin/categories/700", "/admin/tags/701")) {
+            code(call("GET", path + "?status=0", token, null), 400, "VALIDATION_ERROR");
+            code(call("GET", path, token, "{}"), 400, "VALIDATION_ERROR");
+        }
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isZero();
+        code(call("GET", "/blog/articles?page=1&pageSize=5&keyword=Model", null, null), 200, "OK");
+        code(call("GET", "/blog/article-rankings?period=site&metric=view&limit=5", null, null), 200, "OK");
+    }
+
+    @Test
+    void rejectedContentWriteQueriesKeepTheArticleAndAuditUnchanged() throws Exception {
+        String token = actor("model_content_write", 1);
+        String article = create(token, "Model-Write", "原文");
+        String version = revision(token, article);
+        code(write("PUT", "/admin/articles/" + article + "?authorId=1", token, version, body("Model-Write", "不能保存")),
+                400, "VALIDATION_ERROR");
+        code(call("POST", "/admin/categories?status=1", token, "{\"categoryName\":\"不能创建\",\"slug\":\"No-Create\"}"),
+                400, "VALIDATION_ERROR");
+        assertThat(revision(token, article)).isEqualTo(version);
+        assertThat(jdbc.queryForObject("SELECT markdown_content FROM blog_article_content WHERE article_id=?", String.class, article)).isEqualTo("原文");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_category", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void articleCreationRechecksTokenAfterWaitingForItsCategory() throws Exception {
+        String token = actor("model_create_lock", 1);
+        seedDictionary();
+        Map<String, Object> body = body("Model-Create-Lock", "不能保存");
+        body.put("categoryId", "700");
+        MvcResult result = waitingInteraction("blog_category", "SELECT category_id FROM blog_category WHERE category_id=? FOR UPDATE", 700,
+                () -> call("POST", "/admin/articles", token, json.writeValueAsString(body)),
+                () -> sessions.revokeAll(Long.parseLong(userId("model_create_lock"))), true);
+        code(result, 401, "UNAUTHENTICATED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article_content", Integer.class)).isZero();
+        finishAudits();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=1", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=0 AND error_message='UNAUTHENTICATED'", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void displayProfileSeparatesPublicDataAndRequiresCompleteReplacement() throws Exception {
+        String token = actor("display_profile", 1);
+        MvcResult empty = call("GET", "/admin/home/profile", token, null);
+        code(empty, 200, "OK");
+        assertThat(data(empty).isNull()).isTrue();
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("userId", userId("display_profile"));
+        value.put("nickname", "公开主人"); value.put("tagline", "");
+        for (String field : List.of("description", "avatar", "website", "publicEmail", "githubUrl", "location")) { value.put(field, null); }
+        code(write("PUT", "/admin/home/profile", token, empty.getResponse().getHeader("X-Revision"), value), 200, "OK");
+        jdbc.update("UPDATE sys_user SET email='login-only@example.test' WHERE username='display_profile'");
+        MvcResult publicResult = call("GET", "/home/profile", null, null);
+        code(publicResult, 200, "OK");
+        assertThat(data(publicResult).has("userId")).isFalse();
+        assertThat(data(publicResult).get("publicEmail").isNull()).isTrue();
+        String revision = call("GET", "/admin/home/profile", token, null).getResponse().getHeader("X-Revision");
+        value.remove("location");
+        code(write("PUT", "/admin/home/profile", token, revision, value), 400, "VALIDATION_ERROR");
+        value.put("location", "上海"); value.put("avatar", ORIGIN + "/api/v1/blog/articles/1/files/2/content");
+        code(write("PUT", "/admin/home/profile", token, revision, value), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void displaySocialFiltersHiddenAndChecksVersionsAndMailto() throws Exception {
+        String token = actor("display_social", 1);
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("name", "联系"); value.put("icon", "github"); value.put("url", "mailto:contact@example.test");
+        value.put("sortOrder", -1); value.put("status", 1);
+        MvcResult created = call("POST", "/admin/home/social-links", token, json.writeValueAsString(value));
+        code(created, 201, "OK");
+        String id = data(created).get("socialId").asString();
+        assertThat(created.getResponse().getHeader("X-Revision")).isNotNull();
+        assertThat(data(call("GET", "/home/social-links", null, null)).size()).isEqualTo(1);
+        value.put("url", "mailto:contact@example.test?subject=hello");
+        code(write("PUT", "/admin/home/social-links/" + id, token, created.getResponse().getHeader("X-Revision"), value), 400, "VALIDATION_ERROR");
+        value.put("url", "https://example.test/social"); value.put("status", 0);
+        code(write("PUT", "/admin/home/social-links/" + id, token, created.getResponse().getHeader("X-Revision"), value), 200, "OK");
+        assertThat(data(call("GET", "/home/social-links", null, null)).size()).isZero();
+        code(write("DELETE", "/admin/home/social-links/" + id, token, created.getResponse().getHeader("X-Revision"), null), 412, "REVISION_CONFLICT");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='home:social' AND target_id=? AND result=1", Integer.class, id)).isEqualTo(2);
+    }
+
+    @Test
+    void experienceDatesAndMarkdownAreValidatedAndRenderedSafely() throws Exception {
+        String token = actor("display_experience", 1);
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("experienceType", 2); value.put("title", "项目"); value.put("subtitle", null); value.put("logoUrl", null);
+        value.put("content", "# 介绍\n<script>alert(1)</script>\n[安全](https://example.test)");
+        value.put("startDate", "2020-02-29"); value.put("endDate", null); value.put("sortOrder", 0); value.put("status", 1);
+        code(call("POST", "/admin/cv/experiences", token, json.writeValueAsString(value)), 201, "OK");
+        MvcResult result = call("GET", "/cv/experiences?experienceType=2", null, null);
+        code(result, 200, "OK");
+        JsonNode row = data(result).get("records").get(0);
+        assertThat(row.has("content")).isFalse(); assertThat(row.get("htmlContent").asString()).contains("<h1").doesNotContain("<script");
+        value.put("endDate", "2019-01-01");
+        code(call("POST", "/admin/cv/experiences", token, json.writeValueAsString(value)), 400, "VALIDATION_ERROR");
+        value.put("endDate", null); value.put("content", "中".repeat(22000));
+        code(call("POST", "/admin/cv/experiences", token, json.writeValueAsString(value)), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void musicSupportsUnsignedDurationAndRequiresLyricPairWithoutFetchingUrls() throws Exception {
+        String token = actor("display_music", 1);
+        Map<String, Object> value = new LinkedHashMap<>();
+        value.put("title", "曲目"); value.put("artist", null); value.put("durationSeconds", 4294967295L);
+        value.put("coverUrl", null); value.put("audioUrl", "https://media.example.test/audio.mp3");
+        value.put("lyricUrl", null); value.put("lyricType", null); value.put("sortOrder", 0); value.put("status", 1);
+        // Long在MVC输出用于ID，这里的请求用原始JSON数值表达时长。
+        String body = json.writeValueAsString(value).replace("\"4294967295\"", "4294967295");
+        code(call("POST", "/admin/music", token, body), 201, "OK");
+        MvcResult result = call("GET", "/blog/music", null, null);
+        code(result, 200, "OK");
+        JsonNode row = data(result).get("records").get(0);
+        assertThat(row.get("durationSeconds").isNumber()).isTrue();
+        assertThat(row.get("durationSeconds").asLong()).isEqualTo(4294967295L);
+        value.put("lyricType", "lrc");
+        code(call("POST", "/admin/music", token, json.writeValueAsString(value)), 400, "VALIDATION_ERROR");
+        value.put("durationSeconds", null); value.put("lyricUrl", "https://media.example.test/lyric.lrc");
+        code(call("POST", "/admin/music", token, json.writeValueAsString(value)), 201, "OK");
+    }
+
+    @Test
+    void newGlobalResourcesRejectSelfAndUnknownOrDuplicateQueries() throws Exception {
+        String token = actor("display_self", 1);
+        jdbc.update("UPDATE sys_role SET data_scope='SELF' WHERE role_id=1");
+        for (String path : List.of("/admin/home/profile", "/admin/home/social-links", "/admin/cv/experiences", "/admin/cv/skills", "/admin/music", "/admin/operation-logs")) {
+            code(call("GET", path, token, null), 403, "FORBIDDEN");
+        }
+        for (String path : List.of("/home/profile", "/home/social-links", "/cv/experiences", "/cv/skills", "/blog/music")) {
+            code(call("GET", path + "?userId=1", null, null), 400, "VALIDATION_ERROR");
+            code(call("GET", path, null, "{}"), 400, "VALIDATION_ERROR");
+        }
+        code(call("GET", "/cv/skills?page=1&page=2", null, null), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void logQueryAndCleanupKeepTheirOwnAuditAndIndependentAllPermission() throws Exception {
+        String token = actor("display_logs", 1);
+        code(call("POST", "/admin/categories", token, "{\"categoryName\":\"审计来源\",\"slug\":\"log-source\"}"), 201, "OK");
+        MvcResult listed = call("GET", "/admin/operation-logs?operationType=create&operationTarget=blog:category", token, null);
+        code(listed, 200, "OK");
+        JsonNode row = data(listed).get("records").get(0);
+        assertThat(row.has("operationData")).isFalse();
+        String id = row.get("logId").asString();
+        MvcResult detail = call("GET", "/admin/operation-logs/" + id, token, null);
+        code(detail, 200, "OK"); assertThat(data(detail).get("operationData").isNull()).isTrue();
+        code(call("DELETE", "/admin/operation-logs/" + id, token, null), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE log_id=?", Integer.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='sys:log' AND target_id=? AND result=1", Integer.class, id)).isEqualTo(1);
+        code(call("DELETE", "/admin/operation-logs/" + id, token, null), 404, "NOT_FOUND");
+        code(call("GET", "/admin/operation-logs?begin=2026-10-30T01:00:00.000Z&end=2026-10-29T01:00:00.000Z", token, null), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void subscriptionConfirmsOnlyCurrentRoundAndOwnerAndNeverExposesTickets() throws Exception {
+        String token = actor("rss_owner", 3); String other = actor("rss_other", 3);
+        String old = requestSubscription(token, "  Confirm@Example.TEST ");
+        MvcResult own = call("GET", "/me/rss-subscription", token, null);
+        code(own, 200, "OK"); assertThat(data(own).get("email").asString()).isEqualTo("confirm@example.test");
+        assertThat(data(own).get("status").asInt()).isZero(); assertThat(data(own).has("ticket")).isFalse(); assertThat(data(own).has("userId")).isFalse();
+        String current = requestSubscription(token, "confirm@example.test");
+        code(confirm(token, old), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(confirm(other, current), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(confirm(token, current), 200, "OK");
+        code(confirm(token, current), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(call("PUT", "/me/rss-subscription", token, "{\"email\":\"CONFIRM@example.test\"}"), 200, "OK");
+        verify(mail, times(2)).send(eq("confirm@example.test"), eq("确认邮件订阅"), anyString());
+        assertThat(jdbc.queryForObject("SELECT verified_at IS NOT NULL AND subscribe_time IS NOT NULL AND unsubscribe_time IS NULL FROM blog_rss_subscription", Boolean.class)).isTrue();
+        assertThat(jdbc.queryForObject("SELECT email FROM sys_user WHERE username='rss_owner'", String.class)).isNull();
+    }
+
+    @Test
+    void subscriptionUniqueEmailSmtpFailureAndPendingActivationHaveRealOutcomes() throws Exception {
+        String admin = actor("rss_admin", 1); String member = actor("rss_member", 3); String other = actor("rss_second", 3);
+        doThrow(new com.xuan.exception.BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用")).when(mail).send(anyString(), anyString(), anyString());
+        code(call("PUT", "/me/rss-subscription", member, "{\"email\":\"pending@example.test\"}"), 503, "SERVICE_UNAVAILABLE");
+        assertThat(data(call("GET", "/me/rss-subscription", member, null)).get("status").asInt()).isZero();
+        code(call("PUT", "/me/rss-subscription", other, "{\"email\":\"PENDING@example.test\"}"), 409, "UNIQUE_CONFLICT");
+        String id = jdbc.queryForObject("SELECT subscription_id FROM blog_rss_subscription", String.class);
+        String rev = call("GET", "/admin/rss-subscriptions/" + id, admin, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/rss-subscriptions/" + id + "/status", admin, rev, Map.of("status", 1)), 409, "STATE_CONFLICT");
+        reset(mail); String ticket = requestSubscription(member, "pending@example.test"); code(confirm(member, ticket), 200, "OK");
+        code(call("DELETE", "/me/rss-subscription", member, null), 200, "OK");
+        String first = jdbc.queryForObject("SELECT unsubscribe_time FROM blog_rss_subscription", String.class);
+        code(call("DELETE", "/me/rss-subscription", member, null), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT unsubscribe_time FROM blog_rss_subscription", String.class)).isEqualTo(first);
+    }
+
+    @Test
+    void subscriptionConsumedConfirmationIsNotRestoredAfterDatabaseRollback() throws Exception {
+        String token = actor("rss_rollback", 3); String ticket = requestSubscription(token, "rollback@example.test");
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE UPDATE ON blog_rss_subscription FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated failure'");
+        code(confirm(token, ticket), 503, "SERVICE_UNAVAILABLE");
+        jdbc.execute("DROP TRIGGER part7_fail");
+        assertThat(data(call("GET", "/me/rss-subscription", token, null)).get("status").asInt()).isZero();
+        code(confirm(token, ticket), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(confirm(token, requestSubscription(token, "rollback@example.test")), 200, "OK");
+    }
+
+    @Test
+    void subscriptionNotificationRunsAfterFirstPublicCommitAndUnsubscribeIsScopedAndIdempotent() throws Exception {
+        String admin = actor("rss_publish", 1); String token = actor("rss_recipient", 3);
+        code(confirm(token, requestSubscription(token, "recipient@example.test")), 200, "OK");
+        String article = published(admin, "rss-first-public"); finishAudits();
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mail, times(1)).send(eq("recipient@example.test"), eq("新文章发布"), text.capture());
+        assertThat(text.getValue()).contains(ORIGIN + "/articles/rss-first-public");
+        String ticket = fragmentTicket(text.getValue(), "unsubscribeTicket");
+        code(status(admin, article, 2), 200, "OK"); code(status(admin, article, 1), 200, "OK"); finishAudits();
+        verify(mail, times(1)).send(eq("recipient@example.test"), eq("新文章发布"), anyString());
+        code(call("GET", "/blog/rss-subscriptions/unsubscribe?ticket=" + ticket, null, null), 405, "METHOD_NOT_ALLOWED");
+        code(unsubscribe(ticket), 200, "OK"); code(unsubscribe(ticket), 200, "OK");
+        String newer = requestSubscription(token, "recipient@example.test"); code(confirm(token, newer), 200, "OK");
+        code(unsubscribe(ticket), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(call("POST", "/blog/rss-subscriptions/unsubscribe", null, "{\"email\":\"recipient@example.test\"}"), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void subscriptionPublicationRollbackAndPrivatePublicationNeverSendMail() throws Exception {
+        String admin = actor("rss_no_leak", 1); String token = actor("rss_no_leak_member", 3);
+        code(confirm(token, requestSubscription(token, "no-leak@example.test")), 200, "OK"); reset(mail);
+        String draft = create(admin, "rss-failed", "正文");
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE INSERT ON sys_operation_log FOR EACH ROW BEGIN IF NEW.result=1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated failure'; END IF; END");
+        code(status(admin, draft, 1), 503, "SERVICE_UNAVAILABLE"); jdbc.execute("DROP TRIGGER part7_fail"); finishAudits();
+        verifyNoInteractions(mail); assertThat(jdbc.queryForObject("SELECT status FROM blog_article WHERE article_id=?", Integer.class, draft)).isZero();
+        Map<String,Object> privateBody = body("rss-private", "私密正文"); privateBody.put("visibility", 2);
+        MvcResult created = call("POST", "/admin/articles", admin, json.writeValueAsString(privateBody)); code(created, 201, "OK");
+        code(status(admin, data(created).get("articleId").asString(), 1), 200, "OK"); finishAudits(); verifyNoInteractions(mail);
+    }
+
+    @Test
+    void feedAndSitemapContainOnlyPublicResourcesAndReturnXmlWithoutReadingCounts() throws Exception {
+        String admin = actor("rss_xml", 1); seedDictionary();
+        String visible = published(admin, "feed-visible"); create(admin, "feed-hidden", "不能公开");
+        jdbc.update("UPDATE blog_article SET title='XML <title> & safe',summary='<summary>&摘要',category_id=700 WHERE article_id=?", visible);
+        jdbc.update("INSERT INTO blog_article_tag(article_id,tag_id) VALUES(?,701)", visible);
+        MvcResult feed = call("GET", "/blog/rss.xml", null, null); assertThat(feed.getResponse().getStatus()).isEqualTo(200);
+        String xml = feed.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(feed.getResponse().getContentType()).startsWith("application/rss+xml"); assertThat(xml).contains("&lt;title&gt; &amp; safe", "&lt;summary&gt;&amp;摘要", "/articles/feed-visible").doesNotContain("feed-hidden", "markdownContent");
+        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(new java.io.ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        MvcResult sitemap = call("GET", "/blog/sitemap.xml", null, null);
+        assertThat(sitemap.getResponse().getStatus()).isEqualTo(200); String map = sitemap.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(map).contains("/articles/feed-visible", "/categories/category", "/tags/tag-one").doesNotContain("feed-hidden");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, visible)).isZero();
+        code(call("GET", "/blog/sitemap.xml?page=2", null, null), 404, "NOT_FOUND");
+        code(status(admin, visible, 2), 200, "OK");
+        assertThat(call("GET", "/blog/rss.xml", null, null).getResponse().getContentAsString()).doesNotContain("feed-visible");
+        assertThat(call("GET", "/blog/sitemap.xml", null, null).getResponse().getContentAsString()).doesNotContain("tag-one", "category");
+    }
+
+    @Test
+    void messagePrivateParentChainIsVisibleOnlyToItsInitiatorThroughPublicRoutes() throws Exception {
+        String admin = actor("message_admin", 1); String owner = actor("message_owner", 3); String other = actor("message_other", 3);
+        String root = createMessage(owner, null, "私密根原文", 1); reviewMessage(admin, root, 1);
+        MvcResult reply = call("POST", "/admin/messages/" + root + "/replies", admin, json.writeValueAsString(messageEdit("后台私密回复"))); code(reply, 201, "OK");
+        assertThat(data(reply).get("author").get("userId").asString()).isEqualTo(userId("message_admin")); assertThat(data(reply).get("isSecret").asInt()).isEqualTo(1);
+        for (String viewer : Arrays.asList(null, other, admin)) {
+            assertThat(data(call("GET", "/blog/messages", viewer, null)).get("total").asString()).isEqualTo("0");
+            code(call("GET", "/blog/messages?parentId=" + root, viewer, null), 404, "NOT_FOUND");
+        }
+        MvcResult ownThread = call("GET", "/blog/messages?parentId=" + root, owner, null); code(ownThread, 200, "OK");
+        assertThat(data(ownThread).get("records").get(0).get("content").asString()).isEqualTo("后台私密回复");
+        code(call("GET", "/me/messages/" + root, other, null), 404, "NOT_FOUND");
+        code(call("POST", "/blog/messages", other, json.writeValueAsString(messageBody(root, "不能插入", 0))), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void messagePublicThreadSecretBranchAndDeepAncestorReviewNeverLeakHiddenContent() throws Exception {
+        String admin = actor("message_branch_admin", 1); String owner = actor("message_branch_owner", 3); String other = actor("message_branch_other", 3);
+        String root = createMessage(owner, null, "公开根", 0); reviewMessage(admin, root, 1);
+        String secret = createMessage(other, root, "私密分支", 1); reviewMessage(admin, secret, 1);
+        MvcResult reply = call("POST", "/admin/messages/" + secret + "/replies", admin, json.writeValueAsString(messageEdit("分支回复"))); code(reply, 201, "OK");
+        assertThat(data(call("GET", "/blog/messages?parentId=" + root, owner, null)).get("total").asString()).isEqualTo("0");
+        assertThat(data(call("GET", "/blog/messages?parentId=" + secret, other, null)).get("total").asString()).isEqualTo("1");
+        reviewMessage(admin, root, 2);
+        code(call("GET", "/blog/messages?parentId=" + secret, other, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/me/messages", other, null)).get("records").get(0).get("content").asString()).isEqualTo("私密分支");
+    }
+
+    @Test
+    void messageEditsReenterReviewAndDeletionClearsOriginalWhileKeepingReplies() throws Exception {
+        String admin = actor("message_edit_admin", 1); String owner = actor("message_edit_owner", 3);
+        String root = createMessage(owner, null, "<script>纯文本</script>\n下一行", 0); reviewMessage(admin, root, 1);
+        String child = createMessage(owner, root, "回复保留", 0); reviewMessage(admin, child, 1);
+        MvcResult old = call("GET", "/me/messages/" + root, owner, null); String revision = old.getResponse().getHeader("X-Revision");
+        assertThat(data(old).get("htmlContent").asString()).contains("&lt;script&gt;", "<br>").doesNotContain("<script>");
+        jdbc.update("UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',TRUE,'reviewRequired',FALSE) WHERE config_key='message'");
+        MvcResult edited = write("PUT", "/me/messages/" + root, owner, revision, messageEdit("修改后必须重审")); code(edited, 200, "OK");
+        assertThat(data(edited).get("status").asInt()).isZero(); assertThat(data(edited).get("editedAt").isNull()).isFalse();
+        assertThat(data(call("GET", "/blog/messages", null, null)).get("total").asString()).isEqualTo("0");
+        code(write("PUT", "/me/messages/" + root, owner, revision, messageEdit("旧版本")), 412, "REVISION_CONFLICT");
+        reviewMessage(admin, root, 1);
+        code(call("DELETE", "/me/messages/" + root, owner, null), 200, "OK"); code(call("DELETE", "/me/messages/" + root, owner, null), 200, "OK");
+        JsonNode placeholder = data(call("GET", "/blog/messages", null, null)).get("records").get(0);
+        assertThat(placeholder.get("author").isNull()).isTrue(); assertThat(placeholder.get("content").asString()).isEqualTo("该留言已删除");
+        assertThat(data(call("GET", "/blog/messages?parentId=" + root, null, null)).get("total").asString()).isEqualTo("1");
+        code(write("PUT", "/me/messages/" + root, owner, edited.getResponse().getHeader("X-Revision"), messageEdit("复活")), 412, "REVISION_CONFLICT");
+        String current = call("GET", "/admin/messages/" + root, admin, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/messages/" + root + "/review", admin, current, Map.of("status",1)), 409, "STATE_CONFLICT");
+    }
+
+    @Test
+    void messageConfigurationLockDeterminesCreatePolicyAndRechecksRevokedToken() throws Exception {
+        String token = actor("message_config_lock", 3);
+        MvcResult closed = waitingInteraction("blog_site_config", "SELECT config_key FROM blog_site_config WHERE config_key=? FOR UPDATE", "message",
+                () -> call("POST", "/blog/messages", token, json.writeValueAsString(messageBody(null, "不能新增", 0))),
+                () -> jdbc.update("UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',FALSE,'reviewRequired',TRUE) WHERE config_key='message'"));
+        code(closed, 409, "STATE_CONFLICT"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isZero();
+        jdbc.update("UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',TRUE,'reviewRequired',TRUE) WHERE config_key='message'");
+        MvcResult revoked = waitingInteraction("blog_site_config", "SELECT config_key FROM blog_site_config WHERE config_key=? FOR UPDATE", "message",
+                () -> call("POST", "/blog/messages", token, json.writeValueAsString(messageBody(null, "撤销后不能新增", 0))),
+                () -> sessions.revokeAll(Long.parseLong(userId("message_config_lock"))), true);
+        code(revoked, 401, "UNAUTHENTICATED"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isZero();
+    }
+
+    @Test
+    void messageClosedConfigurationStillAllowsHistoryReviewAndDeletionButNotReplyOrEdit() throws Exception {
+        String admin = actor("message_closed_admin", 1); String token = actor("message_closed", 3);
+        String id = createMessage(token, null, "历史内容", 0);
+        jdbc.update("UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',FALSE,'reviewRequired',TRUE) WHERE config_key='message'");
+        reviewMessage(admin, id, 1);
+        String rev = call("GET", "/me/messages/" + id, token, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/me/messages/" + id, token, rev, messageEdit("不能编辑")), 409, "STATE_CONFLICT");
+        code(call("POST", "/admin/messages/" + id + "/replies", admin, json.writeValueAsString(messageEdit("不能回复"))), 409, "STATE_CONFLICT");
+        code(call("DELETE", "/me/messages/" + id, token, null), 200, "OK");
+        code(call("GET", "/blog/messages?userId=1", token, null), 400, "VALIDATION_ERROR");
+        code(call("GET", "/blog/messages", "invalid-token", null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void messageReplyNotificationUsesOnlyConfirmedSubscriptionAndContainsNoSecretText() throws Exception {
+        String admin = actor("message_mail_admin", 1); String owner = actor("message_mail_owner", 3);
+        jdbc.update("UPDATE sys_user SET email='unverified-login@example.test' WHERE username='message_mail_owner'");
+        String root = createMessage(owner, null, "秘密根内容", 1); reviewMessage(admin, root, 1);
+        code(call("POST", "/admin/messages/" + root + "/replies", admin, json.writeValueAsString(messageEdit("秘密回复一"))), 201, "OK"); finishAudits(); verifyNoInteractions(mail);
+        code(confirm(owner, requestSubscription(owner, "confirmed-message@example.test")), 200, "OK"); reset(mail);
+        code(call("POST", "/admin/messages/" + root + "/replies", admin, json.writeValueAsString(messageEdit("秘密回复二"))), 201, "OK"); finishAudits();
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mail, times(1)).send(eq("confirmed-message@example.test"), eq("留言收到新回复"), text.capture());
+        assertThat(text.getValue()).doesNotContain("秘密根内容", "秘密回复二", "unverified-login@example.test");
+    }
+
+    private Map<String,Object> messageBody(String parent, String content, int secret) {
+        Map<String,Object> value = new LinkedHashMap<>(); value.put("parentId", parent); value.put("content", content);
+        value.put("contentFormat", 0); value.put("isSecret", secret); value.put("notifyReply", 1); return value;
+    }
+    private Map<String,Object> messageEdit(String content) { return Map.of("content", content, "contentFormat", 0, "notifyReply", 1); }
+    private String createMessage(String token, String parent, String content, int secret) throws Exception {
+        MvcResult result = call("POST", "/blog/messages", token, json.writeValueAsString(messageBody(parent, content, secret))); code(result, 201, "OK"); return data(result).get("messageId").asString();
+    }
+    private void reviewMessage(String token, String id, int status) throws Exception {
+        String rev = call("GET", "/admin/messages/" + id, token, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/messages/" + id + "/review", token, rev, Map.of("status", status)), 200, "OK");
+    }
+    private String requestSubscription(String token, String email) throws Exception {
+        code(call("PUT", "/me/rss-subscription", token, json.writeValueAsString(Map.of("email",email))), 200, "OK");
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mail, atLeastOnce()).send(anyString(), eq("确认邮件订阅"), text.capture());
+        return fragmentTicket(text.getValue(), "confirmTicket");
+    }
+    private MvcResult confirm(String token, String ticket) throws Exception { return call("POST", "/me/rss-subscription/confirm", token, json.writeValueAsString(Map.of("ticket", ticket))); }
+    private MvcResult unsubscribe(String ticket) throws Exception { return call("POST", "/blog/rss-subscriptions/unsubscribe", null, json.writeValueAsString(Map.of("ticket", ticket))); }
+    private String fragmentTicket(String text, String name) { return text.split("#"+name+"=",2)[1].split("\\s",2)[0]; }
+
+    @Test
+    void analyticsMasksIpSanitizesUrlsAndDoesNotDoubleCountReading() throws Exception {
+        String admin = actor("analytics_article", 1); String article = published(admin, "analytics-visible");
+        Map<String,Object> value = tracking("fingerprint-analytics-one", "/articles/analytics-visible?ticket=secret#fragment", article);
+        value.put("referer", "https://search.example.test/path?accessToken=secret#ticket");
+        MvcResult result = track(admin, ORIGIN, value); code(result, 200, "OK");
+        assertThat(data(result).get("recorded").asBoolean()).isTrue(); assertThat(data(result).size()).isEqualTo(1);
+        Map<String,Object> saved = jdbc.queryForMap("SELECT * FROM blog_page_view");
+        assertThat(saved.get("page_path")).isEqualTo("/articles/analytics-visible"); assertThat(saved.get("referer")).isEqualTo("https://search.example.test/path");
+        assertThat(saved.get("ip_address")).isEqualTo("203.0.113.0"); assertThat(saved.get("user_id").toString()).isEqualTo(userId("analytics_article"));
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isZero();
+        code(call("GET", "/blog/articles/analytics-visible", null, null), 200, "OK"); code(track(null, ORIGIN, value), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_visitor", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void analyticsRejectsInvalidOriginPathIdentityAndHiddenArticlesBeforeWriting() throws Exception {
+        String admin = actor("analytics_reject", 1); String draft = create(admin, "analytics-hidden", "不能公开");
+        Map<String,Object> value = tracking("fingerprint-analytics-reject", "/", null);
+        code(track(null, null, value), 403, "FORBIDDEN"); code(track(null, "https://evil.example.test", value), 403, "FORBIDDEN");
+        value.put("siteCode", "home"); code(track(null, ORIGIN, value), 403, "FORBIDDEN"); value.put("siteCode", "blog");
+        value.put("pagePath", "/safe/%2e%2e/admin"); code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR");
+        value.put("pagePath", "/safe%3Fticket=secret"); code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR");
+        value.put("pagePath", "/articles/analytics-hidden"); value.put("articleId", draft); code(track(null, ORIGIN, value), 404, "NOT_FOUND");
+        value.put("pagePath", "/"); code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR"); value.put("articleId", null);
+        value.put("userId", userId("analytics_reject")); code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR"); value.remove("userId");
+        value.remove("referer"); code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR"); value.put("referer", null);
+        code(track("bad-token", ORIGIN, value), 401, "UNAUTHENTICATED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isZero(); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_visitor", Integer.class)).isZero();
+    }
+
+    @Test
+    void analyticsRollsBackVisitorWhenPageViewInsertFails() throws Exception {
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE INSERT ON blog_page_view FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated failure'");
+        code(track(null, ORIGIN, tracking("fingerprint-analytics-rollback", "/", null)), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_visitor", Integer.class)).isZero(); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isZero();
+        jdbc.execute("DROP TRIGGER part7_fail"); code(track(null, ORIGIN, tracking("fingerprint-analytics-rollback", "/", null)), 200, "OK");
+    }
+
+    @Test
+    void analyticsRestrictionExpiresAndVisitorDeletionPreservesPv() throws Exception {
+        String admin = actor("analytics_visitor_admin", 1); Map<String,Object> value = tracking("fingerprint-visitor-block", "/", null);
+        code(track(null, ORIGIN, value), 200, "OK"); String id = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor", String.class);
+        String revision = call("GET", "/admin/visitors/" + id, admin, null).getResponse().getHeader("X-Revision");
+        code(track(null, ORIGIN, value), 200, "OK"); assertThat(call("GET", "/admin/visitors/" + id, admin, null).getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        Map<String,Object> permanent = new LinkedHashMap<>(); permanent.put("blockedUntil",null);
+        code(write("PUT", "/admin/visitors/" + id + "/block", admin, revision, Map.of()), 400, "VALIDATION_ERROR");
+        code(write("PUT", "/admin/visitors/" + id + "/block", admin, revision, permanent), 200, "OK");
+        code(track(null, ORIGIN, value), 403, "VISITOR_BLOCKED"); code(call("GET", "/blog/statistics", null, null), 200, "OK");
+        jdbc.update("UPDATE blog_visitor SET blocked_until=UTC_TIMESTAMP(3)-INTERVAL 1 SECOND WHERE visitor_id=?", id); code(track(null, ORIGIN, value), 200, "OK");
+        revision = call("GET", "/admin/visitors/" + id, admin, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/visitors/" + id + "/unblock", admin, revision, Map.of()), 400, "VALIDATION_ERROR");
+        MvcResult unblocked = write("PUT", "/admin/visitors/" + id + "/unblock", admin, revision, null); code(unblocked, 200, "OK");
+        code(write("DELETE", "/admin/visitors/" + id, admin, unblocked.getResponse().getHeader("X-Revision"), null), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL", Integer.class)).isEqualTo(3);
+        JsonNode publicStats = data(call("GET", "/blog/statistics", null, null)); assertThat(publicStats.get("pageViewCount").asString()).isEqualTo("3"); assertThat(publicStats.get("visitorCount").asString()).isEqualTo("0");
+        String view = jdbc.queryForObject("SELECT MIN(view_id) FROM blog_page_view", String.class);
+        code(call("DELETE", "/admin/page-views/" + view, admin, null), 200, "OK"); code(call("DELETE", "/admin/page-views/" + view, admin, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void analyticsReportsUseUtcDistinctUvFirstVisitAndZeroFilledDays() throws Exception {
+        String admin = actor("analytics_reports", 1);
+        jdbc.update("INSERT INTO blog_visitor(visitor_id,fingerprint,province,first_visit_time) VALUES(70001,'fingerprint-report-one','江苏','2024-02-28 23:59:59.999'),(70002,'fingerprint-report-two',NULL,'2024-02-29 00:00:00.000')");
+        jdbc.update("INSERT INTO blog_page_view(visitor_id,site_code,page_path,view_time) VALUES(70001,'blog','/','2024-02-29 00:00:00.000'),(70001,'blog','/','2024-02-29 23:59:59.999'),(70002,'home','/','2024-02-29 01:00:00.000')");
+        String range = "?begin=2024-02-28&end=2024-03-01&siteCode=blog";
+        MvcResult overview = call("GET", "/admin/statistics/overview" + range, admin, null); code(overview, 200, "OK");
+        assertThat(data(overview).get("pageViewCount").asString()).isEqualTo("2"); assertThat(data(overview).get("visitorCount").asString()).isEqualTo("1"); assertThat(data(overview).get("newVisitorCount").asString()).isEqualTo("1");
+        MvcResult trend = call("GET", "/admin/statistics/page-views" + range, admin, null); code(trend, 200, "OK"); assertThat(data(trend).size()).isEqualTo(3);
+        assertThat(data(trend).get(0).get("pageViewCount").asString()).isEqualTo("0"); assertThat(data(trend).get(1).get("pageViewCount").asString()).isEqualTo("2"); assertThat(data(trend).get(1).get("visitorCount").asString()).isEqualTo("1");
+        MvcResult visitors = call("GET", "/admin/statistics/visitors" + range, admin, null); code(visitors, 200, "OK");
+        assertThat(data(visitors).get(0).get("newVisitorCount").asString()).isEqualTo("1"); assertThat(data(visitors).get(2).get("cumulativeNewVisitorCount").asString()).isEqualTo("1");
+        MvcResult provinces = call("GET", "/admin/statistics/provinces" + range, admin, null); code(provinces, 200, "OK"); assertThat(data(provinces).size()).isEqualTo(1); assertThat(data(provinces).get(0).get("visitorCount").asString()).isEqualTo("1");
+        MvcResult views = call("GET", "/admin/page-views?begin=2024-02-29T00:00:00.000Z&end=2024-02-29T23:59:59.999Z&siteCode=blog", admin, null); code(views, 200, "OK"); assertThat(data(views).get("total").asString()).isEqualTo("1");
+    }
+
+    @Test
+    void analyticsArticleRankingsKeepHistoricalVisitsAndExcludeRecycledArticles() throws Exception {
+        String admin = actor("analytics_rank", 1); String article = published(admin, "rank-history"); String recycled = published(admin, "rank-recycled");
+        jdbc.update("INSERT INTO blog_page_view(article_id,site_code,page_path,view_time) VALUES(?,'blog','/articles/rank-history','2024-02-29'),(?,'blog','/articles/rank-history','2024-02-29'),(?,'blog','/articles/rank-recycled','2024-02-29')", article, article, recycled);
+        code(status(admin, article, 2), 200, "OK"); jdbc.update("UPDATE blog_article SET deleted_at=UTC_TIMESTAMP(3) WHERE article_id=?", recycled);
+        MvcResult ranking = call("GET", "/admin/statistics/articles?begin=2024-02-29&end=2024-02-29&limit=1", admin, null); code(ranking, 200, "OK");
+        assertThat(data(ranking).size()).isEqualTo(1); assertThat(data(ranking).get(0).get("articleId").asString()).isEqualTo(article); assertThat(data(ranking).get(0).get("pageViewCount").asString()).isEqualTo("2");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isZero();
+    }
+
+    @Test
+    void analyticsStrictDateRangeAndAllScopeIncludeMaximumDatabaseDate() throws Exception {
+        String admin = actor("analytics_dates", 1);
+        for (String query : List.of("begin=2024-01-01", "begin=2024-02-30&end=2024-03-01", "begin=2024-03-01&end=2024-02-29", "begin=2023-01-01&end=2024-01-03", "begin=0999-01-01&end=0999-01-01", "siteCode=other")) { code(call("GET", "/admin/statistics/overview?" + query, admin, null), 400, "VALIDATION_ERROR"); }
+        MvcResult lastDay = call("GET", "/admin/statistics/page-views?begin=9999-12-31&end=9999-12-31", admin, null); code(lastDay, 200, "OK"); assertThat(data(lastDay).size()).isEqualTo(1);
+        code(call("GET", "/admin/statistics/articles?siteCode=blog", admin, null), 400, "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_role SET data_scope='SELF' WHERE role_id=1");
+        for (String path : List.of("/admin/visitors", "/admin/page-views", "/admin/statistics/overview", "/admin/messages", "/admin/rss-subscriptions")) { code(call("GET", path, admin, null), 403, "FORBIDDEN"); }
+    }
+
+    @Test
+    void analyticsRechecksTokenAfterVisitorWaitAndPublicArticleAfterArticleWait() throws Exception {
+        String token = actor("analytics_wait", 1); String article = published(token, "analytics-wait");
+        Map<String,Object> value = tracking("fingerprint-analytics-wait", "/articles/analytics-wait", article); code(track(null, ORIGIN, value), 200, "OK");
+        String visitor = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor", String.class);
+        MvcResult revoked = waitingInteraction("blog_visitor", "SELECT visitor_id FROM blog_visitor WHERE visitor_id=? FOR UPDATE", visitor,
+                () -> track(token, ORIGIN, value), () -> sessions.revokeAll(Long.parseLong(userId("analytics_wait"))), true);
+        code(revoked, 401, "UNAUTHENTICATED"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isEqualTo(1);
+        MvcResult hidden = waitingInteraction("blog_article", "SELECT article_id FROM blog_article WHERE article_id=? FOR UPDATE", article,
+                () -> track(null, ORIGIN, value), () -> jdbc.update("UPDATE blog_article SET status=2 WHERE article_id=?", article));
+        code(hidden, 404, "NOT_FOUND"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isEqualTo(1);
+    }
+
+    @Test
+    void extendedWritesRecheckOriginalTokenAfterEightResourceLocks() throws Exception {
+        for (String kind : List.of("social", "experience", "skill", "music", "visitor", "subscription", "log", "message")) {
+            String name = "extended_lock_" + kind; String token = actor(name, 1); String user = userId(name);
+            String table; String path; String id;
+            switch (kind) {
+                case "social" -> { jdbc.update("INSERT INTO home_social_link(name,url) VALUES('锁','https://example.test')"); table="home_social_link"; id=jdbc.queryForObject("SELECT MAX(social_id) FROM home_social_link",String.class); path="/admin/home/social-links/"+id; }
+                case "experience" -> { jdbc.update("INSERT INTO cv_experience(experience_type,title,content,start_date) VALUES(0,'锁','正文','2020-01-01')"); table="cv_experience"; id=jdbc.queryForObject("SELECT MAX(experience_id) FROM cv_experience",String.class); path="/admin/cv/experiences/"+id; }
+                case "skill" -> { jdbc.update("INSERT INTO cv_skill(name) VALUES('锁')"); table="cv_skill"; id=jdbc.queryForObject("SELECT MAX(skill_id) FROM cv_skill",String.class); path="/admin/cv/skills/"+id; }
+                case "music" -> { jdbc.update("INSERT INTO blog_music(title,audio_url) VALUES('锁','https://example.test/audio.mp3')"); table="blog_music"; id=jdbc.queryForObject("SELECT MAX(music_id) FROM blog_music",String.class); path="/admin/music/"+id; }
+                case "visitor" -> { jdbc.update("INSERT INTO blog_visitor(fingerprint) VALUES('fingerprint-lock-visitor')"); table="blog_visitor"; id=jdbc.queryForObject("SELECT MAX(visitor_id) FROM blog_visitor",String.class); path="/admin/visitors/"+id; }
+                case "subscription" -> { jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES(?,'lock@example.test')",user); table="blog_rss_subscription"; id=jdbc.queryForObject("SELECT MAX(subscription_id) FROM blog_rss_subscription",String.class); path="/admin/rss-subscriptions/"+id; }
+                case "message" -> { jdbc.update("INSERT INTO blog_message(user_id,content,status) VALUES(?,'锁',1)",user); table="blog_message"; id=jdbc.queryForObject("SELECT MAX(message_id) FROM blog_message",String.class); path="/admin/messages/"+id; }
+                default -> { jdbc.update("INSERT INTO sys_operation_log(user_id,operation_type,operation_target,result) VALUES(?,'create','test:lock',1)",user); table="sys_operation_log"; id=jdbc.queryForObject("SELECT MAX(log_id) FROM sys_operation_log",String.class); path="/admin/operation-logs/"+id; }
+            }
+            String primary = switch(kind) { case "subscription" -> "subscription_id"; case "log" -> "log_id"; default -> kind+"_id"; };
+            String revision = call("GET", path, token, null).getResponse().getHeader("X-Revision");
+            MvcResult result = waitingInteraction(table, "SELECT "+primary+" FROM "+table+" WHERE "+primary+"=? FOR UPDATE", id,
+                    () -> write("DELETE", path, token, revision, null), () -> sessions.revokeAll(Long.parseLong(user)), true);
+            code(result, 401, "UNAUTHENTICATED"); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM "+table+" WHERE "+primary+"=?",Integer.class,id)).isEqualTo(1);
+        }
+        finishAudits(); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=0 AND error_message='UNAUTHENTICATED'",Integer.class)).isEqualTo(8);
+    }
+
+    private Map<String,Object> tracking(String fingerprint, String path, String article) {
+        Map<String,Object> value = new LinkedHashMap<>(); value.put("fingerprint",fingerprint); value.put("siteCode","blog"); value.put("pagePath",path); value.put("pageTitle",null); value.put("referer",null); value.put("articleId",article); return value;
+    }
+    private MvcResult track(String token, String origin, Map<String,Object> value) throws Exception {
+        var builder = req("POST", "/analytics/page-views").contentType("application/json").content(json.writeValueAsString(value));
+        if (origin != null) { builder.header("Origin",origin); } if (token != null) { builder.header("Authorization","Bearer "+token); }
+        builder.header("User-Agent","isolated-integration-test").header("X-Forwarded-For","8.8.8.8");
+        builder.with(request -> { request.setRemoteAddr("203.0.113.42"); return request; }); return mvc.perform(builder).andReturn();
+    }
+
+    @Test
+    void sitemapPartitionsAllUrlsAtCountAndUtf8ByteLimits() throws Exception {
+        String token = actor("sitemap_partition", 1);
+        String digits = "(SELECT 0 AS n UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8 UNION ALL SELECT 9)";
+        String sequence = "SELECT a.n+10*b.n+100*c.n+1000*d.n+10000*e.n AS n FROM "+digits+" a CROSS JOIN "+digits+" b CROSS JOIN "+digits+" c CROSS JOIN "+digits+" d CROSS JOIN "+digits+" e WHERE e.n<5";
+        jdbc.update("INSERT INTO blog_article(author_id,title,slug,status,visibility,publish_time) SELECT ?,CONCAT('地图',n),CONCAT('map-',LPAD(n,5,'0')),1,1,UTC_TIMESTAMP(3) FROM ("+sequence+") sequence_rows", userId("sitemap_partition"));
+        String finalSlug = jdbc.queryForObject("SELECT slug FROM blog_article ORDER BY article_id DESC LIMIT 1",String.class);
+        String index = call("GET", "/blog/sitemap.xml", null, null).getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(index).contains("<sitemapindex", ORIGIN+"/api/v1/blog/sitemap.xml?page=2");
+        String first = call("GET", "/blog/sitemap.xml?page=1", null, null).getResponse().getContentAsString(StandardCharsets.UTF_8);
+        String last = call("GET", "/blog/sitemap.xml?page=2", null, null).getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertThat(first.split("<url>",-1).length-1).isEqualTo(50000); assertThat(last.split("<url>",-1).length-1).isEqualTo(3); assertThat(last).contains(finalSlug);
+        String original = sites.getBlogBaseUrl();
+        try {
+            sites.setBlogBaseUrl(ORIGIN+"/"+"中".repeat(1000));
+            MvcResult bounded = call("GET", "/blog/sitemap.xml?page=1", null, null);
+            assertThat(bounded.getResponse().getStatus()).isEqualTo(200);
+            byte[] bytes = bounded.getResponse().getContentAsByteArray(); assertThat(bytes.length).isLessThanOrEqualTo(50*1024*1024);
+            assertThat(new String(bytes,StandardCharsets.UTF_8).split("<url>",-1).length-1).isLessThan(50000);
+            String finalPage = call("GET", "/blog/sitemap.xml?page=3", null, null).getResponse().getContentAsString(StandardCharsets.UTF_8);
+            assertThat(finalPage).contains(finalSlug);
+        } finally { sites.setBlogBaseUrl(original); }
+    }
+
+    @Test
+    void subscriptionConcurrentConfirmationAndExpiryRespectAtomicConsumption() throws Exception {
+        String token = actor("rss_concurrent", 3); final String ticket = requestSubscription(token,"concurrent@example.test");
+        String key = "dl:article-test:subscription:confirm:"+com.xuan.utils.TokenUtils.digest(ticket);
+        assertThat(redis.getExpire(key)).isBetween(86390L,86400L);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            CountDownLatch start = new CountDownLatch(1);
+            Future<MvcResult> left = executor.submit(() -> { await(start); return confirm(token,ticket); });
+            Future<MvcResult> right = executor.submit(() -> { await(start); return confirm(token,ticket); }); start.countDown();
+            assertThat(List.of(left.get(10,TimeUnit.SECONDS).getResponse().getStatus(),right.get(10,TimeUnit.SECONDS).getResponse().getStatus())).containsExactlyInAnyOrder(200,400);
+        }
+        code(call("DELETE", "/me/rss-subscription",token,null),200,"OK");
+        String expired = requestSubscription(token,"concurrent@example.test");
+        redis.expire("dl:article-test:subscription:confirm:"+com.xuan.utils.TokenUtils.digest(expired), java.time.Duration.ZERO);
+        code(confirm(token,expired),400,"SUBSCRIPTION_TICKET_INVALID");
+    }
+
+    @Test
+    void newFixedPermissionsCannotBeDeletedAndIndependentSelfScopeCannotWrite() throws Exception {
+        String token = actor("extended_permissions",1);
+        for (int id : List.of(121,131,141,151,161,171,181,191,201,221)) {
+            MvcResult detail = call("GET","/admin/permissions/"+id,token,null); code(detail,200,"OK");
+            code(write("DELETE","/admin/permissions/"+id,token,detail.getResponse().getHeader("X-Revision"),null),409,"STATE_CONFLICT");
+        }
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(70000,'extended_self','SELF维护','SELF')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,70000)",userId("extended_permissions"));
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=1 AND permission_id=131");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(70000,131)");
+        code(call("GET","/admin/home/social-links",token,null),200,"OK");
+        code(call("POST","/admin/home/social-links",token,"{\"name\":\"不能创建\",\"icon\":null,\"url\":\"https://example.test\",\"sortOrder\":0,\"status\":1}"),403,"FORBIDDEN");
+    }
+
+    @Test
+    void homeProfileRechecksTokenAfterGuardOwnerAndSingletonLocks() throws Exception {
+        for (String stage : List.of("guard","owner","profile")) {
+            String name = "home_lock_"+stage; String token = actor(name,1); actor(name+"_owner",3); String owner = userId(name+"_owner");
+            Map<String,Object> value = new LinkedHashMap<>(); value.put("userId",owner); value.put("nickname","不能保存"); value.put("tagline","");
+            for (String field : List.of("description","avatar","website","publicEmail","githubUrl","location")) { value.put(field,null); }
+            if (stage.equals("profile")) { jdbc.update("INSERT INTO home_profile(profile_id,user_id,nickname) VALUES(1,?,'原资料')",owner); }
+            String revision = call("GET","/admin/home/profile",token,null).getResponse().getHeader("X-Revision");
+            String table = stage.equals("guard") ? "sys_role" : stage.equals("owner") ? "sys_user" : "home_profile";
+            String primary = stage.equals("guard") ? "role_id" : stage.equals("owner") ? "user_id" : "profile_id";
+            Object target = stage.equals("owner") ? owner : 1;
+            MvcResult result = waitingInteraction(table,"SELECT "+primary+" FROM "+table+" WHERE "+primary+"=? FOR UPDATE",target,
+                    () -> write("PUT","/admin/home/profile",token,revision,value),() -> sessions.revokeAll(Long.parseLong(userId(name))),true);
+            code(result,401,"UNAUTHENTICATED");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM home_profile WHERE nickname='不能保存'",Integer.class)).isZero();
+        }
+        finishAudits(); assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='home:profile' AND result=0 AND error_message='UNAUTHENTICATED'",Integer.class)).isEqualTo(3);
     }
 
     private Map<String, Object> body(String slug, String markdown) {

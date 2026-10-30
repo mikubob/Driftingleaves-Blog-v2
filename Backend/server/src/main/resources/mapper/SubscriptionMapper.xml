@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 订阅与用户唯一约束由数据库保留，通知不从sys_user.email取地址。 -->
+<mapper namespace="com.xuan.mapper.SubscriptionMapper">
+    <select id="byUser" resultType="com.xuan.entity.BlogRssSubscription">SELECT * FROM blog_rss_subscription WHERE user_id=#{user}</select>
+    <select id="lockByUser" resultType="com.xuan.entity.BlogRssSubscription">SELECT * FROM blog_rss_subscription WHERE user_id=#{user} FOR UPDATE</select>
+    <select id="lockById" resultType="com.xuan.entity.BlogRssSubscription">SELECT * FROM blog_rss_subscription WHERE subscription_id=#{id} FOR UPDATE</select>
+    <update id="replace">UPDATE blog_rss_subscription SET email=#{row.email},status=#{row.status},verified_at=#{row.verifiedAt},subscribe_time=#{row.subscribeTime},unsubscribe_time=#{row.unsubscribeTime} WHERE subscription_id=#{row.subscriptionId} AND user_id=#{row.userId}</update>
+    <select id="subscriptionPage" resultType="com.xuan.entity.BlogRssSubscription">
+        SELECT * FROM blog_rss_subscription
+        <where><if test="user != null">AND user_id=#{user}</if><if test="query.email != null">AND INSTR(email,#{query.email}) &gt; 0</if><if test="query.status != null">AND status=#{query.status}</if></where>
+        ORDER BY create_time DESC, subscription_id DESC
+    </select>
+    <select id="recipients" resultType="com.xuan.entity.BlogRssSubscription">SELECT s.* FROM blog_rss_subscription s JOIN sys_user u ON u.user_id=s.user_id AND u.status=1 WHERE s.status=1 AND s.verified_at IS NOT NULL AND s.subscription_id &gt; #{after} ORDER BY s.subscription_id LIMIT 100</select>
+    <select id="confirmed" resultType="com.xuan.entity.BlogRssSubscription">SELECT s.* FROM blog_rss_subscription s JOIN sys_user u ON u.user_id=s.user_id AND u.status=1 WHERE s.user_id=#{user} AND s.status=1 AND s.verified_at IS NOT NULL</select>
+</mapper>

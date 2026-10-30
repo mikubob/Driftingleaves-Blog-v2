@@ -1,8 +1,10 @@
 # DriftingLeavesV2 总接口文档
 
-> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-30（Asia/Shanghai）。当前已实现第 1..11 章共 87 个接口，覆盖身份、本人安全、系统管理、文章、归档、热门榜、分类标签、评论点赞、友链、站点配置及文件附件；其余接口均为待实现契约。隔离测试不代表真实平台已联调或业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
+> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-31（Asia/Shanghai）。当前153个接口均已有实际实现，覆盖身份与系统管理、文章及互动、友链配置与文件、主页简历、留言、音乐、邮件订阅与XML、访问统计及日志治理。隔离测试不代表真实平台已联调或业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
 >
-> **扩充范围**：第 15..20 章补充主页、简历、留言、音乐、邮件订阅、访问统计及操作日志；第 7、10、12..14 章同步文章导航/热门榜、配置白名单、共享模型、业务一致性和错误码。新增表中 sys_operation_log 已有实体与后台写操作审计，其余 9 表尚无实体；第 15..20 章业务 HTTP 接口仍待实现。来源与迁移取舍见第 21 章，数据库约束见 [数据库说明](../sql/README.md)。保留原有章节编号和 api-1..api-86 锚点。
+> **扩充范围**：第 15..20 章补充主页、简历、留言、音乐、邮件订阅、访问统计及操作日志；第 7、10、12..14 章同步文章导航/热门榜、配置白名单、共享模型、业务一致性和错误码。28张表已有实体，剩余9张业务表已随真实消费者接入；第15..20章66个入口及其业务联动均已实现，后台55个写方法接入审计。来源与迁移取舍见第 21 章，数据库约束见 [数据库说明](../sql/README.md)。保留原有章节编号和 api-1..api-86 锚点。
+>
+> **共享约定落实**：153个入口的严格输入、公开/本人/ALL范围、锁后复核、版本、状态和事务均由实际业务消费者落实，逐节状态见[共享模型](#models)。实现与隔离验证不代表已经部署或外部平台联调通过。
 >
 > **维护提示**：每个接口同步维护基本信息、参数表、请求/响应示例、访问要求和业务说明。各示例使用独立的虚构场景；`<...>` 是占位值，部署 origin 和 OAuth 应用需实际配置。
 
@@ -48,6 +50,7 @@
 - `URL?` 最大 2048 字符；外部 URL 默认只接受绝对 http/https（社交mailto链接的明确例外见12.9），不接受 userinfo、控制字符、javascript/data/file 协议。本站文件 URL 仅接受[文件与附件](#group-11)生成的路径。写 URL 不触发服务端抓取。头像/封面只能使用已公开的资源，不能借展示字段公开私密附件。
 - `slug` 为 ASCII `[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`，文章最长 200，分类/标签最长 100；区分大小写，不自动转小写。名称/username/email 按库 `utf8mb4_0900_ai_ci` 唯一性判断，可能连重音差异也视为相等；不能仅靠前端查重。
 - 本文所有“必填”字段均不允许缺失或 null，除非显式写 `?`。PUT 是完整替换该请求模型，可空字段也必须出现；POST 的可选默认值逐项列出。PATCH 仅用于本人资料，缺失保持、null 清空可空字段。
+- 查询参数仅接受各接口声明的字段，每个字段只传一个非空白值；未知、重复或空白参数返回400，不静默忽略或套用默认值。未声明请求体的入口拒绝实际内容；OAuth回调允许平台错误说明，但不回显、不参与身份判断。JSON字段白名单、查询参数白名单与业务权限/SQL范围各自生效。
 
 ### 0.2 响应格式与分页
 
@@ -132,7 +135,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ### 0.8 业务范围与接口索引
 
-共 **153 个不重复的 HTTP 方法与路径组合**，其中第 1..11 章 87 个已实现，其余为待实现契约。第 7.11、15..20 章在原索引基础上新增 67 个方法与路径组合；公开查询不等于已经加入当前运行配置的白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
+共 **153 个不重复的 HTTP 方法与路径组合**，全部已有实际Controller及对应业务消费者。第 7.11、15..20 章在原索引基础上新增 67 个方法与路径组合；公开入口已按方法和路径精确加入准入白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
 
 | 模块 | 接口数 | 方法与完整路径索引 |
 | --- | --- | --- |
@@ -568,6 +571,7 @@ LOGIN 公开；BIND 需当前 Token 及最近 300 秒认证。两者均校验 Or
 | `state` | Query | string | 是 | 与当前浏览器、平台和流程匹配，一次性 |
 | `code` | Query | string | 成功时 | 所选平台 GET 回调授权码；适配器负责平台实际参数 |
 | `error` | Query | string | 拒绝时 | 平台取消/错误标记，不透传平台说明 |
+| `error_description` | Query | string | 否 | 平台错误说明，仅允许带回；不交给业务、不写日志、不回显 |
 
 #### 请求示例
 
@@ -6675,7 +6679,7 @@ Cache-Control: no-store
 
 后台每个操作独立检查 admin:access 及自己的权限，SELF 对这两类全站资源同样有效。写事务按操作者→友链/配置加锁，等待后重查原 Token、账号和权限，再检查版本；READ COMMITTED 和 STATEMENT 本地缓存范围保持不变。四个写方法接入成功同事务、失败回滚后审计，日志不保存 URL 或配置原值；配置键不是数字 ID，配置审计 targetId 为 null。六项固定权限禁止删除，不扩大最后管理员保护名单。
 
-配置更新与评论创建使用同一 comment 配置行锁，关闭站点评论或切换审核策略后，新增按最新提交策略执行；历史查询、本人删除和后台审核不受关闭开关影响。没有新增配置缓存；message 配置只保存，留言接口仍待第16章，文件 HTTP 仍待第11章。
+配置更新与评论创建使用同一 comment 配置行锁，关闭站点评论或切换审核策略后，新增按最新提交策略执行；历史查询、本人删除和后台审核不受关闭开关影响。没有新增配置缓存；message配置现已与第16章留言共用行锁，文件HTTP也已在第11章接通。
 
 <a id="api-70"></a>
 
@@ -7628,7 +7632,7 @@ Authorization: Bearer <site-token>
 | `data.records[].originalName` | string | 安全化展示文件名，无路径 |
 | `data.records[].mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.records[].sizeBytes` | string | 文件实际字节数字符串 |
-| `data.records[].storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
+| `data.records[].storageType` | string | 当前默认 oss，历史 local 按原元数据读取 |
 | `data.records[].createTime` | Time | 创建 UTC 时间 |
 | `data.records[].previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7715,7 +7719,7 @@ Authorization: Bearer <site-token>
 | `data.originalName` | string | 安全化展示文件名，无路径 |
 | `data.mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.sizeBytes` | string | 文件实际字节数字符串 |
-| `data.storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
+| `data.storageType` | string | 当前默认 oss，历史 local 按原元数据读取 |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7802,7 +7806,7 @@ Content-Type: image/png
 | `data.originalName` | string | 安全化展示文件名，无路径 |
 | `data.mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.sizeBytes` | string | 文件实际字节数字符串 |
-| `data.storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
+| `data.storageType` | string | 当前默认 oss，历史 local 按原元数据读取 |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7825,7 +7829,7 @@ Cache-Control: no-store
     "originalName": "leaf.png",
     "mimeType": "image/png",
     "sizeBytes": "2048",
-    "storageType": "local",
+    "storageType": "oss",
     "createTime": "2026-10-29T02:00:00.000Z",
     "previewUrl": "/api/v1/admin/files/42/content"
   },
@@ -7835,7 +7839,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-单文件非空，PNG/JPEG ≤10MiB；multipart ≤11MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。每个请求按用户和可信 IP 共用每 60 秒 10 次窗口，仅计一次；超限 429/RATE_LIMITED 并返回 Retry-After。默认 local；启用现有 OSS 配置后新上传为 oss，旧对象不迁移，响应不返回直链。
+单文件非空，PNG/JPEG ≤10MiB；multipart ≤11MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。每个请求按用户和可信 IP 共用每 60 秒 10 次窗口，仅计一次；超限 429/RATE_LIMITED 并返回 Retry-After。当前默认启用OSS，新上传为oss；需由环境提供OSS凭据，缺失时启动失败，旧对象不迁移，响应不返回直链。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -8091,6 +8095,30 @@ Cache-Control: no-store
 
 逐接口参数表列出实际绑定字段；本节补充可空性、默认值、联合响应及聚合模型。所有响应字段（包括可 null 字段）必须按模型存在，不因 null 全局省略。Page<T> 与分页输出规则见第 0 节。
 
+本节的模型名是HTTP字段约定，不要求每个名称都新建一个Java类。当前第1..11章共87个入口复用现有DTO/VO、实体和响应转换；新增共享规则也必须走真实业务，不能靠生成无人使用的空模型算完成。各节实际覆盖如下：
+
+| 小节 | 当前实现及业务联动 | 后续关系 |
+| --- | --- | --- |
+| 12.1 | Register/Login/ProfilePatch/PasswordSet/PasswordClear DTO；Me/Session/OAuth及Capabilities VO；User/OAuth Service、AuthorizationProvider和对应Mapper。注册分配member，资料版本、密码/绑定与会话撤销、LOGIN/BIND联合响应已连通 | 真实平台与浏览器流程仍须联调 |
+| 12.2 | AdminUser、Role、Permission DTO/VO；对应Service/Mapper落实完整替换、关联升序、独立授权、最后管理员及撤销失败回滚 | 新增字典项不自动产生权限或扩大管理员保护名单 |
+| 12.3 | MenuCreate/Update DTO、MenuVO/MenuNodeVO；菜单结构与角色grants、本人才可访问的完整祖先树已连通 | 组件/图标键是前端注册约定，后续页面尚未实现 |
+| 12.4 | ArticleWrite/State DTO、ArticleAdmin/Public VO及正文/关联实体；ArticleService/Mapper落实PUBLIC、状态转换、正文/标签版本与附件引用锁 | 不增加定时发布、版本列或缓存计数 |
+| 12.5 | Category/Tag DTO、实体与ArticlePublicVO内的公开分类/标签；字典维护即时影响文章当前展示、筛选及关联版本 | 沿用SET NULL/CASCADE，不删除文章正文 |
+| 12.6 | Comment DTO/VO、LikeStateVO；CommentVisibility、Comment/ArticleLike Service及Mapper共用完整父链与真实明细计数 | 第16章留言另按自身私密/格式/通知字段执行，不扩大评论契约 |
+| 12.7 | Link DTO、Config DTO/VO及Service/Mapper落实展示、公开过滤和策略版本 | comment/message配置分别与评论/留言创建和编辑共用原配置行锁 |
+| 12.8 | FileQueryDTO/FileVO/FileContent、BlogFile；FileService/Mapper和ArticleResources落实图片验证、私密读取、全状态引用扫描及存储补偿 | OSS只替换网络边界验证；不开放公开直链或存储切换API |
+| 12.9 | HomeProfile/Social/Experience/Skill DTO/VO、实体及对应Service/Mapper/XML已接通21个入口 | ALL全站维护、空资源版本与公开字段分离，Markdown安全渲染 |
+| 12.10 | Message DTO/VO、实体、MessageVisibility、MessageService/Mapper及11个入口已接通 | 完整父链/私密继承、编辑重新待审、占位删除和已确认订阅邮箱提醒 |
+| 12.11 | Music DTO/VO、实体及Service/Mapper已接通6个入口 | 歌词组合/整数秒/外部媒体校验，不增加音频上传或代理 |
+| 12.12 | Subscription DTO/VO、实体、Service/Mapper与SubscriptionTicketStore/MailClient及11个入口已接通 | 独立确认/投递轮次、真实SMTP、幂等退订；Feed与订阅独立 |
+| 12.13 | Visitor/PageView实体、采集/治理/Statistics服务及Mapper/XML已接通14个入口 | 可信Origin与规范路径/PUBLIC、IP脱敏、UTC区间与补零、保留明细PV/UV |
+| 12.14 | OperationLog DTO/VO、Service、Mapper与既有Aspect/FailureAuditWriter供55个后台写方法及日志治理使用 | 查询与清理分别要求ALL，清理自身同事务新增审计；失败回滚后另写 |
+| 12.15 | ArticlePublicDetailVO.Navigation、ArchiveVO、HotArticleVO和ArticleService/Mapper；导航/推荐/字数/四类榜单与公开过滤已连通 | 第19章已实现另一口径的区间浏览排行，两者不混用 |
+
+共享输入由WebJsonConfig严格解析、DTO执行格式/Unicode长度/默认值/字段出现性校验；ModelRequestAdvice覆盖第1..8章，InteractionRequestAdvice、SiteRequestAdvice和FileRequestAdvice分别覆盖第9..11章的查询与无请求体约定，DisplayRequestAdvice覆盖第15..20章的逐入口查询/无请求体规则。请求拒绝发生在业务前，不消费OAuth state、不签发或注销Token、不写业务数据或业务审计；进入业务后的锁、原Token/身份/独立权限/SQL范围、版本与状态复核继续由原Service/Mapper负责。Query中的authorId/uploaderId/userId只在明确列出的筛选入口允许，不能代替会话身份或扩大范围。
+
+本轮还补齐角色修改/删除/授权、权限修改/删除在目标行锁等待后的身份与本次权限检查，角色授权拿齐权限集合锁后再检查一次；文章创建拿齐分类/标签锁后重查原Token和创建权限。等待期间注销或过期的原Token返回401，元数据、正文/关联及成功审计不提交，失败审计沿原回滚后事务记录；不能用保护锁前或用户锁后的检查代替后续实际等待后的复核。
+
 ### 12.1 本人、身份与用户模型
 
 | 模型/字段 | 类型、必填与约束 |
@@ -8105,6 +8133,10 @@ Cache-Control: no-store
 | PasswordSet | newPassword:string 必填（同注册约束）；currentPassword:string 仅已有密码时必填，否则必须省略 |
 | PasswordClear | currentPassword:string 必填，同密码约束 |
 | Capabilities | roleCodes:string[]、permissionCodes:string[]、dataScopes:对象（权限码 → ALL或SELF）。只含当前有效授权，数组字典序；全局权限仍返回角色计算值，但无本人资源语义 |
+| Session | tokenType/accessToken/expiresIn/user，完整约束见0.4；只在本站登录成功返回 |
+| Provider | source:string、displayName:string；只列配置完整且启用的平台，不含应用凭据 |
+| OAuthAuthorize | 请求仅operation:LOGIN或BIND；响应authorizationUrl:string、expiresIn:number（state有效秒数），平台/回跳地址由服务端配置 |
+| OAuthExchange | 仅ticket:string必填，43位ASCII `[A-Za-z0-9_-]{43}`；结果使用下述OAuthResult联合响应 |
 
 注册不收 email/avatar/roleIds/status，服务端固定启用并分配 member；注册仅返回 Me，不自动登录。邮箱在本站仅是可选联系资料，未验证，不能当登录、找回密码或自动合并依据。系统不得返回 passwordHash/password_hash/salt，包括管理员接口。
 
@@ -8169,10 +8201,11 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 | ArticleWrite.markdownContent | string 必填，可空串用于草稿；设计决定 UTF-8 最多1MiB，发布必须非空白 |
 | ArticleWrite.tagIds | ID[]，POST默认[]；PUT必填；最多20个、不重复、全部存在 |
 | ArticleAdminSummary | articleId/authorId:ID、author:{userId:ID,nickname:string}、category:Category?、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、status:0/1/2、visibility:1/2、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/deletedAt:Time?、createTime/updateTime:Time、tags:Tag[] |
-| ArticleAdminDetail | ArticleAdminSummary + categoryId:ID?、tagIds:ID[]、markdownContent:string、htmlContent:string（服务端已清理，缓存为空时现渲染） |
+| ArticleAdminDetail | ArticleAdminSummary + categoryId:ID?、tagIds:ID[]、markdownContent:string、htmlContent:string（每次按当前规则从Markdown重渲染清理，不信历史HTML缓存） |
 | ArticlePublic | articleId:ID、author:{userId:ID,nickname:string,avatar:URL?}、category:CategoryPublic?、tags:TagPublic[]、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/createTime/updateTime:Time |
 | ArticlePublicDetail | ArticlePublic + htmlContent:string、wordCount:string、readingMinutes:integer、prevArticle/nextArticle:ArticleNavigation?、relatedArticles:ArticleNavigation[]；派生规则见12.15，不返回Markdown源、作者邮箱、后台状态或deletedAt |
 | ArticleState | `{status:1或2}`，必填；不接收publishTime |
+| Archive | month:string（UTC的YYYY-MM）、articleCount:string（该月PUBLIC文章数）；分页total为月份数，不是文章数 |
 
 tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1/3的节点，排除待审/驳回/占位及被隐藏的后代；likeCount 按明细 COUNT，不维护表中不存在的副本。所有资源关联名称为当前资料，非历史快照。ArticlePublic 的 status 隐含已发布，不额外重复字段。
 
@@ -8236,7 +8269,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 ### 12.8 文件模型与读取响应
 
-blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名访问。第 11 章文件 HTTP 已接入文章真实引用与现有存储；默认 storageType=local、bucket=""。可选 OSS 默认关闭；启用现有 OSS 配置后新上传使用 oss，旧文件按各自元数据读取，不迁移历史对象，不提供多存储切换 API，也不把私有附件改成公开直链。
+blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名访问。第 11 章文件 HTTP 已接入文章真实引用与现有存储；当前默认启用OSS，新上传使用storageType=oss；本地目录仅用于临时校验及历史local对象。启用时必须完整提供OSS配置，缺失不回退本地；旧文件按各自元数据读取，不迁移历史对象，不提供多存储切换 API，也不把私有附件改成公开直链。
 
 | 模型 | 字段与约束 |
 | --- | --- |
@@ -8250,6 +8283,8 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 成功内容响应为原始文件字节，非Result：`Content-Type`取服务端确认的image/png或image/jpeg、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。首期不支持Range/分片/断点上传，忽略Range返回完整200；文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。失败仍返回对应HTTP的JSON Result。前端携带Bearer fetch后台内容并用临时object URL预览，不能把Token拼接进img URL。
 
 ### 12.9 主页与简历模型
+
+实施状态：第15章21个入口已使用真实HomeProfile/Social/Experience/Skill服务及Mapper/XML；公开资料与账号资料分离，后台逐操作检查ALL。主页首次设置使用既有管理保护锁串行空资源版本，再升序锁操作者/所选主人、固定资料行。图标键沿用已有菜单键并增加文档示例github，其他图标使用外部HTTP(S)地址。
 
 新增Write/Create/Edit模型均为明确的字段白名单；本章写接口要求表中字段完整出现，可空字段用null清空。响应中的createTime/updateTime由数据库维护，不接收客户端值。Date使用合法YYYY-MM-DD，1000..9999年，与Time区分。
 
@@ -8272,6 +8307,8 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 ### 12.10 留言模型、父链与悄悄话
 
+实施状态：第16章11个入口与message配置行锁、完整祖先链、最早私密祖先接收者、本人归属SQL、编辑重新待审及占位删除已接通。通过提交后的提醒只取启用用户当前已确认激活的订阅邮箱，不含任何私密原文。公开逐层分页沿用轻量父链读取方式，数据量使扫描不可接受时再演进查询。
+
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `MessageCreate` | `parentId`:ID&#124;null（直接回复目标；根留言为null，回复创建后不可改）；`content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话；私密回复必须继承完整父链限制）；`notifyReply`:integer（0/1；见留言通知边界） |
@@ -8291,6 +8328,8 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 
 ### 12.11 音乐模型
 
+实施状态：第17章6个入口已接通播放列表与后台元数据维护；歌词组合、无符号32位整数秒及外部URL实际校验。现有文件业务仍仅支持PNG/JPEG，不抓取或删除外部媒体。
+
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `MusicWrite` | `title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示） |
@@ -8301,6 +8340,8 @@ lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/jso
 
 ### 12.12 邮件订阅与票据模型
 
+实施状态：第18章11个入口已实现；订阅状态写事务、独立Redis申请/投递轮次、一次性确认与幂等退订、真实SMTP边界及PUBLIC XML均已接通。SMTP默认关闭，未配置或传输失败明确503，待验证数据可重发恢复。XML不依赖邮箱订阅。
+
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `Subscription` | `subscriptionId`:ID（订阅ID）；`email`:string（订阅邮箱，≤254；服务端trim并转小写）；`status`:integer（0待验证 1已订阅 2已退订）；`verifiedAt`:Time&#124;null（当前邮箱验证成功时间）；`subscribeTime`:Time&#124;null（最近激活时间）；`unsubscribeTime`:Time&#124;null（最近退订时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
@@ -8308,7 +8349,7 @@ lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/jso
 
 status为0待验证、1已订阅、2已退订。每用户一条、每规范化邮箱一条，昵称读取用户公开资料，不复制旧nickname列。待验证或换邮箱时verifiedAt/subscribeTime/unsubscribeTime清空；激活必须有当前邮箱验证时间和订阅时间，unsubscribeTime=null；退订写时间但可保留原验证记录。任何请求都不能写userId/verifiedAt/审计时间，后台状态接口也不能更换邮箱或跳过验证。
 
-确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，携带本站Bearer向确认接口提交JSON票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。相同已激活邮箱的PUT不再发确认邮件。
+确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，携带本站Bearer向确认接口提交JSON票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
 
 邮件退订票据30天有效，Redis绑定订阅ID、邮箱、verifiedAt、本轮subscribeTime，只允许退订该记录；有效票据可重复调用保持幂等。邮件链接由固定前端页面读取fragment并让用户确认，再POST退订；GET不修改订阅。重新申请/换邮箱/再激活或删除记录后，旧轮次票据失效。服务端不向本人状态接口或后台列表返回票据，不在访问日志中记录票据。实名登录只用于本站身份，邮箱确认不创建会话、不改变登录邮箱或角色。XML Feed独立于邮箱订阅，公开阅读不需要票据。
 
@@ -8316,11 +8357,13 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 
 ### 12.13 访问统计、报表与时间口径
 
+实施状态：第19章14个入口已接通可信Origin/最长站点路径前缀核验、PUBLIC规范slug核验、访客与明细同事务、限制/到期/清理及UTC报表。原IP仅在内存查离线地域，访问表持久化IPv4 /24或IPv6 /48网段；来源URL和页面路径剔除全部query/fragment。
+
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `TrackingResult` | `recorded`:boolean（数据库成功记录本次浏览后为true，不返回访客会话） |
-| `Visitor` | `visitorId`:ID（统计访客ID，不是登录身份）；`fingerprint`:string（ASCII统计标识，不可作为鉴权凭据）；`ipAddress`:string&#124;null（最近IP，仅后台可见）；`userAgent`:string&#124;null（≤1024，最近User-Agent）；`country`:string&#124;null（国家）；`province`:string&#124;null（省份）；`city`:string&#124;null（城市）；`isBlocked`:integer（数据库封禁标记0/1；实际生效还需检查blockedUntil）；`blockedUntil`:Time&#124;null（封禁结束，已封禁且null表示永久）；`firstVisitTime`:Time（首次访问时间）；`lastVisitTime`:Time（最近访问时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `PageView` | `viewId`:ID（浏览记录ID）；`visitorId`:ID&#124;null（统计访客，清理后可空）；`userId`:ID&#124;null（采集时服务端确认的本站用户，匿名或清理后为空）；`articleId`:ID&#124;null（通过公开文章与规范路径核验的文章ID）；`siteCode`:string（home/blog/cv）；`pagePath`:S(2048)（不含敏感查询参数的规范路径）；`pageTitle`:S(200)?（页面标题）；`referer`:URL?（已脱敏的来源URL）；`ipAddress`:string&#124;null（仅后台可见）；`userAgent`:string&#124;null（≤1024）；`viewTime`:Time（采集时间） |
+| `Visitor` | `visitorId`:ID（统计访客ID，不是登录身份）；`fingerprint`:string（ASCII统计标识，不可作为鉴权凭据）；`ipAddress`:string&#124;null（最近脱敏IP网段，仅后台可见）；`userAgent`:string&#124;null（≤1024，最近User-Agent）；`country`:string&#124;null（国家）；`province`:string&#124;null（省份）；`city`:string&#124;null（城市）；`isBlocked`:integer（数据库封禁标记0/1；实际生效还需检查blockedUntil）；`blockedUntil`:Time&#124;null（封禁结束，已封禁且null表示永久）；`firstVisitTime`:Time（首次访问时间）；`lastVisitTime`:Time（最近访问时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `PageView` | `viewId`:ID（浏览记录ID）；`visitorId`:ID&#124;null（统计访客，清理后可空）；`userId`:ID&#124;null（采集时服务端确认的本站用户，匿名或清理后为空）；`articleId`:ID&#124;null（通过公开文章与规范路径核验的文章ID）；`siteCode`:string（home/blog/cv）；`pagePath`:S(2048)（不含敏感查询参数的规范路径）；`pageTitle`:S(200)?（页面标题）；`referer`:URL?（已脱敏的来源URL）；`ipAddress`:string&#124;null（脱敏IP网段，仅后台可见）；`userAgent`:string&#124;null（≤1024）；`viewTime`:Time（采集时间） |
 | `PublicStatistics` | `articleCount`:string（PUBLIC文章数量）；`categoryCount`:string（可展示且至少含一篇PUBLIC文章的分类数）；`tagCount`:string（至少关联一篇PUBLIC文章的标签数）；`pageViewCount`:string（blog站点保留浏览明细条数；不等于累计文章阅读数）；`todayPageViewCount`:string（UTC当日blog浏览明细数）；`visitorCount`:string（blog浏览明细中不同非NULL visitorId数量） |
 | `AdminStatistics` | `pageViewCount`:string（筛选日期内保留浏览明细条数）；`visitorCount`:string（筛选日期内不同非NULL visitorId；不按IP或账号去重）；`newVisitorCount`:string（firstVisitTime在日期区间且符合站点访问条件的访客数）；`articleCount`:string（当前未回收文章数，不受访问日期筛选）；`publishedArticleCount`:string（当前PUBLIC文章数）；`commentCount`:string（当前非删除占位评论数，含待审/驳回）；`messageCount`:string（当前非删除占位留言数，含私密/待审/驳回）；`pendingCommentCount`:string（当前status=0的评论数）；`pendingMessageCount`:string（当前status=0的留言数） |
 | `ViewTrend` | `date`:date（UTC自然日，区间内逐日补零）；`pageViewCount`:string（该日浏览明细条数）；`visitorCount`:string（该日不同非NULL visitorId数） |
@@ -8345,12 +8388,13 @@ PV是保留的page_view条数；UV是所选区间内不同非null visitorId数�
 
 仅服务端写日志，记录实际会话操作人、模块、动作、目标、权限码快照和结果；不接受客户端创建、修改日志。列表不返回大段摘要，详情operationData为白名单脱敏JSON对象或null。不得保存密码、授权头、OAuth code/state/ticket、RSS票据、密钥、原始SQL或异常堆栈。user_id外键SET NULL保证账号物理清理后保留日志；日志不承担授权凭据作用。
 
-日志为不可编辑记录，查询和删除不需要X-Revision；清理需sys:log:delete+ALL，删除行为追加一条新的审计，不递归记录写日志本身。业务成功日志随数据库变更同事务写入；业务失败回滚后另行写脱敏失败日志，不能用已回滚事务保存失败记录。当前后台用户、角色、权限、菜单、文章、分类标签及评论审核/管理删除、友链及配置的30个写方法已实际写入审计：成功日志写入失败使业务回滚，回滚后由独立虚拟线程事务记录失败；operationData固定为null，错误只记固定白名单码。尚未进入业务写方法的参数绑定/校验/HTTP权限拒绝不产生该业务审计。失败投递为进程内异步任务，数据库或进程故障不提供跨宕机可靠投递保证，写入失败输出固定错误；第20章查询/清理API仍待实现。
+日志为不可编辑记录，查询和删除不需要X-Revision；清理需sys:log:delete+ALL，删除行为追加一条新的审计，不递归记录写日志本身。业务成功日志随数据库变更同事务写入；业务失败回滚后另行写脱敏失败日志，不能用已回滚事务保存失败记录。当前后台55个写方法已实际写入审计，包含原32个写方法及主页/社交/简历/音乐、留言治理、订阅治理、访客/PV清理和日志清理：成功日志写入失败使业务回滚，回滚后由独立虚拟线程事务记录失败；operationData固定为null，错误只记固定白名单码。尚未进入业务写方法的参数绑定/校验/HTTP权限拒绝不产生该业务审计。失败投递为进程内异步任务，数据库或进程故障不提供跨宕机可靠投递保证，写入失败输出固定错误；第20章查询/详情/清理已实现，使用独立响应模型；列表不展开operationData，详情当前返回null。清理写入新的审计记录，与删除一起提交；不开放客户端写日志。
 
 ### 12.15 文章导航、推荐与热门榜
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
+| `ArticleNavigation` | `articleId`:ID、`title`:string、`slug`:string；仅PUBLIC文章，供上下篇与相关文章共用 |
 | `HotArticle` | `articleId`:ID（PUBLIC文章ID）；`title`:string（标题）；`slug`:string（URL标识）；`summary`:string（摘要）；`coverUrl`:URL?（外部公开封面）；`viewCount`:string（文章累计阅读数）；`likeCount`:string（当前点赞明细数）；`hotValue`:string（按metric选择的累计阅读数或点赞数）；`publishTime`:Time（首次发布时间） |
 
 ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:integer（最少1）、prevArticle/nextArticle:ArticleNavigation|null、relatedArticles:ArticleNavigation[]。ArticleNavigation仅含articleId:ID、title:string、slug:string；不返回私密或后台信息。字数按Markdown解析后的可见正文统计：每个汉字计1、每个连续英文字母/数字词计1，忽略标记、URL目标和代码块；readingMinutes=max(1,ceil(wordCount/300))，都是读取时派生，不新增SQL列或可写计数。
@@ -8537,15 +8581,19 @@ Cache-Control: no-store
 
 后续验收覆盖 Sa-Token 过期/注销/撤权，按权限 ALL/SELF，OAuth LOGIN/BIND 弹窗与原会话、state/ticket 一次性及重放，纯第三方无密码与最后登录方式，最后管理员，文章可见性/聚合版本，评论审核与占位，点赞幂等，文件私密访问、引用竞态与存储失败。
 
-第 1..11 章共 87 个接口已实现。用户、角色及权限字典管理落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先；菜单管理落实结构锁、完整树、类型约束及前端键白名单。文章落实 PUBLIC 过滤、按操作独立 SQL 范围、正文/标签聚合版本、状态与回收恢复、文件引用锁和存储可用性、阅读派生字段及四类热门榜；文章、文件查询/上传/删除、分类标签、评论点赞及友链配置的固定权限已纳入不可删除列表，最后管理员保护白名单保持原有系统管理范围。Markdown 始终由当前 CommonMark/jsoup 链重新渲染清理，不信任历史 HTML 缓存。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 8 章完成分类、标签的前后台分页、详情和维护，以及文章当前字典响应、隐藏分类筛选、外键删除和聚合版本联动。第 9 章完成完整祖先链公开评论、服务端审核策略、本人管理、按文章作者独立范围的后台审核/占位、审核版本与审计、复合键点赞幂等，以及真实互动计数联动。第 10 章完成友链审核展示联动、配置白名单及公开过滤、配置版本与审计，以及配置 HTTP 与评论开关/审核策略的真实联动。第 11 章完成文件元数据分页/详情、PNG/JPEG 上传、后台原图、文件删除和前后台文章附件共七个入口，复用 ArticleResources、文件锁、UrlPolicy 与现有可选 OSS 客户端；上传/删除接入同事务成功审计及回滚后失败审计。图片实际解码、独立 SQL 范围、PUBLIC 与真实引用检查、删除全状态文章分批扫描和存储补偿均已接入。第 15..20 章仍为待实现契约，不提供成功空壳；message 配置保存不代表留言 HTTP 已实现。配置、命令和真实隔离验证边界见 [后端运行说明](后端运行说明.md)。
+第 1..11 章共 87 个接口已实现。用户、角色及权限字典管理落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先；菜单管理落实结构锁、完整树、类型约束及前端键白名单。文章落实 PUBLIC 过滤、按操作独立 SQL 范围、正文/标签聚合版本、状态与回收恢复、文件引用锁和存储可用性、阅读派生字段及四类热门榜；文章、文件查询/上传/删除、分类标签、评论点赞及友链配置的固定权限已纳入不可删除列表，最后管理员保护白名单保持原有系统管理范围。Markdown 始终由当前 CommonMark/jsoup 链重新渲染清理，不信任历史 HTML 缓存。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 8 章完成分类、标签的前后台分页、详情和维护，以及文章当前字典响应、隐藏分类筛选、外键删除和聚合版本联动。第 9 章完成完整祖先链公开评论、服务端审核策略、本人管理、按文章作者独立范围的后台审核/占位、审核版本与审计、复合键点赞幂等，以及真实互动计数联动。第 10 章完成友链审核展示联动、配置白名单及公开过滤、配置版本与审计，以及配置 HTTP 与评论开关/审核策略的真实联动。第 11 章完成文件元数据分页/详情、PNG/JPEG 上传、后台原图、文件删除和前后台文章附件共七个入口，复用 ArticleResources、文件锁、UrlPolicy 与现有可选 OSS 客户端；上传/删除接入同事务成功审计及回滚后失败审计。图片实际解码、独立 SQL 范围、PUBLIC 与真实引用检查、删除全状态文章分批扫描和存储补偿均已接入。第15..20章66个入口已接通实际业务，公开展示、ALL维护、私密父链、已验证订阅与通知、PUBLIC XML、采集/UTC报表和日志治理均有真实消费者；新增38个固定权限禁止删除，最后管理员白名单不变。配置、命令和真实隔离验证边界见 [后端运行说明](后端运行说明.md)。
 
 第11章最终验证：2026-10-30 19:58:54（Asia/Shanghai），完整 Maven verify 退出0，203项全部通过，其中175项真实隔离MySQL/Redis集成，无失败、错误或跳过。新增25项文件测试，覆盖上传、私密读取、独立范围、行锁后复核、引用竞争与失败补偿；真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证。日志与完整边界见 [后端运行说明](后端运行说明.md)。
+
+历史第12章补齐现有模型的输入入口约束：第1..8章不再忽略未声明、重复或空白查询参数，GET、注销和解绑拒绝未声明请求体；有效查询、密码DELETE请求体及平台错误回调继续沿原业务执行。共享模型字段与状态仍复用既有DTO/VO、实体、Service和Mapper；不增加路由、SQL列、通用状态枚举、版本列或缓存。新增真实隔离测试检查入口拒绝发生在用户创建、注销、OAuth消费、文章阅读/保存和审计之前，并覆盖角色/权限目标及权限集合、文章分类的实际InnoDB锁等待后撤销Token，确认业务与成功审计回滚、失败审计另行提交。第12章后续业务的约定及实施依赖已逐节标明；该历史轮不扩展第15..20章HTTP；本轮已按当前明确授权完成。
+
+第12章最终验证：2026-10-30 20:40:41（Asia/Shanghai），用户指定完整 Maven verify 退出0，BUILD SUCCESS。210项全部通过（common15、server195），其中身份70、文章及关联业务112，共182项真实隔离MySQL/Redis集成，无失败、错误或跳过；本轮新增7项真实行为测试。执行会话39527，日志`Backend/target/verification/verify-part12-final.log`及退出码`verify-part12-final.exit-code.txt`，可执行jar已重新打包；历史日志保留。接口仍87个、后台审计写方法仍32个。第15..20章HTTP、真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证，具体证据和边界见[后端运行说明](后端运行说明.md)。
 
 <a id="group-15"></a>
 
 ## 15. 主页展示与在线简历
 
-本章全部待实现。主页、博客侧栏和简历共用一份站点主人资料；公开读取仅返回展示字段。后台使用现有home/cv权限码和ALL范围；不根据站点主人的userId自动赋权。
+本章接口均已实现。主页、博客侧栏和简历共用一份站点主人资料；公开读取仅返回展示字段。后台使用现有home/cv权限码和ALL范围；不根据站点主人的userId自动赋权。
 
 <a id="api-88"></a>
 
@@ -8556,7 +8604,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/home/profile` |
-| 接口描述 | 查询站点主人公开资料（待实现） |
+| 接口描述 | 查询站点主人公开资料（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -8628,7 +8676,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/home/profile` |
-| 接口描述 | 查询后台主页资料（待实现） |
+| 接口描述 | 查询后台主页资料（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `home:profile:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -8714,7 +8762,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/home/profile` |
-| 接口描述 | 设置主页资料（待实现） |
+| 接口描述 | 设置主页资料（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `home:profile:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -8824,7 +8872,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/home/social-links` |
-| 接口描述 | 查询公开社交链接（待实现） |
+| 接口描述 | 查询公开社交链接（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -8892,7 +8940,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/home/social-links` |
-| 接口描述 | 查询后台社交链接（待实现） |
+| 接口描述 | 查询后台社交链接（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `home:social:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -8985,7 +9033,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/home/social-links/{socialId}` |
-| 接口描述 | 查询社交链接详情（待实现） |
+| 接口描述 | 查询社交链接详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `home:social:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9064,7 +9112,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/home/social-links` |
-| 接口描述 | 创建社交链接（待实现） |
+| 接口描述 | 创建社交链接（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `home:social:create` + 该操作的ALL范围 |
 | 成功状态 | 201 Created |
@@ -9157,7 +9205,7 @@ Location: /api/v1/admin/home/social-links/21
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/home/social-links/{socialId}` |
-| 接口描述 | 修改社交链接（待实现） |
+| 接口描述 | 修改社交链接（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `home:social:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9252,7 +9300,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/home/social-links/{socialId}` |
-| 接口描述 | 删除社交链接（待实现） |
+| 接口描述 | 删除社交链接（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `home:social:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9314,7 +9362,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/cv/experiences` |
-| 接口描述 | 查询公开简历经历（待实现） |
+| 接口描述 | 查询公开简历经历（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -9405,7 +9453,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/cv/experiences` |
-| 接口描述 | 查询后台简历经历（待实现） |
+| 接口描述 | 查询后台简历经历（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:experience:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9507,7 +9555,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/cv/experiences/{experienceId}` |
-| 接口描述 | 查询简历经历详情（待实现） |
+| 接口描述 | 查询简历经历详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:experience:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9594,7 +9642,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/cv/experiences` |
-| 接口描述 | 创建简历经历（待实现） |
+| 接口描述 | 创建简历经历（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:experience:create` + 该操作的ALL范围 |
 | 成功状态 | 201 Created |
@@ -9703,7 +9751,7 @@ endDate=null表示至今；非空不得早于startDate。内容使用CommonMark�
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/cv/experiences/{experienceId}` |
-| 接口描述 | 修改简历经历（待实现） |
+| 接口描述 | 修改简历经历（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:experience:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9814,7 +9862,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/cv/experiences/{experienceId}` |
-| 接口描述 | 删除简历经历（待实现） |
+| 接口描述 | 删除简历经历（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:experience:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -9876,7 +9924,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/cv/skills` |
-| 接口描述 | 查询公开简历技能（待实现） |
+| 接口描述 | 查询公开简历技能（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -9958,7 +10006,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/cv/skills` |
-| 接口描述 | 查询后台简历技能（待实现） |
+| 接口描述 | 查询后台简历技能（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:skill:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -10051,7 +10099,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/cv/skills/{skillId}` |
-| 接口描述 | 查询技能详情（待实现） |
+| 接口描述 | 查询技能详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:skill:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -10130,7 +10178,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/cv/skills` |
-| 接口描述 | 创建简历技能（待实现） |
+| 接口描述 | 创建简历技能（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:skill:create` + 该操作的ALL范围 |
 | 成功状态 | 201 Created |
@@ -10223,7 +10271,7 @@ Location: /api/v1/admin/cv/skills/41
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/cv/skills/{skillId}` |
-| 接口描述 | 修改简历技能（待实现） |
+| 接口描述 | 修改简历技能（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:skill:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -10318,7 +10366,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/cv/skills/{skillId}` |
-| 接口描述 | 删除简历技能（待实现） |
+| 接口描述 | 删除简历技能（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `cv:skill:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -10375,7 +10423,7 @@ Cache-Control: no-store
 
 ## 16. 留言板、本人留言与审核
 
-本章全部待实现，使用blog_message，独立于文章评论。公开列表沿用第9章按parentId逐层分页，返回平面Page而非一次展开整棵线程；父链隐藏与悄悄话规则见第12.10节。本人接口只操作会话userId，ALL不能扩大归属。
+本章接口均已实现，使用blog_message，独立于文章评论。公开列表沿用第9章按parentId逐层分页，返回平面Page而非一次展开整棵线程；父链隐藏与悄悄话规则见第12.10节。本人接口只操作会话userId，ALL不能扩大归属。
 
 <a id="api-109"></a>
 
@@ -10386,7 +10434,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/messages` |
-| 接口描述 | 分页读取可见留言或回复（待实现） |
+| 接口描述 | 分页读取可见留言或回复（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
 | 成功状态 | 200 OK |
@@ -10492,7 +10540,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/blog/messages` |
-| 接口描述 | 发表或回复留言（待实现） |
+| 接口描述 | 发表或回复留言（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `blog:message:create`；始终限制本人归属 |
 | 成功状态 | 201 Created |
@@ -10599,7 +10647,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/me/messages` |
-| 接口描述 | 分页查询本人留言（待实现） |
+| 接口描述 | 分页查询本人留言（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用；仅当前会话本人 |
 | 成功状态 | 200 OK |
@@ -10708,7 +10756,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/me/messages/{messageId}` |
-| 接口描述 | 查询本人留言详情（待实现） |
+| 接口描述 | 查询本人留言详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用；仅当前会话本人 |
 | 成功状态 | 200 OK |
@@ -10804,7 +10852,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/me/messages/{messageId}` |
-| 接口描述 | 编辑本人留言（待实现） |
+| 接口描述 | 编辑本人留言（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `blog:message:updateOwn`；始终限制本人归属 |
 | 成功状态 | 200 OK |
@@ -10912,7 +10960,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/me/messages/{messageId}` |
-| 接口描述 | 删除本人留言（待实现） |
+| 接口描述 | 删除本人留言（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `blog:message:deleteOwn`；始终限制本人归属 |
 | 成功状态 | 200 OK |
@@ -10972,7 +11020,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/messages` |
-| 接口描述 | 分页查询后台留言（待实现） |
+| 接口描述 | 分页查询后台留言（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:message:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11085,7 +11133,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/messages/{messageId}` |
-| 接口描述 | 查询后台留言详情（待实现） |
+| 接口描述 | 查询后台留言详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:message:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11181,7 +11229,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/messages/{messageId}/review` |
-| 接口描述 | 审核留言（待实现） |
+| 接口描述 | 审核留言（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:message:review` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11285,7 +11333,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/messages/{messageId}` |
-| 接口描述 | 后台删除留言（待实现） |
+| 接口描述 | 后台删除留言（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:message:moderate` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11345,7 +11393,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/messages/{messageId}/replies` |
-| 接口描述 | 后台回复留言（待实现） |
+| 接口描述 | 后台回复留言（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:message:review` + 该操作的ALL范围 |
 | 成功状态 | 201 Created |
@@ -11444,7 +11492,7 @@ Cache-Control: no-store
 
 ## 17. 背景音乐与播放列表
 
-本章全部待实现，使用blog_music。保留旧站曲目、封面、歌词、排序与隐藏功能。音频和歌词使用外部HTTP(S)URL，服务端只保存元数据；现有图片上传接口不因此开放音频或歌词上传。
+本章接口均已实现，使用blog_music。保留旧站曲目、封面、歌词、排序与隐藏功能。音频和歌词使用外部HTTP(S)URL，服务端只保存元数据；现有图片上传接口不因此开放音频或歌词上传。
 
 <a id="api-120"></a>
 
@@ -11455,7 +11503,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/music` |
-| 接口描述 | 分页查询公开播放列表（待实现） |
+| 接口描述 | 分页查询公开播放列表（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -11545,7 +11593,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/music` |
-| 接口描述 | 分页查询后台音乐（待实现） |
+| 接口描述 | 分页查询后台音乐（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:music:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11646,7 +11694,7 @@ keyword匹配title或artist，筛选AND组合；sortOrder ASC,musicId ASC。全�
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/music/{musicId}` |
-| 接口描述 | 查询音乐详情（待实现） |
+| 接口描述 | 查询音乐详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:music:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11733,7 +11781,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/music` |
-| 接口描述 | 创建音乐（待实现） |
+| 接口描述 | 创建音乐（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:music:create` + 该操作的ALL范围 |
 | 成功状态 | 201 Created |
@@ -11842,7 +11890,7 @@ lyricUrl与lyricType同时为空或同时非空；durationSeconds可为null。�
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/music/{musicId}` |
-| 接口描述 | 修改音乐（待实现） |
+| 接口描述 | 修改音乐（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:music:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -11953,7 +12001,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/music/{musicId}` |
-| 接口描述 | 删除音乐（待实现） |
+| 接口描述 | 删除音乐（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:music:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -12010,7 +12058,7 @@ Cache-Control: no-store
 
 ## 18. 邮件订阅、RSS Feed 与站点地图
 
-本章全部待实现。XML Feed为公开文章输出，不需要邮箱；邮件推送需本站账号及独立邮箱确认。订阅邮箱不自动绑定为登录邮箱，不复刻旧visitorToken、JWT退订凭据或仅凭邮箱退订的入口。
+本章接口均已实现。XML Feed为公开文章输出，不需要邮箱；邮件推送需本站账号及独立邮箱确认。订阅邮箱不自动绑定为登录邮箱，不复刻旧visitorToken、JWT退订凭据或仅凭邮箱退订的入口。
 
 <a id="api-126"></a>
 
@@ -12021,7 +12069,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/me/rss-subscription` |
-| 接口描述 | 查询本人邮件订阅（待实现） |
+| 接口描述 | 查询本人邮件订阅（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用；仅当前会话本人 |
 | 成功状态 | 200 OK |
@@ -12097,7 +12145,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/me/rss-subscription` |
-| 接口描述 | 申请或修改本人邮件订阅（待实现） |
+| 接口描述 | 申请或修改本人邮件订阅（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `blog:rss:subscribe`；始终限制本人归属 |
 | 成功状态 | 200 OK |
@@ -12179,7 +12227,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/me/rss-subscription/confirm` |
-| 接口描述 | 确认本人订阅邮箱（待实现） |
+| 接口描述 | 确认本人订阅邮箱（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `blog:rss:subscribe`；始终限制本人归属 |
 | 成功状态 | 200 OK |
@@ -12261,7 +12309,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/me/rss-subscription` |
-| 接口描述 | 取消本人邮件订阅（待实现） |
+| 接口描述 | 取消本人邮件订阅（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `blog:rss:unsubscribe`；始终限制本人归属 |
 | 成功状态 | 200 OK |
@@ -12320,7 +12368,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/blog/rss-subscriptions/unsubscribe` |
-| 接口描述 | 通过邮件链接退订（待实现） |
+| 接口描述 | 通过邮件链接退订（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -12382,7 +12430,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/rss-subscriptions` |
-| 接口描述 | 分页查询后台邮件订阅（待实现） |
+| 接口描述 | 分页查询后台邮件订阅（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:rss:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -12478,7 +12526,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/rss-subscriptions/{subscriptionId}` |
-| 接口描述 | 查询邮件订阅详情（待实现） |
+| 接口描述 | 查询邮件订阅详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:rss:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -12559,7 +12607,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/rss-subscriptions/{subscriptionId}/status` |
-| 接口描述 | 管理邮件订阅状态（待实现） |
+| 接口描述 | 管理邮件订阅状态（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:rss:update` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -12648,7 +12696,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/rss-subscriptions/{subscriptionId}` |
-| 接口描述 | 删除邮件订阅（待实现） |
+| 接口描述 | 删除邮件订阅（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:rss:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -12710,7 +12758,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/rss.xml` |
-| 接口描述 | 读取公开RSS Feed（待实现） |
+| 接口描述 | 读取公开RSS Feed（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -12749,7 +12797,7 @@ Content-Type: application/rss+xml; charset=UTF-8
 
 #### 业务说明
 
-成功Content-Type=application/rss+xml; charset=UTF-8，返回RSS2.0而非Result。取最近20篇PUBLIC文章，publishTime DESC,articleId DESC；guid使用稳定本站文章URL，link使用规范slug，pubDate为RFC822日期。description输出转义后的摘要，不输出Markdown、私密正文或邮箱。配置的公开博客基址由服务端提供，不能信任任意Host头。
+成功Content-Type=application/rss+xml; charset=UTF-8，返回RSS2.0而非Result。取最近20篇PUBLIC文章，publishTime DESC,articleId DESC；guid使用稳定本站文章URL，link使用规范slug，pubDate为RFC822日期。description输出转义后的摘要，不输出Markdown、私密正文或邮箱。配置的公开博客基址由app.sites.blog-base-url提供，文章前端规范路径为/articles/{slug}，不能信任任意Host头。
 
 ---
 
@@ -12762,7 +12810,7 @@ Content-Type: application/rss+xml; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/sitemap.xml` |
-| 接口描述 | 读取公开站点地图（待实现） |
+| 接口描述 | 读取公开站点地图（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -12803,7 +12851,7 @@ Content-Type: application/xml; charset=UTF-8
 
 #### 业务说明
 
-成功application/xml; charset=UTF-8，不包Result。只输出站点公开入口、PUBLIC文章及可公开分类/标签URL；使用安全XML编码，lastmod取公开资源更新时间，UTC格式。超过单文件50000条或未压缩50MiB时返回sitemapindex；同一路径支持page正整数查询读取有界子图，未知页404。不得悄悄截断已发布URL。任何缓存均需随发布、下架、回收、可见性或slug变化失效，不能继续暴露非PUBLIC条目。
+成功application/xml; charset=UTF-8，不包Result。只输出站点公开入口、PUBLIC文章及可公开分类/标签URL；使用安全XML编码，lastmod取公开资源更新时间，UTC格式。超过单文件50000条或未压缩50MiB时返回sitemapindex；同一路径支持page正整数查询读取有界子图，未知页404。不得悄悄截断已发布URL。子图链接使用app.sites.api-base-url（含/api/v1）加/blog/sitemap.xml?page=...；公开入口使用已配置home/blog/cv基址，分类/标签前端路径为/categories/{slug}与/tags/{slug}。任何缓存均需随发布、下架、回收、可见性或slug变化失效，不能继续暴露非PUBLIC条目。
 
 ---
 
@@ -12811,7 +12859,7 @@ Content-Type: application/xml; charset=UTF-8
 
 ## 19. 访客、浏览记录与统计报表
 
-本章全部待实现。匿名统计标识与Sa-Token账号完全分开，封禁统计标识不能停用本站账号，也不能凭统计记录取得评论、点赞或订阅权限。报表范围、PV/UV与累计阅读数口径见第12.13节。
+本章接口均已实现。匿名统计标识与Sa-Token账号完全分开，封禁统计标识不能停用本站账号，也不能凭统计记录取得评论、点赞或订阅权限。报表范围、PV/UV与累计阅读数口径见第12.13节。
 
 <a id="api-137"></a>
 
@@ -12822,7 +12870,7 @@ Content-Type: application/xml; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/analytics/page-views` |
-| 接口描述 | 记录站点页面浏览（待实现） |
+| 接口描述 | 记录站点页面浏览（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
 | 成功状态 | 200 OK |
@@ -12899,7 +12947,7 @@ IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、�
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/visitors` |
-| 接口描述 | 分页查询访客（待实现） |
+| 接口描述 | 分页查询访客（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:visitor:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13004,7 +13052,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/visitors/{visitorId}` |
-| 接口描述 | 查询访客详情（待实现） |
+| 接口描述 | 查询访客详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:visitor:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13093,7 +13141,7 @@ X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的最近访问
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/visitors/{visitorId}/block` |
-| 接口描述 | 封禁访客统计标识（待实现） |
+| 接口描述 | 封禁访客统计标识（已实现） |
 | Content-Type | application/json |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:visitor:block` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13190,7 +13238,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/visitors/{visitorId}/unblock` |
-| 接口描述 | 解除访客统计限制（待实现） |
+| 接口描述 | 解除访客统计限制（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:visitor:unblock` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13281,7 +13329,7 @@ X-Revision: "<current-revision>"
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/visitors/{visitorId}` |
-| 接口描述 | 删除访客统计记录（待实现） |
+| 接口描述 | 删除访客统计记录（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:visitor:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13343,7 +13391,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/page-views` |
-| 接口描述 | 分页查询浏览记录（待实现） |
+| 接口描述 | 分页查询浏览记录（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:view:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13448,7 +13496,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/page-views/{viewId}` |
-| 接口描述 | 删除浏览记录（待实现） |
+| 接口描述 | 删除浏览记录（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:view:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13508,7 +13556,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/statistics` |
-| 接口描述 | 查询公开博客统计（待实现） |
+| 接口描述 | 查询公开博客统计（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -13576,7 +13624,7 @@ Content-Type: application/json; charset=UTF-8
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/statistics/overview` |
-| 接口描述 | 查询后台统计总览（待实现） |
+| 接口描述 | 查询后台统计总览（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:statistics:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13657,7 +13705,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/statistics/page-views` |
-| 接口描述 | 查询浏览趋势（待实现） |
+| 接口描述 | 查询浏览趋势（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:statistics:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13728,7 +13776,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/statistics/visitors` |
-| 接口描述 | 查询新访客趋势（待实现） |
+| 接口描述 | 查询新访客趋势（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:statistics:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13799,7 +13847,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/statistics/provinces` |
-| 接口描述 | 查询访客省份分布（待实现） |
+| 接口描述 | 查询访客省份分布（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:statistics:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13868,7 +13916,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/statistics/articles` |
-| 接口描述 | 查询文章访问排行（待实现） |
+| 接口描述 | 查询文章访问排行（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:statistics:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -13936,7 +13984,7 @@ Cache-Control: no-store
 
 ## 20. 操作日志
 
-本章全部待实现，使用sys_operation_log记录管理操作。所有入口要求有效会话、admin:access、对应权限及ALL范围；不按admin角色名称绕过权限。
+本章接口均已实现，使用sys_operation_log记录管理操作。所有入口要求有效会话、admin:access、对应权限及ALL范围；不按admin角色名称绕过权限。
 
 <a id="api-151"></a>
 
@@ -13947,7 +13995,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/operation-logs` |
-| 接口描述 | 分页查询操作日志（待实现） |
+| 接口描述 | 分页查询操作日志（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `sys:log:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -14049,7 +14097,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/operation-logs/{logId}` |
-| 接口描述 | 查询操作日志详情（待实现） |
+| 接口描述 | 查询操作日志详情（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `sys:log:query` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -14136,7 +14184,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `DELETE /api/v1/admin/operation-logs/{logId}` |
-| 接口描述 | 清理单条操作日志（待实现） |
+| 接口描述 | 清理单条操作日志（已实现） |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `sys:log:delete` + 该操作的ALL范围 |
 | 成功状态 | 200 OK |
@@ -14205,6 +14253,18 @@ Cache-Control: no-store
 | 旧管理员登录、验证码、Cookie/JWT和游客角色 | 沿用第1..4章本站Bearer与JustAuth，不新增平行鉴权；不复制旧账号或默认密码 |
 | 旧评论的Markdown、悄悄话、邮件提醒和本人编辑 | 现有blog_comment没有相应格式/私密/通知字段，仍采用第9章纯文本评论及占位删除；这些旧能力没有被默认为已承诺，留言采用新增表的独立功能 |
 | 旧批量审核/删除 | V2沿用逐资源操作与各自版本/权限校验；前端批量操作逐项调用并展示每项结果，不承诺跨请求整体事务 |
-| 旧全文索引、计数同步、邮件系统与部署配置 | 搜索契约定义字面包含；不移植异步计数批次，不把SMTP/OAuth/存储凭据放进配置表；后续实现需另行落实实际依赖与采集/投递组件 |
+| 旧全文索引、计数同步、邮件系统与部署配置 | 搜索契约定义字面包含；不移植异步计数批次，不把SMTP/OAuth/存储凭据放进配置表；本轮使用Boot BOM管理的mail starter实现SMTP边界，并接入现有数据库/Redis及地域设施 |
 
-新增接口均为待实现契约。本次不增加Controller、Service、实体、邮件投递或采集任务，不将上一轮数据库隔离测试视为这些HTTP接口已经通过联调。实现后应按业务验收公开过滤、SELF/ALL拒绝、私密父链、版本冲突、邮箱确认及退订票据、数据回滚、XML转义和日志脱敏；公开白名单只随具体入口实现精确增加，禁止整段放开home/cv/blog/analytics路由。
+新增66个入口已落实Controller→Service接口/实现→Mapper/XML及对应实体/DTO/VO，邮件与采集已接通真实消费者。沿用现有28表，不复制老项目鉴权、访客Token、凭据或计数缓存。公开白名单逐方法/路径增加；隔离验证、真实外部平台和部署验收分别记录在运行说明，不将实现标记等同上线。
+
+
+最终验收（2026-10-31 01:35:02，Asia/Shanghai）：用户指定完整Maven verify退出0、BUILD SUCCESS。244项全部通过：common15、server229；IdentityIntegrationTest70、ArticleIntegrationTest143，共213项真实隔离MySQL/Redis集成，无失败、错误或跳过。本轮新增31项真实业务集成及3项SMTP装配/错误边界测试；实际数据库验证站点地图50000条和UTF-8编码后50MiB分片，确认票据并发消费/过期、8类新资源目标锁及主页保护/所选用户/单例锁等待后的原Token撤销，全部通过。专项34项通过日志为`Backend/target/verification/test-remaining-business-r4.log`，此前夹具修正与失败日志保留。
+
+完整验收执行会话20213，日志`Backend/target/verification/verify-remaining-final.log`，退出码`Backend/target/verification/verify-remaining-final.exit-code.txt`；server可执行jar已重新打包。逐方法/路径核对153个文档声明与153个Controller声明完全对应，无缺少/额外路由，28实体、55个后台审计写方法；清单`Backend/target/verification/remaining-implementation.md`，路由证据`Backend/target/verification/remaining-route-check.txt`。4份文档UTF-8/代码块/本地链接与锚点及git diff --check检查结果见`Backend/target/verification/remaining-doc-check.txt`。
+
+只使用临时目录、随机端口的真实隔离MySQL/Redis，未连接业务库、未导入业务库基线或修改SQL结构，未创建worktree、切换分支、重置、提交、推送或覆盖既有成果。真实SMTP/OSS/OAuth、浏览器联调、独立jar HTTP冒烟和压测未验证；部署需填写明确站点/API基址、SMTP和固定前端完成页。通知及失败审计仍为进程内投递，不保证跨宕机；存储/MySQL补偿失败仍需人工处理。留言公开分页目前读取全部轻量父链节点，数量增长导致扫描不可接受时再演进查询。
+
+
+OSS默认配置验收：2026-10-31 01:49:03（Asia/Shanghai），用户既定完整Maven verify退出0、BUILD SUCCESS，245项全部通过（common15、server230），真实隔离MySQL/Redis集成仍213项，无失败、错误或跳过。新增InfrastructureConfigTest实际加载application.yml，验证默认启用OSS、缺少凭据拒绝启动、虚构边界参数可装配真实SDK；不访问云端。两类集成测试显式禁用部署OSS，继续用临时目录和隔离数据库/Redis；server可执行jar已重新打包。执行会话95436，日志`Backend/target/verification/verify-oss-default-config.log`，退出码`Backend/target/verification/verify-oss-default-config.exit-code.txt`。YAML解析、V2独立DB_URL/禁止初始化/上传限制/Bearer保留及git diff --check通过。
+
+当前默认配置参考老项目非秘密参数，OSS上传需要运行环境提供OSS_ACCESS_KEY_ID和OSS_ACCESS_KEY_SECRET；未把旧密码或AccessKey写入仓库。未启动生产应用、连接业务库或向真实Bucket/SMTP发送请求，未修改老项目、提交或推送。历史local只保留读取兼容和临时校验；此前默认local的分章验收为历史记录，以本轮默认OSS配置为准。

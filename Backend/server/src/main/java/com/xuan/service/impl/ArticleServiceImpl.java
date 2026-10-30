@@ -6,6 +6,7 @@ import com.xuan.annotation.OperationLog;
 import com.xuan.content.ArticleResources;
 import com.xuan.content.ArticleResources.References;
 import com.xuan.content.CommentVisibility;
+import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
@@ -60,6 +61,7 @@ import java.util.TreeSet;
 @RequiredArgsConstructor
 public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> implements IArticleService {
     private final ArticleMapper articles;
+    private final SubscriptionNotifications notifications;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
@@ -170,6 +172,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         validateWrite(request);
         References references = resources.inspect(null, request.getMarkdownContent(), request.getCoverUrl());
         lockAssociations(request.getCategoryId(), request.getTagIds());
+        // 字典行也可能等待，拿齐锁后不能沿用等待前的 Token 和权限。
+        requireAdmin("create");
         BlogArticle article = new BlogArticle();
         article.setAuthorId(sessions.currentUserId());
         article.setStatus(0);
@@ -225,6 +229,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         if (article.getStatus() == 0 && status == 2) {
             throw new BusinessException(409, "STATE_CONFLICT", "草稿须先发布");
         }
+        boolean firstPublic = status == 1 && article.getPublishTime() == null && article.getVisibility() == 1;
         if (status == 1) {
             String markdown = content(id).getMarkdownContent();
             requirePublishable(markdown, article.getArticleType(), article.getOriginalUrl());
@@ -237,6 +242,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
         article.setStatus(status);
         articles.updateArticle(article, requireAdmin("publish"));
+        if (firstPublic) { notifications.afterArticlePublished(id); }
         return profile(articles.scoped(id, null, false));
     }
 

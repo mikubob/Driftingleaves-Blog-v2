@@ -7,6 +7,8 @@ import com.xuan.config.VirtualThreadConfig;
 import com.xuan.properties.AliOssProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
@@ -42,6 +44,22 @@ class InfrastructureConfigTest {
                         "app.oss.region=cn-hangzhou", "app.oss.bucket=isolated-test-bucket",
                         "app.oss.access-key-id=boundary-id", "app.oss.access-key-secret=boundary-secret");
         runner.run(context -> assertThat(context).hasSingleBean(OSS.class).hasSingleBean(AliOssClient.class));
+    }
+
+    /** 加载实际application配置验证默认启用，SDK使用虚构凭据装配，不请求云端。 */
+    @Test
+    void applicationDefaultsToOssAndRejectsMissingCredentials() throws Exception {
+        var application = new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml")).getFirst();
+        var runner = new ApplicationContextRunner().withUserConfiguration(PropertiesConfig.class, OssConfig.class)
+                .withInitializer(context -> context.getEnvironment().getPropertySources().addLast(application))
+                .withPropertyValues("OSS_ACCESS_KEY_ID=", "OSS_ACCESS_KEY_SECRET=");
+        runner.run(context -> assertThat(context).hasFailed());
+        runner.withPropertyValues("OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com", "OSS_REGION=cn-hangzhou",
+                "OSS_BUCKET=isolated-test-bucket", "OSS_ACCESS_KEY_ID=boundary-id", "OSS_ACCESS_KEY_SECRET=boundary-secret")
+                .run(context -> {
+                    assertThat(context).hasNotFailed().hasSingleBean(OSS.class).hasSingleBean(AliOssClient.class);
+                    assertThat(context.getEnvironment().getProperty("app.oss.enabled", Boolean.class)).isTrue();
+                });
     }
 
     @Configuration(proxyBeanMethods = false)

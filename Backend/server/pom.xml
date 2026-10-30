@@ -28,6 +28,11 @@
             <groupId>com.xuan</groupId>
             <artifactId>entity</artifactId>
         </dependency>
+        <!-- 邮箱确认和订阅通知通过真实SMTP发送，连接信息来自外部spring.mail配置。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <!-- 这里提供 MVC、REST、文件上传和默认的 Jackson 3 JSON 支持。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

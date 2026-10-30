@@ -1,12 +1,15 @@
 # DriftingLeavesV2 数据库设计
 
-适用 MySQL **8.0.16+**，InnoDB、utf8mb4。更新日期：2026-10-30。
+当前实现状态（2026-10-31，Asia/Shanghai）：API中153个方法/路径均已有实际消费者，28张表已有实体，55个后台写方法接入事务审计。第15..20章新增66入口及主页/简历、留言私密父链、音乐、订阅邮箱确认、PUBLIC XML、访问/UTC统计与日志治理已实现。当前轮完整验收结果见本文末尾；下方较早分章记录为历史状态，不再限制本轮范围。
 
-这是新项目的空库建库基线，现有 28 张表。当前 `Backend/` 已实现 19 表实体（原有18表及 sys_operation_log）、Sa-Token + JustAuth 身份基础闭环及 API 第 1..11 章共 87 个接口（含系统管理、文章、归档、热门榜、分类标签、评论点赞、友链和配置）。后台32个写方法已接入同事务成功审计与回滚后独立失败审计；其余9张新增表仍仅有设计，文件 HTTP 已与文章和存储连通，日志查询/清理仍待实现，`Front/` 尚无前端工程。分类、标签管理已与文章联动：分类删除按外键 SET NULL，标签删除 CASCADE 关联，文章和正文保留；关联变化使文章 X-Revision 失效，字典与成功日志同事务提交。评论和点赞按真实明细即时统计，互动不改变文章版本；本轮复用现有表、复合键、外键和配置种子，不变更 SQL 结构。运行与隔离测试见 [后端运行说明](../docs/后端运行说明.md)。
+
+适用 MySQL **8.0.16+**，InnoDB、utf8mb4。更新日期：2026-10-31。
+
+这是新项目的空库建库基线，现有28张表已全部映射。API共153个方法/路径，55个后台写方法接入成功同事务、失败回滚后独立审计。主页/简历、留言、音乐、订阅、访客与浏览已有真实业务消费者；文件HTTP与文章/存储已接通，日志有独立ALL查询与清理。`Front/`尚无前端工程。本轮沿用现有表、约束、索引、权限/菜单种子，不修改SQL结构，不向业务库导入基线。分类删除SET NULL、标签关联CASCADE，文章/正文保留并改变聚合版本；互动按真实明细计数，访问PV/UV按保留明细，不反向扣减文章累计阅读。运行与隔离验证见[后端运行说明](../docs/后端运行说明.md)。
 
 ## 文件与执行
 
-- `drifting_leaves_v2.sql`：28 张表、基础角色、权限字典、后台菜单和站点配置；本次直接修改此基线，没有新增迁移脚本。
+- `drifting_leaves_v2.sql`：28 张表、基础角色、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
 
 在 MySQL 客户端执行（路径可按实际位置修改）：
 
@@ -154,7 +157,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 新增模块继续采用独立权限和菜单授权。`home:profile:*`、`home:social:*`、`cv:experience:*`、`cv:skill:*`、`blog:music:*`，以及留言审核、订阅管理、访客/浏览/报表和日志均为全站资源，后台接口需 `admin:access`、对应权限及 ALL 范围；SELF 不生成虚构的归属条件。新增权限仅管理员默认获得这些管理能力；作者和会员只新增 `blog:message:create/updateOwn/deleteOwn`、`blog:rss:subscribe/unsubscribe`，共 5 项前台权限。本人接口始终按会话 `user_id` 限定，不能被 ALL 扩大。
 
-新增模块逐接口契约已补入[API文档](../docs/API.md)第15..20章，旧业务取舍见该文档第21章。新菜单的组件键均为后续前端实现约定。当前没有新增业务 Controller，SQL 中有权限记录不代表该功能已经可用或接口已经受到保护。
+新增模块逐接口契约已补入[API文档](../docs/API.md)第15..20章，旧业务取舍见该文档第21章。新菜单的组件键均为后续前端实现约定。第15..20章已有对应Controller、Service和Mapper/XML，后台独立权限及ALL、本人归属SQL均在实际消费者中检查。
 
 ### 菜单计算
 
@@ -185,15 +188,23 @@ WHERE u.user_id = ? AND u.status = 1;
 - 留言沿用评论的审核与删除占位语义；父节点创建后不允许修改，根节点通过回复链推导。悄悄话接收者由最早私密祖先的user_id推导，前台仅该接收者与节点作者可读；后台管理另需admin:access及对应ALL权限。回复继承私密父链限制，私密发起者可读取其线程中的后台回复，不能向公众泄露私密节点；完整规则见API第12.10节。`notify_reply` 仅表示意愿，实际通知仍需校验收件邮箱；不从该标志推定邮箱已验证。
 - 邮件订阅每用户一条、每邮箱一条，默认待验证。当前邮箱验证成功且写入激活时间后才能置为已订阅；换邮箱重置验证状态，后台也不得绕过确认。退订写入退订时间，重新激活清空该时间。确认/退订票据使用 Redis，确认绑定发起的本站用户与当前邮箱；邮件退订链接可持有作用域仅限该订阅的不可猜票据，不能凭邮箱或用户 ID 退订他人。
 - 浏览记录的站点、文章与已登录用户由服务端核验；匿名访客指纹可伪造，只用于统计和有限限制，不能用它授予互动权限或封禁某个本站账号。删除访客、用户或文章后对应浏览外键置 NULL；总览和排行按保留的明细统计。`blog_article.view_count` 仍是现有累计阅读数，明细清理不反向扣减；明细总数与累计阅读数不要求恒等，不引入旧异步计数同步表。
-- 操作日志仅服务端写入，清理需显式 `sys:log:delete`；账号物理清理后保留日志并将用户关联置 NULL。操作摘要、错误、浏览路径与来源 URL 必须在写入前脱敏，不记录密码、Token、票据或密钥。后台用户/角色/权限/菜单及文章写事务已实际产生审计，当前 operation_data 为 NULL，error_message 只存固定错误码；成功日志与业务一起提交，失败在回滚后以独立事务写入。访问采集和日志查询/保留/清理 API 仍待实现，本次无需变更 SQL 结构。
+- 操作日志仅服务端写入，清理需显式 `sys:log:delete`；账号物理清理后保留日志并将用户关联置 NULL。操作摘要、错误、浏览路径与来源 URL 必须在写入前脱敏，不记录密码、Token、票据或密钥。后台用户/角色/权限/菜单及文章写事务已实际产生审计，当前 operation_data 为 NULL，error_message 只存固定错误码；成功日志与业务一起提交，失败在回滚后以独立事务写入。访问采集、统计及日志查询/显式清理API已实现，沿用原结构，无需导入基线或迁移业务库。
 
 暂未引入组织部门、租户、聊天、相册、文章版本、独立归档表和额外鉴权会话表；这些不属于当前项目的必需部分。第三方登录仅增加身份绑定，Session/Token 由 Sa-Token 及其存储管理。
 
 ## 当前实体映射
 
-第11章沿用 blog_file 和既有文件权限种子，不改表结构、不增加引用表或版本列。文件元数据不可编辑，预览与删除按各自权限计算 uploader_id 范围；后台文章附件还独立限制文章作者范围，公开附件只接受当前 PUBLIC 文章的 Markdown/封面真实引用。上传先校验临时图片，再写随机存储键，最后提交元数据与成功审计；数据库失败清理新对象。删除持同一文件锁按主键每批100篇扫描全部状态文章，包括草稿、私密、下架和回收站；仍引用409，存储失败503并保留元数据。对象已删但提交失败时可重试删除，不宣称存储和MySQL共同事务。默认local，可选OSS只影响新上传，不迁移历史对象，不改变已有Bucket或对象权限。
+第12章共享模型核对沿用现有19表实体、DTO/VO和业务转换，不新增表、列、状态枚举、引用表、版本列或缓存计数。身份/授权、菜单、文章、字典、互动、友链配置与文件的状态、输入和响应已对照API第12章逐项记录；第1..8章入口补齐严格查询及无请求体检查，未进入Service的拒绝请求不写业务或业务审计。分类/标签外键对文章版本、评论父链对公开计数、配置行锁对审核策略、文件锁对引用、授权变化对会话和成功同事务/失败回滚后审计，继续沿既有实现。
 
-原有18表及 sys_operation_log 共19表在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射，其余9张新增表尚无实体，不共享虚构时间基类。主外键用 Long，`view_count` / `size_bytes` 用 BigInteger 覆盖 UNSIGNED 上限，站点 `config_value` 用原始 JSON String，解析留在应用层。五类复合主键实体不声明 `@TableId`，本期不为它们建立 BaseMapper；用户角色关联通过明确 SQL 插入。OperationLogMapper 仅提供服务端日志写入，不添加日志管理 CRUD。
+角色/权限写入在目标行锁后重查原Token与独立权限，角色grants在权限集合锁后复核；文章创建在分类/标签锁后复核。等待期间撤销会话时整笔拒绝，不保存元数据/正文/关联或成功日志，失败日志在回滚后独立提交；没有改变固定保护锁、外键或现有事务隔离级别。
+
+第12章最终验收：2026-10-30 20:40:41（Asia/Shanghai），用户指定完整 Maven verify 退出0，210项全部通过（common15、server195）；其中IdentityIntegrationTest70、ArticleIntegrationTest112，共182项真实隔离MySQL/Redis集成，无失败、错误或跳过。新增7项真实行为测试，执行会话39527，日志`Backend/target/verification/verify-part12-final.log`及退出码`verify-part12-final.exit-code.txt`；历史日志保留，可执行jar已重新打包。只向新建隔离实例导入现有基线，未修改SQL结构、执行业务库迁移或连接业务库；未创建worktree、切分支、重置、提交或推送。第15..20章HTTP、真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证。
+
+home_profile/home_social_link、cv_experience/cv_skill、blog_message、blog_music、blog_rss_subscription、blog_visitor/blog_page_view这9表均已有实体及实际消费者，28表全部映射。sys_operation_log沿用既有写入并增加独立列表/详情与清理，55个后台写方法接入事务审计。未执行业务数据库初始化或迁移。
+
+第11章沿用 blog_file 和既有文件权限种子，不改表结构、不增加引用表或版本列。文件元数据不可编辑，预览与删除按各自权限计算 uploader_id 范围；后台文章附件还独立限制文章作者范围，公开附件只接受当前 PUBLIC 文章的 Markdown/封面真实引用。上传先校验临时图片，再写随机存储键，最后提交元数据与成功审计；数据库失败清理新对象。删除持同一文件锁按主键每批100篇扫描全部状态文章，包括草稿、私密、下架和回收站；仍引用409，存储失败503并保留元数据。对象已删但提交失败时可重试删除，不宣称存储和MySQL共同事务。当前部署默认启用OSS，新上传使用oss；本地目录仅供临时校验及历史local兼容，不迁移历史对象，不改变已有Bucket或对象权限。
+
+全部28表在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射，不共享虚构时间基类。主外键用 Long，`view_count` / `size_bytes` 用 BigInteger 覆盖 UNSIGNED 上限，站点 `config_value` 用原始 JSON String，解析留在应用层。五类复合主键实体不声明 `@TableId`，本期不为它们建立 BaseMapper；用户角色关联通过明确 SQL 插入。OperationLogMapper保留服务端写入，并为独立权限/ALL下的后台查询和清理提供明确SQL；没有客户端创建/编辑日志。
 
 时间默认值和更新时间由 MySQL 维护，应用不做重复填充，连接初始化为 UTC。身份、文章及互动写事务使用 READ COMMITTED，授权/菜单、后台文章详情和评论分页/详情读取使用一致快照；MyBatis 一级缓存限定 STATEMENT，锁后不会复用锁前正文或授权。测试只向新建的隔离实例导入本基线，没有执行开发或业务数据库初始化。
 
@@ -209,3 +220,15 @@ WHERE u.user_id = ? AND u.status = 1;
 第11章最终验收：2026-10-30 19:58:54（Asia/Shanghai），用户指定完整 Maven verify 退出0，BUILD SUCCESS。203项全部通过：common15、server188；其中 IdentityIntegrationTest66、ArticleIntegrationTest109，共175项真实隔离MySQL/Redis集成，无失败、错误或跳过。本章新增25项测试：22项真实集成、2项实际本地/可选OSS存储接入测试、1项OSS上传失败随机键补偿测试；OSS网络仅使用SDK替身，不代表真实云验证。完整执行会话65274，日志`Backend/target/verification/verify-part11-accepted.log`，退出码`Backend/target/verification/verify-part11-accepted.exit-code.txt`；相关109项测试日志`test-part11-r2.log`。早期日志保留，首轮四处测试构造问题已修正；最后缺失子目录删除重试修正已包含在最终验收。可执行jar已重新打包。
 
 第1..11章累计87个接口，后台32个写方法接入审计。文件上传、元数据、前后台读取、文章引用和删除补偿已连通；默认local，显式启用既有OSS配置后新上传为oss，旧对象不迁移。未修改SQL结构、依赖版本或老项目，未连接业务库，未创建worktree、切分支、重置、提交或推送；既有未提交/未跟踪成果保留。第15..20章未扩展。真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证；存储与MySQL没有共同事务，补偿失败仍需人工检查孤立对象。
+
+
+最终验收（2026-10-31 01:35:02，Asia/Shanghai）：用户指定完整Maven verify退出0、BUILD SUCCESS。244项全部通过：common15、server229；IdentityIntegrationTest70、ArticleIntegrationTest143，共213项真实隔离MySQL/Redis集成，无失败、错误或跳过。本轮新增31项真实业务集成及3项SMTP装配/错误边界测试；实际数据库验证站点地图50000条和UTF-8编码后50MiB分片，确认票据并发消费/过期、8类新资源目标锁及主页保护/所选用户/单例锁等待后的原Token撤销，全部通过。专项34项通过日志为`Backend/target/verification/test-remaining-business-r4.log`，此前夹具修正与失败日志保留。
+
+完整验收执行会话20213，日志`Backend/target/verification/verify-remaining-final.log`，退出码`Backend/target/verification/verify-remaining-final.exit-code.txt`；server可执行jar已重新打包。逐方法/路径核对153个文档声明与153个Controller声明完全对应，无缺少/额外路由，28实体、55个后台审计写方法；清单`Backend/target/verification/remaining-implementation.md`，路由证据`Backend/target/verification/remaining-route-check.txt`。4份文档UTF-8/代码块/本地链接与锚点及git diff --check检查结果见`Backend/target/verification/remaining-doc-check.txt`。
+
+只使用临时目录、随机端口的真实隔离MySQL/Redis，未连接业务库、未导入业务库基线或修改SQL结构，未创建worktree、切换分支、重置、提交、推送或覆盖既有成果。真实SMTP/OSS/OAuth、浏览器联调、独立jar HTTP冒烟和压测未验证；部署需填写明确站点/API基址、SMTP和固定前端完成页。通知及失败审计仍为进程内投递，不保证跨宕机；存储/MySQL补偿失败仍需人工处理。留言公开分页目前读取全部轻量父链节点，数量增长导致扫描不可接受时再演进查询。
+
+
+OSS默认配置验收：2026-10-31 01:49:03（Asia/Shanghai），用户既定完整Maven verify退出0、BUILD SUCCESS，245项全部通过（common15、server230），真实隔离MySQL/Redis集成仍213项，无失败、错误或跳过。新增InfrastructureConfigTest实际加载application.yml，验证默认启用OSS、缺少凭据拒绝启动、虚构边界参数可装配真实SDK；不访问云端。两类集成测试显式禁用部署OSS，继续用临时目录和隔离数据库/Redis；server可执行jar已重新打包。执行会话95436，日志`Backend/target/verification/verify-oss-default-config.log`，退出码`Backend/target/verification/verify-oss-default-config.exit-code.txt`。YAML解析、V2独立DB_URL/禁止初始化/上传限制/Bearer保留及git diff --check通过。
+
+当前默认配置参考老项目非秘密参数，OSS上传需要运行环境提供OSS_ACCESS_KEY_ID和OSS_ACCESS_KEY_SECRET；未把旧密码或AccessKey写入仓库。未启动生产应用、连接业务库或向真实Bucket/SMTP发送请求，未修改老项目、提交或推送。历史local只保留读取兼容和临时校验；此前默认local的分章验收为历史记录，以本轮默认OSS配置为准。

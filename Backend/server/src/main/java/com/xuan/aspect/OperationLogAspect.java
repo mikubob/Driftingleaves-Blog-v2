@@ -1,7 +1,14 @@
 package com.xuan.aspect;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.xuan.annotation.OperationLog;
 import com.xuan.entity.BlogCategory;
+import com.xuan.entity.HomeProfile;
+import com.xuan.entity.HomeSocialLink;
+import com.xuan.entity.CvExperience;
+import com.xuan.entity.CvSkill;
+import com.xuan.entity.BlogMusic;
+import com.xuan.model.ResourceVersion;
 import com.xuan.entity.BlogFriendLink;
 import com.xuan.entity.BlogTag;
 import com.xuan.audit.FailureAuditWriter;
@@ -13,6 +20,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.IpUtils;
 import com.xuan.vo.MenuVO;
 import com.xuan.vo.FileVO;
+import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.PermissionVO;
 import com.xuan.vo.RoleVO;
@@ -98,6 +106,7 @@ public class OperationLogAspect {
 
     /** 只从已知的创建结果里取 ID，不用反射或序列化遍历整个对象。 */
     private Long createdId(Object value) {
+        if (value instanceof ResourceVersion<?> resource) { return createdId(resource.value()); }
         return switch (value) {
             case UserAdminVO user -> user.userId();
             case RoleVO role -> role.roleId();
@@ -108,12 +117,21 @@ public class OperationLogAspect {
             case BlogTag tag -> tag.getTagId();
             case BlogFriendLink link -> link.getLinkId();
             case FileVO file -> file.fileId();
+            case MessagePrivateVO row -> row.messageId();
+            case HomeProfile row -> row.getProfileId();
+            case HomeSocialLink row -> row.getSocialId();
+            case CvExperience row -> row.getExperienceId();
+            case CvSkill row -> row.getSkillId();
+            case BlogMusic row -> row.getMusicId();
             default -> null;
         };
     }
 
     /** 只记录名单里的固定错误码，不能把异常自由文本存进日志。 */
     private String safeError(Throwable error) {
+        if (error instanceof NotLoginException) {
+            return "UNAUTHENTICATED";
+        }
         if (error instanceof BusinessException business && SAFE_ERRORS.contains(business.getCode())) {
             return business.getCode();
         }

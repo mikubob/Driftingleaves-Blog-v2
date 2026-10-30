@@ -101,7 +101,9 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     public RoleProfileVO update(long roleId, RoleUpdateDTO request, String revision) {
         // 1. 先锁受影响用户，再锁角色；锁内重查当前身份、后台和业务权限、版本。
         List<Long> affected = lockUsers(roleId, "sys:role:update");
-        SysRole role = requireRole(roles.lockById(roleId));
+        SysRole role = roles.lockById(roleId);
+        requireAdmin("sys:role:update");
+        role = requireRole(role);
         checkRevision(role, revision);
         boolean changed = !role.getDataScope().equals(request.getDataScope())
                 || !role.getStatus().equals(request.getStatus());
@@ -130,7 +132,9 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     @OperationLog(type = "delete", target = "sys:role", permission = "sys:role:delete", targetIdArgument = 0)
     public void delete(long roleId, String revision) {
         List<Long> affected = lockUsers(roleId, "sys:role:delete");
-        SysRole role = requireRole(roles.lockById(roleId));
+        SysRole role = roles.lockById(roleId);
+        requireAdmin("sys:role:delete");
+        role = requireRole(role);
         checkRevision(role, revision);
         if (Set.of("admin", "author", "member").contains(role.getRoleCode())) {
             throw new BusinessException(409, "STATE_CONFLICT", "内置角色禁止删除");
@@ -152,13 +156,17 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     public RoleProfileVO grants(long roleId, RoleGrantDTO request, String revision) {
         // 1. 固定保护锁、升序用户锁之后再锁角色，重新检查身份和整体版本。
         List<Long> affected = lockUsers(roleId, "sys:role:grant");
-        SysRole role = requireRole(roles.lockById(roleId));
+        SysRole role = roles.lockById(roleId);
+        requireAdmin("sys:role:grant");
+        role = requireRole(role);
         checkRevision(role, revision);
         List<Long> permissions = request.permissionIds().stream().sorted().toList();
         if (!permissions.isEmpty() && roles.lockEnabledPermissions(permissions).size() != permissions.size()) {
             throw new BusinessException(400, "VALIDATION_ERROR", "permissionIds须全部存在且启用");
         }
         List<Long> menus = completeMenus(request.menuIds(), new HashSet<>(permissions));
+        // 权限行锁也可能等待，拿齐锁后再确认原 Token 和本次授权权限。
+        requireAdmin("sys:role:grant");
         // 2. 最终集合没变就保留版本和会话，不能因为输入顺序变了就当作修改。
         if (!permissions.equals(roles.permissionIds(roleId)) || !menus.equals(roles.menuIds(roleId))) {
             roles.deletePermissions(roleId);

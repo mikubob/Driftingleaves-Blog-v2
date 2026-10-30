@@ -44,6 +44,46 @@ public class AuthorizationProvider implements StpInterface {
             "blog:link:update", "blog:link:delete", "blog:config:query", "blog:config:update");
     /** 上传和删除已有实际文件入口，禁止删除，但不增加最后管理员必须拥有的能力。 */
     public static final Set<String> FILE_PERMISSIONS = Set.of("blog:file:upload", "blog:file:delete");
+    /** 第15..20章固定权限已有实际消费者，不扩展最后管理员保护名单。 */
+    public static final Set<String> EXTENDED_PERMISSIONS = Set.of(
+            "home:profile:query",
+            "home:profile:update",
+            "home:social:query",
+            "home:social:create",
+            "home:social:update",
+            "home:social:delete",
+            "cv:experience:query",
+            "cv:experience:create",
+            "cv:experience:update",
+            "cv:experience:delete",
+            "cv:skill:query",
+            "cv:skill:create",
+            "cv:skill:update",
+            "cv:skill:delete",
+            "blog:message:query",
+            "blog:message:review",
+            "blog:message:moderate",
+            "blog:message:create",
+            "blog:message:updateOwn",
+            "blog:message:deleteOwn",
+            "blog:music:query",
+            "blog:music:create",
+            "blog:music:update",
+            "blog:music:delete",
+            "blog:rss:query",
+            "blog:rss:update",
+            "blog:rss:delete",
+            "blog:rss:subscribe",
+            "blog:rss:unsubscribe",
+            "blog:visitor:query",
+            "blog:visitor:block",
+            "blog:visitor:unblock",
+            "blog:visitor:delete",
+            "blog:view:query",
+            "blog:view:delete",
+            "blog:statistics:query",
+            "sys:log:query",
+            "sys:log:delete");
     private final AuthorizationMapper mapper;
 
     @Override

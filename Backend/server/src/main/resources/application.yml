@@ -1,102 +1,195 @@
 # 环境差异用环境变量或外部 application 配置覆盖，这里不默认启用 profile。
 server:
-  port: ${SERVER_PORT:8080}
+  # 沿用老项目的5922端口，部署时可用SERVER_PORT覆盖。
+  port: ${SERVER_PORT:5922}
   servlet:
+    # 所有业务接口统一加/api/v1，Controller里不再重复写。
     context-path: /api/v1
+  # 关闭容器自动解释转发头，客户端IP统一交给IpUtils按可信代理链提取。
   forward-headers-strategy: none
+  # 框架错误也不向客户端展开原始异常、堆栈或被拒绝的字段值。
   error:
     include-message: never
     include-stacktrace: never
     include-binding-errors: never
 spring:
   servlet:
+    # 这里只接收单张PNG/JPEG；实际类型、尺寸和图片解码还由文件业务校验。
     multipart:
+      # 单文件最多10MiB，总请求多留1MiB容纳multipart边界和字段。
       max-file-size: 10MB
       max-request-size: 11MB
+      # 上传内容直接落临时文件，避免把整张图片留在内存。
       file-size-threshold: 0
   threads:
     virtual:
+      # HTTP处理使用Java 21虚拟线程，业务事务和锁检查仍同步执行。
       enabled: true
   main:
+    # 虚拟线程不会阻止JVM退出，这里保持应用进程运行。
     keep-alive: true
   application:
+    # 应用标识，用于区分日志中的服务名称。
     name: drifting-leaves-v2
+  # 连接信息必须由部署环境提供，不在仓库保存数据库账号或密码。
   datasource:
+    # 填写V2数据库的JDBC地址，连接时区与应用都使用UTC。
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     hikari:
+      # 沿用老项目的5个空闲连接、20个连接上限和60秒等待，使用V2既有Hikari而非Druid。
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 60000
+      # 每条新连接固定到UTC，避免DATETIME随机器时区发生偏移。
       connection-init-sql: SET time_zone = '+00:00'
+      # 默认使用READ COMMITTED，等到行锁后能读到最新已提交状态。
       transaction-isolation: TRANSACTION_READ_COMMITTED
   data:
+    # 会话、限流和一次性票据共用Redis；不可用时不跳过安全检查。
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT:6379}
+      # 只有实际Redis未启用密码时才留空，数据库编号默认0。
       password: ${REDIS_PASSWORD:}
       database: ${REDIS_DATABASE:0}
+      # 建立连接和等待Redis命令各最多2秒。
       connect-timeout: 2s
       timeout: 2s
+  # 参考老项目SMTP服务与STARTTLS设置，账号和授权码仍由外部环境提供。
+  mail:
+    host: ${SMTP_HOST:smtp.qq.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    # SMTP超时单位都是毫秒，沿用老项目的连接/读取/写入等待时间。
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 3000
+      mail.smtp.writetimeout: 5000
+      mail.smtp.auth: true
+      mail.smtp.starttls.enable: true
   sql:
     init:
+      # 应用不自动建库、导入基线或迁移数据，数据库由受控流程准备。
       mode: never
 mybatis-plus:
+  # 加载各业务Mapper对应的XML，复杂查询和锁SQL放在这些文件中。
   mapper-locations: classpath:/mapper/*.xml
   configuration:
+    # 数据库的下划线列名映射到Java驼峰字段。
     map-underscore-to-camel-case: true
     # READ COMMITTED 下等锁后要真正重查数据库，不能复用同一 SqlSession 在锁前缓存的正文或权限。
     local-cache-scope: STATEMENT
   global-config:
+    # 启动时不打印MyBatis-Plus横幅。
     banner: false
+# 只接受本站Bearer Header，OAuth只用于确认第三方身份，不代替本站会话。
 sa-token:
+  # 请求格式为Authorization: Bearer <site-token>。
   token-name: Authorization
   token-prefix: Bearer
+  # 本站Token固定有效7200秒，也就是2小时。
   timeout: 7200
+  # 不另设空闲过期时间，也不因访问自动延长固定有效期。
   active-timeout: -1
   auto-renew: false
+  # 同一账号允许多端登录，各端每次登录生成独立Token。
   is-concurrent: true
   is-share: false
+  # 不从请求体或Cookie读取Token，只读取声明的Header。
   is-read-body: false
   is-read-header: true
   is-read-cookie: false
+  # 登录Token由业务响应返回，不额外自动写入响应头。
   is-write-header: false
+  # 关闭Sa-Token自身日志和横幅，避免认证细节进入日志。
   is-log: false
   is-print: false
+  # 签发Token时创建对应Session，用来保存该次登录的认证时间和方式。
   right-now-create-token-session: true
 app:
+  # 公开链接只用明确部署基址；未配置时依赖它的采集/XML入口返回503。
+  sites:
+    # 主页公开基址；可带明确路径前缀，必须与实际Origin和前端路由一致。
+    home-base-url: ${HOME_BASE_URL:https://driftingleaves.xyz}
+    # 博客公开基址，用于文章链接、RSS和站点地图，不能根据请求Host猜测。
+    blog-base-url: ${BLOG_BASE_URL:https://blog.driftingleaves.xyz}
+    # 简历公开基址；同一Origin下多个站点按最长路径前缀区分，前缀不要重复。
+    cv-base-url: ${CV_BASE_URL:https://cv.driftingleaves.xyz}
+    # 公开后端基址须包含/api/v1，站点地图索引用它生成现有子图接口链接。
+    api-base-url: ${PUBLIC_API_BASE_URL:}
+  # 这里只控制本站邮件业务；SMTP连接、账号、密码和TLS仍由外部spring.mail配置提供。
+  mail:
+    # 默认关闭；启用前配齐SMTP、发件地址和两个固定完成页，发送失败明确返回503。
+    enabled: ${MAIL_ENABLED:false}
+    # 发件地址需由SMTP服务允许，不能用请求中的任意地址替换。
+    from: ${MAIL_FROM:${SMTP_USERNAME:}}
+    # 固定邮箱确认完成页，不带query或fragment；票据由邮件链接的fragment携带。
+    confirm-url: ${MAIL_CONFIRM_URL:}
+    # 固定退订完成页，同样不带query或fragment；页面确认后POST退订，GET不改状态。
+    unsubscribe-url: ${MAIL_UNSUBSCRIBE_URL:}
+  # 附件地址识别与存储位置配置，不会因此开放上传目录的静态访问。
   files:
+    # OSS上传仍在此目录临时校验图片；也用于读取历史local记录，不存放新的持久附件。
     local-root: ${UPLOAD_ROOT:./uploads}
+    # 补充本站附件地址的明确HTTP(S) origin；可用逗号分隔，不带路径或通配符。
     public-origins: ${FILE_PUBLIC_ORIGINS:}
+  # OSS只影响启用后新上传的对象，历史local/oss记录继续按各自存储类型读取。
   oss:
-    enabled: ${OSS_ENABLED:false}
-    endpoint: ${OSS_ENDPOINT:}
-    region: ${OSS_REGION:}
-    bucket: ${OSS_BUCKET:}
+    # 默认启用OSS，新上传保存为私有OSS对象；凭据缺失则启动失败，不悄悄改用本地存储。
+    enabled: ${OSS_ENABLED:true}
+    # 填写HTTPS服务地址，不带业务路径、query、fragment或用户名密码。
+    endpoint: ${OSS_ENDPOINT:https://oss-cn-beijing.aliyuncs.com}
+    # 填写Bucket所属地域，与endpoint和实际Bucket对应。
+    region: ${OSS_REGION:cn-beijing}
+    # 使用事先准备的私有Bucket，应用不自动创建Bucket或修改对象权限。
+    bucket: ${OSS_BUCKET:dl-blog}
+    # AccessKey只从环境或外部秘密配置读取，不写入源码、站点配置或日志。
     access-key-id: ${OSS_ACCESS_KEY_ID:}
     access-key-secret: ${OSS_ACCESS_KEY_SECRET:}
+    # 使用STS临时凭据时填写；当前不会自动续期，到期前需由部署环境更新。
     security-token: ${OSS_SECURITY_TOKEN:}
+    # 读写只限这个非空专属目录前缀，使用ASCII目录名并以/结尾。
     key-prefix: ${OSS_KEY_PREFIX:drifting-leaves-v2/}
+  # 本站会话和第三方授权共用这些明确配置，不按任意请求地址动态放行。
   auth:
-    allowed-origins: ${FRONTEND_ORIGINS:}
+    # CORS允许的前端origin列表，逗号分隔；不带路径或通配符，空列表不放行跨域。
+    allowed-origins: ${FRONTEND_ORIGINS:https://driftingleaves.xyz,https://blog.driftingleaves.xyz,https://cv.driftingleaves.xyz,https://admin.driftingleaves.xyz}
+    # OAuth固定完成页，需与允许的前端origin匹配，不能让客户端指定任意回跳。
     frontend-complete-url: ${OAUTH_COMPLETE_URL:}
+    # 本站Redis键的统一前缀，同一Redis上的不同部署应使用不同值。
     redis-prefix: ${REDIS_KEY_PREFIX:dl:v2:}
+    # BCrypt成本默认12；生产环境先测本机硬件耗时，再决定是否覆盖。
     bcrypt-strength: ${BCRYPT_STRENGTH:12}
+    # 仅填写直接信任的代理IP字面量，逗号分隔；为空时忽略转发头，不接受网段或主机名。
     trusted-proxies: ${TRUSTED_PROXIES:}
+    # 认证入口的Redis固定窗口限制；业务入口的注解限流仍按各自声明执行。
     rate:
+      # 下列认证限制共用的窗口秒数，默认60秒。
       window-seconds: ${AUTH_RATE_WINDOW_SECONDS:60}
+      # 窗口内失败登录默认最多10次，同时检查IP及IP与登录名组合。
       login-failures: ${AUTH_RATE_LOGIN_FAILURES:10}
+      # 注册默认每窗口5次，分别按可信IP和存在的浏览器标识限制。
       register: ${AUTH_RATE_REGISTER:5}
+      # OAuth默认每窗口20次，分别按可信IP和存在的浏览器标识限制。
       oauth: ${AUTH_RATE_OAUTH:20}
+    # 只开放这里列出的平台；每个平台启用前须配齐该平台应用的ID、Secret和回调地址。
     providers:
+      # GitHub OAuth应用配置，默认不启用。
       GITHUB:
         enabled: ${OAUTH_GITHUB_ENABLED:false}
         client-id: ${OAUTH_GITHUB_CLIENT_ID:}
         client-secret: ${OAUTH_GITHUB_CLIENT_SECRET:}
         redirect-uri: ${OAUTH_GITHUB_REDIRECT_URI:}
+      # Gitee OAuth应用配置，默认不启用。
       GITEE:
         enabled: ${OAUTH_GITEE_ENABLED:false}
         client-id: ${OAUTH_GITEE_CLIENT_ID:}
         client-secret: ${OAUTH_GITEE_CLIENT_SECRET:}
         redirect-uri: ${OAUTH_GITEE_REDIRECT_URI:}
+      # QQ互联应用配置，默认不启用。
       QQ:
         enabled: ${OAUTH_QQ_ENABLED:false}
         client-id: ${OAUTH_QQ_CLIENT_ID:}
@@ -105,7 +198,11 @@ app:
 # 关掉会展开请求、回调查询和平台响应的调试日志，避免把秘密内容记下来。
 logging:
   level:
+    # 保留Web警告，关闭会展开请求内容的调试输出。
     org.springframework.web: WARN
+    # 沿用老项目的Mapper警告级别，不展开SQL调试信息。
+    com.xuan.mapper: WARN
+    # 第三方OAuth、HTTP客户端及OSS SDK不输出平台响应、票据或存储凭据。
     me.zhyd.oauth: OFF
     com.xkcoding.http: OFF
     com.aliyun.oss: OFF

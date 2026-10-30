@@ -41,7 +41,8 @@ import java.util.Set;
 public class AuthWebConfig implements WebMvcConfigurer {
     private static final Set<String> PUBLIC = Set.of("POST /auth/register", "POST /auth/login", "POST /auth/logout",
             "GET /auth/oauth/providers", "POST /auth/oauth/exchange", "GET /blog/articles", "GET /blog/archives",
-            "GET /blog/article-rankings", "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs");
+            "GET /blog/article-rankings", "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs", "GET /home/profile", "GET /home/social-links",
+            "GET /cv/experiences", "GET /cv/skills", "GET /blog/music", "POST /blog/rss-subscriptions/unsubscribe", "GET /blog/rss.xml", "GET /blog/sitemap.xml", "GET /blog/messages", "POST /analytics/page-views", "GET /blog/statistics");
     private final IUserService users;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
@@ -80,6 +81,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
                     || path.matches("/blog/articles/[^/]+/files/[^/]+/content")))) {
+            if (("GET /blog/messages".equals(route) || "POST /analytics/page-views".equals(route)) && request.getHeader("Authorization") != null) { users.requireCurrent(); }
             return;
         }
         // 3. OAuth 动态路径也要检查平台名单，绑定需要的原会话由业务服务检查。

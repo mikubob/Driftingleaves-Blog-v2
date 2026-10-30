@@ -9,6 +9,7 @@ import jakarta.validation.ConstraintViolationException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.TransactionException;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
@@ -42,7 +43,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> business(BusinessException exception) {
         // 1. 保留业务错误的 HTTP 状态，不能把失败包成 200。
-        ResponseEntity.BodyBuilder response = ResponseEntity.status(exception.getStatus());
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(exception.getStatus()).contentType(MediaType.APPLICATION_JSON);
         // 2. 限流错误补上要等多少秒，其他错误按统一格式返回。
         if (exception.getRetryAfter() != null) {
             response.header("Retry-After", exception.getRetryAfter().toString());
@@ -55,7 +56,7 @@ public class GlobalExceptionHandler {
         // 只提取字段名和校验说明，不把密码等被拒绝的输入放进错误列表。
         List<Result.FieldError> errors = exception.getBindingResult().getFieldErrors().stream()
                 .map(error -> new Result.FieldError(error.getField(), error.getDefaultMessage())).toList();
-        return ResponseEntity.badRequest().body(new Result<>("VALIDATION_ERROR", "参数校验失败", null, errors));
+        return ResponseEntity.badRequest().contentType(MediaType.APPLICATION_JSON).body(new Result<>("VALIDATION_ERROR", "参数校验失败", null, errors));
     }
 
     @ExceptionHandler({HttpMessageNotReadableException.class, MissingRequestValueException.class,
@@ -109,6 +110,6 @@ public class GlobalExceptionHandler {
     }
 
     private ResponseEntity<Result<Void>> error(int status, String code, String message) {
-        return ResponseEntity.status(status).body(Result.error(code, message));
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(Result.error(code, message));
     }
 }

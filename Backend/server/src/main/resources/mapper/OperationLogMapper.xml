@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 日志不可编辑，后台列表排除摘要，清理仍进入正常审计事务。 -->
+<mapper namespace="com.xuan.mapper.OperationLogMapper">
+    <select id="logPage" resultType="com.xuan.vo.OperationLogVO">
+        SELECT log_id,user_id,operation_type,operation_target,target_id,permission_code,result,error_message,ip_address,operation_time
+        FROM sys_operation_log
+        <where>
+            <if test="user != null">AND user_id=#{user}</if>
+            <if test="target != null">AND target_id=#{target}</if>
+            <if test="query.operationType != null">AND operation_type=#{query.operationType}</if>
+            <if test="query.operationTarget != null">AND operation_target=#{query.operationTarget}</if>
+            <if test="query.result != null">AND result=#{query.result}</if>
+            <if test="begin != null">AND operation_time &gt;= #{begin}</if>
+            <if test="end != null">AND operation_time &lt; #{end}</if>
+        </where>
+        ORDER BY operation_time DESC, log_id DESC
+    </select>
+    <select id="lockById" resultType="com.xuan.entity.SysOperationLog">SELECT * FROM sys_operation_log WHERE log_id=#{id} FOR UPDATE</select>
+</mapper>

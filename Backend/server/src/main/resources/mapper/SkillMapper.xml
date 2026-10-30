@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 全站资源由Service检查ALL权限，公开列表过滤隐藏记录。 -->
+<mapper namespace="com.xuan.mapper.SkillMapper">
+    <select id="resourcePage" resultType="com.xuan.entity.CvSkill">
+        SELECT * FROM cv_skill
+        <where>
+            <if test="publicOnly">AND status = 1</if>
+            <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
+            <if test="!publicOnly and query.keyword != null">AND (INSTR(name, #{query.keyword}) &gt; 0)</if>
+            
+        </where>
+        ORDER BY sort_order ASC, skill_id ASC
+    </select>
+    <select id="lockById" resultType="com.xuan.entity.CvSkill">
+        SELECT * FROM cv_skill WHERE skill_id = #{id} FOR UPDATE
+    </select>
+    <update id="replace">
+        UPDATE cv_skill SET name=#{row.name}, description=#{row.description}, icon=#{row.icon}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE skill_id = #{row.skillId}
+    </update>
+</mapper>

@@ -1,0 +1,38 @@
+package com.xuan.dto;
+
+import com.xuan.validation.TextLength;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Pattern;
+import lombok.Getter;
+import lombok.AccessLevel;
+import java.util.Set;
+import java.util.HashSet;
+
+/** 采集只收统计字段，账号、IP、UA和时间由服务端确认。 */
+@Getter
+public class PageViewCreateDTO {
+    @NotNull @Pattern(regexp = "[A-Za-z0-9-]{16,150}")
+    private String fingerprint;
+    @NotNull @Pattern(regexp = "home|blog|cv")
+    private String siteCode;
+    @NotNull @TextLength(min = 1, max = 2048)
+    private String pagePath;
+    @TextLength(min = 1, max = 200)
+    private String pageTitle;
+    @TextLength(min = 1, max = 2048)
+    private String referer;
+
+    private Long articleId;
+    @Getter(AccessLevel.NONE)
+    private final Set<String> present = new HashSet<>();
+    public void setFingerprint(String value) { present.add("fingerprint"); fingerprint = value == null ? null : value.strip(); }
+    public void setSiteCode(String value) { present.add("siteCode"); siteCode = value == null ? null : value.strip(); }
+    public void setPagePath(String value) { present.add("pagePath"); pagePath = value == null ? null : value.strip(); }
+    public void setPageTitle(String value) { present.add("pageTitle"); pageTitle = value == null ? null : value.strip(); }
+    public void setReferer(String value) { present.add("referer"); referer = value == null ? null : value.strip(); }
+    public void setArticleId(Long value) { present.add("articleId"); articleId = value; }
+    /** 可空字段必须显式出现。 */
+    @AssertTrue(message = "须提供全部声明字段")
+    public boolean isComplete() { return present.size() == 6; }
+}

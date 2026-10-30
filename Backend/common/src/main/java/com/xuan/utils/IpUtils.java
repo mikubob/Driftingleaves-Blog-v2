@@ -35,6 +35,17 @@ public final class IpUtils {
         return current;
     }
 
+    /** 访问统计只保留IPv4 /24或IPv6 /48网段，不把完整客户端IP落库。 */
+    public static String anonymize(String value) {
+        String ip = normalize(value);
+        if (ip == null) { return null; }
+        try {
+            byte[] bytes = InetAddress.getByName(ip).getAddress();
+            java.util.Arrays.fill(bytes, bytes.length == 4 ? 3 : 6, bytes.length, (byte) 0);
+            return InetAddress.getByAddress(bytes).getHostAddress();
+        } catch (UnknownHostException error) { return null; }
+    }
+
     /** 先把地址整理成统一写法再比较，避免同一个 IPv6 地址写法不同而漏掉检查。 */
     private static boolean trusted(String ip, List<String> proxies) {
         return proxies.stream().anyMatch(proxy -> ip.equals(normalize(proxy)));
