@@ -5,21 +5,25 @@
     <select id="linkPage" resultType="com.xuan.entity.BlogFriendLink">
         SELECT * FROM blog_friend_link
         <where>
-            <choose><when test="publicOnly">status = 1</when>
+            <choose>
+                <when test="publicOnly">status = 1</when>
                 <otherwise>
                     <if test="query.status != null">AND status = #{query.status}</if>
                     <if test="query.keyword != null">AND INSTR(link_name, #{query.keyword}) &gt; 0</if>
-                </otherwise></choose>
+                </otherwise>
+            </choose>
         </where>
         ORDER BY sort_order ASC, link_id ASC
     </select>
+
     <!-- 写事务持有此锁到版本校验、保存和成功审计完成。 -->
     <select id="lockById" resultType="com.xuan.entity.BlogFriendLink">
         SELECT * FROM blog_friend_link WHERE link_id = #{id} FOR UPDATE
     </select>
+
     <update id="updateLink">
         UPDATE blog_friend_link SET link_name=#{link.linkName}, url=#{link.url}, avatar=#{link.avatar},
-            description=#{link.description}, sort_order=#{link.sortOrder}, status=#{link.status}
+        description=#{link.description}, sort_order=#{link.sortOrder}, status=#{link.status}
         WHERE link_id=#{link.linkId}
     </update>
 </mapper>

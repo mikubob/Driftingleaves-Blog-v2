@@ -2,6 +2,7 @@ package com.xuan;
 
 import com.xuan.config.IpLocationConfig;
 import com.xuan.location.IpLocationResolver;
+import com.xuan.utils.IpUtils;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -10,17 +11,21 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.mock.web.MockHttpServletRequest;
-import com.xuan.utils.IpUtils;
+
 import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.stream.IntStream;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 实际加载 IPv4、IPv6 的 xdb 离线库，检查并发查询、代理 IP 和资源无效时启动失败。 */
+/**
+ * 实际加载 IPv4、IPv6 的 xdb 离线库，检查并发查询、代理 IP 和资源无效时启动失败。
+ */
 class IpLocationConfigTest {
+
     private static AnnotationConfigApplicationContext context;
     private static IpLocationResolver resolver;
 
@@ -56,7 +61,8 @@ class IpLocationConfigTest {
     void supportsConcurrentDualStackCallsOnOneSpringSingleton() throws Exception {
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<String>> queries = IntStream.range(0, 32).mapToObj(index -> (Callable<String>) () ->
-                    resolver.getIpLocation(index % 2 == 0 ? "114.114.114.114" : "240e:3b7:3272:d8d0:db09:c067:8d59:539e")).toList();
+                    resolver.getIpLocation(
+                            index % 2 == 0 ? "114.114.114.114" : "240e:3b7:3272:d8d0:db09:c067:8d59:539e")).toList();
             var results = executor.invokeAll(queries);
             for (int index = 0; index < results.size(); index++) {
                 assertThat(results.get(index).get()).isEqualTo(index % 2 == 0 ? "江苏省 南京市" : "广东省 深圳市");

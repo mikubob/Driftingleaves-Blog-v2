@@ -5,12 +5,16 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
+
 import java.util.List;
 
-/** 登录和注解限流共用 Redis 固定窗口；Redis 出错就拒绝请求，超限返回等待秒数。 */
+/**
+ * 登录和注解限流共用 Redis 固定窗口；Redis 出错就拒绝请求，超限返回等待秒数。
+ */
 @Component
 @RequiredArgsConstructor
 public class RedisRateLimiter {
+
     private static final DefaultRedisScript<Long> HIT = new DefaultRedisScript<>("""
             local ttl = 0
             for _, key in ipairs(KEYS) do

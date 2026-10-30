@@ -7,14 +7,18 @@
         a.status = 1 AND a.visibility = 1 AND a.deleted_at IS NULL
         AND a.publish_time IS NOT NULL AND a.publish_time &lt;= #{now}
     </sql>
+
     <!-- 这里只取文章资料和作者展示信息，点赞数从真实明细统计。 -->
     <sql id="columns">
         a.*, u.nickname AS author_nickname, u.avatar AS author_avatar,
         (SELECT COUNT(*) FROM blog_article_like l WHERE l.article_id = a.article_id) AS like_count
     </sql>
+
     <!-- 分页和 total 共用条件，INSTR 把通配符当普通字符查找。 -->
     <select id="articlePage" resultType="com.xuan.model.ArticleRow">
-        SELECT <include refid="columns"/> FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
+        SELECT
+        <include refid="columns"/>
+        FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
         <if test="filter.keyword != null">JOIN blog_article_content c ON c.article_id = a.article_id</if>
         <where>
             <choose>
@@ -23,8 +27,10 @@
                     AND a.publish_time IS NOT NULL AND a.publish_time &lt;= #{filter.now}
                 </when>
                 <otherwise>
-                    <choose><when test="filter.trash == 1">a.deleted_at IS NOT NULL</when>
-                        <otherwise>a.deleted_at IS NULL</otherwise></choose>
+                    <choose>
+                        <when test="filter.trash == 1">a.deleted_at IS NOT NULL</when>
+                        <otherwise>a.deleted_at IS NULL</otherwise>
+                    </choose>
                     <if test="filter.scopeAuthor != null">AND a.author_id = #{filter.scopeAuthor}</if>
                     <if test="filter.authorId != null">AND a.author_id = #{filter.authorId}</if>
                     <if test="filter.status != null">AND a.status = #{filter.status}</if>
@@ -33,7 +39,7 @@
             </choose>
             <if test="filter.keyword != null">
                 AND (INSTR(a.title, #{filter.keyword}) &gt; 0 OR INSTR(a.summary, #{filter.keyword}) &gt; 0
-                    OR INSTR(c.markdown_content, #{filter.keyword}) &gt; 0)
+                OR INSTR(c.markdown_content, #{filter.keyword}) &gt; 0)
             </if>
             <if test="filter.categoryId != null">
                 AND a.category_id = #{filter.categoryId}
@@ -42,118 +48,182 @@
                 </if>
             </if>
             <if test="filter.tagId != null">
-                AND EXISTS (SELECT 1 FROM blog_article_tag t WHERE t.article_id = a.article_id AND t.tag_id = #{filter.tagId})
+                AND EXISTS (SELECT 1 FROM blog_article_tag t WHERE t.article_id = a.article_id AND t.tag_id =
+                #{filter.tagId})
             </if>
             <if test="filter.from != null">AND a.publish_time &gt;= #{filter.from}</if>
             <if test="filter.until != null">AND a.publish_time &lt; #{filter.until}</if>
         </where>
-        <choose><when test="filter.publicOnly">ORDER BY a.is_top DESC, a.publish_time DESC, a.article_id DESC</when>
-            <otherwise>ORDER BY a.update_time DESC, a.article_id DESC</otherwise></choose>
+        <choose>
+            <when test="filter.publicOnly">ORDER BY a.is_top DESC, a.publish_time DESC, a.article_id DESC</when>
+            <otherwise>ORDER BY a.update_time DESC, a.article_id DESC</otherwise>
+        </choose>
     </select>
+
     <!-- 操作范围也写进 SQL；先锁文件再锁文章，等待后业务层重查原 Token 和最新范围。 -->
     <select id="scoped" resultType="com.xuan.model.ArticleRow">
         <choose>
             <when test="lock">SELECT a.* FROM blog_article a</when>
-            <otherwise>SELECT <include refid="columns"/> FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id</otherwise>
+            <otherwise>SELECT
+                <include refid="columns"/>
+                FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
+            </otherwise>
         </choose>
-        WHERE a.article_id = #{id} <if test="author != null">AND a.author_id = #{author}</if>
+        WHERE a.article_id = #{id}
+        <if test="author != null">AND a.author_id = #{author}</if>
         <if test="lock">FOR UPDATE</if>
     </select>
+
     <!-- slug 用 ascii_bin 唯一键，大小写不同就不会查到同一篇文章。 -->
     <select id="publicBySlug" resultType="com.xuan.model.ArticleRow">
         <choose>
             <when test="lock">SELECT a.* FROM blog_article a</when>
-            <otherwise>SELECT <include refid="columns"/> FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id</otherwise>
+            <otherwise>SELECT
+                <include refid="columns"/>
+                FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
+            </otherwise>
         </choose>
-        WHERE a.slug = #{slug} AND <include refid="publicCondition"/>
+        WHERE a.slug = #{slug} AND
+        <include refid="publicCondition"/>
         <if test="lock">FOR UPDATE</if>
     </select>
+
     <!-- 评论和点赞不能因后台 Token 放宽公开条件，和 slug 详情共用同一判断。 -->
     <select id="publicById" resultType="com.xuan.model.ArticleRow">
-        SELECT a.* FROM blog_article a WHERE a.article_id = #{id} AND <include refid="publicCondition"/>
+        SELECT a.* FROM blog_article a WHERE a.article_id = #{id} AND
+        <include refid="publicCondition"/>
     </select>
+
     <!-- 正文和文章资料要在同一快照或锁事务里读取。 -->
     <select id="content" resultType="com.xuan.entity.BlogArticleContent">
         SELECT * FROM blog_article_content WHERE article_id = #{id}
     </select>
+
     <!-- 字典名称取当前值，关联 ID 按升序返回，也用来算文章整体版本。 -->
     <select id="tags" resultType="com.xuan.entity.BlogTag">
         SELECT t.* FROM blog_tag t JOIN blog_article_tag r ON r.tag_id = t.tag_id
         WHERE r.article_id = #{id} ORDER BY t.tag_id
     </select>
+
     <!-- 当前标签关联和字典一起拿共享锁，避免版本检查后标签又被级联删除。 -->
     <select id="lockCurrentTags" resultType="long">
         SELECT t.tag_id FROM blog_tag t JOIN blog_article_tag r ON r.tag_id = t.tag_id
         WHERE r.article_id = #{id} ORDER BY t.tag_id FOR SHARE
     </select>
+
     <!-- 后台能查隐藏分类，返回前台时才隐藏分类资料。 -->
-    <select id="category" resultType="com.xuan.entity.BlogCategory">SELECT * FROM blog_category WHERE category_id = #{id}</select>
+    <select id="category" resultType="com.xuan.entity.BlogCategory">SELECT * FROM blog_category WHERE category_id =
+        #{id}
+    </select>
+
     <!-- 本次保存提交前分类不能被删，删除后的 SET NULL 会改变文章下次计算的整体版本。 -->
-    <select id="lockCategory" resultType="long">SELECT category_id FROM blog_category WHERE category_id = #{id} FOR SHARE</select>
+    <select id="lockCategory" resultType="long">SELECT category_id FROM blog_category WHERE category_id = #{id} FOR
+        SHARE
+    </select>
+
     <!-- 不同文章可以同时共享同一标签，但删除标签要等这些共享锁释放。 -->
-    <select id="lockTag" resultType="long">SELECT tag_id FROM blog_tag WHERE tag_id = #{id} FOR SHARE</select>
+    <select id="lockTag" resultType="long">
+        SELECT tag_id FROM blog_tag WHERE tag_id = #{id} FOR SHARE
+    </select>
+
     <!-- 写文件引用和删除文件都要拿同一把文件锁，多文件由调用方按 ID 升序锁定。 -->
-    <select id="lockFile" resultType="com.xuan.entity.BlogFile">SELECT * FROM blog_file WHERE file_id = #{id} FOR UPDATE</select>
+    <select id="lockFile" resultType="com.xuan.entity.BlogFile">SELECT * FROM blog_file WHERE file_id = #{id} FOR
+        UPDATE
+    </select>
+
     <!-- 文件 query 权限要单独检查上传者范围，不能拿文章作者范围代替。 -->
     <select id="scopedFile" resultType="com.xuan.entity.BlogFile">
-        SELECT * FROM blog_file WHERE file_id = #{id} <if test="uploader != null">AND uploader_id = #{uploader}</if>
+        SELECT * FROM blog_file WHERE file_id = #{id}
+        <if test="uploader != null">AND uploader_id = #{uploader}</if>
     </select>
+
     <!-- 可空字段也要明确写入，不能让 MyBatis 忽略 NULL；计数、作者和时间不收客户端输入。 -->
     <update id="updateArticle">
         UPDATE blog_article SET category_id = #{article.categoryId}, title = #{article.title}, slug = #{article.slug},
-            summary = #{article.summary}, cover_url = #{article.coverUrl}, article_type = #{article.articleType},
-            original_url = #{article.originalUrl}, status = #{article.status}, visibility = #{article.visibility},
-            is_top = #{article.isTop}, allow_comment = #{article.allowComment},
-            publish_time = #{article.publishTime}, deleted_at = #{article.deletedAt}
-        WHERE article_id = #{article.articleId} <if test="author != null">AND author_id = #{author}</if>
+        summary = #{article.summary}, cover_url = #{article.coverUrl}, article_type = #{article.articleType},
+        original_url = #{article.originalUrl}, status = #{article.status}, visibility = #{article.visibility},
+        is_top = #{article.isTop}, allow_comment = #{article.allowComment},
+        publish_time = #{article.publishTime}, deleted_at = #{article.deletedAt}
+        WHERE article_id = #{article.articleId}
+        <if test="author != null">AND author_id = #{author}</if>
     </update>
+
     <!-- 清理后的 HTML 和 Markdown 一起覆盖保存，不接收客户端 HTML。 -->
     <insert id="saveContent">
         INSERT INTO blog_article_content(article_id, markdown_content, html_content) VALUES(#{id}, #{markdown}, #{html})
         ON DUPLICATE KEY UPDATE markdown_content = #{markdown}, html_content = #{html}
     </insert>
+
     <!-- 全部标签一起替换，不能单独提交。 -->
-    <delete id="clearTags">DELETE FROM blog_article_tag WHERE article_id = #{id}</delete>
+    <delete id="clearTags">
+        DELETE FROM blog_article_tag WHERE article_id = #{id}
+    </delete>
+
     <!-- 文章、标签两列一起作主键，唯一键和外键负责防重复及失效关联。 -->
-    <insert id="addTag">INSERT INTO blog_article_tag(article_id, tag_id) VALUES(#{id}, #{tag})</insert>
+    <insert id="addTag">
+        INSERT INTO blog_article_tag(article_id, tag_id) VALUES(#{id}, #{tag})
+    </insert>
+
     <!-- 加阅读量不算编辑文章，保留原修改时间，也不改变 X-Revision。 -->
-    <update id="incrementViews">UPDATE blog_article SET view_count = view_count + 1, update_time = update_time WHERE article_id = #{id}</update>
+    <update id="incrementViews">UPDATE blog_article SET view_count = view_count + 1, update_time = update_time WHERE
+        article_id = #{id}
+    </update>
+
     <!-- 分页插件按月份分组计算 total，不能拿文章条数当月份条数。 -->
     <select id="archives" resultType="com.xuan.vo.ArchiveVO">
         SELECT DATE_FORMAT(a.publish_time, '%Y-%m') AS month, COUNT(*) AS article_count
-        FROM blog_article a WHERE <include refid="publicCondition"/>
+        FROM blog_article a WHERE
+        <include refid="publicCondition"/>
         GROUP BY DATE_FORMAT(a.publish_time, '%Y-%m') ORDER BY month DESC
     </select>
+
     <!-- 发布时间一样时再按主键确定上下篇，不受置顶影响。 -->
     <select id="adjacent" resultType="com.xuan.vo.ArticlePublicVO$Navigation">
-        SELECT a.article_id, a.title, a.slug FROM blog_article a WHERE <include refid="publicCondition"/>
+        SELECT a.article_id, a.title, a.slug FROM blog_article a WHERE
+        <include refid="publicCondition"/>
         <choose>
             <when test="earlier">
-                AND (a.publish_time &lt; #{article.publishTime} OR (a.publish_time = #{article.publishTime} AND a.article_id &lt; #{article.articleId}))
+                AND (a.publish_time &lt; #{article.publishTime} OR (a.publish_time = #{article.publishTime} AND
+                a.article_id &lt; #{article.articleId}))
                 ORDER BY a.publish_time DESC, a.article_id DESC
             </when>
             <otherwise>
-                AND (a.publish_time &gt; #{article.publishTime} OR (a.publish_time = #{article.publishTime} AND a.article_id &gt; #{article.articleId}))
+                AND (a.publish_time &gt; #{article.publishTime} OR (a.publish_time = #{article.publishTime} AND
+                a.article_id &gt; #{article.articleId}))
                 ORDER BY a.publish_time ASC, a.article_id ASC
             </otherwise>
         </choose>
         LIMIT 1
     </select>
+
     <!-- 分类隐藏或不存在就不推荐，同分类候选也得符合公开条件。 -->
     <select id="related" resultType="com.xuan.vo.ArticlePublicVO$Navigation">
-        SELECT a.article_id, a.title, a.slug FROM blog_article a JOIN blog_category c ON c.category_id = a.category_id AND c.status = 1
-        WHERE <include refid="publicCondition"/> AND a.category_id = #{article.categoryId} AND a.article_id != #{article.articleId}
+        SELECT a.article_id, a.title, a.slug FROM blog_article a JOIN blog_category c ON c.category_id = a.category_id
+        AND c.status = 1
+        WHERE
+        <include refid="publicCondition"/>
+        AND a.category_id = #{article.categoryId} AND a.article_id != #{article.articleId}
         ORDER BY a.publish_time DESC, a.article_id DESC LIMIT 6
     </select>
+
     <!-- 服务端用布尔值选指标，不拼接客户端 SQL，累计点赞从明细 COUNT 得到。 -->
     <select id="rankings" resultType="com.xuan.model.ArticleRow">
-        SELECT <include refid="columns"/> FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
-        WHERE <include refid="publicCondition"/>
+        SELECT
+        <include refid="columns"/>
+        FROM blog_article a JOIN sys_user u ON u.user_id = a.author_id
+        WHERE
+        <include refid="publicCondition"/>
         <if test="from != null">AND a.publish_time &gt;= #{from}</if>
         <if test="until != null">AND a.publish_time &lt; #{until}</if>
-        ORDER BY <choose><when test="likes">like_count</when><otherwise>a.view_count</otherwise></choose> DESC,
-            a.publish_time DESC, a.article_id DESC LIMIT #{limit}
+        ORDER BY
+        <choose>
+            <when test="likes">like_count</when>
+            <otherwise>a.view_count</otherwise>
+        </choose>
+        DESC,
+        a.publish_time DESC, a.article_id DESC LIMIT #{limit}
     </select>
+
     <!-- 一次取出当前文章的整条评论链，后面要查全部祖先，不能只看直接父节点而漏掉隐藏后代。 -->
     <select id="commentNodes" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
         SELECT comment_id, parent_id, status FROM blog_comment WHERE article_id = #{id}

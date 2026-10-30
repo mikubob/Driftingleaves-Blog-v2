@@ -3,9 +3,12 @@ package com.xuan.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.xuan.entity.SysUserOauth;
 import org.apache.ibatis.annotations.Param;
+
 import java.util.List;
 
-/** 第三方身份由数据库唯一键防重复，删除时要同时限制用户和平台。 */
+/**
+ * 第三方身份由数据库唯一键防重复，删除时要同时限制用户和平台。
+ */
 public interface OAuthBindingMapper extends BaseMapper<SysUserOauth> {
     /**
      * 按平台和已验证的 uuid 查唯一绑定，两个字段都区分大小写；不能按昵称或邮箱认账号，用户状态由调用方检查。

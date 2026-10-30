@@ -24,9 +24,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 后台角色接口先检查身份和入口权限，各项操作还要检查对应业务权限。 */
+/**
+ * 后台角色接口先检查身份和入口权限，各项操作还要检查对应业务权限。
+ */
 @RestController
 @RequestMapping("/admin/roles")
 @RequiredArgsConstructor
@@ -35,7 +38,7 @@ public class RoleController {
 
     /**
      * 检查后台入口和查询权限后分页取全站角色，SELF 不缩小这个字典范围。
-     * @param query 已经检查过的分页、关键词及状态
+     * @param query 已校验的分页、关键词及状态
      * @return 含完整授权关联的分页；无逐条 X-Revision
      */
     @GetMapping
@@ -57,7 +60,7 @@ public class RoleController {
 
     /**
      * 检查后台入口和创建权限后建空授权角色，不收关联集合和时间字段。
-     * @param body 已经检查过的允许的创建字段
+     * @param body 已校验的创建字段
      * @return 201 角色及详情 Location，无 X-Revision
      */
     @PostMapping

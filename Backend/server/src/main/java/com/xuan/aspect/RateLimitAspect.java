@@ -15,15 +15,19 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
 import java.util.ArrayList;
 import java.util.List;
 
-/** MVC 检查权限后再执行注解限流，已有认证限流的入口不重复计数。 */
+/**
+ * MVC 检查权限后再执行注解限流，已有认证限流的入口不重复计数。
+ */
 @Aspect
 @Component
 @Order(50)
 @RequiredArgsConstructor
 public class RateLimitAspect {
+
     private final RedisRateLimiter limiter;
     private final AuthProperties properties;
     private final SessionManager sessions;
@@ -34,14 +38,17 @@ public class RateLimitAspect {
         if (!rule.value().matches("[a-zA-Z0-9:._-]{1,100}") || rule.limit() < 1 || rule.windowSeconds() < 1) {
             throw new IllegalStateException("限流注解配置无效");
         }
-        ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
+        ServletRequestAttributes attributes =
+                (ServletRequestAttributes) RequestContextHolder.currentRequestAttributes();
         HttpServletRequest request = attributes.getRequest();
         String prefix = properties.getRedisPrefix() + "rate:interface:" + rule.value() + ":";
         List<String> keys = new ArrayList<>();
-        keys.add(prefix + "ip:" + TokenUtils.digest(String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies()))));
+        keys.add(prefix + "ip:" + TokenUtils.digest(
+                String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies()))));
         if (rule.dimension() != RateLimit.Dimension.IP) {
             long userId = sessions.currentUserId();
-            String identity = rule.dimension() == RateLimit.Dimension.USER ? Long.toString(userId) : sessions.currentToken();
+            String identity = rule.dimension() == RateLimit.Dimension.USER ? Long.toString(
+                    userId) : sessions.currentToken();
             keys.add(prefix + rule.dimension().name() + ":" + TokenUtils.digest(identity));
         }
         limiter.hit(keys, rule.windowSeconds(), rule.limit());

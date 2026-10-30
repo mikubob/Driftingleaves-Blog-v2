@@ -2,10 +2,14 @@ package com.xuan.utils;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
+
 import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 实际解析 IP 地址，不查 DNS 或外部地域库。 */
+/**
+ * 实际解析 IP 地址，不查 DNS 或外部地域库。
+ */
 class IpUtilsTest {
     @Test
     void ignoresHeadersFromUntrustedPeerAndStopsAtFirstUntrustedHop() {

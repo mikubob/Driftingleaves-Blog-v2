@@ -2,26 +2,26 @@ package com.xuan.aspect;
 
 import cn.dev33.satoken.exception.NotLoginException;
 import com.xuan.annotation.OperationLog;
+import com.xuan.audit.FailureAuditWriter;
 import com.xuan.entity.BlogCategory;
-import com.xuan.entity.HomeProfile;
-import com.xuan.entity.HomeSocialLink;
+import com.xuan.entity.BlogFriendLink;
+import com.xuan.entity.BlogMusic;
+import com.xuan.entity.BlogTag;
 import com.xuan.entity.CvExperience;
 import com.xuan.entity.CvSkill;
-import com.xuan.entity.BlogMusic;
-import com.xuan.model.ResourceVersion;
-import com.xuan.entity.BlogFriendLink;
-import com.xuan.entity.BlogTag;
-import com.xuan.audit.FailureAuditWriter;
+import com.xuan.entity.HomeProfile;
+import com.xuan.entity.HomeSocialLink;
 import com.xuan.entity.SysOperationLog;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.OperationLogMapper;
+import com.xuan.model.ResourceVersion;
 import com.xuan.properties.AuthProperties;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.IpUtils;
-import com.xuan.vo.MenuVO;
-import com.xuan.vo.FileVO;
-import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.ArticleProfileVO;
+import com.xuan.vo.FileVO;
+import com.xuan.vo.MenuVO;
+import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.PermissionVO;
 import com.xuan.vo.RoleVO;
 import com.xuan.vo.UserAdminVO;
@@ -37,20 +37,25 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
+
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Set;
 
-/** 操作日志在业务写事务里保存，成功日志写失败就回滚；失败日志等回滚结束后另写。 */
+/**
+ * 操作日志在业务写事务里保存，成功日志写失败就回滚；失败日志等回滚结束后另写。
+ */
 @Aspect
 @Component
 @Order(200)
 @RequiredArgsConstructor
 public class OperationLogAspect {
+
     private static final Set<String> SAFE_ERRORS = Set.of("VALIDATION_ERROR", "UNAUTHENTICATED", "FORBIDDEN",
             "ACCOUNT_DISABLED", "NOT_FOUND", "STATE_CONFLICT", "UNIQUE_CONFLICT", "PRECONDITION_REQUIRED",
-            "REVISION_CONFLICT", "REAUTH_REQUIRED", "SERVICE_UNAVAILABLE", "LAST_ADMIN", "RESOURCE_IN_USE", "PAYLOAD_TOO_LARGE");
+            "REVISION_CONFLICT", "REAUTH_REQUIRED", "SERVICE_UNAVAILABLE", "LAST_ADMIN", "RESOURCE_IN_USE",
+            "PAYLOAD_TOO_LARGE");
     private final OperationLogMapper logs;
     private final FailureAuditWriter failures;
     private final SessionManager sessions;
@@ -76,8 +81,12 @@ public class OperationLogAspect {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             log.setIpAddress(IpUtils.clientIp(attributes.getRequest(), properties.getTrustedProxies()));
         }
+
         // 1. 先登记事务结束回调，业务、外层事务或提交阶段出错都能记录失败。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public void afterCompletion(int status) {
                 if (status != STATUS_COMMITTED) {
@@ -94,6 +103,7 @@ public class OperationLogAspect {
             if (log.getTargetId() == null) {
                 log.setTargetId(createdId(result));
             }
+
             // 2. 成功日志要在提交前写进同一事务，不能异步保存。
             log.setResult(1);
             logs.insertLog(log);
@@ -106,7 +116,9 @@ public class OperationLogAspect {
 
     /** 只从已知的创建结果里取 ID，不用反射或序列化遍历整个对象。 */
     private Long createdId(Object value) {
-        if (value instanceof ResourceVersion<?> resource) { return createdId(resource.value()); }
+        if (value instanceof ResourceVersion<?> resource) {
+            return createdId(resource.value());
+        }
         return switch (value) {
             case UserAdminVO user -> user.userId();
             case RoleVO role -> role.roleId();

@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.entity.BlogMusic;
 import org.apache.ibatis.annotations.Param;
-/** 查询与总数使用同样条件，写事务先锁操作者再锁资源。 */
+/**
+ * 查询与总数使用同样条件，写事务先锁操作者再锁资源。
+ */
 public interface MusicMapper extends BaseMapper<BlogMusic> {
     /** 公开查询只取展示状态，关键词按字面包含。 */
     IPage<BlogMusic> resourcePage(IPage<BlogMusic> page, @Param("query") DisplayQueryDTO query, @Param("publicOnly") boolean publicOnly);

@@ -21,11 +21,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 公开查询不混入待审评论，创建仍要求当前用户和评论权限。 */
+/**
+ * 公开查询不混入待审评论，创建仍要求当前用户和评论权限。
+ */
 @RestController("publicCommentController")
 @RequestMapping("/blog/articles/{articleId}/comments")
 @RequiredArgsConstructor
 public class CommentController {
+
     private final ICommentService comments;
 
     /** 每次只展开一层，父链不可见和文章非公开都返回 404。 */

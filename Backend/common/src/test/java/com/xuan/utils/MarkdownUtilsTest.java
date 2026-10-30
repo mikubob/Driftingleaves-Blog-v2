@@ -2,9 +2,12 @@ package com.xuan.utils;
 
 import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 实际解析和清理 HTML，检查危险标签、URL、字数和阅读时间。 */
+/**
+ * 实际解析和清理 HTML，检查危险标签、URL、字数和阅读时间。
+ */
 class MarkdownUtilsTest {
     @Test
     void sanitizesExecutableHtmlAndUnsafeUrlsIncludingEncodedProtocols() {

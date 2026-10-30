@@ -9,11 +9,15 @@ import com.aliyun.oss.model.PutObjectRequest;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AliOssProperties;
 import com.xuan.utils.TokenUtils;
+
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
-/** OSS 对象键由服务端生成，读写都只能在专属前缀里进行，不提供公开直链。 */
+/**
+ * OSS 对象键由服务端生成，读写都只能在专属前缀里进行，不提供公开直链。
+ */
 public class AliOssClient {
+
     private final OSS oss;
     private final String bucket;
     private final String prefix;
@@ -28,6 +32,7 @@ public class AliOssClient {
 
     /**
      * 上传已经过业务检查的文件；类型、归属和数据库失败后的补偿仍由文件业务处理。
+     *
      * @param bytes 非空文件内容，不超过当前 10MiB 文件大小约定
      * @param extension 已与内容识别一致的 png、jpg 或 jpeg，不使用原文件名
      * @return 专属前缀下的随机对象键，只有确认上传成功才返回
@@ -51,7 +56,8 @@ public class AliOssClient {
             try {
                 oss.deleteObject(bucket, key);
             } catch (OSSException | ClientException cleanupFailure) {
-                System.getLogger(getClass().getName()).log(System.Logger.Level.ERROR, "上传失败后的OSS对象清理失败，需要检查孤立对象");
+                System.getLogger(getClass().getName())
+                        .log(System.Logger.Level.ERROR, "上传失败后的OSS对象清理失败，需要检查孤立对象");
             }
             throw unavailable();
         }
@@ -59,6 +65,7 @@ public class AliOssClient {
 
     /**
      * 权限检查通过后打开私有对象，用完必须关闭流，否则 SDK 连接不能释放。
+     *
      * @param key 来自数据库的本站对象键，禁止 URL、路径穿越及其他前缀
      * @return 待关闭的对象流；不存在返回 404，云端失败返回 503
      */

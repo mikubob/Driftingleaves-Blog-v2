@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 一篇文章只选一个分类；归档按发布时间查，不另建归档表。 */
+import java.time.LocalDateTime;
+
+/**
+ * 一篇文章只选一个分类；归档按发布时间查，不另建归档表。
+ */
 @Data
 @TableName("blog_category")
 public class BlogCategory {
+
     /** 分类ID。 */
     @TableId(value = "category_id", type = IdType.AUTO)
     private Long categoryId;

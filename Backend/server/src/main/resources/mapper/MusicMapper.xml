@@ -7,15 +7,21 @@
         <where>
             <if test="publicOnly">AND status = 1</if>
             <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
-            <if test="!publicOnly and query.keyword != null">AND (INSTR(title, #{query.keyword}) &gt; 0 OR INSTR(artist, #{query.keyword}) &gt; 0)</if>
-            
+            <if test="!publicOnly and query.keyword != null">AND (INSTR(title, #{query.keyword}) &gt; 0 OR INSTR(artist,
+                #{query.keyword}) &gt; 0)
+            </if>
+
         </where>
         ORDER BY sort_order ASC, music_id ASC
     </select>
+
     <select id="lockById" resultType="com.xuan.entity.BlogMusic">
         SELECT * FROM blog_music WHERE music_id = #{id} FOR UPDATE
     </select>
+
     <update id="replace">
-        UPDATE blog_music SET title=#{row.title}, artist=#{row.artist}, duration_seconds=#{row.durationSeconds}, cover_url=#{row.coverUrl}, audio_url=#{row.audioUrl}, lyric_url=#{row.lyricUrl}, lyric_type=#{row.lyricType}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE music_id = #{row.musicId}
+        UPDATE blog_music SET title=#{row.title}, artist=#{row.artist}, duration_seconds=#{row.durationSeconds},
+        cover_url=#{row.coverUrl}, audio_url=#{row.audioUrl}, lyric_url=#{row.lyricUrl}, lyric_type=#{row.lyricType},
+        sort_order=#{row.sortOrder}, status=#{row.status} WHERE music_id = #{row.musicId}
     </update>
 </mapper>

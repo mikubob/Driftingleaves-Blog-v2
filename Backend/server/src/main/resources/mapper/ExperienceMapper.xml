@@ -12,10 +12,14 @@
         </where>
         ORDER BY sort_order ASC, start_date DESC, experience_id DESC
     </select>
+
     <select id="lockById" resultType="com.xuan.entity.CvExperience">
         SELECT * FROM cv_experience WHERE experience_id = #{id} FOR UPDATE
     </select>
+
     <update id="replace">
-        UPDATE cv_experience SET experience_type=#{row.experienceType}, title=#{row.title}, subtitle=#{row.subtitle}, logo_url=#{row.logoUrl}, content=#{row.content}, start_date=#{row.startDate}, end_date=#{row.endDate}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE experience_id = #{row.experienceId}
+        UPDATE cv_experience SET experience_type=#{row.experienceType}, title=#{row.title}, subtitle=#{row.subtitle},
+        logo_url=#{row.logoUrl}, content=#{row.content}, start_date=#{row.startDate}, end_date=#{row.endDate},
+        sort_order=#{row.sortOrder}, status=#{row.status} WHERE experience_id = #{row.experienceId}
     </update>
 </mapper>

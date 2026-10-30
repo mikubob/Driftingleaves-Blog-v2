@@ -23,18 +23,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 权限字典接口先检查身份和后台入口，再检查各项业务权限。 */
+/**
+ * 权限字典接口先检查身份和后台入口，再检查各项业务权限。
+ */
 @RestController
 @RequestMapping("/admin/permissions")
 @RequiredArgsConstructor
 public class PermissionController {
+
     private final IPermissionService permissions;
 
     /**
      * 检查后台入口和查询权限后分页取字典，禁用项也能查。
-     * @param query 已经检查过的分页和过滤条件
+     *
+     * @param query 已校验的分页和过滤条件
      * @return ID 升序分页，不提供逐条 X-Revision
      */
     @GetMapping
@@ -45,6 +50,7 @@ public class PermissionController {
 
     /**
      * 检查后台入口和查询权限后取详情及版本。
+     *
      * @param permissionId 正十进制权限 ID
      * @return 200 详情及 X-Revision，不存在返回 404
      */
@@ -56,7 +62,8 @@ public class PermissionController {
 
     /**
      * 检查后台入口和创建权限后建字典项，不自动给角色授权，也不会凭空增加后端功能。
-     * @param body 已经检查过的允许的创建字段，不接受审计或授权字段
+     *
+     * @param body 已校验的创建字段，不接受审计或授权字段
      * @return 201 资料及详情 Location，无 X-Revision
      */
     @PostMapping
@@ -69,6 +76,7 @@ public class PermissionController {
 
     /**
      * 检查后台入口和更新权限后完整替换资料、状态，编码不能改。
+     *
      * @param permissionId 目标权限 ID
      * @param body 完整资料，说明可为 null 但不可省略
      * @param revision 详情版本，缺失交由锁事务返回 428
@@ -84,6 +92,7 @@ public class PermissionController {
 
     /**
      * 检查后台入口和删除权限后再进入锁事务；固定权限或仍被菜单引用的权限不能删。
+     *
      * @param permissionId 目标权限 ID
      * @param revision 当前详情版本
      * @return 200 空结果，无 X-Revision；角色关联及全部会话撤销共同受失败回滚约束
@@ -98,6 +107,7 @@ public class PermissionController {
 
     /**
      * 检查路径 ID，前导零、符号、小数或超过 Long 范围都拒绝。
+     *
      * @param value 原始路径文本
      * @return 内部权限 ID
      */
@@ -114,6 +124,7 @@ public class PermissionController {
 
     /**
      * 版本只放响应头，响应体返回约定的字典资料。
+     *
      * @param result 同一事务读取的资料和版本
      * @return 200 详情与 X-Revision
      */

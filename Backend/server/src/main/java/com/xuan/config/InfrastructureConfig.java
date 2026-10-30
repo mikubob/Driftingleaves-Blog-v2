@@ -12,13 +12,17 @@ import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+
 import java.time.Clock;
 import java.util.List;
 
-/** 这里配置分页、密码、时钟和事务顺序，虚拟线程和失败日志由各自配置负责。 */
+/**
+ * 这里配置分页、密码、时钟和事务顺序，虚拟线程和失败日志由各自配置负责。
+ */
 @Configuration
 @EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
+
     /** 沿用官方 Redis DAO 的键处理方式，加上本站前缀，避免混用其他应用的会话。 */
     @Bean
     @Primary
@@ -38,16 +42,23 @@ public class InfrastructureConfig {
                         """, Long.class), List.of(finalKey), value);
             }
 
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public String wrapKey(String key) {
                 return properties.getRedisPrefix() + "session:" + key;
             }
         };
+
         // 2. 用现有连接工厂初始化 DAO，不再创建另一套 Redis 客户端。
         dao.init(factory);
         return dao;
     }
 
+    /**
+     * 为 MySQL 查询配置分页拦截器，保留项目统一分页行为。
+     */
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
         MybatisPlusInterceptor interceptor = new MybatisPlusInterceptor();
@@ -55,11 +66,17 @@ public class InfrastructureConfig {
         return interceptor;
     }
 
+    /**
+     * 使用配置的 BCrypt 成本创建密码编码器，不沿用旧密码散列。
+     */
     @Bean
     public BCryptPasswordEncoder passwordEncoder(AuthProperties properties) {
         return new BCryptPasswordEncoder(properties.getBcryptStrength());
     }
 
+    /**
+     * 提供 UTC 时钟，让业务时间不受执行机器时区影响。
+     */
     @Bean
     public Clock clock() {
         return Clock.systemUTC();

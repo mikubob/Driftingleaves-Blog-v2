@@ -4,14 +4,18 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.math.BigInteger;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 这里只存文件资料，私有文件必须先检查权限，再由服务端读取返回。 */
+import java.math.BigInteger;
+import java.time.LocalDateTime;
+
+/**
+ * 这里只存文件资料，私有文件必须先检查权限，再由服务端读取返回。
+ */
 @Data
 @TableName("blog_file")
 public class BlogFile {
+
     /** 文件ID。 */
     @TableId(value = "file_id", type = IdType.AUTO)
     private Long fileId;

@@ -1,39 +1,52 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
-import com.xuan.entity.BlogMessage;
-import com.xuan.dto.MessagePublicQueryDTO;
-import com.xuan.dto.MessageOwnQueryDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
+import com.xuan.dto.MessageOwnQueryDTO;
+import com.xuan.dto.MessagePublicQueryDTO;
+import com.xuan.entity.BlogMessage;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
-import com.xuan.vo.MessagePublicVO;
 import com.xuan.vo.MessagePrivateVO;
+import com.xuan.vo.MessagePublicVO;
 
-/** 留言公开、本人和后台入口各自执行可见性/归属检查。 */
+/**
+ * 留言公开、本人和后台入口各自执行可见性/归属检查。
+ */
 public interface IMessageService extends IService<BlogMessage> {
+
     /** 逐层分页，匿名和有效会话的total分别只计可见节点。 */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
+
     /** 作者固定当前用户，私密性继承完整父链。 */
     MessagePrivateVO create(MessageCreateDTO request);
+
     /** 本人列表只按当前user_id取数。 */
     PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query);
+
     /** 本人详情返回编辑所需版本，他人404。 */
     ResourceVersion<MessagePrivateVO> ownDetail(long id);
+
     /** 编辑保留私密性和父关系，记录编辑时间并重新审核。 */
     ResourceVersion<MessagePrivateVO> edit(long id, MessageEditDTO request, String revision);
+
     /** 本人删除幂等占位。 */
     void deleteOwn(long id);
+
     /** ALL后台独立查询权限，私密内容不会由前台路径返回。 */
     PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query);
+
     /** ALL后台详情与版本在同一快照。 */
     ResourceVersion<MessagePrivateVO> adminDetail(long id);
+
     /** 实际转为通过后提交，再使用已确认订阅发送提醒。 */
     ResourceVersion<MessagePrivateVO> review(long id, int status, String revision);
+
     /** ALL后台管理删除同样占位，不级联整树。 */
     void deleteAdmin(long id);
+
     /** 用实际后台操作者身份回复，继承完整私密范围。 */
     MessagePrivateVO replyAdmin(long id, MessageEditDTO request);
 }

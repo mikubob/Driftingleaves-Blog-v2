@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 接口权限单独保存，菜单存不存在、看不看得见都不能代替权限检查。 */
+import java.time.LocalDateTime;
+
+/**
+ * 接口权限单独保存，菜单存不存在、看不看得见都不能代替权限检查。
+ */
 @Data
 @TableName("sys_permission")
 public class SysPermission {
+
     /** 权限ID。 */
     @TableId(value = "permission_id", type = IdType.AUTO)
     private Long permissionId;

@@ -24,8 +24,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
-/** 展示与维护直接读同一张表，成功审计失败时资料一起回滚。 */
+/**
+ * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ */
 @Service
 @RequiredArgsConstructor
 public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implements ISkillService {

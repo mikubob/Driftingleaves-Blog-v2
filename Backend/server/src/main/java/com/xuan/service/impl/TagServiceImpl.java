@@ -23,12 +23,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.List;
 
-/** 标签字典和成功日志一起提交，删除只清理关联，不删除文章。 */
+/**
+ * 标签字典和成功日志一起提交，删除只清理关联，不删除文章。
+ */
 @Service
 @RequiredArgsConstructor
 public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements ITagService {
+
     private final TagMapper tags;
     private final UserMapper users;
     private final IUserService identities;

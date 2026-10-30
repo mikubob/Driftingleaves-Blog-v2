@@ -8,7 +8,7 @@
         <where>
             <if test="query.keyword != null">
                 AND (INSTR(u.username, #{query.keyword}) > 0 OR INSTR(u.nickname, #{query.keyword}) > 0
-                     OR INSTR(u.email, #{query.keyword}) > 0)
+                OR INSTR(u.email, #{query.keyword}) > 0)
             </if>
             <if test="query.status != null">AND u.status = #{query.status}</if>
             <if test="roleId != null">
@@ -17,28 +17,36 @@
         </where>
         ORDER BY u.create_time DESC, u.user_id DESC
     </select>
+
     <!-- 这是管理写事务的第一把锁，禁用角色也得锁，避免绕过最后管理员检查。 -->
     <select id="lockAdminGuard" resultType="long">
         SELECT role_id FROM sys_role WHERE role_id = 1 FOR UPDATE
     </select>
+
     <!-- 用户锁后再按角色 ID 升序加锁，是否存在、启用由业务层一起检查。 -->
     <select id="lockRoles" resultType="com.xuan.entity.SysRole">
         SELECT * FROM sys_role WHERE role_id IN
         <foreach collection="roleIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY role_id FOR UPDATE
     </select>
+
     <!-- 只写后台资料和状态，用户名、密码、时间和角色关联不改。 -->
     <update id="updateAdmin">
         UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email}, avatar = #{user.avatar},
-            intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
+        intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
     </update>
+
     <!-- 完整替换前清掉旧关联，后续插入失败时一起回滚。 -->
-    <delete id="deleteRoles">DELETE FROM sys_user_role WHERE user_id = #{userId}</delete>
+    <delete id="deleteRoles">
+        DELETE FROM sys_user_role WHERE user_id = #{userId}
+    </delete>
+
     <!-- 用完整的两列主键写入检查过的关联，空集合由业务层跳过。 -->
     <insert id="insertRoles">
         INSERT INTO sys_user_role (user_id, role_id) VALUES
         <foreach collection="roleIds" item="id" separator=",">(#{userId}, #{id})</foreach>
     </insert>
+
     <!-- 按固定系统管理权限检查修改后的有效管理员，新增权限不会自动扩大保护名单。 -->
     <select id="effectiveAdminCount" resultType="long">
         <bind name="requiredCount" value="permissions.size()"/>
@@ -46,34 +54,40 @@
         JOIN sys_user_role ur ON ur.user_id = u.user_id AND ur.role_id = 1
         JOIN sys_role r ON r.role_id = ur.role_id AND r.role_code = 'admin' AND r.status = 1 AND r.data_scope = 'ALL'
         WHERE u.status = 1 AND (
-            SELECT COUNT(*) FROM sys_role_permission rp
-            JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
-            WHERE rp.role_id = 1 AND p.permission_code IN
-            <foreach collection="permissions" item="code" open="(" separator="," close=")">#{code}</foreach>
+        SELECT COUNT(*) FROM sys_role_permission rp
+        JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
+        WHERE rp.role_id = 1 AND p.permission_code IN
+        <foreach collection="permissions" item="code" open="(" separator="," close=")">#{code}</foreach>
         ) = #{requiredCount}
     </select>
     <!-- 登录、密码、绑定和解绑共用用户锁，时间由数据库维护。 -->
+
     <!-- 按用户名取完整内部资料并拿排他行锁，先不过滤 status；密码通过后由业务层检查启用状态，认证失败统一报错。 -->
     <select id="lockByUsername" resultType="com.xuan.entity.SysUser">
         SELECT * FROM sys_user WHERE username = #{username} FOR UPDATE
     </select>
+
     <!-- 按用户 ID 拿登录、密码和绑定共用的行锁，同一用户的安全操作在这里排队，不存在时由调用方按场景报错。 -->
     <select id="lockById" resultType="com.xuan.entity.SysUser">
         SELECT * FROM sys_user WHERE user_id = #{userId} FOR UPDATE
     </select>
+
     <!-- 这里只更新本人允许修改的四个字段，PATCH 没传的值已由业务层合并；NULL 要清空，账号、密码和角色不改。 -->
     <update id="updateProfile">
         UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email},
-            avatar = #{user.avatar}, intro = #{user.intro} WHERE user_id = #{user.userId}
+        avatar = #{user.avatar}, intro = #{user.intro} WHERE user_id = #{user.userId}
     </update>
+
     <!-- 这里只更新目标用户密码哈希，NULL 就清除；业务层先查最近认证、旧凭据和剩余登录方式，提交前还要撤销 Redis 会话。 -->
     <update id="updatePassword">
         UPDATE sys_user SET password_hash = #{hash} WHERE user_id = #{userId}
     </update>
+
     <!-- 最近登录用数据库当前毫秒时间，连接固定 UTC，并与用户锁和会话签发在同一事务。 -->
     <update id="updateLastLogin">
         UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3) WHERE user_id = #{userId}
     </update>
+
     <!-- 只给新用户插入启用的 member 关联，user_id、role_id 一起作主键；没有可用角色时插入零行，业务层必须回滚注册。 -->
     <insert id="assignMember">
         INSERT INTO sys_user_role (user_id, role_id)

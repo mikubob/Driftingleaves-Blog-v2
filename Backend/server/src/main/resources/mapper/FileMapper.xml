@@ -12,11 +12,13 @@
         </where>
         ORDER BY create_time DESC, file_id DESC
     </select>
+
     <!-- 存储已确认删除后才删元数据，事务或审计失败时允许再次清理已不存在的对象。 -->
     <delete id="deleteScoped">
         DELETE FROM blog_file WHERE file_id = #{id}
         <if test="uploader != null">AND uploader_id = #{uploader}</if>
     </delete>
+
     <!-- 不能筛 PUBLIC 或使用 HTML 缓存，草稿、私密、下架和回收站同样保留引用。 -->
     <select id="referencesAfter" resultType="com.xuan.mapper.FileMapper$ArticleReference">
         SELECT a.article_id, a.cover_url, c.markdown_content FROM blog_article a

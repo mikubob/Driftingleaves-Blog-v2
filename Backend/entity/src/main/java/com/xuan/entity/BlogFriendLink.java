@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 友链 URL 的协议和长度由应用检查。 */
+import java.time.LocalDateTime;
+
+/**
+ * 友链 URL 的协议和长度由应用检查。
+ */
 @Data
 @TableName("blog_friend_link")
 public class BlogFriendLink {
+
     /** 友链ID。 */
     @TableId(value = "link_id", type = IdType.AUTO)
     private Long linkId;

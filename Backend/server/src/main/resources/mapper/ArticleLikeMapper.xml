@@ -4,8 +4,14 @@
 <mapper namespace="com.xuan.mapper.ArticleLikeMapper">
     <select id="state" resultType="com.xuan.vo.LikeStateVO">
         SELECT EXISTS(SELECT 1 FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}) AS liked,
-            (SELECT COUNT(*) FROM blog_article_like WHERE article_id = #{article}) AS like_count
+        (SELECT COUNT(*) FROM blog_article_like WHERE article_id = #{article}) AS like_count
     </select>
-    <insert id="add">INSERT INTO blog_article_like(article_id, user_id) VALUES(#{article}, #{user})</insert>
-    <delete id="remove">DELETE FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}</delete>
+
+    <insert id="add">
+        INSERT INTO blog_article_like(article_id, user_id) VALUES(#{article}, #{user})
+    </insert>
+
+    <delete id="remove">
+        DELETE FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}
+    </delete>
 </mapper>

@@ -18,11 +18,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 本人查询和删除只取会话用户，文章下架后仍能处理自己的评论。 */
+/**
+ * 本人查询和删除只取会话用户，文章下架后仍能处理自己的评论。
+ */
 @RestController("ownCommentController")
 @RequestMapping("/me/comments")
 @RequiredArgsConstructor
 public class CommentController {
+
     private final ICommentService comments;
 
     /** 不额外要求 query 权限，也不接收客户端 userId。 */

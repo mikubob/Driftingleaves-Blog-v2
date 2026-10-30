@@ -14,22 +14,26 @@
         </where>
         ORDER BY permission_id ASC
     </select>
+
     <!-- 禁用角色和用户也算受影响，多角色关联同一用户只撤销一次会话。 -->
     <select id="userIds" resultType="long">
         SELECT DISTINCT ur.user_id FROM sys_user_role ur
         JOIN sys_role_permission rp ON rp.role_id = ur.role_id
         WHERE rp.permission_id = #{permissionId} ORDER BY ur.user_id
     </select>
+
     <!-- 先拿固定保护锁和升序用户锁，再锁目标权限，读取最新状态及版本字段。 -->
     <select id="lockById" resultType="com.xuan.entity.SysPermission">
         SELECT * FROM sys_permission WHERE permission_id = #{permissionId} FOR UPDATE
     </select>
+
     <!-- 编码不能改，禁用不删角色授权或菜单限制，重新启用也不能恢复旧 Token。 -->
     <update id="updatePermission">
         UPDATE sys_permission SET permission_name = #{permission.permissionName}, module = #{permission.module},
-            description = #{permission.description}, status = #{permission.status}
+        description = #{permission.description}, status = #{permission.status}
         WHERE permission_id = #{permission.permissionId}
     </update>
+
     <!-- 禁用、隐藏菜单也算引用，不能因为删权限就撤掉它们的访问限制。 -->
     <select id="menuReferences" resultType="long">
         SELECT COUNT(*) FROM sys_menu WHERE permission_id = #{permissionId}

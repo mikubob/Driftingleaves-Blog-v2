@@ -8,6 +8,7 @@ import com.xuan.properties.AuthProperties;
 import com.xuan.properties.FileProperties;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils;
+import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
 import lombok.RequiredArgsConstructor;
 import org.commonmark.node.AbstractVisitor;
@@ -19,6 +20,7 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -26,10 +28,9 @@ import java.net.URI;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import com.xuan.utils.TokenUtils;
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
@@ -37,22 +38,31 @@ import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/** 这里找出文章真正引用的附件，整理本站附件地址，再确认私有对象可用。 */
+/**
+ * 这里找出文章真正引用的附件，整理本站附件地址，再确认私有对象可用。
+ */
 @Component
 @RequiredArgsConstructor
 public class ArticleResources {
-    private static final Pattern CONTEXT = Pattern.compile("/api/v1/blog/articles/([1-9][0-9]{0,18})/files/([1-9][0-9]{0,18})/content");
+
+    private static final Pattern CONTEXT = Pattern.compile(
+            "/api/v1/blog/articles/([1-9][0-9]{0,18})/files/([1-9][0-9]{0,18})/content");
     private static final Parser PARSER = Parser.builder().build();
     private final AuthProperties auth;
     private final FileProperties files;
     private final AliOssProperties ossProperties;
     private final ObjectProvider<AliOssClient> oss;
 
-    /** 保存清理后的 HTML、封面和实际引用 ID，Markdown 原文仍和文章一起保存。 */
-    public record References(String coverUrl, String html, Set<Long> fileIds) { }
+    /**
+     * 保存清理后的 HTML、封面和实际引用 ID，Markdown 原文仍和文章一起保存。
+     */
+    public record References(String coverUrl, String html, Set<Long> fileIds) {
+
+    }
 
     /**
      * 从 Markdown 语法树和清理后的 HTML 中找链接、图片，普通数字和代码块不能算附件引用。
+     *
      * @param articleId 当前文章；创建为null，此时不允许任何本站附件
      * @param markdown 原始正文，不修改客户端Markdown源
      * @param cover 封面，可为空；外部封面必须是合法HTTP(S)
@@ -61,10 +71,23 @@ public class ArticleResources {
     public References inspect(Long articleId, String markdown, String cover) {
         Set<Long> ids = new TreeSet<>();
         PARSER.parse(markdown).accept(new AbstractVisitor() {
+            /**
+             * {@inheritDoc}
+             */
             @Override
-            public void visit(Link link) { canonical(link.getDestination(), articleId, ids); visitChildren(link); }
+            public void visit(Link link) {
+                canonical(link.getDestination(), articleId, ids);
+                visitChildren(link);
+            }
+
+            /**
+             * {@inheritDoc}
+             */
             @Override
-            public void visit(Image image) { canonical(image.getDestination(), articleId, ids); visitChildren(image); }
+            public void visit(Image image) {
+                canonical(image.getDestination(), articleId, ids);
+                visitChildren(image);
+            }
         });
         Document document = Jsoup.parseBodyFragment(MarkdownUtils.toHtml(markdown));
         for (Element element : document.select("a[href], img[src]")) {
@@ -72,7 +95,8 @@ public class ArticleResources {
             element.attr(attribute, canonical(element.attr(attribute), articleId, ids));
         }
         String normalizedCover = cover == null ? null : canonical(cover, articleId, ids);
-        if (normalizedCover != null && !CONTEXT.matcher(normalizedCover).matches() && !UrlPolicy.valid(normalizedCover)) {
+        if (normalizedCover != null && !CONTEXT.matcher(normalizedCover).matches() && !UrlPolicy.valid(
+                normalizedCover)) {
             throw invalid();
         }
         return new References(normalizedCover, document.body().html(), Set.copyOf(ids));
@@ -96,12 +120,14 @@ public class ArticleResources {
 
     /**
      * 文件行锁和权限检查通过后再查实际对象；文件缺失或不可读返回 503，不抓取外部 URL。
+     *
      * @param file 数据库元数据，不能使用客户端存储键或Bucket
      */
     public void requireAvailable(BlogFile file) {
         if ("oss".equals(file.getStorageType())) {
             AliOssClient client = oss.getIfAvailable();
-            if (client == null || !file.getBucket().equals(ossProperties.getBucket()) || !client.exists(file.getObjectKey())) {
+            if (client == null || !file.getBucket().equals(ossProperties.getBucket()) || !client.exists(
+                    file.getObjectKey())) {
                 throw unavailable();
             }
             return;
@@ -109,7 +135,8 @@ public class ArticleResources {
         try {
             Path target = localTarget(file);
             if (!Files.isRegularFile(target) || !Files.isReadable(target)
-                    || file.getSizeBytes().signum() <= 0 || !file.getSizeBytes().equals(BigInteger.valueOf(Files.size(target)))) {
+                    || file.getSizeBytes().signum() <= 0 || !file.getSizeBytes()
+                    .equals(BigInteger.valueOf(Files.size(target)))) {
                 throw unavailable();
             }
         } catch (IOException exception) {
@@ -225,7 +252,7 @@ public class ArticleResources {
         if (!target.startsWith(root) || !parent.toRealPath().startsWith(root)
                 || Files.isSymbolicLink(target)
                 || (Files.exists(target, LinkOption.NOFOLLOW_LINKS)
-                    && (!target.toRealPath().startsWith(root) || !Files.isRegularFile(target)))) {
+                && (!target.toRealPath().startsWith(root) || !Files.isRegularFile(target)))) {
             throw unavailable();
         }
         return target;
@@ -279,7 +306,8 @@ public class ArticleResources {
         Matcher match = CONTEXT.matcher(raw);
         if (!match.matches() || !raw.equals(decoded) || !raw.equals(normalized)
                 || uri.getRawQuery() != null || uri.getRawFragment() != null || uri.getRawUserInfo() != null
-                || (uri.isAbsolute() && !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme())))
+                || (uri.isAbsolute() && !("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(
+                uri.getScheme())))
                 || (uri.getRawAuthority() != null && !uri.isAbsolute()) || articleId == null
                 || !articleId.equals(IdUtils.parse(match.group(1)))) {
             throw invalid();
@@ -314,8 +342,12 @@ public class ArticleResources {
     }
 
     /** 输入有问题只报固定错误，不透露 URL、存储键或私密文件是否存在。 */
-    private BusinessException invalid() { return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束"); }
+    private BusinessException invalid() {
+        return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束");
+    }
 
     /** 对象没了或存储出错都要失败，不能拿空对象当作发布成功。 */
-    private BusinessException unavailable() { return new BusinessException(503, "SERVICE_UNAVAILABLE", "引用文件存储暂不可用"); }
+    private BusinessException unavailable() {
+        return new BusinessException(503, "SERVICE_UNAVAILABLE", "引用文件存储暂不可用");
+    }
 }

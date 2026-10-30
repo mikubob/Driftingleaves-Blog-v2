@@ -11,26 +11,33 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.safety.Safelist;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Markdown 先渲染再清理 HTML，标题锚点、字数和阅读时间也在这里生成。 */
+/**
+ * Markdown 先渲染再清理 HTML，标题锚点、字数和阅读时间也在这里生成。
+ */
 public final class MarkdownUtils {
+
     private static final List<Extension> EXTENSIONS = List.of(TablesExtension.create(),
             AutolinkExtension.create(), TaskListItemsExtension.create());
     private static final Parser PARSER = Parser.builder().extensions(EXTENSIONS).build();
     private static final HtmlRenderer RENDERER = HtmlRenderer.builder().extensions(EXTENSIONS).build();
-    private static final Pattern PUNCTUATION = Pattern.compile("[^\\p{L}\\p{M}\\p{N}_\\s-]", Pattern.UNICODE_CHARACTER_CLASS);
+    private static final Pattern PUNCTUATION = Pattern.compile("[^\\p{L}\\p{M}\\p{N}_\\s-]",
+            Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern WHITESPACE = Pattern.compile("\\s", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern WORD = Pattern.compile("\\p{IsHan}|[A-Za-z0-9]+");
 
-    private MarkdownUtils() { }
+    private MarkdownUtils() {
+    }
 
     /**
      * Markdown 转成 HTML 后还要清理，开头有标签也不能当成可信 HTML。
+     *
      * @param markdown 原始 Markdown；null 和空文本输出空字符串
      * @return 可输出的安全 HTML，含表格、代码、任务列表及标题锚点
      */
@@ -44,6 +51,7 @@ public final class MarkdownUtils {
 
     /**
      * 旧 HTML 缓存也要重新清理，去掉脚本、事件、样式和危险 URL，再生成不重复的标题 ID。
+     *
      * @param html 原始 HTML，不可信
      * @return 清理后的正文；允许规范相对 URL 和同页锚点
      */
@@ -83,6 +91,7 @@ public final class MarkdownUtils {
 
     /**
      * 按清理后能看到的正文计算字数，每个汉字算一字，连续英文字母或数字算一个词。
+     *
      * @param markdown 原始 Markdown，代码块和链接 URL 目标不计数
      * @return 安全 HTML、字数和至少一分钟的阅读时长；不保存数据库计数副本
      */
@@ -94,6 +103,10 @@ public final class MarkdownUtils {
         return new ArticleContent(html, count, (int) Math.max(1, (count + 299) / 300));
     }
 
-    /** 正文结果不依赖业务模型；ID 和计数如何转成字符串由应用负责。 */
-    public record ArticleContent(String htmlContent, long wordCount, int readingMinutes) { }
+    /**
+     * 正文结果不依赖业务模型；ID 和计数如何转成字符串由应用负责。
+     */
+    public record ArticleContent(String htmlContent, long wordCount, int readingMinutes) {
+
+    }
 }

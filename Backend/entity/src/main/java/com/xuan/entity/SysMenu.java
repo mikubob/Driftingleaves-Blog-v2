@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 菜单分目录、页面、按钮，写入时要检查父子类型和循环引用。 */
+import java.time.LocalDateTime;
+
+/**
+ * 菜单分目录、页面、按钮，写入时要检查父子类型和循环引用。
+ */
 @Data
 @TableName("sys_menu")
 public class SysMenu {
+
     /** 菜单ID。 */
     @TableId(value = "menu_id", type = IdType.AUTO)
     private Long menuId;

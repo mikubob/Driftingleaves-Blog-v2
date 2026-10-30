@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 角色没有权重继承，谁有哪项权限要明确授权。 */
+import java.time.LocalDateTime;
+
+/**
+ * 角色没有权重继承，谁有哪项权限要明确授权。
+ */
 @Data
 @TableName("sys_role")
 public class SysRole {

@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 账号和个人资料放在这里，停用用 status，避免删除文章作者记录。 */
+import java.time.LocalDateTime;
+
+/**
+ * 账号和个人资料放在这里，停用用 status，避免删除文章作者记录。
+ */
 @Data
 @TableName("sys_user")
 public class SysUser {

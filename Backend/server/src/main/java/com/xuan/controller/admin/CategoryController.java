@@ -2,8 +2,8 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.CategoryCreateDTO;
-import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.dto.CategoryQueryDTO;
+import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.entity.BlogCategory;
 import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
@@ -24,13 +24,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 后台分类接口，先过后台入口和业务权限检查，再交给业务事务处理。 */
+/**
+ * 后台分类接口，先过后台入口和业务权限检查，再交给业务事务处理。
+ */
 @RestController
 @RequestMapping("/admin/categories")
 @RequiredArgsConstructor
 public class CategoryController {
+
     private final ICategoryService categories;
 
     /** 获取分类分页，列表不提供每条记录的版本，编辑前要先取详情。 */

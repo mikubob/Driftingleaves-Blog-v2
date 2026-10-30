@@ -4,22 +4,27 @@ import com.xuan.location.IpLocationResolver;
 import org.lionsoul.ip2region.service.Config;
 import org.lionsoul.ip2region.service.InvalidConfigException;
 import org.lionsoul.ip2region.service.Ip2Region;
-import org.lionsoul.ip2region.xdb.XdbException;
 import org.lionsoul.ip2region.xdb.Header;
 import org.lionsoul.ip2region.xdb.Searcher;
 import org.lionsoul.ip2region.xdb.Version;
+import org.lionsoul.ip2region.xdb.XdbException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.Resource;
-import java.io.IOException;
-import java.io.BufferedInputStream;
 
-/** IPv4 和 IPv6 离线库随应用打包，启动时检查格式，退出时释放查询器。 */
+import java.io.BufferedInputStream;
+import java.io.IOException;
+
+/**
+ * IPv4 和 IPv6 离线库随应用打包，启动时检查格式，退出时释放查询器。
+ */
 @Configuration(proxyBeanMethods = false)
 public class IpLocationConfig {
+
     /**
      * 从资源流加载数据库，这样打成可执行 jar 也能读取，不能硬转成磁盘文件。
+     *
      * @param ipv4Database 与 3.3.7 客户端匹配的 IPv4 xdb
      * @param ipv6Database 与 3.3.7 客户端匹配的 IPv6 xdb
      * @return 并发安全、由容器统一关闭的地域解析器

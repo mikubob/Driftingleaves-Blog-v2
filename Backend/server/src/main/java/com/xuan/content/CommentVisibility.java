@@ -1,6 +1,7 @@
 package com.xuan.content;
 
 import com.xuan.mapper.ArticleMapper.CommentNode;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -8,9 +9,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 文章计数和评论入口共用完整祖先链检查，不能只看直接父节点。 */
+/**
+ * 文章计数和评论入口共用完整祖先链检查，不能只看直接父节点。
+ */
 public final class CommentVisibility {
-    private CommentVisibility() { }
+
+    private CommentVisibility() {
+    }
 
     /** 逐层回溯并记住结果，0/2 隐藏整支，3 保留可展开位置；不受 SQL 递归深度限制。 */
     public static Set<Long> visible(List<CommentNode> nodes) {

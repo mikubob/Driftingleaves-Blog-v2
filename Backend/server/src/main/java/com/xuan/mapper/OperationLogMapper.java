@@ -1,16 +1,19 @@
 package com.xuan.mapper;
 
-import com.xuan.entity.SysOperationLog;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.OperationLogQueryDTO;
+import com.xuan.entity.SysOperationLog;
 import com.xuan.vo.OperationLogVO;
-import org.apache.ibatis.annotations.Param;
-import java.time.LocalDateTime;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 
-/** 只允许服务端写日志，后台提供独立查询与清理，不开放编辑。 */
+import java.time.LocalDateTime;
+
+/**
+ * 只允许服务端写日志，后台提供独立查询与清理，不开放编辑。
+ */
 @Mapper
 public interface OperationLogMapper extends BaseMapper<SysOperationLog> {
     /** 列表明确排除摘要列，筛选与总数一致。 */

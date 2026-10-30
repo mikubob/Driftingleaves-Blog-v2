@@ -2,6 +2,12 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 单例首次创建使用管理保护锁，不能只靠不存在记录的行锁。 -->
 <mapper namespace="com.xuan.mapper.HomeProfileMapper">
-    <select id="lockProfile" resultType="com.xuan.entity.HomeProfile">SELECT * FROM home_profile WHERE profile_id=1 FOR UPDATE</select>
-    <update id="replace">UPDATE home_profile SET user_id=#{row.userId}, nickname=#{row.nickname}, tagline=#{row.tagline}, description=#{row.description}, avatar=#{row.avatar}, website=#{row.website}, public_email=#{row.publicEmail}, github_url=#{row.githubUrl}, location=#{row.location} WHERE profile_id=1</update>
+    <select id="lockProfile" resultType="com.xuan.entity.HomeProfile">SELECT * FROM home_profile WHERE profile_id=1 FOR
+        UPDATE
+    </select>
+
+    <update id="replace">UPDATE home_profile SET user_id=#{row.userId}, nickname=#{row.nickname},
+        tagline=#{row.tagline}, description=#{row.description}, avatar=#{row.avatar}, website=#{row.website},
+        public_email=#{row.publicEmail}, github_url=#{row.githubUrl}, location=#{row.location} WHERE profile_id=1
+    </update>
 </mapper>

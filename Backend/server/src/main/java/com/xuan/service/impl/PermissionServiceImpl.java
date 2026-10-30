@@ -1,9 +1,8 @@
 package com.xuan.service.impl;
 
-import com.xuan.annotation.OperationLog;
-import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.xuan.annotation.OperationLog;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.dto.PermissionUpdateDTO;
@@ -16,6 +15,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IPermissionService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.TokenUtils;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
 import lombok.RequiredArgsConstructor;
@@ -23,15 +23,19 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** 权限字典写入依次锁保护点、升序用户和权限；授权改变时先退出相关会话，再提交数据库。 */
+/**
+ * 权限字典写入依次锁保护点、升序用户和权限；授权改变时先退出相关会话，再提交数据库。
+ */
 @Service
 @RequiredArgsConstructor
 public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPermission> implements IPermissionService {
+
     private final PermissionMapper permissions;
     private final UserMapper users;
     private final IUserService identities;
@@ -41,7 +45,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 同一只读快照里先查后台入口和业务权限，列表、总数用同样条件。
-     * @param query 已经检查过的分页、字面关键词、模块和状态
+     *
+     * @param query 已校验的分页、字面关键词、模块和状态
      * @return 权限 ID 升序分页，无逐条版本；SELF 不缩小全局字典
      */
     @Override
@@ -54,6 +59,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 同一快照里先查权限，再取字典资料和版本，禁用项也保留。
+     *
      * @param permissionId 全局权限 ID
      * @return 详情及带引号版本，不存在返回 404
      */
@@ -66,7 +72,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 保护锁和操作者锁内重查权限，只写允许的字典字段，不自动建立角色关联。
-     * @param request 已经检查过的创建资料及默认值
+     *
+     * @param request 已校验的创建资料及默认值
      * @return 回查数据库审计时间后的字典项；唯一冲突使事务回滚
      */
     @Override
@@ -86,6 +93,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 依次拿到保护锁、用户锁、权限锁后重查身份和版本，再完整替换资料，关联都保留。
+     *
      * @param permissionId 目标权限
      * @param request 全部允许字段，不接受权限码
      * @param revision 详情业务版本；缺失、格式错误、过期分别返回 428、400、412
@@ -93,7 +101,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "update", target = "sys:permission", permission = "sys:permission:update", targetIdArgument = 0)
+    @OperationLog(type = "update", target = "sys:permission", permission = "sys:permission:update", targetIdArgument
+            = 0)
     public PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision) {
         // 1. 锁内重查原会话、启用身份、后台和业务权限、版本，不能拿等待前的授权继续写。
         List<Long> affected = lockUsers(permissionId, "sys:permission:update");
@@ -102,6 +111,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         permission = requirePermission(permission);
         checkRevision(permission, revision);
         boolean changed = !permission.getStatus().equals(request.getStatus());
+
         // 2. 禁用只让授权暂时无效，不删除角色关联或菜单访问限制。
         permission.setPermissionName(request.getPermissionName());
         permission.setModule(request.getModule());
@@ -121,13 +131,15 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 同一锁事务里查版本和删除限制，再物理删除，角色权限关联由数据库级联清理。
+     *
      * @param permissionId 目标权限
      * @param revision 当前版本；状态限制不能绕过版本检查
      * @throws BusinessException 固定后端权限禁止删除，任意菜单引用返回 RESOURCE_IN_USE；撤销失败回滚全部删除
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument = 0)
+    @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument
+            = 0)
     public void delete(long permissionId, String revision) {
         List<Long> affected = lockUsers(permissionId, "sys:permission:delete");
         SysPermission permission = permissions.lockById(permissionId);
@@ -153,6 +165,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 实时查启用账号、原 Token、后台入口和本次业务权限。
+     *
      * @param permission 当前 sys:permission 操作权限，SELF 对全局字典无本人语义
      */
     private void requireAdmin(String permission) {
@@ -164,6 +177,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 写事务先拿固定保护锁，再升序锁操作者及全部关联用户，最后重查身份和权限。
+     *
      * @param permissionId 目标权限，创建时为 null，仅锁操作者
      * @param permission 当前操作权限
      * @return 全部受影响用户，包含禁用角色和禁用用户，多角色关联去重
@@ -184,6 +198,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 全部目标用户锁到后再撤销会话，权限和菜单都实时查库，不沿用旧缓存。
+     *
      * @param affected 已去重的关联用户；Redis 失败直接抛出使数据库事务回滚
      */
     private void revoke(List<Long> affected) {
@@ -194,6 +209,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 先检查权限，再查字典项是否存在，禁用项也能取到。
+     *
      * @param permission 数据库查询结果
      * @return 存在的实体；不存在抛出 404
      */
@@ -206,6 +222,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 拿到权限行锁后先查单个带引号版本，再写入、查状态限制或撤销会话。
+     *
      * @param permission 当前锁定实体
      * @param revision 客户端详情版本，拒绝通配符和多个版本
      */
@@ -223,6 +240,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 同一快照或锁事务里按固定顺序生成业务版本，时间字段不参与。
+     *
      * @param permission 当前实体，编码固定，资料及状态均参与摘要
      * @return 约定资料及带引号的 SHA-256 版本
      */
@@ -235,11 +253,13 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
     /**
      * 只返回约定的字典资料，调用方负责用同一快照或行锁读取。
+     *
      * @param permission 已确认存在的实体
      * @return 对外字段及数据库维护的 UTC 审计时间
      */
     private PermissionVO view(SysPermission permission) {
-        return new PermissionVO(permission.getPermissionId(), permission.getPermissionCode(), permission.getPermissionName(),
+        return new PermissionVO(permission.getPermissionId(), permission.getPermissionCode(),
+                permission.getPermissionName(),
                 permission.getModule(), permission.getDescription(), permission.getStatus(),
                 permission.getCreateTime(), permission.getUpdateTime());
     }

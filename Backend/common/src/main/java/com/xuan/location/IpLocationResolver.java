@@ -4,10 +4,14 @@ import com.xuan.exception.BusinessException;
 import com.xuan.utils.IpUtils;
 import org.lionsoul.ip2region.service.Ip2Region;
 import org.lionsoul.ip2region.xdb.InetAddressException;
+
 import java.io.IOException;
 
-/** IP 地域在本地查，IPv4 和 IPv6 查询器只创建一份，不查 DNS 或远程定位服务。 */
+/**
+ * IP 地域在本地查，IPv4 和 IPv6 查询器只创建一份，不查 DNS 或远程定位服务。
+ */
 public class IpLocationResolver implements AutoCloseable {
+
     private static final GeoInfo UNKNOWN = new GeoInfo(null, null, null);
     private final Ip2Region database;
 
@@ -18,6 +22,7 @@ public class IpLocationResolver implements AutoCloseable {
 
     /**
      * 查国家、省份和城市，查不到的字段就留 null，不编造地址。
+     *
      * @param ip IPv4 或 IPv6 字面量；请求 IP 应先由 IpUtils 按可信代理规则提取
      * @return 无效、回环或未命中时字段为 null；库内 0/空字段同样归一为 null
      * @throws BusinessException 数据库查询故障或线程中断时返回 503，不当作普通未知地址
@@ -28,6 +33,7 @@ public class IpLocationResolver implements AutoCloseable {
 
     /**
      * 省市能查到就显示省市，否则显示国家；回环显示本地，没有结果显示未知。
+     *
      * @param ip IPv4 或 IPv6 字面量，不接受主机名、端口或转发头列表
      * @return 省份与城市以一个空格连接，或国家、本地、未知
      */
@@ -55,7 +61,8 @@ public class IpLocationResolver implements AutoCloseable {
             if (region == null || region.isBlank()) {
                 return UNKNOWN;
             }
-            // 3.3.x 库依次是国家、省份、城市、ISP、国家代码，不能照搬 2.x 的字段位置。
+
+            // 3.3. x 库依次是国家、省份、城市、ISP、国家代码，不能照搬 2.x 的字段位置。
             String[] parts = region.split("\\|", -1);
             return new GeoInfo(part(parts, 0), part(parts, 1), part(parts, 2));
         } catch (InterruptedException exception) {
@@ -86,6 +93,10 @@ public class IpLocationResolver implements AutoCloseable {
         database.close();
     }
 
-    /** 地域结果不依赖业务实体，未知字段填 null。 */
-    public record GeoInfo(String country, String province, String city) { }
+    /**
+     * 地域结果不依赖业务实体，未知字段填 null。
+     */
+    public record GeoInfo(String country, String province, String city) {
+
+    }
 }

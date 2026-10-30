@@ -2,14 +2,35 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 首次和最近访问与一条PV同事务保存，管理限制不回写统计字段。 -->
 <mapper namespace="com.xuan.mapper.VisitorMapper">
-    <insert id="ensure">INSERT INTO blog_visitor(fingerprint,first_visit_time,last_visit_time) VALUES(#{fingerprint},#{now},#{now}) ON DUPLICATE KEY UPDATE fingerprint=VALUES(fingerprint)</insert>
-    <select id="lockFingerprint" resultType="com.xuan.entity.BlogVisitor">SELECT * FROM blog_visitor WHERE fingerprint=#{fingerprint} FOR UPDATE</select>
-    <select id="lockById" resultType="com.xuan.entity.BlogVisitor">SELECT * FROM blog_visitor WHERE visitor_id=#{id} FOR UPDATE</select>
-    <update id="visit">UPDATE blog_visitor SET ip_address=#{row.ipAddress},user_agent=#{row.userAgent},country=#{row.country},province=#{row.province},city=#{row.city},last_visit_time=GREATEST(first_visit_time,#{row.lastVisitTime}) WHERE visitor_id=#{row.visitorId}</update>
-    <update id="restriction">UPDATE blog_visitor SET is_blocked=#{row.isBlocked},blocked_until=#{row.blockedUntil} WHERE visitor_id=#{row.visitorId}</update>
+    <insert id="ensure">INSERT INTO blog_visitor(fingerprint,first_visit_time,last_visit_time)
+        VALUES(#{fingerprint},#{now},#{now}) ON DUPLICATE KEY UPDATE fingerprint=VALUES(fingerprint)
+    </insert>
+
+    <select id="lockFingerprint" resultType="com.xuan.entity.BlogVisitor">SELECT * FROM blog_visitor WHERE
+        fingerprint=#{fingerprint} FOR UPDATE
+    </select>
+
+    <select id="lockById" resultType="com.xuan.entity.BlogVisitor">SELECT * FROM blog_visitor WHERE visitor_id=#{id} FOR
+        UPDATE
+    </select>
+
+    <update id="visit">UPDATE blog_visitor SET
+        ip_address=#{row.ipAddress},user_agent=#{row.userAgent},country=#{row.country},province=#{row.province},city=#{row.city},last_visit_time=GREATEST(first_visit_time,#{row.lastVisitTime})
+        WHERE visitor_id=#{row.visitorId}
+    </update>
+
+    <update id="restriction">UPDATE blog_visitor SET is_blocked=#{row.isBlocked},blocked_until=#{row.blockedUntil} WHERE
+        visitor_id=#{row.visitorId}
+    </update>
+
     <select id="visitorPage" resultType="com.xuan.entity.BlogVisitor">
         SELECT * FROM blog_visitor
-        <where><if test="query.country != null">AND country=#{query.country}</if><if test="query.province != null">AND province=#{query.province}</if><if test="query.city != null">AND city=#{query.city}</if><if test="query.isBlocked != null">AND is_blocked=#{query.isBlocked}</if></where>
+        <where>
+            <if test="query.country != null">AND country=#{query.country}</if>
+            <if test="query.province != null">AND province=#{query.province}</if>
+            <if test="query.city != null">AND city=#{query.city}</if>
+            <if test="query.isBlocked != null">AND is_blocked=#{query.isBlocked}</if>
+        </where>
         ORDER BY last_visit_time DESC,visitor_id DESC
     </select>
 </mapper>

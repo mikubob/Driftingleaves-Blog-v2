@@ -6,10 +6,12 @@
     <select id="findIdentity" resultType="com.xuan.entity.SysUserOauth">
         SELECT * FROM sys_user_oauth WHERE source = #{source} AND uuid = #{uuid}
     </select>
+
     <!-- 用户全部绑定按 source 升序返回，不按平台开关过滤；能否登录、去掉 uuid 等内部字段由业务层处理。 -->
     <select id="findByUser" resultType="com.xuan.entity.SysUserOauth">
         SELECT * FROM sys_user_oauth WHERE user_id = #{userId} ORDER BY source
     </select>
+
     <!-- 删除同时限制用户和平台，不能只按 source 删；同一用户锁事务里要先查最近认证和最后登录方式。 -->
     <delete id="deleteBinding">
         DELETE FROM sys_user_oauth WHERE user_id = #{userId} AND source = #{source}

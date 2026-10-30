@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.servlet.HandlerMapping;
+
 import java.util.Set;
 
 /** 第十章拒绝未声明、重复和空查询参数，不让 MVC 静默忽略状态或身份字段。 */
@@ -12,6 +13,7 @@ import java.util.Set;
         com.xuan.controller.blog.SiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
         com.xuan.controller.admin.SiteConfigController.class})
 public class SiteRequestAdvice {
+
     /** 值的类型和长度交给 DTO，GET 不接受请求体。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {

@@ -4,16 +4,20 @@
 <mapper namespace="com.xuan.mapper.SiteConfigMapper">
     <select id="configs" resultType="com.xuan.entity.BlogSiteConfig">
         SELECT * FROM blog_site_config WHERE
-        <choose><when test="publicOnly">config_key='site' AND is_public=1</when>
-            <otherwise>config_key IN ('site','comment','message')</otherwise></choose>
+        <choose>
+            <when test="publicOnly">config_key='site' AND is_public=1</when>
+            <otherwise>config_key IN ('site','comment','message')</otherwise>
+        </choose>
         ORDER BY config_key ASC
     </select>
+
     <select id="lockByKey" resultType="com.xuan.entity.BlogSiteConfig">
         SELECT * FROM blog_site_config WHERE config_key=#{key} FOR UPDATE
     </select>
+
     <!-- JSON 和公开标记同一条语句更新，不能只保存一半。 -->
     <update id="updateConfig">
         UPDATE blog_site_config SET config_value=#{config.configValue}, description=#{config.description},
-            is_public=#{config.isPublic} WHERE config_key=#{config.configKey}
+        is_public=#{config.isPublic} WHERE config_key=#{config.configKey}
     </update>
 </mapper>

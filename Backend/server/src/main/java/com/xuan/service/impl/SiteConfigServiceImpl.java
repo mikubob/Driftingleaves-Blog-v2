@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -30,7 +31,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 配置行和评论创建共用锁，不加缓存，保存后下一个评论直接读取新策略。 */
+/**
+ * 配置行和评论创建共用锁，不加缓存，保存后下一个评论直接读取新策略。
+ */
 @Service
 @RequiredArgsConstructor
 public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSiteConfig> implements ISiteConfigService {

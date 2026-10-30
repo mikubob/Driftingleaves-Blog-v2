@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 这里只存站点展示和业务开关，不能存数据库、邮件或对象存储密码。 */
+import java.time.LocalDateTime;
+
+/**
+ * 这里只存站点展示和业务开关，不能存数据库、邮件或对象存储密码。
+ */
 @Data
 @TableName("blog_site_config")
 public class BlogSiteConfig {
+
     /** 唯一配置键，如site、comment。 */
     @TableId(value = "config_key", type = IdType.INPUT)
     private String configKey;

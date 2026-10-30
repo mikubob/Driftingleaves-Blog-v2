@@ -16,11 +16,14 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 本人点赞不收 userId；PUT 和 DELETE 共用用户、IP 的一分钟六十次窗口。 */
+/**
+ * 本人点赞不收 userId；PUT 和 DELETE 共用用户、IP 的一分钟六十次窗口。
+ */
 @RestController
 @RequestMapping("/blog/articles/{articleId}/like")
 @RequiredArgsConstructor
 public class ArticleLikeController {
+
     private final IArticleLikeService likes;
 
     /** 查询只需登录，不额外要求 like 权限，文章仍必须公开。 */
@@ -47,6 +50,9 @@ public class ArticleLikeController {
         return Result.ok(likes.unlike(IdUtils.parse(articleId)));
     }
 
+    /**
+     * 点赞接口不收请求体，传入实际内容时返回 400。
+     */
     private void rejectBody(String body) {
         if (body != null) {
             throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");

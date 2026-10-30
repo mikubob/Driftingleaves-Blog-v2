@@ -2,9 +2,12 @@ package com.xuan.exception;
 
 import lombok.Getter;
 
-/** 这里的错误文案可以给用户看，转成 HTTP 响应由应用负责。 */
+/**
+ * 这里的错误文案可以给用户看，转成 HTTP 响应由应用负责。
+ */
 @Getter
 public class BusinessException extends RuntimeException {
+
     private final int status;
     private final String code;
     private final Integer retryAfter;

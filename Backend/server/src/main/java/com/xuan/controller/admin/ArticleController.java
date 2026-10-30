@@ -26,18 +26,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 后台文章先检查入口和操作权限，再由业务事务检查各自范围和版本。 */
+/**
+ * 后台文章先检查入口和操作权限，再由业务事务检查各自范围和版本。
+ */
 @RestController
 @RequestMapping("/admin/articles")
 @RequiredArgsConstructor
 public class ArticleController {
+
     private final IArticleService articles;
 
     /**
      * 按 query 权限范围分页，默认只看正常文章，列表不带正文和每条版本。
-     * @param query 已经检查过的分页及过滤，authorId不能扩大SELF
+     *
+     * @param query 已校验的分页及过滤，authorId不能扩大SELF
      * @return 200后台文章分页
      */
     @GetMapping
@@ -48,6 +53,7 @@ public class ArticleController {
 
     /**
      * 按 query 权限范围取文章完整详情，回收站文章也能查。
+     *
      * @param articleId 正十进制目标ID
      * @return 200详情及X-Revision，不存在或越界404
      */
@@ -59,7 +65,8 @@ public class ArticleController {
 
     /**
      * 检查后台入口和 create 权限后，以当前用户创建草稿；失败时不能留下半篇文章。
-     * @param body 已经检查过的允许的创建字段及默认值，不接受身份或服务端字段
+     *
+     * @param body 已校验的创建字段及默认值，不接受身份或服务端字段
      * @return 201 完整详情、Location及X-Revision
      */
     @PostMapping
@@ -72,6 +79,7 @@ public class ArticleController {
 
     /**
      * PUT 要填全，可空字段也要传；锁内查 update 范围，已发布文章还要单独查 publish 范围。
+     *
      * @param articleId 正十进制目标ID
      * @param body 全部允许的内容字段，不接受状态或HTML
      * @param revision 原样详情版本，缺失交给权限检查后的锁事务返回428
@@ -87,6 +95,7 @@ public class ArticleController {
 
     /**
      * 按 publish 范围发布或下架；目标状态相同也要查版本，回收站文章不能改。
+     *
      * @param articleId 正十进制目标ID
      * @param body 只允许status=1或2
      * @param revision 当前整体版本
@@ -102,6 +111,7 @@ public class ArticleController {
 
     /**
      * 检查 delete 范围和版本后只移入回收站，正文和关联都保留。
+     *
      * @param articleId 正十进制目标ID
      * @param revision 当前整体版本，已回收仍先检查
      * @param body 本接口不接受请求体，防止静默忽略未声明字段
@@ -119,6 +129,7 @@ public class ArticleController {
 
     /**
      * 检查 restore 范围后恢复回收站文章，固定为下架状态，不自动发布。
+     *
      * @param articleId 正十进制目标ID
      * @param revision 当前回收站整体版本
      * @param body 本接口不接受请求体
@@ -142,6 +153,7 @@ public class ArticleController {
 
     /**
      * 把文章整体版本写进响应头，响应体只返回约定的后台详情字段。
+     *
      * @param result 同一快照或锁事务生成的详情与版本
      * @return 200 约定详情及X-Revision
      */

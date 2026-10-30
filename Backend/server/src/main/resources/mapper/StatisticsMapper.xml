@@ -2,46 +2,78 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 不保存计数副本，所有统计读同一快照；NULL访客只影响UV，不影响PV。 -->
 <mapper namespace="com.xuan.mapper.StatisticsMapper">
-    <sql id="viewsRange">v.view_time &gt;= #{begin}<if test="end != null"> AND v.view_time &lt; #{end}</if><if test="site != null"> AND v.site_code=#{site}</if></sql>
-    <sql id="firstRange">x.first_visit_time &gt;= #{begin}<if test="end != null"> AND x.first_visit_time &lt; #{end}</if><if test="site != null"> AND EXISTS(SELECT 1 FROM blog_page_view v WHERE v.visitor_id=x.visitor_id AND <include refid="viewsRange"/>)</if></sql>
+    <sql id="viewsRange">v.view_time &gt;= #{begin}
+        <if test="end != null">AND v.view_time &lt; #{end}</if>
+        <if test="site != null">AND v.site_code=#{site}</if>
+    </sql>
+
+    <sql id="firstRange">x.first_visit_time &gt;= #{begin}
+        <if test="end != null">AND x.first_visit_time &lt; #{end}</if>
+        <if test="site != null">AND EXISTS(SELECT 1 FROM blog_page_view v WHERE v.visitor_id=x.visitor_id AND<include
+                refid="viewsRange"/>)
+        </if>
+    </sql>
+
     <select id="publicStatistics" resultType="com.xuan.vo.PublicStatisticsVO">
         SELECT
-        CAST((SELECT COUNT(*) FROM blog_article a WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count,
-        CAST((SELECT COUNT(*) FROM blog_category c WHERE c.status=1 AND EXISTS(SELECT 1 FROM blog_article a WHERE a.category_id=c.category_id AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS category_count,
-        CAST((SELECT COUNT(*) FROM blog_tag t WHERE EXISTS(SELECT 1 FROM blog_article_tag x JOIN blog_article a ON a.article_id=x.article_id WHERE x.tag_id=t.tag_id AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS tag_count,
+        CAST((SELECT COUNT(*) FROM blog_article a WHERE<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
+        AS CHAR) AS article_count,
+        CAST((SELECT COUNT(*) FROM blog_category c WHERE c.status=1 AND EXISTS(SELECT 1 FROM blog_article a WHERE
+        a.category_id=c.category_id AND<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS
+        category_count,
+        CAST((SELECT COUNT(*) FROM blog_tag t WHERE EXISTS(SELECT 1 FROM blog_article_tag x JOIN blog_article a ON
+        a.article_id=x.article_id WHERE x.tag_id=t.tag_id AND<include
+            refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS tag_count,
         CAST((SELECT COUNT(*) FROM blog_page_view WHERE site_code='blog') AS CHAR) AS page_view_count,
-        CAST((SELECT COUNT(*) FROM blog_page_view WHERE site_code='blog' AND view_time &gt;= #{today} AND view_time &lt; #{tomorrow}) AS CHAR) AS today_page_view_count,
+        CAST((SELECT COUNT(*) FROM blog_page_view WHERE site_code='blog' AND view_time &gt;= #{today} AND view_time &lt;
+        #{tomorrow}) AS CHAR) AS today_page_view_count,
         CAST((SELECT COUNT(DISTINCT visitor_id) FROM blog_page_view WHERE site_code='blog') AS CHAR) AS visitor_count
     </select>
+
     <select id="overview" resultType="com.xuan.vo.AdminStatisticsVO">
         SELECT
-        CAST((SELECT COUNT(*) FROM blog_page_view v WHERE <include refid="viewsRange"/>) AS CHAR) AS page_view_count,
-        CAST((SELECT COUNT(DISTINCT v.visitor_id) FROM blog_page_view v WHERE <include refid="viewsRange"/>) AS CHAR) AS visitor_count,
-        CAST((SELECT COUNT(*) FROM blog_visitor x WHERE <include refid="firstRange"/>) AS CHAR) AS new_visitor_count,
+        CAST((SELECT COUNT(*) FROM blog_page_view v WHERE<include refid="viewsRange"/>) AS CHAR) AS page_view_count,
+        CAST((SELECT COUNT(DISTINCT v.visitor_id) FROM blog_page_view v WHERE<include refid="viewsRange"/>) AS CHAR) AS
+        visitor_count,
+        CAST((SELECT COUNT(*) FROM blog_visitor x WHERE<include refid="firstRange"/>) AS CHAR) AS new_visitor_count,
         CAST((SELECT COUNT(*) FROM blog_article WHERE deleted_at IS NULL) AS CHAR) AS article_count,
-        CAST((SELECT COUNT(*) FROM blog_article a WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS published_article_count,
+        CAST((SELECT COUNT(*) FROM blog_article a WHERE<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
+        AS CHAR) AS published_article_count,
         CAST((SELECT COUNT(*) FROM blog_comment WHERE status != 3) AS CHAR) AS comment_count,
         CAST((SELECT COUNT(*) FROM blog_message WHERE status != 3) AS CHAR) AS message_count,
         CAST((SELECT COUNT(*) FROM blog_comment WHERE status=0) AS CHAR) AS pending_comment_count,
         CAST((SELECT COUNT(*) FROM blog_message WHERE status=0) AS CHAR) AS pending_message_count
     </select>
+
     <select id="viewTrend" resultType="com.xuan.vo.ViewTrendVO">
-        SELECT DATE(v.view_time) AS date,CAST(COUNT(*) AS CHAR) AS page_view_count,CAST(COUNT(DISTINCT v.visitor_id) AS CHAR) AS visitor_count
-        FROM blog_page_view v WHERE <include refid="viewsRange"/> GROUP BY DATE(v.view_time) ORDER BY DATE(v.view_time)
+        SELECT DATE(v.view_time) AS date,CAST(COUNT(*) AS CHAR) AS page_view_count,CAST(COUNT(DISTINCT v.visitor_id) AS
+        CHAR) AS visitor_count
+        FROM blog_page_view v WHERE
+        <include refid="viewsRange"/>
+        GROUP BY DATE(v.view_time) ORDER BY DATE(v.view_time)
     </select>
+
     <select id="visitorTrend" resultType="com.xuan.vo.VisitorTrendVO">
-        SELECT DATE(x.first_visit_time) AS date,CAST(COUNT(*) AS CHAR) AS new_visitor_count,'0' AS cumulative_new_visitor_count
-        FROM blog_visitor x WHERE <include refid="firstRange"/> GROUP BY DATE(x.first_visit_time) ORDER BY DATE(x.first_visit_time)
+        SELECT DATE(x.first_visit_time) AS date,CAST(COUNT(*) AS CHAR) AS new_visitor_count,'0' AS
+        cumulative_new_visitor_count
+        FROM blog_visitor x WHERE
+        <include refid="firstRange"/>
+        GROUP BY DATE(x.first_visit_time) ORDER BY DATE(x.first_visit_time)
     </select>
+
     <select id="provinces" resultType="com.xuan.vo.ProvinceMetricVO">
         SELECT x.province,CAST(COUNT(DISTINCT x.visitor_id) AS CHAR) AS visitor_count
         FROM blog_visitor x JOIN blog_page_view v ON v.visitor_id=x.visitor_id
-        WHERE <include refid="viewsRange"/> GROUP BY x.province ORDER BY COUNT(DISTINCT x.visitor_id) DESC,x.province ASC
+        WHERE
+        <include refid="viewsRange"/>
+        GROUP BY x.province ORDER BY COUNT(DISTINCT x.visitor_id) DESC,x.province ASC
     </select>
+
     <select id="articles" resultType="com.xuan.vo.ArticleViewMetricVO">
         SELECT a.article_id,a.title,a.slug,CAST(COUNT(*) AS CHAR) AS page_view_count
         FROM blog_page_view v JOIN blog_article a ON a.article_id=v.article_id AND a.deleted_at IS NULL
-        WHERE v.site_code='blog' AND v.view_time &gt;= #{begin}<if test="end != null"> AND v.view_time &lt; #{end}</if>
+        WHERE v.site_code='blog' AND v.view_time &gt;= #{begin}
+        <if test="end != null">AND v.view_time &lt; #{end}</if>
         GROUP BY a.article_id,a.title,a.slug ORDER BY COUNT(*) DESC,a.article_id DESC LIMIT #{limit}
     </select>
 </mapper>

@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.servlet.HandlerMapping;
+
 import java.util.Set;
 
 /** 身份、系统管理和文章字典只收声明过的参数，不能把忽略身份字段当作校验通过。 */
@@ -16,6 +17,7 @@ import java.util.Set;
         com.xuan.controller.blog.ArticleController.class, com.xuan.controller.blog.CategoryController.class,
         com.xuan.controller.blog.TagController.class})
 public class ModelRequestAdvice {
+
     /** 绑定前只查参数名、重复值和无请求体约定，字段内容仍交给 DTO 和业务层检查。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {

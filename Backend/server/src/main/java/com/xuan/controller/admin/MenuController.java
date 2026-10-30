@@ -21,18 +21,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 import java.util.List;
 
-/** 菜单接口先检查身份和后台入口，再检查各项菜单操作权限。 */
+/**
+ * 菜单接口先检查身份和后台入口，再检查各项菜单操作权限。
+ */
 @RestController
 @RequestMapping("/admin/menus")
 @RequiredArgsConstructor
 public class MenuController {
+
     private final IMenuService menus;
 
     /**
      * 检查后台入口和查询权限后取完整后台树，本人能访问哪些菜单走另一个接口。
+     *
      * @return 200 全状态 MenuNode 列表，无逐条 X-Revision
      */
     @GetMapping
@@ -43,6 +48,7 @@ public class MenuController {
 
     /**
      * 检查后台入口和查询权限后取菜单详情及版本。
+     *
      * @param menuId 正十进制菜单 ID
      * @return 200 详情及 X-Revision，不存在返回 404
      */
@@ -54,7 +60,8 @@ public class MenuController {
 
     /**
      * 检查后台入口和创建权限后建菜单，不自动给角色授权或增加接口权限。
-     * @param body 已经检查过的允许的创建字段和默认值，不接受客户端审计字段
+     *
+     * @param body 已校验的创建字段和默认值，不接受客户端审计字段
      * @return 201 资料和详情 Location，无 X-Revision
      */
     @PostMapping
@@ -66,6 +73,7 @@ public class MenuController {
 
     /**
      * 检查后台入口和更新权限后完整替换菜单，创建后的 menuCode 不能改。
+     *
      * @param menuId 目标菜单 ID
      * @param body 全部可写字段，可空字段不可省略
      * @param revision 当前详情版本；缺失交由锁事务返回 428
@@ -81,6 +89,7 @@ public class MenuController {
 
     /**
      * 检查后台入口和删除权限后删除叶子菜单，引用和版本要在锁事务里检查。
+     *
      * @param menuId 目标菜单 ID
      * @param revision 当前详情版本
      * @return 200 空结果，无 X-Revision；有子节点返回 RESOURCE_IN_USE
@@ -95,6 +104,7 @@ public class MenuController {
 
     /**
      * 检查路径 ID，前导零、符号、小数或超过 Long 范围都拒绝。
+     *
      * @param value 原始路径文本
      * @return 内部菜单 ID
      */
@@ -111,6 +121,7 @@ public class MenuController {
 
     /**
      * 版本放响应头，响应体只返回约定的菜单字段。
+     *
      * @param result 同一事务得到的详情及版本
      * @return 200 详情及 X-Revision
      */

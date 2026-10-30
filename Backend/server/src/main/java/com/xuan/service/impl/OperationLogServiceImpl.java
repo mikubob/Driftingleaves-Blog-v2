@@ -15,23 +15,28 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.QueryTimeUtils;
-import com.xuan.vo.OperationLogVO;
 import com.xuan.vo.OperationLogDetailVO;
+import com.xuan.vo.OperationLogVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 
-/** 查询与清理分别使用独立权限，清理自身也要留一条新日志。 */
+/**
+ * 查询与清理分别使用独立权限，清理自身也要留一条新日志。
+ */
 @Service
 @RequiredArgsConstructor
 public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, SysOperationLog> implements IOperationLogService {
+
     private final OperationLogMapper logs;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
+
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -43,6 +48,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         return PageResult.from(logs.logPage(new Page<>(query.page(), query.pageSize()), query,
                 IdUtils.parse(query.userId()), IdUtils.parse(query.targetId()), begin, end));
     }
+
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -50,9 +56,12 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         requireAdmin("query");
         SysOperationLog row = required(logs.selectById(id));
         // 现有审计写入者没有摘要白名单，不把数据库里的任意JSON直接当公开字段。
-        return new OperationLogDetailVO(row.getLogId(), row.getUserId(), row.getOperationType(), row.getOperationTarget(),
-                row.getTargetId(), row.getPermissionCode(), row.getResult(), row.getErrorMessage(), row.getIpAddress(), row.getOperationTime(), null);
+        return new OperationLogDetailVO(row.getLogId(), row.getUserId(), row.getOperationType(),
+                row.getOperationTarget(),
+                row.getTargetId(), row.getPermissionCode(), row.getResult(), row.getErrorMessage(), row.getIpAddress(),
+                row.getOperationTime(), null);
     }
+
     /** {@inheritDoc} */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -65,6 +74,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         required(row);
         logs.deleteById(id);
     }
+
     /** 不借query范围放宽delete，也不把SELF伪装为全局权限。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
@@ -74,9 +84,12 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
             throw new BusinessException(403, "FORBIDDEN", "此操作需要ALL范围");
         }
     }
+
     /** 权限检查通过后才报告不存在。 */
     private SysOperationLog required(SysOperationLog row) {
-        if (row == null) { throw new BusinessException(404, "NOT_FOUND", "日志不存在"); }
+        if (row == null) {
+            throw new BusinessException(404, "NOT_FOUND", "日志不存在");
+        }
         return row;
     }
 }

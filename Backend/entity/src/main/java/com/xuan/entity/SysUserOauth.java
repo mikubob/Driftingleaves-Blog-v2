@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 一个用户在每个平台只绑定一个账号，不保存第三方 Token。 */
+import java.time.LocalDateTime;
+
+/**
+ * 一个用户在每个平台只绑定一个账号，不保存第三方 Token。
+ */
 @Data
 @TableName("sys_user_oauth")
 public class SysUserOauth {

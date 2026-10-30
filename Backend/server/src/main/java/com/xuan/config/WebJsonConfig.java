@@ -14,19 +14,26 @@ import tools.jackson.databind.SerializationContext;
 import tools.jackson.databind.ValueDeserializer;
 import tools.jackson.databind.ValueSerializer;
 import tools.jackson.databind.cfg.CoercionAction;
-import tools.jackson.databind.cfg.EnumFeature;
 import tools.jackson.databind.cfg.CoercionInputShape;
+import tools.jackson.databind.cfg.EnumFeature;
 import tools.jackson.databind.module.SimpleModule;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 import tools.jackson.databind.type.LogicalType;
+
 import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
-/** MVC 用 Jackson 3 严格检查输入，ID 返回字符串，时间按 UTC 毫秒格式返回。 */
+/**
+ * MVC 用 Jackson 3 严格检查输入，ID 返回字符串，时间按 UTC 毫秒格式返回。
+ */
 @Configuration
 public class WebJsonConfig {
+
+    /**
+     * 统一配置 ID、UTC 时间和严格输入规则，拒绝隐式类型转换。
+     */
     @Bean
     public JsonMapperBuilderCustomizer webJsonCustomizer() {
         return builder -> {
@@ -34,16 +41,21 @@ public class WebJsonConfig {
             SimpleModule module = new SimpleModule();
             module.addSerializer(Long.class, ToStringSerializer.instance);
             module.addSerializer(BigInteger.class, ToStringSerializer.instance);
+
             // 2. 输入 ID 只能是合法十进制字符串，不能把 JSON 数字自动转过来。
             module.addDeserializer(Long.class, new ValueDeserializer<>() {
+                /**
+                 * {@inheritDoc}
+                 */
                 @Override
                 public Long deserialize(JsonParser parser, DeserializationContext context) {
-                    // 2.先查 JSON 类型和正整数格式，带前导零的也不能收。
+                    // 2.1 先查 JSON 类型和正整数格式，带前导零的也不能收。
                     if (parser.currentToken() != JsonToken.VALUE_STRING
                             || !parser.getString().matches("[1-9][0-9]{0,18}")) {
                         return context.reportInputMismatch(Long.class, "ID须为正十进制字符串");
                     }
-                    // 2.再查是否超过 Long 范围，溢出就按输入错误处理。
+
+                    // 2.2 再查是否超过 Long 范围，溢出就按输入错误处理。
                     try {
                         return Long.valueOf(parser.getString());
                     } catch (NumberFormatException exception) {
@@ -51,15 +63,20 @@ public class WebJsonConfig {
                     }
                 }
             });
+
             // 3. 数据库里的 UTC 时间按固定毫秒格式返回，不跟随机器时区变化。
             module.addSerializer(LocalDateTime.class, new ValueSerializer<>() {
                 private final DateTimeFormatter format = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'");
 
+                /**
+                 * {@inheritDoc}
+                 */
                 @Override
                 public void serialize(LocalDateTime value, JsonGenerator generator, SerializationContext context) {
                     generator.writeString(format.format(value.atOffset(ZoneOffset.UTC)));
                 }
             });
+
             // 4. 未知字段、重复属性、数字枚举和隐式类型转换都要拒绝。
             builder.addModule(module)
                     .enable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES,

@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 正文单独存一张表，列表查询就不用读取大段内容。 */
+import java.time.LocalDateTime;
+
+/**
+ * 正文单独存一张表，列表查询就不用读取大段内容。
+ */
 @Data
 @TableName("blog_article_content")
 public class BlogArticleContent {
+
     /** 文章ID，同时作为主键及关联blog_article.article_id的外键。 */
     @TableId(value = "article_id", type = IdType.INPUT)
     private Long articleId;

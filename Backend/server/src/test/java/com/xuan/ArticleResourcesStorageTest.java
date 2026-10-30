@@ -13,10 +13,12 @@ import com.xuan.properties.FileProperties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
+
 import java.io.ByteArrayInputStream;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,9 +26,13 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** 只替换 OSS SDK 的网络边界，实际调用现有客户端和附件存储逻辑，不访问真实云账号。 */
+/**
+ * 只替换 OSS SDK 的网络边界，实际调用现有客户端和附件存储逻辑，不访问真实云账号。
+ */
 class ArticleResourcesStorageTest {
-    @TempDir Path directory;
+
+    @TempDir
+    Path directory;
 
     @Test
     void optionalOssUsesExistingClientPrivateRandomKeyAndClosesReadStream() throws Exception {
@@ -36,7 +42,8 @@ class ArticleResourcesStorageTest {
         files.setLocalRoot(directory);
         DefaultListableBeanFactory beans = new DefaultListableBeanFactory();
         beans.registerSingleton("ossClient", new AliOssClient(sdk, properties));
-        ArticleResources resources = new ArticleResources(new AuthProperties(), files, properties, beans.getBeanProvider(AliOssClient.class));
+        ArticleResources resources = new ArticleResources(new AuthProperties(), files, properties,
+                beans.getBeanProvider(AliOssClient.class));
         Path temporary = resources.temporary();
         Files.write(temporary, new byte[]{1, 2, 3});
         BlogFile row = new BlogFile();
@@ -49,7 +56,10 @@ class ArticleResourcesStorageTest {
         OSSObject object = new OSSObject();
         boolean[] closed = {false};
         object.setObjectContent(new ByteArrayInputStream(new byte[]{1, 2, 3}) {
-            @Override public void close() { closed[0] = true; }
+            @Override
+            public void close() {
+                closed[0] = true;
+            }
         });
         when(sdk.getObject(properties.getBucket(), row.getObjectKey())).thenReturn(object);
         assertThat(resources.read(row)).containsExactly(1, 2, 3);

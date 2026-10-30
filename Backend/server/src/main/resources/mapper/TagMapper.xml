@@ -10,6 +10,7 @@
         </where>
         ORDER BY tag_id ASC
     </select>
+
     <!-- 先锁字典再删除，文章保存持有共享锁时这里会等待。 -->
     <select id="lockById" resultType="com.xuan.entity.BlogTag">
         SELECT * FROM blog_tag WHERE tag_id = #{id} FOR UPDATE

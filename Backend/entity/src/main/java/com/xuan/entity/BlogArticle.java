@@ -4,14 +4,18 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.math.BigInteger;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 这里只存文章基本资料；发布、公开或私密、回收站分别控制。 */
+import java.math.BigInteger;
+import java.time.LocalDateTime;
+
+/**
+ * 这里只存文章基本资料；发布、公开或私密、回收站分别控制。
+ */
 @Data
 @TableName("blog_article")
 public class BlogArticle {
+
     /** 文章ID。 */
     @TableId(value = "article_id", type = IdType.AUTO)
     private Long articleId;

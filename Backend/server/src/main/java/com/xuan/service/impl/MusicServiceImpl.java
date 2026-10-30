@@ -24,11 +24,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
-/** 展示与维护直接读同一张表，成功审计失败时资料一起回滚。 */
+
+/**
+ * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ */
 @Service
 @RequiredArgsConstructor
 public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implements IMusicService {
+
     private final MusicMapper items;
     private final UserMapper users;
     private final IUserService identities;
@@ -41,7 +46,9 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MusicPublicVO> publicItems(DisplayQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
-                .convert(row -> new MusicPublicVO(row.getMusicId(), row.getTitle(), row.getArtist(), row.getDurationSeconds(), row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType(), row.getSortOrder())));
+                .convert(row -> new MusicPublicVO(row.getMusicId(), row.getTitle(), row.getArtist(),
+                        row.getDurationSeconds(), row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(),
+                        row.getLyricType(), row.getSortOrder())));
     }
 
     /** {@inheritDoc} */
@@ -99,9 +106,15 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
 
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
     private void validate(MusicWriteDTO request) {
-        if (!UrlPolicy.valid(request.getCoverUrl())) { throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源"); }
-        if (!UrlPolicy.valid(request.getAudioUrl())) { throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源"); }
-        if (!UrlPolicy.valid(request.getLyricUrl())) { throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源"); }
+        if (!UrlPolicy.valid(request.getCoverUrl())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+        }
+        if (!UrlPolicy.valid(request.getAudioUrl())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+        }
+        if (!UrlPolicy.valid(request.getLyricUrl())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+        }
     }
 
     /** 白名单逐项赋值，NULL也写入数据库。 */
@@ -138,12 +151,17 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
 
     /** 先检查权限，再报告不存在。 */
     private BlogMusic requireItem(BlogMusic row) {
-        if (row == null) { throw new BusinessException(404, "NOT_FOUND", "资料不存在"); }
+        if (row == null) {
+            throw new BusinessException(404, "NOT_FOUND", "资料不存在");
+        }
         return row;
     }
 
     /** 业务版本排除审计时间和公开渲染结果。 */
     private ResourceVersion<BlogMusic> profile(BlogMusic row) {
-        return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getMusicId(), row.getTitle(), row.getArtist(), row.getDurationSeconds(), row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType(), row.getSortOrder(), row.getStatus()))) + "\"");
+        return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(
+                Arrays.asList(row.getMusicId(), row.getTitle(), row.getArtist(), row.getDurationSeconds(),
+                        row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType(), row.getSortOrder(),
+                        row.getStatus()))) + "\"");
     }
 }

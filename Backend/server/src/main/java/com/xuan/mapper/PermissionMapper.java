@@ -5,14 +5,17 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.entity.SysPermission;
 import org.apache.ibatis.annotations.Param;
+
 import java.util.List;
 
-/** 权限字典写入依次锁保护点、升序用户和目标权限，顺序由业务层负责。 */
+/**
+ * 权限字典写入依次锁保护点、升序用户和目标权限，顺序由业务层负责。
+ */
 public interface PermissionMapper extends BaseMapper<SysPermission> {
     /**
      * 列表和总数共用条件，编码、名称按文字包含查找，模块和状态精确匹配。
      * @param page 分页参数
-     * @param query 已经检查过的查询条件
+     * @param query 已校验的查询条件
      * @return ID 升序的完整状态分页
      */
     IPage<SysPermission> permissionPage(IPage<SysPermission> page, @Param("query") PermissionQueryDTO query);
@@ -34,7 +37,7 @@ public interface PermissionMapper extends BaseMapper<SysPermission> {
     /**
      * 完整替换资料和状态，NULL 也要写，编码和时间字段不改。
      * @param permission 已锁定且通过版本检查的实体
-     * @return 更新数，由调用方事务协调状态和会话撤销
+     * @return 更新数，由调用方事务处理状态变化和会话撤销
      */
     int updatePermission(@Param("permission") SysPermission permission);
 

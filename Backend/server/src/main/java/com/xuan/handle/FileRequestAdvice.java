@@ -1,19 +1,21 @@
 package com.xuan.handle;
 
 import com.xuan.exception.BusinessException;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.ServletException;
-import java.io.IOException;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.multipart.MultipartHttpServletRequest;
 import org.springframework.web.servlet.HandlerMapping;
+
+import java.io.IOException;
 import java.util.Set;
 
 /** 文件入口拒绝额外查询、重复文件和伪造上传者，不能让 MVC 静默忽略 multipart 字段。 */
 @ControllerAdvice(assignableTypes = {com.xuan.controller.admin.FileController.class,
         com.xuan.controller.blog.FileController.class})
 public class FileRequestAdvice {
+
     /** POST 只接收一个 file 部件，其他接口没有请求体，分页才有明确查询字段。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) throws ServletException, IOException {

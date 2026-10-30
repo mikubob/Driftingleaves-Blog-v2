@@ -11,10 +11,13 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** OSS 只在开关启用时创建，关闭时不用凭据，也不访问云资源。 */
+/**
+ * OSS 只在开关启用时创建，关闭时不用凭据，也不访问云资源。
+ */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "app.oss", name = "enabled", havingValue = "true")
 public class OssConfig {
+
     /** 启用后先查配置，再用 V4 签名创建共用 SDK；容器退出时关闭连接。 */
     @Bean(destroyMethod = "shutdown")
     public OSS oss(AliOssProperties properties) {

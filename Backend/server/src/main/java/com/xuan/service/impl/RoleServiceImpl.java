@@ -1,9 +1,8 @@
 package com.xuan.service.impl;
 
-import com.xuan.annotation.OperationLog;
-import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.xuan.annotation.OperationLog;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleQueryDTO;
@@ -18,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IRoleService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.TokenUtils;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -33,10 +34,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** 角色资料和授权一起修改，依次拿保护锁、升序用户锁、角色锁后重查权限；撤销会话失败就整笔回滚。 */
+/**
+ * 角色资料和授权一起修改，依次拿保护锁、升序用户锁、角色锁后重查权限；撤销会话失败就整笔回滚。
+ */
 @Service
 @RequiredArgsConstructor
 public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements IRoleService {
+
     private final RoleMapper roles;
     private final UserMapper users;
     private final IUserService identities;
@@ -46,7 +50,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 同一只读快照里检查后台和业务权限再分页，统计、完整关联和返回资料要对应。
-     * @param query 已经检查过的页码、页大小、字面关键词和状态
+     *
+     * @param query 已校验的页码、页大小、字面关键词和状态
      * @return 按角色 ID 升序的分页，不提供逐条版本
      */
     @Override
@@ -58,6 +63,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 同一快照里取角色和全部权限、菜单关联，禁用关联也参与整体版本。
+     *
      * @param roleId 全局目标角色 ID
      * @return 角色详情及带引号版本，不存在时在权限检查后返回 404
      */
@@ -70,7 +76,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 保护锁和操作者锁内重查后台及业务权限，新角色创建时不带任何授权。
-     * @param request 已经检查过的允许的创建字段，默认值由入口模型确定
+     *
+     * @param request 已校验的创建字段，默认值由入口模型确定
      * @return 回查数据库审计时间后的角色；编码冲突回滚，不分配任何权限和菜单
      */
     @Override
@@ -90,6 +97,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 保护锁、用户锁、角色锁内完整替换资料，范围或状态改变时撤销全部关联会话。
+     *
      * @param roleId 目标角色
      * @param request 完整资料，编码不可修改
      * @param revision 详情整体版本；缺失、格式错误和过期分别返回 428、400、412
@@ -107,6 +115,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         checkRevision(role, revision);
         boolean changed = !role.getDataScope().equals(request.getDataScope())
                 || !role.getStatus().equals(request.getStatus());
+
         // 2. 完整替换允许修改的字段，角色码和全部授权关联保留。
         role.setRoleName(request.getRoleName());
         role.setDescription(request.getDescription());
@@ -123,6 +132,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 同一锁事务里删自定义角色，用户、权限、菜单三种关联由数据库级联清理。
+     *
      * @param roleId 目标角色
      * @param revision 当前角色整体版本，先检查版本再检查内置角色状态约束
      * @throws BusinessException 内置角色禁止删除；撤销失败使角色及全部关联恢复
@@ -145,6 +155,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 权限和菜单在同一事务完整替换，祖先和访问权限全查过后才写两个集合。
+     *
      * @param roleId 目标角色
      * @param request 不重复的明确权限及菜单集合，空数组清空
      * @param revision 角色资料与授权共用的版本
@@ -167,6 +178,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         List<Long> menus = completeMenus(request.menuIds(), new HashSet<>(permissions));
         // 权限行锁也可能等待，拿齐锁后再确认原 Token 和本次授权权限。
         requireAdmin("sys:role:grant");
+
         // 2. 最终集合没变就保留版本和会话，不能因为输入顺序变了就当作修改。
         if (!permissions.equals(roles.permissionIds(roleId)) || !menus.equals(roles.menuIds(roleId))) {
             roles.deletePermissions(roleId);
@@ -177,6 +189,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
             if (!menus.isEmpty()) {
                 roles.insertMenus(roleId, menus);
             }
+
             // 3. 两类授权一起检查最后管理员，Redis 撤销会话成功后才提交数据库。
             protectAdmin(roleId);
             revoke(affected);
@@ -186,6 +199,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 按数据库当前身份、会话、后台入口和业务权限检查角色操作。
+     *
      * @param permission 具体 sys:role 操作权限；SELF 不限制全局资源
      */
     private void requireAdmin(String permission) {
@@ -197,6 +211,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 写事务先拿固定保护锁，再升序锁关联用户和操作者，最后重查身份和权限。
+     *
      * @param roleId 目标角色；创建时为 null，只锁操作者
      * @param permission 当前操作权限
      * @return 全部关联用户 ID，包含禁用用户，供提交前撤销所有会话
@@ -217,7 +232,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 结构保护锁内补齐祖先，逐个检查启用、循环、父类型和明确授予的访问权限。
-     * @param selected 已经检查过的格式的菜单 ID 集合
+     *
+     * @param selected 已校验的格式的菜单 ID 集合
      * @param permissions 本次明确选择且已确认启用的权限，不隐式增加
      * @return 去重并升序的最终菜单集合；任一节点或祖先无效则拒绝全部保存
      */
@@ -256,6 +272,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 固定保护锁内检查修改后的 admin 角色和系统管理权限，确保仍有有效管理员。
+     *
      * @param roleId 已修改角色；其他角色不影响固定 admin 条件
      * @throws BusinessException 最后管理员将失效，数据库写入必须回滚
      */
@@ -267,6 +284,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 锁住全部目标用户后逐个撤销所有会话，权限和菜单实时查库，不用旧授权缓存。
+     *
      * @param affected 已锁定的关联用户；Redis 任一失败直接抛出以回滚数据库
      */
     private void revoke(List<Long> affected) {
@@ -277,6 +295,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 先检查权限，再确认角色是否存在，禁用角色也能取到。
+     *
      * @param role 当前查询结果
      * @return 存在的角色实体
      */
@@ -289,6 +308,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 拿到角色锁后先查整体版本，再查状态、写关联或撤销会话。
+     *
      * @param role 当前已锁定角色
      * @param revision 客户端原样携带的单个带引号版本
      */
@@ -306,6 +326,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 同一快照或锁事务里取资料并按固定顺序计算整体版本，不包含时间字段。
+     *
      * @param role 当前角色实体
      * @return 角色资料与带引号 SHA-256 版本，权限或菜单变化也会改变摘要
      */
@@ -318,6 +339,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
     /**
      * 返回角色资料和排序后的完整关联，禁用项也保留；调用方负责同一快照或行锁。
+     *
      * @param role 当前角色实体
      * @return 对外约定的角色字段
      */

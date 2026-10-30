@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
-import java.time.LocalDateTime;
-import java.math.BigDecimal;
 
-/** 全站展示资料，启停与账号身份无关，时间由数据库维护。 */
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+
+/**
+ * 全站展示资料，启停与账号身份无关，时间由数据库维护。
+ */
 @Data
 @TableName("blog_music")
 public class BlogMusic {
+
     @TableId(type = IdType.AUTO)
     private Long musicId;
     private String title;

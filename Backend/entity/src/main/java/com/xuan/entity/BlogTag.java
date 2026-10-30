@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 标签字典。 */
+import java.time.LocalDateTime;
+
+/**
+ * 标签字典。
+ */
 @Data
 @TableName("blog_tag")
 public class BlogTag {
+
     /** 标签ID。 */
     @TableId(value = "tag_id", type = IdType.AUTO)
     private Long tagId;

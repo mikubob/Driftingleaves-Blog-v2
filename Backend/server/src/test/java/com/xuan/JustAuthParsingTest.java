@@ -3,8 +3,8 @@ package com.xuan;
 import com.xkcoding.http.HttpUtil;
 import com.xkcoding.http.support.HttpHeader;
 import com.xkcoding.http.support.SimpleHttpResponse;
-import com.xuan.properties.AuthProperties;
 import com.xuan.client.JustAuthClient;
+import com.xuan.properties.AuthProperties;
 import me.zhyd.oauth.config.AuthConfig;
 import me.zhyd.oauth.exception.AuthException;
 import me.zhyd.oauth.model.AuthCallback;
@@ -12,7 +12,9 @@ import me.zhyd.oauth.model.AuthUser;
 import me.zhyd.oauth.request.AuthGithubRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
+
 import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -21,8 +23,11 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mockStatic;
 
-/** HTTP 响应用替身，JustAuth 和 Fastjson 兼容包仍实际解析。 */
+/**
+ * HTTP 响应用替身，JustAuth 和 Fastjson 兼容包仍实际解析。
+ */
 class JustAuthParsingTest {
+
     @Test
     void githubResponseParsingUsesCompatibleFastjsonApi() {
         AuthConfig config = AuthConfig.builder().clientId("test").clientSecret("test")
@@ -38,7 +43,9 @@ class JustAuthParsingTest {
         try (MockedStatic<HttpUtil> http = mockStatic(HttpUtil.class)) {
             http.when(() -> HttpUtil.get(anyString(), isNull(), any(HttpHeader.class), eq(false)))
                     .thenReturn(new SimpleHttpResponse(true, 200, Map.of(),
-                            "{\"id\":9223372036854775807,\"login\":\"leaf\",\"name\":\"叶\",\"avatar_url\":\"https://example.test/a.png\"}", null));
+                            "{\"id\":9223372036854775807,\"login\":\"leaf\",\"name\":\"叶\"," +
+                                    "\"avatar_url\":\"https://example.test/a.png\"}",
+                            null));
             AuthUser user = request.getUserInfo(token);
             assertThat(user.getUuid()).isEqualTo("9223372036854775807");
             assertThat(user.getNickname()).isEqualTo("叶");

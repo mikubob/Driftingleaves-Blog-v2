@@ -3,8 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.LinkQueryDTO;
+import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogFriendLink;
 import com.xuan.exception.BusinessException;
@@ -17,19 +17,23 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
-import com.xuan.vo.LinkPublicVO;
 import com.xuan.vo.LinkProfileVO;
+import com.xuan.vo.LinkPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
 
-/** 友链维护结果直接用于公开展示，写入和成功审计一起提交。 */
+/**
+ * 友链维护结果直接用于公开展示，写入和成功审计一起提交。
+ */
 @Service
 @RequiredArgsConstructor
 public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFriendLink> implements IFriendLinkService {
+
     private final FriendLinkMapper links;
     private final UserMapper users;
     private final IUserService identities;

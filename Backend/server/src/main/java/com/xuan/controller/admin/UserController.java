@@ -23,18 +23,23 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 后台用户接口先检查后台入口，各项操作还得有明确的业务权限。 */
+/**
+ * 后台用户接口先检查后台入口，各项操作还得有明确的业务权限。
+ */
 @RestController
 @RequestMapping("/admin/users")
 @RequiredArgsConstructor
 public class UserController {
+
     private final IUserService users;
 
     /**
      * 分页查全站用户，SELF 不缩小范围，关键词和角色筛选由同一套 SQL 条件完成。
-     * @param query 已经检查过的分页及过滤参数
+     *
+     * @param query 已校验的分页及过滤参数
      * @return 无逐条版本的脱敏分页结果
      */
     @GetMapping
@@ -45,6 +50,7 @@ public class UserController {
 
     /**
      * 获取全站用户详情及整体版本，禁用用户也能查看。
+     *
      * @param userId 正十进制用户 ID
      * @return 资料、完整角色集合和 X-Revision；不存在返回 404
      */
@@ -56,7 +62,8 @@ public class UserController {
 
     /**
      * 创建有本站密码、没有角色的用户，不自动登录。
-     * @param body 已经检查过的创建字段，不接受 roleIds
+     *
+     * @param body 已校验的创建字段，不接受 roleIds
      * @return 201 资料及对应详情 Location
      */
     @PostMapping
@@ -68,6 +75,7 @@ public class UserController {
 
     /**
      * 资料和状态要完整替换，业务层锁内核对版本，禁用时撤销全部会话。
+     *
      * @param userId 目标用户 ID
      * @param body 含可空字段的完整资料
      * @param revision 带引号的版本；缺失交由 Service 返回 428
@@ -83,6 +91,7 @@ public class UserController {
 
     /**
      * 完整替换用户角色，业务层保证保留最后管理员，提交前撤销目标用户的全部会话。
+     *
      * @param userId 目标用户 ID
      * @param body 去重且最多一百项的角色集合，空集合清空
      * @param revision 用户详情的整体版本
@@ -98,6 +107,7 @@ public class UserController {
 
     /**
      * 检查路径和查询 ID，不能有前导零、符号、空白或超过 Long 范围。
+     *
      * @param value 原始 ID 文本
      * @return 已确认的内部 Long ID
      */
@@ -114,6 +124,7 @@ public class UserController {
 
     /**
      * 内部资料转成统一响应，版本只放响应头。
+     *
      * @param result 资料及其带引号版本
      * @return 成功响应及 X-Revision
      */

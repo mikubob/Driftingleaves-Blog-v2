@@ -9,8 +9,10 @@ import com.xuan.exception.BusinessException;
 import com.xuan.properties.AliOssProperties;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+
 import java.io.ByteArrayInputStream;
 import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -20,8 +22,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** OSS 网络调用用替身，客户端逻辑和配置检查照常执行，不访问真实 Bucket。 */
+/**
+ * OSS 网络调用用替身，客户端逻辑和配置检查照常执行，不访问真实 Bucket。
+ */
 class AliOssClientTest {
+
     private final OSS sdk = mock(OSS.class);
     private final AliOssProperties properties = properties();
     private final AliOssClient client = new AliOssClient(sdk, properties);
@@ -60,7 +65,8 @@ class AliOssClientTest {
         }
         assertThatThrownBy(() -> client.upload(new byte[0], "png")).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.upload(new byte[1], "../png")).isInstanceOf(BusinessException.class);
-        assertThatThrownBy(() -> client.upload(new byte[10 * 1024 * 1024 + 1], "png")).isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> client.upload(new byte[10 * 1024 * 1024 + 1], "png")).isInstanceOf(
+                BusinessException.class);
         verifyNoInteractions(sdk);
     }
 
@@ -76,7 +82,8 @@ class AliOssClientTest {
         when(sdk.doesObjectExist(properties.getBucket(), key)).thenReturn(true, false);
         assertThat(client.exists(key)).isTrue();
         assertThat(client.exists(key)).isFalse();
-        when(sdk.doesObjectExist(properties.getBucket(), key)).thenThrow(new ClientException("secret-bearing-sdk-message"));
+        when(sdk.doesObjectExist(properties.getBucket(), key)).thenThrow(
+                new ClientException("secret-bearing-sdk-message"));
         assertThatThrownBy(() -> client.exists(key)).isInstanceOfSatisfying(BusinessException.class,
                 error -> assertThat(error.getStatus()).isEqualTo(503));
         OSSException missing = mock(OSSException.class);

@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -19,10 +20,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 
-/** 实时查询授权，角色、权限和菜单在同一读取事务里用同一个快照。 */
+/**
+ * 实时查询授权，角色、权限和菜单在同一读取事务里用同一个快照。
+ */
 @Component
 @RequiredArgsConstructor
 public class AuthorizationProvider implements StpInterface {
+
     /** 只有这些初始化系统管理权限参与最后管理员保护，新增字典项不自动加进来。 */
     public static final List<String> ADMIN_PERMISSIONS = List.of("admin:access",
             "sys:user:query", "sys:user:create", "sys:user:update", "sys:user:assignRole",
@@ -31,7 +35,8 @@ public class AuthorizationProvider implements StpInterface {
             "sys:permission:query", "sys:permission:create", "sys:permission:update", "sys:permission:delete");
     /** 文章接口已经使用这些固定权限，不能删除；它们不加入最后管理员保护名单。 */
     public static final Set<String> ARTICLE_PERMISSIONS = Set.of("blog:article:query", "blog:article:create",
-            "blog:article:update", "blog:article:publish", "blog:article:delete", "blog:article:restore", "blog:file:query");
+            "blog:article:update", "blog:article:publish", "blog:article:delete", "blog:article:restore",
+            "blog:file:query");
     /** 这些权限已有分类、标签接口使用，不能删除；不加入最后管理员保护名单。 */
     public static final Set<String> TAXONOMY_PERMISSIONS = Set.of("blog:category:query", "blog:category:create",
             "blog:category:update", "blog:category:delete", "blog:tag:query", "blog:tag:create",
@@ -86,11 +91,17 @@ public class AuthorizationProvider implements StpInterface {
             "sys:log:delete");
     private final AuthorizationMapper mapper;
 
+    /**
+     * 按当前启用的用户、角色和权限，为 Sa-Token 返回有效权限码。
+     */
     @Override
     public List<String> getPermissionList(Object loginId, String loginType) {
         return capabilities(Long.parseLong(loginId.toString())).permissionCodes();
     }
 
+    /**
+     * 只返回该用户当前有效的角色码，不复用登录时的旧授权。
+     */
     @Override
     public List<String> getRoleList(Object loginId, String loginType) {
         return mapper.roleCodes(Long.parseLong(loginId.toString()));
@@ -105,6 +116,7 @@ public class AuthorizationProvider implements StpInterface {
             scopes.merge(grant.getPermissionCode(), grant.getDataScope(),
                     (left, right) -> "ALL".equals(left) || "ALL".equals(right) ? "ALL" : "SELF");
         }
+
         // 2. 返回有效角色、权限和各自范围，不能按角色名给通配权限。
         return new CapabilitiesVO(mapper.roleCodes(userId), List.copyOf(scopes.keySet()), scopes);
     }
@@ -126,6 +138,7 @@ public class AuthorizationProvider implements StpInterface {
         if (!capabilities.permissionCodes().contains("admin:access")) {
             return List.of();
         }
+
         // 2. 菜单授权还要和有效权限一起检查；目录只管结构，授权的隐藏项保留。
         Set<String> permissions = new HashSet<>(capabilities.permissionCodes());
         Map<Long, MenuGrant> candidates = new HashMap<>();
@@ -134,6 +147,7 @@ public class AuthorizationProvider implements StpInterface {
                 candidates.put(menu.getMenuId(), menu);
             }
         }
+
         // 3. 每个节点都查完整祖先链，再把合法节点分成根节点和子节点。
         Map<Long, List<MenuGrant>> children = new HashMap<>();
         List<MenuGrant> roots = new ArrayList<>();
@@ -146,10 +160,14 @@ public class AuthorizationProvider implements StpInterface {
                 }
             }
         }
+
         // 4. 逐层排序并组装菜单树，没有可访问页面的空目录去掉。
         return build(roots, children);
     }
 
+    /**
+     * 逐级检查菜单祖先的授权、启用状态和类型，遇到环就拒绝该分支。
+     */
     private boolean validChain(MenuGrant menu, Map<Long, MenuGrant> candidates) {
         // 1. 沿父链记下走过的节点，发现循环就拒绝这个分支。
         Set<Long> seen = new HashSet<>();
@@ -159,10 +177,12 @@ public class AuthorizationProvider implements StpInterface {
                 return false;
             }
             Long parentId = current.getParentId();
+
             // 2. 根节点可以是目录或页面，按钮必须放在页面下面。
             if (parentId == null) {
                 return !"B".equals(current.getMenuType());
             }
+
             // 3. 每一级祖先都得已授权且启用，父类型也得符合目录、页面、按钮的规则。
             MenuGrant parent = candidates.get(parentId);
             if (parent == null || !("B".equals(current.getMenuType())
@@ -174,16 +194,22 @@ public class AuthorizationProvider implements StpInterface {
         return false;
     }
 
+    /**
+     * 按排序值和 ID 组装菜单树，移除没有可访问页面的目录。
+     */
     private List<MenuNodeVO> build(List<MenuGrant> nodes, Map<Long, List<MenuGrant>> children) {
         List<MenuNodeVO> result = new ArrayList<>();
+
         // 1. 每层先按 sortOrder 再按 menuId 排，排序值相同时结果也稳定。
         nodes.sort(Comparator.comparing(MenuGrant::getSortOrder).thenComparing(MenuGrant::getMenuId));
         for (MenuGrant node : nodes) {
             // 2. 先组装子树，再看当前目录里还有没有能访问的页面。
-            List<MenuNodeVO> nested = build(new ArrayList<>(children.getOrDefault(node.getMenuId(), List.of())), children);
+            List<MenuNodeVO> nested = build(new ArrayList<>(children.getOrDefault(node.getMenuId(), List.of())),
+                    children);
             if ("D".equals(node.getMenuType()) && nested.isEmpty()) {
                 continue;
             }
+
             // 3. 有效的隐藏项和按钮原样保留，前端再按类型生成导航或操作。
             result.add(new MenuNodeVO(node.getMenuId(), node.getParentId(), node.getMenuCode(), node.getMenuName(),
                     node.getMenuType(), node.getRouteName(), node.getPath(), node.getComponent(), node.getIcon(),

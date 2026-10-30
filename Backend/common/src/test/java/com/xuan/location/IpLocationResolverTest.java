@@ -3,7 +3,9 @@ package com.xuan.location;
 import com.xuan.exception.BusinessException;
 import org.junit.jupiter.api.Test;
 import org.lionsoul.ip2region.service.Ip2Region;
+
 import java.io.IOException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
@@ -11,8 +13,11 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** 对字段归一化、无效输入和确定性查询故障做小范围测试，真实 xdb 由配置测试覆盖。 */
+/**
+ * 对字段归一化、无效输入和确定性查询故障做小范围测试，真实 xdb 由配置测试覆盖。
+ */
 class IpLocationResolverTest {
+
     private final Ip2Region database = mock(Ip2Region.class);
     private final IpLocationResolver resolver = new IpLocationResolver(database);
 
@@ -44,7 +49,8 @@ class IpLocationResolverTest {
 
     @Test
     void reportsLookupFailureWithoutRawMessageAndPreservesInterruption() throws Exception {
-        when(database.search("8.8.8.8")).thenThrow(new IOException("internal database path"), new InterruptedException());
+        when(database.search("8.8.8.8")).thenThrow(new IOException("internal database path"),
+                new InterruptedException());
         assertThatThrownBy(() -> resolver.getGeoInfo("8.8.8.8"))
                 .isInstanceOfSatisfying(BusinessException.class, error -> {
                     assertThat(error.getStatus()).isEqualTo(503);

@@ -43,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -56,10 +57,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** 文章写入先锁操作者，再升序锁文件、锁文章；原会话要重查，正文、标签和成功日志一起提交。 */
+/**
+ * 文章写入先锁操作者，再升序锁文件、锁文章；原会话要重查，正文、标签和成功日志一起提交。
+ */
 @Service
 @RequiredArgsConstructor
 public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> implements IArticleService {
+
     private final ArticleMapper articles;
     private final SubscriptionNotifications notifications;
     private final UserMapper users;
@@ -69,11 +73,16 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     private final ArticleResources resources;
     private final JsonMapper json;
 
-    /** 文件必须比文章先加锁，保存已锁对象，后面不能倒过来补拿新文件锁。 */
-    private record LockedArticle(ArticleRow article, Map<Long, BlogFile> files) { }
+    /**
+     * 文件必须比文章先加锁，保存已锁对象，后面不能倒过来补拿新文件锁。
+     */
+    private record LockedArticle(ArticleRow article, Map<Long, BlogFile> files) {
+
+    }
 
     /**
      * 同一快照里查公开列表，ID 和月份先检查；分类隐藏只影响返回的分类资料。
+     *
      * @param query 公开请求过滤
      * @return 稳定置顶/发布时间/ID倒序分页，不改变阅读数
      */
@@ -90,7 +99,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 文章锁内取公开详情、上下篇和阅读信息，全部成功后再原子加一次阅读。
-     * @param slug 已经检查过的大小写敏感slug
+     *
+     * @param slug 已校验的大小写敏感slug
      * @return 安全公开详情；任何正文或数据库失败回滚计数，不以Token放宽PUBLIC
      */
     @Override
@@ -121,8 +131,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 同一快照里按 UTC 月份统计公开文章，分页和统计共用条件。
-     * @param page 已经检查过的页码
-     * @param pageSize 已经检查过的页大小
+     *
+     * @param page 已校验的页码
+     * @param pageSize 已校验的页大小
      * @return 月份倒序分页，不读取正文或改变阅读数
      */
     @Override
@@ -133,6 +144,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 先实时查后台入口和 query 权限，SQL 再限制作者；authorId 只是额外条件，不能扩大 SELF。
+     *
      * @param query 后台分页、状态、回收站及字面关键词
      * @return 修改时间及ID倒序列表，不携带正文或版本
      */
@@ -149,6 +161,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 文章资料、正文、升序标签和当前分类在同一只读快照里取，回收站也能查。
+     *
      * @param id 目标文章
      * @return 约定的后台详情和整体版本；范围外统一404
      */
@@ -160,20 +173,25 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 锁住操作者后再查身份和创建权限，作者固定取会话、状态固定草稿，关联一起提交。
-     * @param request 已经检查过的允许的字段及 POST 默认值，创建时不得包含本站附件
+     *
+     * @param request 已校验的字段及 POST 默认值，创建时不得包含本站附件
      * @return 创建后的完整详情及版本；唯一键或关联失败回滚元数据、正文、标签与审计
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:article", permission = "blog:article:create")
     public ArticleProfileVO create(ArticleWriteDTO request) {
+        // 1. 锁住操作者后检查创建权限，再校验正文、封面和关联字典。
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
         validateWrite(request);
         References references = resources.inspect(null, request.getMarkdownContent(), request.getCoverUrl());
         lockAssociations(request.getCategoryId(), request.getTagIds());
-        // 字典行也可能等待，拿齐锁后不能沿用等待前的 Token 和权限。
+
+        // 2. 字典行也可能等待，拿齐锁后不能沿用等待前的 Token 和权限。
         requireAdmin("create");
+
+        // 3. 以当前用户创建草稿，正文、标签和成功审计在同一事务提交。
         BlogArticle article = new BlogArticle();
         article.setAuthorId(sessions.currentUserId());
         article.setStatus(0);
@@ -186,6 +204,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 先拿文件锁、文章锁并重查权限，再检查版本、完整替换文章；已发布还要单独查 publish 范围。
+     *
      * @param id 目标文章
      * @param request PUT全部允许字段
      * @param revision 当前整体版本，状态或同值操作不能绕过检查
@@ -214,6 +233,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 锁事务里查 publish 范围和版本，状态只允许 0→1、1→2、2→1 或保持当前目标。
+     *
      * @param id 目标文章
      * @param status 入口保证1或2
      * @param revision 当前业务版本
@@ -242,12 +262,15 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
         article.setStatus(status);
         articles.updateArticle(article, requireAdmin("publish"));
-        if (firstPublic) { notifications.afterArticlePublished(id); }
+        if (firstPublic) {
+            notifications.afterArticlePublished(id);
+        }
         return profile(articles.scoped(id, null, false));
     }
 
     /**
      * 文章锁内查 delete 范围和版本，只写回收时间，正文、关联和互动都留下。
+     *
      * @param id 目标文章
      * @param revision 当前版本；已回收仍先检查该版本
      */
@@ -264,6 +287,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 文章锁内查 restore 范围、版本和回收状态，恢复后固定下架，不自动公开。
+     *
      * @param id 目标文章
      * @param revision 当前回收站版本
      * @return 清空deletedAt后的详情，首次发布时间保留，非回收站409
@@ -284,9 +308,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 同一快照里查公开榜单，本月按 UTC 首次发布时间筛选，热度仍看累计数。
+     *
      * @param period site或month
      * @param metric view或like
-     * @param limit 已经检查过的1..20
+     * @param limit 已校验的1..20
      * @return 稳定热度/发布时间/ID倒序列表，不增加阅读计数
      */
     @Override
@@ -296,12 +321,14 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         YearMonth month = "month".equals(period) ? YearMonth.from(at) : null;
         return articles.rankings(month == null ? null : month.atDay(1).atStartOfDay(), upper(month), at,
                 "like".equals(metric), limit).stream().map(row -> new HotArticleVO(row.getArticleId(), row.getTitle(),
-                        row.getSlug(), row.getSummary(), row.getCoverUrl(), row.getViewCount(), row.getLikeCount(),
-                        "like".equals(metric) ? BigInteger.valueOf(row.getLikeCount()) : row.getViewCount(), row.getPublishTime())).toList();
+                row.getSlug(), row.getSummary(), row.getCoverUrl(), row.getViewCount(), row.getLikeCount(),
+                "like".equals(metric) ? BigInteger.valueOf(row.getLikeCount()) : row.getViewCount(),
+                row.getPublishTime())).toList();
     }
 
     /**
      * 原 Token、启用账号、后台入口和业务权限都要实时查，范围只合并授予本次权限的角色。
+     *
      * @param operation 文章操作后缀
      * @return ALL为null，SELF为当前作者ID，交给SQL作为独立过滤
      */
@@ -314,6 +341,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 先锁操作者并定位旧引用，再升序锁新旧文件、锁文章，最后重查原 Token、范围和版本。
+     *
      * @param id 目标文章
      * @param operation 当前操作的独立权限
      * @param revision 客户端详情版本
@@ -347,6 +375,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 最终引用的每个文件都要存在、满足 query 权限及上传者范围，还得确认存储对象可用。
+     *
      * @param ids 已在文章锁前升序取得行锁的文件ID集合
      * @param locked 文章锁前读取并持锁的文件快照；缺失记录不能在文章锁后补锁
      */
@@ -367,6 +396,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 持有文章锁时再锁分类和升序标签，避免检查存在后它们又被删掉。
+     *
      * @param category 分类可空，后台可引用隐藏分类
      * @param tags 入口已确认数量、不重复及ID格式的完整集合
      */
@@ -383,19 +413,22 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 写入前查解码后的 Markdown UTF-8 大小和转载来源，不裁剪原文，也不抓外部地址。
+     *
      * @param request 已完成JSON、Unicode、枚举和集合格式验证的请求
      */
     private void validateWrite(ArticleWriteDTO request) {
         if (request.getMarkdownContent().getBytes(StandardCharsets.UTF_8).length > 1024 * 1024) {
             throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "Markdown正文超过1MiB");
         }
-        if (!UrlPolicy.valid(request.getOriginalUrl()) || (request.getArticleType() != 1 && request.getOriginalUrl() == null)) {
+        if (!UrlPolicy.valid(
+                request.getOriginalUrl()) || (request.getArticleType() != 1 && request.getOriginalUrl() == null)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "转载和翻译必须提供合法原文URL");
         }
     }
 
     /**
      * 发布和编辑已发布文章都得有非空白正文及合法来源，失败不能改原状态和首次发布时间。
+     *
      * @param markdown 当前或候选Markdown源
      * @param type 1原创、2转载、3翻译
      * @param original 外部来源URL；转载/翻译不得为空
@@ -408,6 +441,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 只把允许修改的字段填进去，不能让 DTO 覆盖作者、状态、计数和发布时间等字段。
+     *
      * @param article 新草稿或当前锁定文章
      * @param request 已通过入口和业务校验的完整内容
      * @param cover 已归一化的规范封面URL
@@ -427,6 +461,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 调用方事务里完整替换正文和升序标签，插入或成功日志失败就整笔回滚。
+     *
      * @param id 新建或已锁定文章ID
      * @param request 完整正文和标签集合，字典已锁定
      * @param html 服务端渲染清理的公开上下文缓存
@@ -441,6 +476,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 权限和范围通过后再查文章是否存在，越界也报 404，不泄露文章状态。
+     *
      * @param row 已落实操作范围的SQL结果
      * @return 非空文章，缺失和越界统一404
      */
@@ -453,6 +489,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 先查版本，再查是否在回收站；回收站文章不能编辑或发布。
+     *
      * @param article 已锁定并通过当前版本校验的文章，回收状态返回409
      */
     private void requireNormal(BlogArticle article) {
@@ -463,6 +500,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 文章没正文就按存储故障处理，不能编个空正文返回，也不能创建孤立文章。
+     *
      * @param id 同一快照或当前行锁下的文章ID
      * @return 存在的正文；缺失返回503使写事务回滚
      */
@@ -476,6 +514,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 同一快照或锁事务里取后台详情并计算版本，Markdown 和升序 tagIds 都要算进去。
+     *
      * @param row 最新文章元数据
      * @return 安全后台HTML及带引号版本，排除计数、审计时间和派生阅读信息
      */
@@ -485,12 +524,14 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setCategoryId(row.getCategoryId());
         value.setTagIds(value.getTags().stream().map(BlogTag::getTagId).toList());
         value.setMarkdownContent(markdown);
-        value.setHtmlContent(resources.adminHtml(resources.inspect(row.getArticleId(), markdown, row.getCoverUrl()).html()));
+        value.setHtmlContent(
+                resources.adminHtml(resources.inspect(row.getArticleId(), markdown, row.getCoverUrl()).html()));
         return new ArticleProfileVO(value, revision(row, markdown, value.getTagIds()));
     }
 
     /**
      * 按固定顺序计算版本，把全部可写资料、状态、首次发布时间、回收时间、Markdown 和升序标签都算进去。
+     *
      * @param row 同一快照或行锁下的最新元数据
      * @param markdown 同一篇文章的原始正文，不以HTML缓存替代
      * @param tags 当前完整升序标签ID集合
@@ -498,13 +539,15 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     private String revision(BlogArticle row, String markdown, List<Long> tags) {
         return "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getArticleId(), row.getAuthorId(),
-                row.getCategoryId(), row.getTitle(), row.getSlug(), row.getSummary(), row.getCoverUrl(), row.getArticleType(),
+                row.getCategoryId(), row.getTitle(), row.getSlug(), row.getSummary(), row.getCoverUrl(),
+                row.getArticleType(),
                 row.getOriginalUrl(), row.getStatus(), row.getVisibility(), row.getIsTop(), row.getAllowComment(),
                 row.getPublishTime(), row.getDeletedAt(), markdown, tags))) + "\"";
     }
 
     /**
      * 拿到文章锁并检查范围后，先查单个具体版本，再查状态或是否重复操作。
+     *
      * @param article 当前锁定元数据，关联标签已锁定
      * @param expected 客户端原样版本；缺失428、格式错误400、过期412
      */
@@ -524,6 +567,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 前台只返回约定字段，隐藏分类给 null，标签升序，作者不带邮箱或后台资料。
+     *
      * @param row 已满足PUBLIC的文章元数据和公开作者资料
      * @param value 公开列表或详情模型
      * @return 同一快照或锁事务内填充的公开字段，不输出Markdown源
@@ -533,7 +577,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setAuthor(new ArticlePublicVO.Author(row.getAuthorId(), row.getAuthorNickname(), row.getAuthorAvatar()));
         BlogCategory category = row.getCategoryId() == null ? null : articles.category(row.getCategoryId());
         value.setCategory(category == null || category.getStatus() != 1 ? null : new ArticlePublicVO.Category(
-                category.getCategoryId(), category.getCategoryName(), category.getSlug(), category.getDescription(), category.getSortOrder()));
+                category.getCategoryId(), category.getCategoryName(), category.getSlug(), category.getDescription(),
+                category.getSortOrder()));
         value.setTitle(row.getTitle());
         value.setSlug(row.getSlug());
         value.setSummary(row.getSummary());
@@ -555,6 +600,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 后台返回完整管理资料和当前字典，封面保留保存值，HTML 里的附件地址另外转成后台路径。
+     *
      * @param row 当前操作SQL范围内的文章
      * @param value 后台列表或详情模型
      * @return 含回收状态和真实互动计数的约定字段，不含作者私人资料
@@ -587,6 +633,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 逐层检查评论的整条祖先链，只有自身通过、祖先全部通过或占位的评论才计数。
+     *
      * @param id 当前文章
      * @return 不含待审、驳回、占位及隐藏后代的真实明细数量，无额外缓存或SQL计数列
      */
@@ -598,16 +645,21 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     /**
      * 月份结束时间取下月第一天且不包含它；9999-12 不设上界，避免超出 MySQL 时间范围。
-     * @param month 已经检查过的月份，无过滤时为null
+     *
+     * @param month 已校验的月份，无过滤时为null
      * @return 下月首日UTC零点，最高月份或无过滤为null
      */
     private LocalDateTime upper(YearMonth month) {
-        return month == null || month.equals(YearMonth.of(9999, 12)) ? null : month.plusMonths(1).atDay(1).atStartOfDay();
+        return month == null || month.equals(YearMonth.of(9999, 12)) ? null : month.plusMonths(1).atDay(1)
+                .atStartOfDay();
     }
 
     /**
      * 时间由服务端按 UTC 毫秒生成，写进 DATETIME(3)，不取机器本地时间或客户端时间。
+     *
      * @return 服务端当前UTC时间；仅用于首次发布、回收和公开过滤
      */
-    private LocalDateTime now() { return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS); }
+    private LocalDateTime now() {
+        return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
+    }
 }

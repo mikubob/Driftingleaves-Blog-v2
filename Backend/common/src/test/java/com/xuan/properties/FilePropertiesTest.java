@@ -1,11 +1,15 @@
 package com.xuan.properties;
 
 import org.junit.jupiter.api.Test;
+
 import java.util.Arrays;
 import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 实际检查附件 origin 配置，不访问网络或存储。 */
+/**
+ * 实际检查附件 origin 配置，不访问网络或存储。
+ */
 class FilePropertiesTest {
     @Test
     void acceptsConcreteHttpOriginsAndRejectsPathsCredentialsAndInvalidValues() {

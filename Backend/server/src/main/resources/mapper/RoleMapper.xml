@@ -13,44 +13,61 @@
         </where>
         ORDER BY role_id ASC
     </select>
+
     <!-- 禁用权限也保留，按固定顺序返回才能算整体版本。 -->
     <select id="permissionIds" resultType="long">
         SELECT permission_id FROM sys_role_permission WHERE role_id = #{roleId} ORDER BY permission_id
     </select>
+
     <!-- 禁用菜单也保留，按固定顺序返回才能算整体版本。 -->
     <select id="menuIds" resultType="long">
         SELECT menu_id FROM sys_role_menu WHERE role_id = #{roleId} ORDER BY menu_id
     </select>
+
     <!-- 已经持有固定保护锁，先找出关联用户，再由业务层按 ID 升序锁住。 -->
     <select id="userIds" resultType="long">
         SELECT user_id FROM sys_user_role WHERE role_id = #{roleId} ORDER BY user_id
     </select>
+
     <!-- 用户锁之后再锁角色，不按状态过滤。 -->
     <select id="lockById" resultType="com.xuan.entity.SysRole">
         SELECT * FROM sys_role WHERE role_id = #{roleId} FOR UPDATE
     </select>
+
     <!-- 只替换允许修改的字段，不改角色码和关联集合。 -->
     <update id="updateRole">
         UPDATE sys_role SET role_name = #{role.roleName}, description = #{role.description},
-            data_scope = #{role.dataScope}, status = #{role.status} WHERE role_id = #{role.roleId}
+        data_scope = #{role.dataScope}, status = #{role.status} WHERE role_id = #{role.roleId}
     </update>
+
     <!-- 角色锁后按 ID 升序锁权限，缺失或禁用都要让整个请求失败。 -->
     <select id="lockEnabledPermissions" resultType="long">
         SELECT permission_id FROM sys_permission WHERE permission_id IN
         <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         AND status = 1 ORDER BY permission_id FOR UPDATE
     </select>
+
     <!-- 结构修改共用固定保护锁，这里取全部状态，用来查祖先和循环。 -->
-    <select id="allMenus" resultType="com.xuan.entity.SysMenu">SELECT * FROM sys_menu ORDER BY menu_id</select>
+    <select id="allMenus" resultType="com.xuan.entity.SysMenu">
+        SELECT * FROM sys_menu ORDER BY menu_id
+    </select>
+
     <!-- 权限和菜单替换必须放进同一事务。 -->
-    <delete id="deletePermissions">DELETE FROM sys_role_permission WHERE role_id = #{roleId}</delete>
+    <delete id="deletePermissions">
+        DELETE FROM sys_role_permission WHERE role_id = #{roleId}
+    </delete>
+
     <!-- 空集合就是清空，任何失败都要和权限替换一起回滚。 -->
-    <delete id="deleteMenus">DELETE FROM sys_role_menu WHERE role_id = #{roleId}</delete>
+    <delete id="deleteMenus">
+        DELETE FROM sys_role_menu WHERE role_id = #{roleId}
+    </delete>
+
     <!-- 只插入存在且启用、明确授予的权限，不能按菜单自动增加权限。 -->
     <insert id="insertPermissions">
         INSERT INTO sys_role_permission(role_id, permission_id) VALUES
         <foreach collection="ids" item="id" separator=",">(#{roleId}, #{id})</foreach>
     </insert>
+
     <!-- 祖先补齐后再插入最终集合，两列主键防止重复关联。 -->
     <insert id="insertMenus">
         INSERT INTO sys_role_menu(role_id, menu_id) VALUES

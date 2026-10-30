@@ -2,14 +2,24 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 所有公开派生资源复用文章PUBLIC条件，不缓存下架前的内容。 -->
 <mapper namespace="com.xuan.mapper.FeedMapper">
-    <select id="recent" resultType="com.xuan.entity.BlogArticle">SELECT a.* FROM blog_article a WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/> ORDER BY a.publish_time DESC,a.article_id DESC LIMIT 20</select>
+    <select id="recent" resultType="com.xuan.entity.BlogArticle">SELECT a.* FROM blog_article a WHERE
+        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
+        ORDER BY a.publish_time DESC,a.article_id DESC LIMIT 20
+    </select>
+
     <select id="sitemap" resultType="com.xuan.model.SitemapRow">
         SELECT * FROM (
-            SELECT 1 AS kind,a.article_id AS resource_id,a.slug,a.update_time AS updated_at FROM blog_article a WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
-            UNION ALL
-            SELECT 2,c.category_id,c.slug,c.update_time FROM blog_category c WHERE c.status=1 AND EXISTS(SELECT 1 FROM blog_article a WHERE a.category_id=c.category_id AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
-            UNION ALL
-            SELECT 3,t.tag_id,t.slug,t.update_time FROM blog_tag t WHERE EXISTS(SELECT 1 FROM blog_article_tag x JOIN blog_article a ON a.article_id=x.article_id WHERE x.tag_id=t.tag_id AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
-        ) resources WHERE kind &gt; #{kind} OR (kind=#{kind} AND resource_id &gt; #{after}) ORDER BY kind,resource_id LIMIT 1000
+        SELECT 1 AS kind,a.article_id AS resource_id,a.slug,a.update_time AS updated_at FROM blog_article a WHERE
+        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
+        UNION ALL
+        SELECT 2,c.category_id,c.slug,c.update_time FROM blog_category c WHERE c.status=1 AND EXISTS(SELECT 1 FROM
+        blog_article a WHERE a.category_id=c.category_id AND<include
+            refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
+        UNION ALL
+        SELECT 3,t.tag_id,t.slug,t.update_time FROM blog_tag t WHERE EXISTS(SELECT 1 FROM blog_article_tag x JOIN
+        blog_article a ON a.article_id=x.article_id WHERE x.tag_id=t.tag_id AND<include
+            refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
+        ) resources WHERE kind &gt; #{kind} OR (kind=#{kind} AND resource_id &gt; #{after}) ORDER BY kind,resource_id
+        LIMIT 1000
     </select>
 </mapper>

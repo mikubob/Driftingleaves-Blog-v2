@@ -2,9 +2,13 @@ package com.xuan.utils;
 
 import com.xuan.exception.BusinessException;
 
-/** 路径和查询里的 ID 也按 JSON ID 的规则检查，只收正十进制字符串。 */
+/**
+ * 路径和查询里的 ID 也按 JSON ID 的规则检查，只收正十进制字符串。
+ */
 public final class IdUtils {
-    private IdUtils() { }
+
+    private IdUtils() {
+    }
 
     /** 可选参数没传就返回 null；有符号、前导零或超过 Long 范围都报错。 */
     public static Long parse(String value) {

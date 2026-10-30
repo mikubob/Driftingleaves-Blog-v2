@@ -35,15 +35,19 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 
-/** 写评论先锁操作者、配置、文章、评论；锁后重新查身份和范围，原文与审核结果一起提交。 */
+/**
+ * 写评论先锁操作者、配置、文章、评论；锁后重新查身份和范围，原文与审核结果一起提交。
+ */
 @Service
 @RequiredArgsConstructor
 public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> implements ICommentService {
+
     private static final String DELETED = "该评论已删除";
     private final CommentMapper comments;
     private final ArticleMapper articles;
@@ -118,7 +122,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query) {
         long actor = requireMember(null);
         return PageResult.from(comments.commentPage(new Page<>(query.page(), query.pageSize()),
-                IdUtils.parse(query.articleId()), actor, query.status(), null)
+                        IdUtils.parse(query.articleId()), actor, query.status(), null)
                 .convert(row -> ownView(row, new CommentOwnVO())));
     }
 
@@ -136,7 +140,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query) {
         Long author = requireAdmin("query");
         return PageResult.from(comments.commentPage(new Page<>(query.page(), query.pageSize()),
-                IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author)
+                        IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author)
                 .convert(this::adminView));
     }
 
@@ -233,6 +237,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return "ALL".equals(authorization.requireScope(actor, "blog:comment:" + operation)) ? null : actor;
     }
 
+    /**
+     * 确认文章当前公开，草稿、私密、下架及回收站统一返回 404。
+     */
     private ArticleRow requirePublic(long id) {
         ArticleRow row = articles.publicById(id, LocalDateTime.now(ZoneOffset.UTC));
         if (row == null) {
@@ -241,6 +248,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return row;
     }
 
+    /**
+     * 评论不存在或查询范围外时统一返回 404。
+     */
     private CommentRow requireComment(CommentRow row) {
         if (row == null) {
             throw missing();
@@ -257,6 +267,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
     }
 
+    /**
+     * 用评论业务字段生成版本，不把浏览量或审计时间当作编辑冲突。
+     */
     private String revision(BlogComment row) {
         return "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getCommentId(), row.getArticleId(),
                 row.getUserId(), row.getParentId(), row.getContent(), row.getStatus()))) + "\"";
@@ -275,10 +288,16 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
     }
 
+    /**
+     * 把后台评论详情与当前版本一起返回。
+     */
     private CommentProfileVO profile(CommentRow row) {
         return new CommentProfileVO(adminView(row), revision(row));
     }
 
+    /**
+     * 组装本人可读的评论资料，删除记录只返回占位内容。
+     */
     private <T extends CommentOwnVO> T ownView(CommentRow row, T value) {
         value.setCommentId(row.getCommentId());
         value.setArticleId(row.getArticleId());
@@ -291,6 +310,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return value;
     }
 
+    /**
+     * 在评论资料中补充作者公开资料与文章标题，供后台审核使用。
+     */
     private CommentAdminVO adminView(CommentRow row) {
         CommentAdminVO value = ownView(row, new CommentAdminVO());
         value.setAuthor(author(row));
@@ -298,6 +320,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return value;
     }
 
+    /**
+     * 只返回前台评论字段及可见回复数，删除占位不还原原文。
+     */
     private CommentPublicVO publicView(CommentRow row) {
         CommentPublicVO value = new CommentPublicVO();
         value.setCommentId(row.getCommentId());
@@ -312,14 +337,24 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return value;
     }
 
+    /**
+     * 删除占位不返回作者，其余只返回公开昵称和头像。
+     */
     private Author author(CommentRow row) {
-        return row.getStatus() == 3 ? null : new Author(row.getUserId(), row.getAuthorNickname(), row.getAuthorAvatar());
+        return row.getStatus() == 3 ? null : new Author(row.getUserId(), row.getAuthorNickname(),
+                row.getAuthorAvatar());
     }
 
+    /**
+     * 统一返回评论不存在，避免暴露范围外记录。
+     */
     private BusinessException missing() {
         return new BusinessException(404, "NOT_FOUND", "评论不存在");
     }
 
+    /**
+     * 当前评论状态不允许操作时返回 409。
+     */
     private BusinessException conflict(String message) {
         return new BusinessException(409, "STATE_CONFLICT", message);
     }

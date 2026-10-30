@@ -2,6 +2,7 @@ package com.xuan;
 
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
+
 import java.io.IOException;
 import java.net.ServerSocket;
 import java.nio.file.Files;
@@ -12,8 +13,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/** 测试自己启动临时数据目录、随机端口和回环监听的进程，不连接已经运行的服务。 */
+/**
+ * 测试自己启动临时数据目录、随机端口和回环监听的进程，不连接已经运行的服务。
+ */
 final class IsolatedServices implements AutoCloseable {
+
     final int mysqlPort;
     final int redisPort;
     final String jdbcUrl;
@@ -24,7 +28,8 @@ final class IsolatedServices implements AutoCloseable {
         directory = Files.createTempDirectory(Path.of("target"), "identity-it-").toAbsolutePath();
         mysqlPort = freePort();
         redisPort = freePort();
-        jdbcUrl = "jdbc:mysql://127.0.0.1:" + mysqlPort + "/drifting_leaves_v2?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&sslMode=DISABLED";
+        jdbcUrl = "jdbc:mysql://127.0.0.1:" + mysqlPort + "/drifting_leaves_v2?connectionTimeZone=UTC" +
+                "&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&sslMode=DISABLED";
         Path mysql = Path.of(System.getProperty("test.mysql.bin")).toAbsolutePath();
         String base = mysql.getParent().getParent().toString().replace('\\', '/');
         String data = directory.resolve("mysql").toString().replace('\\', '/');
@@ -59,7 +64,8 @@ final class IsolatedServices implements AutoCloseable {
     private void waitForMysql() throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
         while (System.nanoTime() < deadline) {
-            try (var connection = DriverManager.getConnection(jdbcUrl.replace("/drifting_leaves_v2?", "/?"), "root", "")) {
+            try (var connection = DriverManager.getConnection(jdbcUrl.replace("/drifting_leaves_v2?", "/?"), "root",
+                    "")) {
                 ScriptUtils.executeSqlScript(connection, new FileSystemResource("../../sql/drifting_leaves_v2.sql"));
                 return;
             } catch (java.sql.SQLException exception) {

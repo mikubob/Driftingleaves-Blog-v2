@@ -1,7 +1,5 @@
 package com.xuan.service.impl;
 
-import java.util.List;
-
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -26,8 +24,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
-/** 展示与维护直接读同一张表，成功审计失败时资料一起回滚。 */
+import java.util.List;
+/**
+ * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ */
 @Service
 @RequiredArgsConstructor
 public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink> implements ISocialService {

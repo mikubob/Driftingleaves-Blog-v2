@@ -16,14 +16,16 @@
         </where>
         ORDER BY sort_order ASC, category_id ASC
     </select>
+
     <!-- 文章保存会拿分类共享锁，删除要等那些保存结束，不能留失效关联。 -->
     <select id="lockById" resultType="com.xuan.entity.BlogCategory">
         SELECT * FROM blog_category WHERE category_id = #{id} FOR UPDATE
     </select>
+
     <!-- description 为 null 就清空，不改数据库维护的时间。 -->
     <update id="updateCategory">
         UPDATE blog_category SET category_name = #{category.categoryName}, slug = #{category.slug},
-            description = #{category.description}, sort_order = #{category.sortOrder}, status = #{category.status}
+        description = #{category.description}, sort_order = #{category.sortOrder}, status = #{category.status}
         WHERE category_id = #{category.categoryId}
     </update>
 </mapper>

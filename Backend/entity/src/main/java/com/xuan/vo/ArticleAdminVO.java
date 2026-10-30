@@ -3,13 +3,17 @@ package com.xuan.vo;
 import com.xuan.entity.BlogCategory;
 import com.xuan.entity.BlogTag;
 import lombok.Data;
+
 import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 后台列表只给文章资料，不带大段正文和单条版本。 */
+/**
+ * 后台列表只给文章资料，不带大段正文和单条版本。
+ */
 @Data
 public class ArticleAdminVO {
+
     private Long articleId;
     private Long authorId;
     private Author author;
@@ -33,6 +37,10 @@ public class ArticleAdminVO {
     private LocalDateTime updateTime;
     private List<BlogTag> tags;
 
-    /** 后台作者资料只返回约定字段，不带头像、邮箱和认证信息。 */
-    public record Author(Long userId, String nickname) { }
+    /**
+     * 后台作者资料只返回约定字段，不带头像、邮箱和认证信息。
+     */
+    public record Author(Long userId, String nickname) {
+
+    }
 }

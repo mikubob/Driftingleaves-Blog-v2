@@ -5,12 +5,19 @@
     <select id="viewPage" resultType="com.xuan.entity.BlogPageView">
         SELECT * FROM blog_page_view
         <where>
-            <if test="visitor != null">AND visitor_id=#{visitor}</if><if test="user != null">AND user_id=#{user}</if><if test="article != null">AND article_id=#{article}</if>
-            <if test="query.siteCode != null">AND site_code=#{query.siteCode}</if><if test="query.pagePath != null">AND page_path=#{query.pagePath}</if>
+            <if test="visitor != null">AND visitor_id=#{visitor}</if>
+            <if test="user != null">AND user_id=#{user}</if>
+            <if test="article != null">AND article_id=#{article}</if>
+            <if test="query.siteCode != null">AND site_code=#{query.siteCode}</if>
+            <if test="query.pagePath != null">AND page_path=#{query.pagePath}</if>
             <if test="query.referer != null">AND INSTR(referer,#{query.referer}) &gt; 0</if>
-            <if test="begin != null">AND view_time &gt;= #{begin}</if><if test="end != null">AND view_time &lt; #{end}</if>
+            <if test="begin != null">AND view_time &gt;= #{begin}</if>
+            <if test="end != null">AND view_time &lt; #{end}</if>
         </where>
         ORDER BY view_time DESC,view_id DESC
     </select>
-    <select id="lockById" resultType="com.xuan.entity.BlogPageView">SELECT * FROM blog_page_view WHERE view_id=#{id} FOR UPDATE</select>
+
+    <select id="lockById" resultType="com.xuan.entity.BlogPageView">SELECT * FROM blog_page_view WHERE view_id=#{id} FOR
+        UPDATE
+    </select>
 </mapper>

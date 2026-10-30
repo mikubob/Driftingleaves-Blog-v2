@@ -1,9 +1,15 @@
 package com.xuan.utils;
 
 import com.xuan.exception.BusinessException;
-/** 新业务沿用带引号的 SHA-256 业务版本，校验必须在资源锁内调用。 */
+
+/**
+ * 新业务沿用带引号的 SHA-256 业务版本，校验必须在资源锁内调用。
+ */
 public final class RevisionUtils {
-    private RevisionUtils() { }
+
+    private RevisionUtils() {
+    }
+
     /** 区分缺版本、格式错误和版本过期，不把审计时间放进业务值。 */
     public static void check(String expected, String supplied) {
         if (supplied == null) {

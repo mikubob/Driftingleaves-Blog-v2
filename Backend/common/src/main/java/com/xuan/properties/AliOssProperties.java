@@ -3,13 +3,17 @@ package com.xuan.properties;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+
 import java.net.URI;
 
-/** OSS 默认关闭，启用后再检查配置；不要生成会暴露密钥的 toString。 */
+/**
+ * OSS 默认关闭，启用后再检查配置；不要生成会暴露密钥的 toString。
+ */
 @Getter
 @Setter
 @ConfigurationProperties("app.oss")
 public class AliOssProperties {
+
     private boolean enabled;
     private String endpoint;
     private String region;

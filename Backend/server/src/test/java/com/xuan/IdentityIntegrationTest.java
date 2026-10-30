@@ -1,81 +1,71 @@
 package com.xuan;
 
-import com.xuan.annotation.RateLimit;
-import com.xuan.audit.FailureAuditWriter;
-import com.xuan.entity.SysOperationLog;
-import com.xuan.mapper.OperationLogMapper;
-import com.xuan.ratelimit.RedisRateLimiter;
-import org.junit.jupiter.api.AfterEach;
-import org.springframework.web.context.request.RequestContextHolder;
-import org.springframework.test.util.AopTestUtils;
-import org.mybatis.spring.SqlSessionTemplate;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.atomic.AtomicBoolean;
-import com.xuan.utils.TokenUtils;
-import com.xuan.exception.BusinessException;
-import com.xuan.mapper.UserMapper;
-
 import cn.dev33.satoken.SaManager;
-
-import cn.dev33.satoken.dao.SaTokenDaoForRedisTemplate;
-
-import com.zaxxer.hikari.HikariDataSource;
-
-import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
-
-import org.springframework.http.HttpMethod;
-
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.dao.SaTokenDaoForRedisTemplate;
 import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
-import com.xuan.dto.LoginDTO;
+import com.xuan.annotation.RateLimit;
+import com.xuan.audit.FailureAuditWriter;
+import com.xuan.client.JustAuthClient;
+import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminUserUpdateDTO;
-import com.xuan.entity.BlogArticle;
-import com.xuan.entity.BlogFile;
-import com.xuan.properties.AuthProperties;
-import com.xuan.result.Result;
-import com.xuan.security.AuthorizationProvider;
-import com.xuan.service.IUserService;
-import com.xuan.service.IRoleService;
-import com.xuan.service.IPermissionService;
-import com.xuan.service.IMenuService;
+import com.xuan.dto.LoginDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.dto.PermissionUpdateDTO;
 import com.xuan.dto.RoleUpdateDTO;
-import com.xuan.client.JustAuthClient;
-import com.xuan.client.OAuthProviderClient;
-import com.xuan.store.RedisOAuthStore;
+import com.xuan.entity.BlogArticle;
+import com.xuan.entity.BlogFile;
+import com.xuan.entity.SysOperationLog;
+import com.xuan.exception.BusinessException;
+import com.xuan.mapper.OperationLogMapper;
+import com.xuan.mapper.UserMapper;
+import com.xuan.properties.AuthProperties;
+import com.xuan.ratelimit.RedisRateLimiter;
+import com.xuan.result.Result;
+import com.xuan.security.AuthorizationProvider;
+import com.xuan.service.IMenuService;
+import com.xuan.service.IPermissionService;
+import com.xuan.service.IRoleService;
+import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.RedisOAuthStore;
+import com.xuan.utils.TokenUtils;
 import com.xuan.vo.SessionVO;
+import com.zaxxer.hikari.HikariDataSource;
 import jakarta.servlet.http.Cookie;
 import me.zhyd.oauth.config.AuthDefaultSource;
 import me.zhyd.oauth.utils.AuthChecker;
 import org.apache.ibatis.session.SqlSessionFactory;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
+import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.RedisConnectionFailureException;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.data.redis.RedisConnectionFailureException;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.UncategorizedSQLException;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
+import org.springframework.test.util.AopTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -86,62 +76,105 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
-import tools.jackson.databind.JsonNode;
+import org.springframework.web.context.request.RequestContextHolder;
 import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.math.BigInteger;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.IntStream;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.times;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
-/** 身份接口走真实 MySQL、Redis、Service、Mapper 和 MVC，只有平台网络和指定失败使用替身。 */
+/**
+ * 身份接口走真实 MySQL、Redis、Service、Mapper 和 MVC，只有平台网络和指定失败使用替身。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(IdentityIntegrationTest.Boundaries.class)
 @EnabledIfSystemProperty(named = "test.mysql.bin", matches = ".+")
 class IdentityIntegrationTest {
+
     private static IsolatedServices services;
     private static final String PASSWORD = "Example-password-2026";
     private static final String ORIGIN = "https://blog.example.test";
-    @Autowired MockMvc mvc;
-    @Autowired JsonMapper json;
-    @Autowired JdbcTemplate jdbc;
-    @Autowired StringRedisTemplate redis;
-    @MockitoSpyBean IUserService users;
-    @MockitoSpyBean IRoleService roles;
-    @MockitoSpyBean IPermissionService permissions;
-    @MockitoSpyBean IMenuService menus;
-    @Autowired AuthorizationProvider authorization;
-    @Autowired RedisOAuthStore store;
-    @Autowired AuthProperties properties;
-    @Autowired PlatformTransactionManager transactionManager;
-    @Autowired SqlSessionFactory sqlSessionFactory;
-    @MockitoSpyBean SessionManager sessions;
-    @MockitoSpyBean OperationLogMapper auditLogs;
-    @MockitoSpyBean FailureAuditWriter failureAudits;
-    @Autowired RedisRateLimiter rateLimiter;
+
+    @Autowired
+    MockMvc mvc;
+
+    @Autowired
+    JsonMapper json;
+
+    @Autowired
+    JdbcTemplate jdbc;
+
+    @Autowired
+    StringRedisTemplate redis;
+
+    @MockitoSpyBean
+    IUserService users;
+
+    @MockitoSpyBean
+    IRoleService roles;
+
+    @MockitoSpyBean
+    IPermissionService permissions;
+
+    @MockitoSpyBean
+    IMenuService menus;
+
+    @Autowired
+    AuthorizationProvider authorization;
+
+    @Autowired
+    RedisOAuthStore store;
+
+    @Autowired
+    AuthProperties properties;
+
+    @Autowired
+    PlatformTransactionManager transactionManager;
+
+    @Autowired
+    SqlSessionFactory sqlSessionFactory;
+
+    @MockitoSpyBean
+    SessionManager sessions;
+
+    @MockitoSpyBean
+    OperationLogMapper auditLogs;
+
+    @MockitoSpyBean
+    FailureAuditWriter failureAudits;
+
+    @Autowired
+    RedisRateLimiter rateLimiter;
     private final List<CompletableFuture<Void>> pendingAudits = new CopyOnWriteArrayList<>();
 
     @DynamicPropertySource
@@ -166,7 +199,8 @@ class IdentityIntegrationTest {
             registry.add("app.auth.providers." + source + ".enabled", () -> true);
             registry.add("app.auth.providers." + source + ".client-id", () -> "isolated-test-app");
             registry.add("app.auth.providers." + source + ".client-secret", () -> "isolated-boundary-value");
-            registry.add("app.auth.providers." + source + ".redirect-uri", () -> ORIGIN + "/api/v1/auth/oauth/" + source + "/callback");
+            registry.add("app.auth.providers." + source + ".redirect-uri",
+                    () -> ORIGIN + "/api/v1/auth/oauth/" + source + "/callback");
         }
     }
 
@@ -193,10 +227,15 @@ class IdentityIntegrationTest {
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
         // 自建菜单从叶子开始清理，先释放权限的 RESTRICT 引用，不改初始化菜单和原有授权。
-        while (jdbc.update("DELETE m FROM sys_menu m LEFT JOIN sys_menu c ON c.parent_id=m.menu_id WHERE m.menu_code LIKE 'test:%' AND c.menu_id IS NULL") > 0) { }
+        while (jdbc.update(
+                "DELETE m FROM sys_menu m LEFT JOIN sys_menu c ON c.parent_id=m.menu_id WHERE m.menu_code LIKE " +
+                 "'test:%' AND c.menu_id IS NULL") > 0) {
+        }
         jdbc.update("DELETE FROM sys_permission WHERE permission_code LIKE 'test:%'");
         jdbc.update("UPDATE sys_role SET status=1");
-        jdbc.update("UPDATE sys_role SET data_scope=CASE WHEN role_id=1 THEN 'ALL' ELSE 'SELF' END WHERE role_id IN (1,2,3)");
+        jdbc.update(
+                "UPDATE sys_role SET data_scope=CASE WHEN role_id=1 THEN 'ALL' ELSE 'SELF' END WHERE role_id IN (1,2," +
+                 "3)");
         jdbc.update("UPDATE sys_permission SET status=1");
         jdbc.update("DELETE FROM sys_role WHERE role_id > 3");
         jdbc.update("UPDATE sys_menu SET status=1");
@@ -211,21 +250,35 @@ class IdentityIntegrationTest {
             final int address = index;
             assertCode(mvc.perform(req("GET", "/admin/test/rate-user")
                     .header("Authorization", "Bearer " + (index == 1 ? token : another))
-                    .with(request -> { request.setRemoteAddr("192.0.2." + address); return request; })).andReturn(), 200, "OK");
+                    .with(request -> {
+                        request.setRemoteAddr("192.0.2." + address);
+                        return request;
+                    })).andReturn(), 200, "OK");
         }
         MvcResult limited = mvc.perform(req("GET", "/admin/test/rate-user").header("Authorization", "Bearer " + token)
-                .with(request -> { request.setRemoteAddr("192.0.2.3"); return request; })).andReturn();
+                .with(request -> {
+                    request.setRemoteAddr("192.0.2.3");
+                    return request;
+                })).andReturn();
         assertCode(limited, 429, "RATE_LIMITED");
         assertThat(Integer.parseInt(limited.getResponse().getHeader("Retry-After"))).isPositive();
         for (int index = 1; index <= 3; index++) {
             final int address = index;
-            MvcResult result = mvc.perform(req("GET", "/admin/test/rate-token").header("Authorization", "Bearer " + token)
-                    .with(request -> { request.setRemoteAddr("198.51.100." + address); return request; })).andReturn();
+            MvcResult result = mvc.perform(
+                    req("GET", "/admin/test/rate-token").header("Authorization", "Bearer " + token)
+                            .with(request -> {
+                                request.setRemoteAddr("198.51.100." + address);
+                                return request;
+                            })).andReturn();
             assertCode(result, index <= 2 ? 200 : 429, index <= 2 ? "OK" : "RATE_LIMITED");
         }
         assertCode(mvc.perform(req("GET", "/admin/test/rate-token").header("Authorization", "Bearer " + another)
-                .with(request -> { request.setRemoteAddr("198.51.100.4"); return request; })).andReturn(), 200, "OK");
-        assertThat(redis.keys("dl:test:rate:interface:*")).allMatch(key -> !key.contains(token) && !key.contains(another));
+                .with(request -> {
+                    request.setRemoteAddr("198.51.100.4");
+                    return request;
+                })).andReturn(), 200, "OK");
+        assertThat(redis.keys("dl:test:rate:interface:*")).allMatch(
+                key -> !key.contains(token) && !key.contains(another));
         assertThat(redis.keys("dl:test:rate:register:*")).hasSize(2);
         for (String key : redis.keys("dl:test:rate:register:*")) {
             assertThat(redis.opsForValue().get(key)).isEqualTo("1");
@@ -241,7 +294,8 @@ class IdentityIntegrationTest {
                     index % 2 == 0 ? "{\"currentPassword\":\"incorrect-password\",\"newPassword\":\"another-password\"}"
                             : "{\"currentPassword\":\"incorrect-password\"}"), 401, "AUTH_FAILED");
         }
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"incorrect-password\"}"), 429, "RATE_LIMITED");
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"incorrect-password\"}"), 429,
+                "RATE_LIMITED");
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<Boolean>> requests = IntStream.range(0, 12).mapToObj(index -> (Callable<Boolean>) () -> {
                 try {
@@ -269,8 +323,9 @@ class IdentityIntegrationTest {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
             try {
                 String role = createRole(token, "audit_rollback");
-                visibleInTransaction.set(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
-                        Integer.class, role) == 1);
+                visibleInTransaction.set(
+                        jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
+                                Integer.class, role) == 1);
                 status.setRollbackOnly();
             } catch (Exception exception) {
                 throw new AssertionError(exception);
@@ -278,9 +333,12 @@ class IdentityIntegrationTest {
         });
         awaitAudits();
         assertThat(visibleInTransaction).isTrue();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_rollback'", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=1", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT error_message FROM sys_operation_log", String.class)).isEqualTo("TRANSACTION_NOT_COMMITTED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_rollback'",
+                Integer.class)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=1", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT error_message FROM sys_operation_log", String.class)).isEqualTo(
+                "TRANSACTION_NOT_COMMITTED");
     }
 
     @Test
@@ -300,9 +358,11 @@ class IdentityIntegrationTest {
         assertCode(call("POST", "/admin/roles", token, roleCreateBody("audit_fail")), 503, "SERVICE_UNAVAILABLE");
         awaitAudits();
         assertThat(independentVirtualTransaction).isTrue();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_fail'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_fail'",
+                Integer.class)).isZero();
         assertThat(jdbc.queryForMap("SELECT result,error_message,operation_data FROM sys_operation_log"))
-                .containsEntry("result", 0).containsEntry("error_message", "SERVICE_UNAVAILABLE").containsEntry("operation_data", null);
+                .containsEntry("result", 0).containsEntry("error_message", "SERVICE_UNAVAILABLE")
+                .containsEntry("operation_data", null);
     }
 
     @Test
@@ -313,7 +373,10 @@ class IdentityIntegrationTest {
         try {
             MvcResult result = mvc.perform(req("POST", "/admin/users").header("Authorization", "Bearer " + token)
                     .header("X-Forwarded-For", "1.1.1.1, 198.51.100.9, 192.0.2.2")
-                    .with(request -> { request.setRemoteAddr("192.0.2.1"); return request; })
+                    .with(request -> {
+                        request.setRemoteAddr("192.0.2.1");
+                        return request;
+                    })
                     .contentType("application/json").content(createUserBody("audit_created"))).andReturn();
             assertCode(result, 201, "OK");
             Map<String, Object> log = jdbc.queryForMap("SELECT * FROM sys_operation_log");
@@ -355,8 +418,11 @@ class IdentityIntegrationTest {
         assertThat(me.get("createTime").asString()).matches(".*\\.\\d{3}Z");
         assertThat(created.getResponse().getContentAsString()).doesNotContain("passwordHash", "uuid");
         long id = Long.parseLong(me.get("userId").asString());
-        assertThat(jdbc.queryForObject("SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, id)).isEqualTo(3);
-        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).startsWith("$2a$");
+        assertThat(jdbc.queryForObject("SELECT role_id FROM sys_user_role WHERE user_id=?", Long.class, id)).isEqualTo(
+                3);
+        assertThat(
+                jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).startsWith(
+                "$2a$");
         assertCode(register("LEAF"), 409, "UNIQUE_CONFLICT");
         String token = login("leaf");
         String another = login("leaf");
@@ -371,11 +437,17 @@ class IdentityIntegrationTest {
                 "blog:rss:subscribe", "blog:rss:unsubscribe");
         assertCode(call("GET", "/me", null, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/blog/anything", null, null), 401, "UNAUTHENTICATED");
-        assertCode(mvc.perform(req("GET", "/me").param("Authorization", "Bearer " + token)).andReturn(), 401, "UNAUTHENTICATED");
-        assertCode(mvc.perform(req("GET", "/me").cookie(new Cookie("Authorization", token))).andReturn(), 401, "UNAUTHENTICATED");
+        assertCode(mvc.perform(req("GET", "/me").param("Authorization", "Bearer " + token)).andReturn(), 401,
+                "UNAUTHENTICATED");
+        assertCode(mvc.perform(req("GET", "/me").cookie(new Cookie("Authorization", token))).andReturn(), 401,
+                "UNAUTHENTICATED");
         assertCode(call("POST", "/auth/register", null, "{\"username\":12}"), 400, "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/register", null, "{\"username\":\"a\",\"username\":\"b\"}"), 400, "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/register", null, "{\"username\":\"leaf\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\",\"status\":1}"), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/auth/register", null, "{\"username\":\"a\",\"username\":\"b\"}"), 400,
+                "VALIDATION_ERROR");
+        assertCode(call("POST", "/auth/register", null,
+                        "{\"username\":\"leaf\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\",\"status\":1}"),
+                         400,
+                "VALIDATION_ERROR");
         assertCode(call("POST", "/auth/register", null, " ".repeat(8 * 1024 * 1024 + 1)), 413, "PAYLOAD_TOO_LARGE");
         assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
         assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
@@ -403,7 +475,8 @@ class IdentityIntegrationTest {
                 ORIGIN + "/api/v1/admin/articles/1/files/2/content",
                 ORIGIN + "/api/v1/%61dmin/files/1/content",
                 ORIGIN + "/api/v1/temp/%2e%2e/admin/files/1/content")) {
-            assertCode(patch(token, original, json.writeValueAsString(Map.of("avatar", avatar))), 400, "VALIDATION_ERROR");
+            assertCode(patch(token, original, json.writeValueAsString(Map.of("avatar", avatar))), 400,
+                    "VALIDATION_ERROR");
         }
         MvcResult patched = patch(token, original, "{\"intro\":\" hello \"}");
         assertCode(patched, 200, "OK");
@@ -414,7 +487,9 @@ class IdentityIntegrationTest {
         assertCode(patch(token, original, "{\"intro\":null}"), 412, "REVISION_CONFLICT");
         assertCode(patch(token, revised, "{\"intro\":null}"), 200, "OK");
         String current = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
-        MvcResult filled = patch(token, current, "{\"nickname\":\" 新昵称 \",\"email\":\" leaf@example.test \",\"avatar\":\" https://images.example.test/a.png \",\"intro\":\" 简介 \"}");
+        MvcResult filled = patch(token, current,
+                "{\"nickname\":\" 新昵称 \",\"email\":\" leaf@example.test \",\"avatar\":\" https://images.example" +
+                 ".test/a.png \",\"intro\":\" 简介 \"}");
         assertCode(filled, 200, "OK");
         assertThat(data(filled).get("nickname").asString()).isEqualTo("新昵称");
         assertThat(data(filled).get("email").asString()).isEqualTo("leaf@example.test");
@@ -422,7 +497,8 @@ class IdentityIntegrationTest {
         long other = Long.parseLong(data(register("other")).get("userId").asString());
         jdbc.update("UPDATE sys_user SET email='used@example.test' WHERE user_id=?", other);
         String filledRevision = filled.getResponse().getHeader("X-Revision");
-        assertCode(patch(token, filledRevision, "{\"nickname\":\"不应保存\",\"email\":\"USED@example.test\"}"), 409, "UNIQUE_CONFLICT");
+        assertCode(patch(token, filledRevision, "{\"nickname\":\"不应保存\",\"email\":\"USED@example.test\"}"), 409,
+                "UNIQUE_CONFLICT");
         assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(filledRevision);
         MvcResult cleared = patch(token, filledRevision, "{\"email\":\" \",\"avatar\":null,\"intro\":\" \"}");
         assertCode(cleared, 200, "OK");
@@ -438,7 +514,8 @@ class IdentityIntegrationTest {
         assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isNotEqualTo(beforeRole);
         assertCode(call("PATCH", "/me/profile", token, "{\"nicknamePresent\":true}"), 400, "VALIDATION_ERROR");
         var preflight = mvc.perform(req("OPTIONS", "/me").header("Origin", ORIGIN)
-                .header("Access-Control-Request-Method", "PATCH").header("Access-Control-Request-Headers", "Authorization,If-Revision")).andReturn();
+                .header("Access-Control-Request-Method", "PATCH")
+                .header("Access-Control-Request-Headers", "Authorization,If-Revision")).andReturn();
         assertThat(preflight.getResponse().getStatus()).isEqualTo(200);
         assertThat(preflight.getResponse().getHeader("Access-Control-Allow-Origin")).isEqualTo(ORIGIN);
         assertThat(mvc.perform(req("OPTIONS", "/me").header("Origin", "https://evil.test")
@@ -457,7 +534,8 @@ class IdentityIntegrationTest {
         assertCode(call("GET", "/admin/test/users", token, null), 403, "FORBIDDEN");
         assertCode(call("GET", "/admin/test/no-permission", token, null), 403, "FORBIDDEN");
         assertThat(call("GET", "/me/menus", token, null).getResponse().getContentAsString())
-                .contains("content/article/index", "\"menuType\":\"B\"", "\"isVisible\":0").doesNotContain("system/user/index");
+                .contains("content/article/index", "\"menuType\":\"B\"", "\"isVisible\":0")
+                .doesNotContain("system/user/index");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(authorization.requireScope(id, "blog:article:update")).isEqualTo("SELF");
@@ -482,18 +560,22 @@ class IdentityIntegrationTest {
         assertCode(call("DELETE", "/me/password", recent, clearBody), 409, "LAST_LOGIN_METHOD");
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','verified')", id);
         assertCode(call("DELETE", "/me/password", recent, clearBody), 200, "OK");
-        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isNull();
+        assertThat(
+                jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isNull();
         assertCode(call("GET", "/me", old, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/me", recent, null), 401, "UNAUTHENTICATED");
         assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
         OAuthFlow flow = start("LOGIN", null, null);
-        String oauthToken = data(exchange(callbackTicket(flow, "verified"), flow.browser(), null)).get("session").get("accessToken").asString();
+        String oauthToken = data(exchange(callbackTicket(flow, "verified"), flow.browser(), null)).get("session")
+                .get("accessToken").asString();
         assertCode(call("DELETE", "/me/password", oauthToken, clearBody), 409, "STATE_CONFLICT");
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", oauthToken, null), 409, "LAST_LOGIN_METHOD");
         StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "PASSWORD");
-        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 403, "REAUTH_REQUIRED");
+        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 403,
+                "REAUTH_REQUIRED");
         StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "OAUTH");
-        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}"), 400, "VALIDATION_ERROR");
+        assertCode(call("PUT", "/me/password", oauthToken,
+                "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}"), 400, "VALIDATION_ERROR");
         assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 200, "OK");
         assertCode(call("GET", "/me", oauthToken, null), 401, "UNAUTHENTICATED");
         assertCode(call("POST", "/auth/login", null, loginBody("leaf", "new-password-2026")), 200, "OK");
@@ -505,8 +587,12 @@ class IdentityIntegrationTest {
         String token = login("leaf");
         String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
         doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(id);
-        assertCode(call("PUT", "/me/password", token, "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"" + PASSWORD + "\"}"), 503, "SERVICE_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(before);
+        assertCode(call("PUT", "/me/password", token,
+                        "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"" + PASSWORD + "\"}"), 503,
+                "SERVICE_UNAVAILABLE");
+        assertThat(
+                jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(
+                before);
         reset(sessions);
         SessionVO[] created = new SessionVO[1];
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
@@ -523,14 +609,16 @@ class IdentityIntegrationTest {
         assertThat(StpUtil.getStpLogic().getLoginIdByToken(token)).isNotNull();
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=3");
         assertCode(register("rollback"), 503, "SERVICE_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='rollback'", Integer.class)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='rollback'", Integer.class)).isZero();
     }
 
     @Test
     void oauthBrowserReplayExpiryAndVerifiedIdentity() throws Exception {
         OAuthFlow flow = start("LOGIN", null, null);
         assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
-                .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", TokenUtils.random()))).andReturn(), 400, "OAUTH_STATE_INVALID");
+                        .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", TokenUtils.random()))).andReturn(),
+                400, "OAUTH_STATE_INVALID");
         String ticket = callbackTicket(flow, " SameIdentity ");
         assertCode(callback(flow, "same"), 400, "OAUTH_STATE_INVALID");
         assertCode(exchange(ticket, TokenUtils.random(), null), 400, "OAUTH_STATE_INVALID");
@@ -571,7 +659,8 @@ class IdentityIntegrationTest {
         assertCode(exchange(ticket, bind.browser(), original), 200, "OK");
         assertThat(data(call("GET", "/me/oauth-bindings", original, null)).size()).isEqualTo(1);
         OAuthFlow conflict = start("BIND", otherUser, bind.browser());
-        assertThat(callback(conflict, "bind-identity").getResponse().getHeader("Location")).endsWith("#error=OAUTH_BIND_CONFLICT");
+        assertThat(callback(conflict, "bind-identity").getResponse().getHeader("Location")).endsWith(
+                "#error=OAUTH_BIND_CONFLICT");
         OAuthFlow revoked = start("BIND", original, bind.browser());
         call("POST", "/auth/logout", original, null);
         assertCode(callback(revoked, "new-identity"), 401, "UNAUTHENTICATED");
@@ -597,7 +686,8 @@ class IdentityIntegrationTest {
                 .isEqualTo(ORIGIN + "/oauth/complete#error=SERVICE_UNAVAILABLE");
         assertThat(failed.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
         assertThat(failed.getResponse().getHeader("Referrer-Policy")).isEqualTo("no-referrer");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
         assertThat(store.containsKey(bind.state())).isFalse();
         assertThat(redis.keys("dl:test:oauth:ticket:*")).isEmpty();
         assertCode(callback(bind, "transaction-failure-identity"), 400, "OAUTH_STATE_INVALID");
@@ -628,7 +718,9 @@ class IdentityIntegrationTest {
             assertThat(winners).isEqualTo(1);
         }
         store.cache(state, state, 30);
-        assertThat(redis.getExpire("dl:test:oauth:justauth:" + TokenUtils.digest(state), TimeUnit.MILLISECONDS)).isBetween(1L, 30L);
+        assertThat(
+                redis.getExpire("dl:test:oauth:justauth:" + TokenUtils.digest(state), TimeUnit.MILLISECONDS)).isBetween(
+                1L, 30L);
         Thread.sleep(45);
         assertThat(store.containsKey(state)).isFalse();
         properties.getRate().setLoginFailures(1);
@@ -644,7 +736,8 @@ class IdentityIntegrationTest {
 
     @Test
     void existingMappingsAndExpandedSchemaMatchRealMysql() throws Exception {
-        List<String> tables = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()", String.class);
+        List<String> tables = jdbc.queryForList(
+                "SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()", String.class);
         assertThat(tables).hasSize(28);
         // 已经实现的 19 个实体逐列检查，其他业务仍只检查数据库设计。
         tables.removeAll(List.of("home_profile", "home_social_link", "cv_experience", "cv_skill",
@@ -665,24 +758,38 @@ class IdentityIntegrationTest {
                 mapped.add(id == null ? column.value() : id.value());
                 if (id != null) {
                     idCount++;
-                    assertThat(id.type()).isEqualTo(table.equals("blog_article_content") || table.equals("blog_site_config") ? IdType.INPUT : IdType.AUTO);
+                    assertThat(id.type()).isEqualTo(table.equals("blog_article_content") || table.equals(
+                            "blog_site_config") ? IdType.INPUT : IdType.AUTO);
                 }
             }
-            List<String> keys = jdbc.queryForList("SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND table_name=? AND constraint_name='PRIMARY'", String.class, table);
+            List<String> keys = jdbc.queryForList(
+                    "SELECT column_name FROM information_schema.key_column_usage WHERE table_schema=DATABASE() AND " +
+                     "table_name=? AND constraint_name='PRIMARY'",
+                    String.class, table);
             assertThat(idCount).isEqualTo(keys.size() == 1 ? 1 : 0);
-            assertThat(mapped).containsExactlyInAnyOrderElementsOf(jdbc.queryForList("SELECT column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=?", String.class, table));
+            assertThat(mapped).containsExactlyInAnyOrderElementsOf(jdbc.queryForList(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=?",
+                    String.class, table));
         }
         long userId = Long.parseLong(data(register("leaf")).get("userId").asString());
-        jdbc.update("INSERT INTO blog_article(author_id,title,slug,view_count) VALUES (?,'test','test',18446744073709551615)", userId);
-        jdbc.update("INSERT INTO blog_file(uploader_id,original_name,object_key,mime_type,size_bytes) VALUES (?,'test','test','image/png',18446744073709551615)", userId);
+        jdbc.update(
+                "INSERT INTO blog_article(author_id,title,slug,view_count) VALUES (?,'test','test'," +
+                 "18446744073709551615)",
+                userId);
+        jdbc.update(
+                "INSERT INTO blog_file(uploader_id,original_name,object_key,mime_type,size_bytes) VALUES (?,'test'," +
+                 "'test','image/png',18446744073709551615)",
+                userId);
         var config = sqlSessionFactory.getConfiguration();
         if (!config.hasMapper(ArticleTestMapper.class)) {
             config.addMapper(ArticleTestMapper.class);
             config.addMapper(FileTestMapper.class);
         }
         try (var session = sqlSessionFactory.openSession()) {
-            assertThat(session.getMapper(ArticleTestMapper.class).selectList(null).getFirst().getViewCount()).isEqualTo(new BigInteger("18446744073709551615"));
-            assertThat(session.getMapper(FileTestMapper.class).selectList(null).getFirst().getSizeBytes()).isEqualTo(new BigInteger("18446744073709551615"));
+            assertThat(session.getMapper(ArticleTestMapper.class).selectList(null).getFirst().getViewCount()).isEqualTo(
+                    new BigInteger("18446744073709551615"));
+            assertThat(session.getMapper(FileTestMapper.class).selectList(null).getFirst().getSizeBytes()).isEqualTo(
+                    new BigInteger("18446744073709551615"));
         }
         assertThat(jdbc.queryForObject("SELECT @@session.time_zone", String.class)).isEqualTo("+00:00");
     }
@@ -696,46 +803,82 @@ class IdentityIntegrationTest {
             jdbc.update("INSERT INTO sys_user(username,nickname) VALUES ('schema-check','schema-check')");
             long userId = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-check'", Long.class);
             jdbc.update("INSERT INTO home_profile(user_id,nickname) VALUES (?,'站点主人')", userId);
-            assertThatThrownBy(() -> jdbc.update("INSERT INTO home_profile(profile_id,user_id,nickname) VALUES (2,?,'其他资料')", userId))
+            assertThatThrownBy(
+                    () -> jdbc.update("INSERT INTO home_profile(profile_id,user_id,nickname) VALUES (2,?,'其他资料')",
+                            userId))
                     .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_profile_singleton");
-            assertThatThrownBy(() -> jdbc.update("INSERT INTO cv_experience(experience_type,title,content,start_date,end_date) VALUES (0,'学校','内容','2026-10-30','2025-10-30')"))
+            assertThatThrownBy(() -> jdbc.update(
+                    "INSERT INTO cv_experience(experience_type,title,content,start_date,end_date) VALUES (0,'学校'," +
+                     "'内容','2026-10-30','2025-10-30')"))
                     .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_experience_dates");
             jdbc.update("INSERT INTO blog_music(title,audio_url) VALUES ('音乐','https://example.test/audio.mp3')");
-            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_music(title,audio_url,lyric_url) VALUES ('音乐','https://example.test/audio.mp3','https://example.test/lyric.lrc')"))
+            assertThatThrownBy(() -> jdbc.update(
+                    "INSERT INTO blog_music(title,audio_url,lyric_url) VALUES ('音乐','https://example.test/audio.mp3'," +
+                     "'https://example.test/lyric.lrc')"))
                     .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_music_lyric");
 
             // 2. 留言只收本站用户，删除父节点也保留回复链，订阅邮箱要确认且不能重复。
             jdbc.update("INSERT INTO blog_message(user_id,content) VALUES (?,'根留言')", userId);
-            long parentId = jdbc.queryForObject("SELECT message_id FROM blog_message WHERE user_id=?", Long.class, userId);
+            long parentId = jdbc.queryForObject("SELECT message_id FROM blog_message WHERE user_id=?", Long.class,
+                    userId);
             jdbc.update("INSERT INTO blog_message(user_id,parent_id,content) VALUES (?,?,'回复')", userId, parentId);
             assertThatThrownBy(() -> jdbc.update("DELETE FROM blog_message WHERE message_id=?", parentId))
                     .isInstanceOf(DataIntegrityViolationException.class);
             assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_message(user_id,content) VALUES (-1,'未知账号')"))
                     .isInstanceOf(DataIntegrityViolationException.class);
-            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email,status) VALUES (?,'leaf@example.test',1)", userId))
+            assertThatThrownBy(() -> jdbc.update(
+                    "INSERT INTO blog_rss_subscription(user_id,email,status) VALUES (?,'leaf@example.test',1)", userId))
                     .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_rss_active");
             jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'leaf@example.test')", userId);
             jdbc.update("INSERT INTO sys_user(username,nickname) VALUES ('schema-second','schema-second')");
-            long secondUser = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-second'", Long.class);
-            assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'LEAF@example.test')", secondUser))
+            long secondUser = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-second'",
+                    Long.class);
+            assertThatThrownBy(
+                    () -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'LEAF@example.test')",
+                            secondUser))
                     .isInstanceOf(DataIntegrityViolationException.class);
 
             // 3. 清统计标识或账号时要保留浏览和操作日志，统计记录不能拿来当身份凭据。
             jdbc.update("INSERT INTO blog_visitor(fingerprint) VALUES ('schema-visitor')");
-            long visitorId = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor WHERE fingerprint='schema-visitor'", Long.class);
-            jdbc.update("INSERT INTO blog_page_view(visitor_id,user_id,site_code,page_path) VALUES (?,?,'blog','/articles/test')", visitorId, secondUser);
-            jdbc.update("INSERT INTO sys_operation_log(user_id,operation_type,operation_target,result) VALUES (?,'update','schema-check',1)", secondUser);
+            long visitorId = jdbc.queryForObject(
+                    "SELECT visitor_id FROM blog_visitor WHERE fingerprint='schema-visitor'", Long.class);
+            jdbc.update(
+                    "INSERT INTO blog_page_view(visitor_id,user_id,site_code,page_path) VALUES (?,?,'blog'," +
+                     "'/articles/test')",
+                    visitorId, secondUser);
+            jdbc.update(
+                    "INSERT INTO sys_operation_log(user_id,operation_type,operation_target,result) VALUES (?," +
+                     "'update','schema-check',1)",
+                    secondUser);
             jdbc.update("DELETE FROM blog_visitor WHERE visitor_id=?", visitorId);
             jdbc.update("DELETE FROM sys_user WHERE user_id=?", secondUser);
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL AND user_id IS NULL AND page_path='/articles/test'", Integer.class)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE user_id IS NULL AND operation_target='schema-check'", Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL AND user_id IS NULL AND " +
+                     "page_path='/articles/test'",
+                    Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT COUNT(*) FROM sys_operation_log WHERE user_id IS NULL AND operation_target='schema-check'",
+                    Integer.class)).isEqualTo(1);
         });
+
         // 4. 新增权限明确授予管理员，作者和会员不能自动获得新增全站管理入口。
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission p LEFT JOIN sys_role_permission rp ON rp.permission_id=p.permission_id AND rp.role_id=1 WHERE rp.permission_id IS NULL", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu m LEFT JOIN sys_role_menu rm ON rm.menu_id=m.menu_id AND rm.role_id=1 WHERE rm.menu_id IS NULL", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id IN (2,3) AND permission_id>=120 AND permission_id NOT IN (163,164,165,183,184)", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_permission p LEFT JOIN sys_role_permission rp ON rp.permission_id=p" +
+                 ".permission_id AND rp.role_id=1 WHERE rp.permission_id IS NULL",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_menu m LEFT JOIN sys_role_menu rm ON rm.menu_id=m.menu_id AND rm.role_id=1 " +
+                 "WHERE rm.menu_id IS NULL",
+                Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_role_permission WHERE role_id IN (2,3) AND permission_id>=120 AND " +
+                 "permission_id NOT IN (163,164,165,183,184)",
+                Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=3", Integer.class)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu b JOIN sys_menu p ON p.menu_id=b.parent_id WHERE b.menu_type='B' AND p.menu_type<>'M'", Integer.class)).isZero();
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_menu b JOIN sys_menu p ON p.menu_id=b.parent_id WHERE b.menu_type='B' AND p" +
+                 ".menu_type<>'M'",
+                Integer.class)).isZero();
     }
 
     @Test
@@ -755,7 +898,8 @@ class IdentityIntegrationTest {
             jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','method')", id);
             String token = login("leaf");
             List<Callable<Integer>> changes = List.of(
-                    () -> call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}").getResponse().getStatus(),
+                    () -> call("DELETE", "/me/password", token,
+                            "{\"currentPassword\":\"" + PASSWORD + "\"}").getResponse().getStatus(),
                     () -> call("DELETE", "/me/oauth-bindings/GITHUB", token, null).getResponse().getStatus());
             List<Integer> statuses = new ArrayList<>();
             for (var result : executor.invokeAll(changes)) {
@@ -763,7 +907,10 @@ class IdentityIntegrationTest {
             }
             assertThat(statuses).contains(200);
             assertThat(statuses.stream().filter(status -> status == 200).count()).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT (password_hash IS NOT NULL) + (SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?) FROM sys_user WHERE user_id=?", Integer.class, id, id)).isEqualTo(1);
+            assertThat(jdbc.queryForObject(
+                    "SELECT (password_hash IS NOT NULL) + (SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?) FROM " +
+                     "sys_user WHERE user_id=?",
+                    Integer.class, id, id)).isEqualTo(1);
         }
     }
 
@@ -789,7 +936,8 @@ class IdentityIntegrationTest {
         String ticket = callbackTicket(flow, "pending");
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
         assertCode(exchange(ticket, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
     }
 
     @Test
@@ -844,7 +992,8 @@ class IdentityIntegrationTest {
             github.setEnabled(false);
             gitee.setClientSecret("");
             assertThat(data(call("GET", "/me/oauth-bindings", token, null)).isEmpty()).isTrue();
-            assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 409, "LAST_LOGIN_METHOD");
+            assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 409,
+                    "LAST_LOGIN_METHOD");
             assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 404, "NOT_FOUND");
         } finally {
             github.setEnabled(true);
@@ -852,12 +1001,16 @@ class IdentityIntegrationTest {
         }
         assertCode(call("DELETE", "/me/oauth-bindings/GITEE", otherToken, null), 404, "NOT_FOUND");
         assertCode(call("DELETE", "/me/oauth-bindings/github", token, null), 404, "NOT_FOUND");
-        StpUtil.getStpLogic().getTokenSessionByToken(another).set("authenticatedAt", System.currentTimeMillis() - 301_000);
+        StpUtil.getStpLogic().getTokenSessionByToken(another)
+                .set("authenticatedAt", System.currentTimeMillis() - 301_000);
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", another, null), 403, "REAUTH_REQUIRED");
-        assertCode(call("DELETE", "/me/password", another, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 403, "REAUTH_REQUIRED");
+        assertCode(call("DELETE", "/me/password", another, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 403,
+                "REAUTH_REQUIRED");
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'", Integer.class, id)).isZero();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'", Integer.class, otherId)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'",
+                Integer.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'",
+                Integer.class, otherId)).isEqualTo(1);
         assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/me", otherToken, null), 200, "OK");
@@ -873,10 +1026,15 @@ class IdentityIntegrationTest {
                 "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}")) {
             assertCode(call("PUT", "/me/password", token, body), 400, "VALIDATION_ERROR");
         }
-        assertCode(call("PUT", "/me/password", token, "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
-        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(before);
-        assertCode(call("PUT", "/me/password", token, "{\"newPassword\":\" new-password-2026 \",\"currentPassword\":\"" + PASSWORD + "\"}"), 200, "OK");
+        assertCode(call("PUT", "/me/password", token,
+                "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"wrong-password\"}"), 401,
+                "AUTH_FAILED");
+        assertThat(
+                jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(
+                before);
+        assertCode(call("PUT", "/me/password", token,
+                "{\"newPassword\":\" new-password-2026 \",\"currentPassword\":\"" + PASSWORD + "\"}"), 200, "OK");
         assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
         assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
@@ -891,17 +1049,23 @@ class IdentityIntegrationTest {
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','rollback')", id);
         String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
         doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(id);
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 503, "SERVICE_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(before);
+        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 503,
+                "SERVICE_UNAVAILABLE");
+        assertThat(
+                jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(
+                before);
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 503, "SERVICE_UNAVAILABLE");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class,
+                id)).isEqualTo(1);
         assertCode(call("GET", "/me", token, null), 200, "OK");
     }
 
     @Test
     void permissionsAndMenusCombineEffectiveRolesAndRequireTheWholeAncestorChain() throws Exception {
         long id = Long.parseLong(data(register("leaf")).get("userId").asString());
-        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES (9,'pages','菜单','ALL'),(10,'access','权限','SELF')");
+        jdbc.update(
+                "INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES (9,'pages','菜单','ALL'),(10," +
+                 "'access','权限','SELF')");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES (?,9),(?,10)", id, id);
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (10,1),(10,10),(10,11)");
         jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES (9,110),(9,1011)");
@@ -912,26 +1076,34 @@ class IdentityIntegrationTest {
         assertCode(menus, 200, "OK");
         assertThat(data(menus).size()).isEqualTo(1);
         assertThat(data(menus).get(0).get("children").size()).isEqualTo(1);
-        assertThat(data(menus).get(0).get("children").get(0).get("children").get(0).get("menuId").asString()).isEqualTo("1011");
-        assertThat(menus.getResponse().getContentAsString()).contains("\"isVisible\":0").doesNotContain("system", "comment");
+        assertThat(data(menus).get(0).get("children").get(0).get("children").get(0).get("menuId").asString()).isEqualTo(
+                "1011");
+        assertThat(menus.getResponse().getContentAsString()).contains("\"isVisible\":0")
+                .doesNotContain("system", "comment");
         JsonNode capabilities = data(call("GET", "/me/capabilities", token, null));
         assertThat(capabilities.get("roleCodes").toString()).isEqualTo("[\"access\",\"member\",\"pages\"]");
         assertThat(capabilities.get("permissionCodes").toString())
-                .isEqualTo("[\"admin:access\",\"blog:article:create\",\"blog:article:like\",\"blog:article:query\",\"blog:comment:create\",\"blog:comment:deleteOwn\","
-                        + "\"blog:message:create\",\"blog:message:deleteOwn\",\"blog:message:updateOwn\",\"blog:rss:subscribe\",\"blog:rss:unsubscribe\"]");
+                .isEqualTo(
+                        "[\"admin:access\",\"blog:article:create\",\"blog:article:like\",\"blog:article:query\"," +
+                         "\"blog:comment:create\",\"blog:comment:deleteOwn\","
+                                + "\"blog:message:create\",\"blog:message:deleteOwn\",\"blog:message:updateOwn\"," +
+                                 "\"blog:rss:subscribe\",\"blog:rss:unsubscribe\"]");
         assertThat(capabilities.get("dataScopes").get("blog:article:query").asString()).isEqualTo("SELF");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (9,10)");
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").get("blog:article:query").asString()).isEqualTo("ALL");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").get("blog:article:query")
+                .asString()).isEqualTo("ALL");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").has("blog:article:query")).isFalse();
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes")
+                .has("blog:article:query")).isFalse();
         jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=10");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("ALL");
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
         assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("SELF");
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo("[\"access\",\"member\"]");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo(
+                "[\"access\",\"member\"]");
     }
 
     @Test
@@ -947,7 +1119,8 @@ class IdentityIntegrationTest {
             assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
             assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
         }
-        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'operator','操作员','SELF')");
+        jdbc.update(
+                "INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'operator','操作员','SELF')");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,80)");
         assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
@@ -981,24 +1154,33 @@ class IdentityIntegrationTest {
         assertThat(created.getResponse().getContentAsString()).doesNotContain("passwordHash", "uuid", "accessToken");
         String userToken = login("new_user");
         assertCode(call("GET", "/admin/users", userToken, null), 403, "FORBIDDEN");
-        String withEmail = createUserBody("email_user").replace("\"nickname\":\"叶\"", "\"nickname\":\"  昵称  \",\"email\":\" used@example.test \"");
+        String withEmail = createUserBody("email_user").replace("\"nickname\":\"叶\"",
+                "\"nickname\":\"  昵称  \",\"email\":\" used@example.test \"");
         MvcResult emailed = call("POST", "/admin/users", admin, withEmail);
         assertCode(emailed, 201, "OK");
         assertThat(data(emailed).get("nickname").asString()).isEqualTo("昵称");
         assertThat(data(emailed).get("email").asString()).isEqualTo("used@example.test");
         assertCode(call("POST", "/admin/users", admin, createUserBody("NEW_USER")), 409, "UNIQUE_CONFLICT");
-        assertCode(call("POST", "/admin/users", admin, withEmail.replace("email_user", "email_other")), 409, "UNIQUE_CONFLICT");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='email_other'", Integer.class)).isZero();
+        assertCode(call("POST", "/admin/users", admin, withEmail.replace("email_user", "email_other")), 409,
+                "UNIQUE_CONFLICT");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='email_other'",
+                Integer.class)).isZero();
         String valid = createUserBody("invalid_user");
-        for (String extra : List.of("\"roleIds\":[]", "\"status\":null", "\"status\":2", "\"status\":\"1\"", "\"status\":1.5",
-                "\"email\":\"bad\"", "\"avatar\":\"javascript:bad\"", "\"avatar\":\"" + ORIGIN + "/api/v1/admin/files/1/content\"",
+        for (String extra : List.of("\"roleIds\":[]", "\"status\":null", "\"status\":2", "\"status\":\"1\"",
+                "\"status\":1.5",
+                "\"email\":\"bad\"", "\"avatar\":\"javascript:bad\"",
+                "\"avatar\":\"" + ORIGIN + "/api/v1/admin/files/1/content\"",
                 "\"userId\":\"1\"", "\"nickname\":12")) {
-            assertCode(call("POST", "/admin/users", admin, valid.substring(0, valid.length() - 1) + "," + extra + "}"), 400, "VALIDATION_ERROR");
+            assertCode(call("POST", "/admin/users", admin, valid.substring(0, valid.length() - 1) + "," + extra + "}"),
+                    400, "VALIDATION_ERROR");
         }
-        assertCode(call("POST", "/admin/users", admin, valid.replace(PASSWORD, "密".repeat(25))), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/users", admin, valid.replace(PASSWORD, "密".repeat(25))), 400,
+                "VALIDATION_ERROR");
         assertCode(call("POST", "/admin/users", admin, valid.replace(PASSWORD, "short")), 400, "VALIDATION_ERROR");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='invalid_user'", Integer.class)).isZero();
-        MvcResult disabled = call("POST", "/admin/users", admin, valid.substring(0, valid.length() - 1) + ",\"status\":0}");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='invalid_user'",
+                Integer.class)).isZero();
+        MvcResult disabled = call("POST", "/admin/users", admin,
+                valid.substring(0, valid.length() - 1) + ",\"status\":0}");
         assertCode(disabled, 201, "OK");
         assertCode(call("POST", "/auth/login", null, loginBody("invalid_user", PASSWORD)), 403, "ACCOUNT_DISABLED");
     }
@@ -1008,7 +1190,8 @@ class IdentityIntegrationTest {
         String admin = adminLogin("adminroot");
         long first = Long.parseLong(data(register("first_user")).get("userId").asString());
         long second = Long.parseLong(data(register("second_user")).get("userId").asString());
-        jdbc.update("UPDATE sys_user SET nickname='literal%_\\\\',create_time='2026-01-01' WHERE user_id IN (?,?)", first, second);
+        jdbc.update("UPDATE sys_user SET nickname='literal%_\\\\',create_time='2026-01-01' WHERE user_id IN (?,?)",
+                first, second);
         jdbc.update("UPDATE sys_user SET email='search@example.test',status=0 WHERE user_id=?", first);
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,2)", first);
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=3");
@@ -1059,13 +1242,16 @@ class IdentityIntegrationTest {
         assertCode(adminPut(path, admin, "*", userBody("叶", 1)), 400, "VALIDATION_ERROR");
         assertCode(adminPut(path, admin, revision + "," + revision, userBody("叶", 1)), 400, "VALIDATION_ERROR");
         for (String field : List.of("email", "avatar", "intro")) {
-            assertCode(adminPut(path, admin, revision, userBody("叶", 1).replace("\"" + field + "\":null,", "")), 400, "VALIDATION_ERROR");
+            assertCode(adminPut(path, admin, revision, userBody("叶", 1).replace("\"" + field + "\":null,", "")), 400,
+                    "VALIDATION_ERROR");
         }
         for (String extra : List.of("\"username\":\"changed\"", "\"password\":\"12345678\"", "\"roleIds\":[]")) {
             String body = userBody("叶", 1);
-            assertCode(adminPut(path, admin, revision, body.substring(0, body.length() - 1) + "," + extra + "}"), 400, "VALIDATION_ERROR");
+            assertCode(adminPut(path, admin, revision, body.substring(0, body.length() - 1) + "," + extra + "}"), 400,
+                    "VALIDATION_ERROR");
         }
-        MvcResult updated = adminPut(path, admin, revision, userBody("  修改昵称  ", 1).replace("\"intro\":null", "\"intro\":\"  \""));
+        MvcResult updated = adminPut(path, admin, revision,
+                userBody("  修改昵称  ", 1).replace("\"intro\":null", "\"intro\":\"  \""));
         assertCode(updated, 200, "OK");
         assertThat(data(updated).get("nickname").asString()).isEqualTo("修改昵称");
         assertThat(data(updated).get("intro").isNull()).isTrue();
@@ -1096,7 +1282,8 @@ class IdentityIntegrationTest {
         for (String body : List.of("{}", "{\"roleIds\":null}", "{\"roleIds\":[null]}", "{\"roleIds\":[3]}",
                 "{\"roleIds\":[\"03\"]}", "{\"roleIds\":[\"9223372036854775808\"]}", "{\"roleIds\":[\"3\",\"3\"]}",
                 "{\"roleIds\":[\"3\",\"999999\"]}", "{\"roleIds\":[],\"status\":1}",
-                json.writeValueAsString(Map.of("roleIds", IntStream.range(1, 102).mapToObj(Integer::toString).toList())))) {
+                json.writeValueAsString(
+                        Map.of("roleIds", IntStream.range(1, 102).mapToObj(Integer::toString).toList())))) {
             assertCode(adminPut(path, admin, revision, body), 400, "VALIDATION_ERROR");
         }
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=2");
@@ -1133,10 +1320,13 @@ class IdentityIntegrationTest {
         String revision = adminRevision(admin, id);
         try (var sql = sqlSessionFactory.openSession()) {
             assertThat(sql.getMapper(UserMapper.class).effectiveAdminCount(jdbc.queryForList(
-                    "SELECT permission_code FROM sys_permission WHERE permission_code='admin:access' OR permission_code LIKE 'sys:%'", String.class))).isEqualTo(1);
+                    "SELECT permission_code FROM sys_permission WHERE permission_code='admin:access' OR " +
+                     "permission_code LIKE 'sys:%'",
+                    String.class))).isEqualTo(1);
         }
         assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("不应保存", 0)), 409, "LAST_ADMIN");
-        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"3\"]}"), 409, "LAST_ADMIN");
+        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"3\"]}"), 409,
+                "LAST_ADMIN");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/me", admin, null)).get("nickname").asString()).isEqualTo("叶");
         assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).contains("\"1\"");
@@ -1148,16 +1338,20 @@ class IdentityIntegrationTest {
         String id = data(register("target_user")).get("userId").asString();
         String token = login("target_user");
         String revision = adminRevision(admin, id);
-        doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(Long.parseLong(id));
-        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("不应保存", 0)), 503, "SERVICE_UNAVAILABLE");
-        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"2\"]}"), 503, "SERVICE_UNAVAILABLE");
+        doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions)
+                .revokeAll(Long.parseLong(id));
+        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("不应保存", 0)), 503,
+                "SERVICE_UNAVAILABLE");
+        assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"2\"]}"), 503,
+                "SERVICE_UNAVAILABLE");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).isEqualTo("[\"3\"]");
         assertCode(call("GET", "/me", token, null), 200, "OK");
         reset(sessions);
         jdbc.update("UPDATE sys_user SET email='used@example.test' WHERE username='adminroot'");
         assertCode(adminPut("/admin/users/" + id, admin, revision,
-                userBody("不应保存", 0).replace("\"email\":null", "\"email\":\"USED@example.test\"")), 409, "UNIQUE_CONFLICT");
+                        userBody("不应保存", 0).replace("\"email\":null", "\"email\":\"USED@example.test\"")), 409,
+                "UNIQUE_CONFLICT");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
         assertCode(call("GET", "/me", token, null), 200, "OK");
     }
@@ -1195,11 +1389,15 @@ class IdentityIntegrationTest {
             for (var result : executor.invokeAll(changes)) {
                 MvcResult response = result.get(10, TimeUnit.SECONDS);
                 statuses.add(response.getResponse().getStatus());
-                assertCode(response, response.getResponse().getStatus(), response.getResponse().getStatus() == 200 ? "OK" : "LAST_ADMIN");
+                assertCode(response, response.getResponse().getStatus(),
+                        response.getResponse().getStatus() == 200 ? "OK" : "LAST_ADMIN");
             }
             assertThat(statuses).containsExactlyInAnyOrder(200, 409);
         }
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user u JOIN sys_user_role ur ON u.user_id=ur.user_id WHERE u.status=1 AND ur.role_id=1", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_user u JOIN sys_user_role ur ON u.user_id=ur.user_id WHERE u.status=1 AND " +
+                 "ur.role_id=1",
+                Integer.class)).isEqualTo(1);
     }
 
     @Test
@@ -1219,7 +1417,8 @@ class IdentityIntegrationTest {
                 // 主线程先拿真实保护锁，另一个请求通过 MVC 检查后进入业务层，再等这把锁。
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
-                    var response = executor.submit(() -> adminPut("/admin/users/" + target, admin, revision, userBody("不应保存", 1)));
+                    var response = executor.submit(
+                            () -> adminPut("/admin/users/" + target, admin, revision, userBody("不应保存", 1)));
                     try {
                         assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
                     } catch (InterruptedException exception) {
@@ -1232,8 +1431,10 @@ class IdentityIntegrationTest {
                     }
                     return response;
                 });
-                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403, revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
-                assertThat(jdbc.queryForObject("SELECT nickname FROM sys_user WHERE user_id=?", String.class, target)).isEqualTo("叶");
+                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403,
+                        revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT nickname FROM sys_user WHERE user_id=?", String.class,
+                        target)).isEqualTo("叶");
                 jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
             }
         }
@@ -1246,7 +1447,8 @@ class IdentityIntegrationTest {
         List<String> paths = List.of("/admin/roles", "/admin/roles/2", "/admin/roles",
                 "/admin/roles/2", "/admin/roles/2", "/admin/roles/2/grants");
         List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE", "PUT");
-        List<String> bodies = List.of("", "", roleCreateBody("editor"), roleBody("作者", "SELF", 1), "", grantBody(List.of(), List.of()));
+        List<String> bodies = List.of("", "", roleCreateBody("editor"), roleBody("作者", "SELF", 1), "",
+                grantBody(List.of(), List.of()));
         jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name) VALUES(9,'operator','操作员')");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
         for (int i = 0; i < paths.size(); i++) {
@@ -1254,16 +1456,22 @@ class IdentityIntegrationTest {
             assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
             assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
         }
-        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:role:%'");
+        jdbc.update(
+                "INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission " +
+                 "WHERE permission_code LIKE 'sys:role:%'");
         for (int i = 0; i < paths.size(); i++) {
-            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403,
+                    "FORBIDDEN");
         }
         jdbc.update("DELETE FROM sys_role_permission WHERE role_id=9");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
         for (int i = 0; i < paths.size(); i++) {
-            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403,
+                    "FORBIDDEN");
         }
-        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code='sys:role:query'");
+        jdbc.update(
+                "INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission " +
+                 "WHERE permission_code='sys:role:query'");
         assertCode(call("GET", "/admin/roles", token, null), 200, "OK");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_code='sys:role:query'");
         assertCode(call("GET", "/admin/roles", token, null), 403, "FORBIDDEN");
@@ -1299,10 +1507,12 @@ class IdentityIntegrationTest {
         for (String extra : List.of("\"permissionIds\":[]", "\"menuIds\":[]", "\"roleId\":\"1\"",
                 "\"dataScope\":null", "\"dataScope\":\"all\"", "\"status\":null", "\"status\":1.2",
                 "\"status\":\"1\"", "\"status\":2", "\"description\":\"" + "中".repeat(256) + "\"")) {
-            assertCode(call("POST", "/admin/roles", admin, roleCreateBody("x").replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+            assertCode(call("POST", "/admin/roles", admin, roleCreateBody("x").replace("}", "," + extra + "}")), 400,
+                    "VALIDATION_ERROR");
         }
         call("POST", "/admin/roles", admin, roleCreateBody("under_score").replace("内容编辑", "字面%_\\\\匹配"));
-        MvcResult second = call("POST", "/admin/roles", admin, roleCreateBody("another").replace("内容编辑", "字面%_\\\\匹配").replace("}", ",\"status\":0}"));
+        MvcResult second = call("POST", "/admin/roles", admin,
+                roleCreateBody("another").replace("内容编辑", "字面%_\\\\匹配").replace("}", ",\"status\":0}"));
         MvcResult page = mvc.perform(req("GET", "/admin/roles").header("Authorization", "Bearer " + admin)
                 .param("keyword", " %_\\ ").param("pageSize", "1")).andReturn();
         assertCode(page, 200, "OK");
@@ -1317,7 +1527,8 @@ class IdentityIntegrationTest {
         MvcResult beyond = call("GET", "/admin/roles?page=100000", admin, null);
         assertThat(data(beyond).get("page").asInt()).isEqualTo(100000);
         assertThat(data(beyond).get("records").isEmpty()).isTrue();
-        assertThat(data(call("GET", "/admin/roles?keyword=editor", admin, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/admin/roles?keyword=editor", admin, null)).get("total").asString()).isEqualTo(
+                "1");
         for (String query : List.of("page=0", "page=100001", "pageSize=101", "pageSize=1.2", "status=2", "keyword= ")) {
             String[] parameter = query.split("=", 2);
             assertCode(mvc.perform(req("GET", "/admin/roles").header("Authorization", "Bearer " + admin)
@@ -1344,10 +1555,13 @@ class IdentityIntegrationTest {
             assertCode(adminPut(path, admin, invalid, roleBody("编辑", "SELF", 1)), 400, "VALIDATION_ERROR");
         }
         for (String field : List.of("\"description\":null,", "\"dataScope\":\"SELF\",", ",\"status\":1")) {
-            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace(field, "")), 400, "VALIDATION_ERROR");
+            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace(field, "")), 400,
+                    "VALIDATION_ERROR");
         }
-        for (String extra : List.of("\"roleCode\":\"changed\"", "\"permissionIds\":[]", "\"menuIds\":[]", "\"updateTime\":null")) {
-            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        for (String extra : List.of("\"roleCode\":\"changed\"", "\"permissionIds\":[]", "\"menuIds\":[]",
+                "\"updateTime\":null")) {
+            assertCode(adminPut(path, admin, revision, roleBody("编辑", "SELF", 1).replace("}", "," + extra + "}")),
+                    400, "VALIDATION_ERROR");
         }
         MvcResult updated = adminPut(path, admin, revision, roleBody("  编辑  ", "SELF", 1).replace("null", "\"   \""));
         assertCode(updated, 200, "OK");
@@ -1375,7 +1589,8 @@ class IdentityIntegrationTest {
         String id = createRole(admin, "editor");
         String path = "/admin/roles/" + id + "/grants";
         String original = roleRevision(admin, id);
-        long button = jdbc.queryForObject("SELECT menu_id FROM sys_menu WHERE menu_type='B' AND permission_id=11", Long.class);
+        long button = jdbc.queryForObject("SELECT menu_id FROM sys_menu WHERE menu_type='B' AND permission_id=11",
+                Long.class);
         assertCode(call("PUT", path, admin, grantBody(List.of(), List.of())), 428, "PRECONDITION_REQUIRED");
         for (String body : List.of("{}", "{\"permissionIds\":[],\"menuIds\":null}",
                 "{\"permissionIds\":[1],\"menuIds\":[]}", "{\"permissionIds\":[\"01\"],\"menuIds\":[]}",
@@ -1396,16 +1611,20 @@ class IdentityIntegrationTest {
         MvcResult granted = adminPut(path, admin, original, grantBody(List.of(11L, 10L, 1L, 45L), List.of(button)));
         assertCode(granted, 200, "OK");
         assertThat(data(granted).get("permissionIds").toString()).isEqualTo("[\"1\",\"10\",\"11\",\"45\"]");
-        assertThat(data(granted).get("menuIds").toString()).isEqualTo(json.writeValueAsString(List.of(100L, 110L, button).stream().sorted().toList()));
+        assertThat(data(granted).get("menuIds").toString()).isEqualTo(
+                json.writeValueAsString(List.of(100L, 110L, button).stream().sorted().toList()));
         String current = granted.getResponse().getHeader("X-Revision");
         assertThat(current).isNotEqualTo(original);
-        assertCode(adminPut("/admin/roles/" + id, admin, original, roleBody("旧资料", "SELF", 1)), 412, "REVISION_CONFLICT");
+        assertCode(adminPut("/admin/roles/" + id, admin, original, roleBody("旧资料", "SELF", 1)), 412,
+                "REVISION_CONFLICT");
         // 禁用关联也要出现在详情和版本里，只改时间不改变整体版本。
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=11");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=?", button);
         assertThat(roleRevision(admin, id)).isEqualTo(current);
-        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").toString()).contains("\"11\"");
-        assertThat(data(call("GET", "/admin/roles", admin, null)).get("records").toString()).contains("\"" + button + "\"");
+        assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").toString()).contains(
+                "\"11\"");
+        assertThat(data(call("GET", "/admin/roles", admin, null)).get("records").toString()).contains(
+                "\"" + button + "\"");
         jdbc.update("UPDATE sys_role SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE role_id=?", id);
         assertThat(roleRevision(admin, id)).isEqualTo(current);
         assertCode(adminPut(path, admin, current, grantBody(List.of(), List.of())), 200, "OK");
@@ -1430,7 +1649,8 @@ class IdentityIntegrationTest {
         }
         first = login("first_user");
         assertThat(authorization.requireScope(Long.parseLong(firstId), "blog:article:query")).isEqualTo("SELF");
-        assertThat(call("GET", "/me/menus", first, null).getResponse().getContentAsString()).contains("content/article/index");
+        assertThat(call("GET", "/me/menus", first, null).getResponse().getContentAsString()).contains(
+                "content/article/index");
         String revision = saved.getResponse().getHeader("X-Revision");
         MvcResult noop = adminPut(path, admin, revision, grantBody(List.of(1L, 10L), List.of(110L, 100L)));
         assertCode(noop, 200, "OK");
@@ -1448,7 +1668,9 @@ class IdentityIntegrationTest {
         String admin = adminLogin("adminroot");
         String id = createRole(admin, "editor");
         String path = "/admin/roles/" + id;
-        assertCode(adminPut(path + "/grants", admin, roleRevision(admin, id), grantBody(List.of(1L, 10L), List.of(110L))), 200, "OK");
+        assertCode(
+                adminPut(path + "/grants", admin, roleRevision(admin, id), grantBody(List.of(1L, 10L), List.of(110L))),
+                200, "OK");
         String user = data(register("role_user")).get("userId").asString();
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", user, id);
         String token = login("role_user");
@@ -1462,8 +1684,11 @@ class IdentityIntegrationTest {
         assertCode(roleDelete(path, admin, revision), 503, "SERVICE_UNAVAILABLE");
         assertThat(roleRevision(admin, id)).isEqualTo(revision);
         assertThat(adminRevision(admin, user)).isEqualTo(userRevision);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id=?", Integer.class, id)).isEqualTo(2);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=?", Integer.class, id)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id=?", Integer.class,
+                id)).isEqualTo(2);
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=?", Integer.class, id)).isEqualTo(
+                2);
         reset(sessions);
         MvcResult deleted = roleDelete(path, admin, revision);
         assertCode(deleted, 200, "OK");
@@ -1471,14 +1696,16 @@ class IdentityIntegrationTest {
         assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
         assertCode(call("GET", path, admin, null), 404, "NOT_FOUND");
         for (String table : List.of("sys_role_permission", "sys_role_menu", "sys_user_role")) {
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE role_id=?", Integer.class, id)).isZero();
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE role_id=?", Integer.class,
+                    id)).isZero();
         }
         assertThat(adminRevision(admin, user)).isNotEqualTo(userRevision);
         assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/me", second, null), 401, "UNAUTHENTICATED");
         assertCode(roleDelete(path, admin, revision), 404, "NOT_FOUND");
         for (String builtin : List.of("1", "2", "3")) {
-            assertCode(roleDelete("/admin/roles/" + builtin, admin, roleRevision(admin, builtin)), 409, "STATE_CONFLICT");
+            assertCode(roleDelete("/admin/roles/" + builtin, admin, roleRevision(admin, builtin)), 409,
+                    "STATE_CONFLICT");
         }
     }
 
@@ -1490,13 +1717,17 @@ class IdentityIntegrationTest {
             assertCode(adminPut("/admin/roles/1", admin, revision, body), 409, "LAST_ADMIN");
             assertThat(roleRevision(admin, "1")).isEqualTo(revision);
         }
-        List<Long> permissions = jdbc.queryForList("SELECT permission_id FROM sys_role_permission WHERE role_id=1 ORDER BY permission_id", Long.class);
-        List<Long> menus = jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id", Long.class);
-        assertCode(adminPut("/admin/roles/1/grants", admin, revision, grantBody(List.of(), List.of())), 409, "LAST_ADMIN");
+        List<Long> permissions = jdbc.queryForList(
+                "SELECT permission_id FROM sys_role_permission WHERE role_id=1 ORDER BY permission_id", Long.class);
+        List<Long> menus = jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id",
+                Long.class);
+        assertCode(adminPut("/admin/roles/1/grants", admin, revision, grantBody(List.of(), List.of())), 409,
+                "LAST_ADMIN");
         assertCode(adminPut("/admin/roles/1/grants", admin, revision,
                 grantBody(permissions.stream().filter(id -> id != 90L).toList(), List.of())), 409, "LAST_ADMIN");
         assertThat(roleRevision(admin, "1")).isEqualTo(revision);
-        assertThat(jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id", Long.class)).isEqualTo(menus);
+        assertThat(jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id",
+                Long.class)).isEqualTo(menus);
         assertCode(call("GET", "/me", admin, null), 200, "OK");
         assertCode(adminPut("/admin/roles/1", admin, revision, roleBody("管理员展示名", "ALL", 1)), 200, "OK");
         assertCode(call("GET", "/me", admin, null), 200, "OK");
@@ -1511,8 +1742,11 @@ class IdentityIntegrationTest {
         String token = login("role_user");
         String revision = roleRevision(admin, id);
         doThrow(new RedisConnectionFailureException("injected failure")).when(sessions).revokeAll(Long.parseLong(user));
-        assertCode(adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "ALL", 0)), 503, "SERVICE_UNAVAILABLE");
-        assertCode(adminPut("/admin/roles/" + id + "/grants", admin, revision, grantBody(List.of(1L, 10L), List.of(110L))), 503, "SERVICE_UNAVAILABLE");
+        assertCode(adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "ALL", 0)), 503,
+                "SERVICE_UNAVAILABLE");
+        assertCode(
+                adminPut("/admin/roles/" + id + "/grants", admin, revision, grantBody(List.of(1L, 10L), List.of(110L))),
+                503, "SERVICE_UNAVAILABLE");
         assertThat(roleRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").isEmpty()).isTrue();
         assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("menuIds").isEmpty()).isTrue();
@@ -1527,11 +1761,15 @@ class IdentityIntegrationTest {
         try (var executor = Executors.newFixedThreadPool(2)) {
             List<Callable<MvcResult>> writes = List.of(
                     () -> adminPut("/admin/roles/" + id, admin, revision, roleBody("并发资料", "SELF", 1)),
-                    () -> adminPut("/admin/roles/" + id + "/grants", admin, revision, grantBody(List.of(1L), List.of())));
+                    () -> adminPut("/admin/roles/" + id + "/grants", admin, revision,
+                            grantBody(List.of(1L), List.of())));
             var results = executor.invokeAll(writes);
             assertThat(results.stream().map(result -> {
-                try { return result.get().getResponse().getStatus(); }
-                catch (Exception exception) { throw new IllegalStateException(exception); }
+                try {
+                    return result.get().getResponse().getStatus();
+                } catch (Exception exception) {
+                    throw new IllegalStateException(exception);
+                }
             }).sorted().toList()).containsExactly(200, 412);
         }
     }
@@ -1547,14 +1785,16 @@ class IdentityIntegrationTest {
         jdbc.update("UPDATE sys_menu SET status=1 WHERE menu_id=110");
         try {
             jdbc.update("UPDATE sys_menu SET parent_id=120 WHERE menu_id=110");
-            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L, 20L), List.of(110L))), 400, "VALIDATION_ERROR");
+            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L, 20L), List.of(110L))), 400,
+                    "VALIDATION_ERROR");
         } finally {
             jdbc.update("UPDATE sys_menu SET parent_id=100 WHERE menu_id=110");
         }
         try {
             jdbc.update("UPDATE sys_menu SET parent_id=200 WHERE menu_id=100");
             jdbc.update("UPDATE sys_menu SET parent_id=100 WHERE menu_id=200");
-            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L), List.of(110L))), 400, "VALIDATION_ERROR");
+            assertCode(adminPut(path, admin, revision, grantBody(List.of(10L), List.of(110L))), 400,
+                    "VALIDATION_ERROR");
         } finally {
             jdbc.update("UPDATE sys_menu SET parent_id=NULL WHERE menu_id IN (100,200)");
         }
@@ -1576,7 +1816,8 @@ class IdentityIntegrationTest {
             assertCode(results.get(0).get(), 200, "OK");
             assertCode(results.get(1).get(), 409, "LAST_ADMIN");
         }
-        assertThat(jdbc.queryForObject("SELECT data_scope FROM sys_role WHERE role_id=1", String.class)).isEqualTo("ALL");
+        assertThat(jdbc.queryForObject("SELECT data_scope FROM sys_role WHERE role_id=1", String.class)).isEqualTo(
+                "ALL");
         assertCode(call("GET", "/admin/roles", second, null), 200, "OK");
     }
 
@@ -1596,18 +1837,24 @@ class IdentityIntegrationTest {
                         .update(eq(Long.parseLong(id)), any(RoleUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
-                    var response = executor.submit(() -> adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "SELF", 1)));
-                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
-                    catch (InterruptedException exception) {
+                    var response = executor.submit(
+                            () -> adminPut("/admin/roles/" + id, admin, revision, roleBody("不应保存", "SELF", 1)));
+                    try {
+                        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new IllegalStateException(exception);
                     }
                     jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
-                    if (revoke) { sessions.revokeAll(actor); }
+                    if (revoke) {
+                        sessions.revokeAll(actor);
+                    }
                     return response;
                 });
-                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403, revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
-                assertThat(jdbc.queryForObject("SELECT role_name FROM sys_role WHERE role_id=?", String.class, id)).isEqualTo("内容编辑");
+                assertCode(pending.get(10, TimeUnit.SECONDS), revoke ? 401 : 403,
+                        revoke ? "UNAUTHENTICATED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT role_name FROM sys_role WHERE role_id=?", String.class,
+                        id)).isEqualTo("内容编辑");
                 jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", actor);
             }
         }
@@ -1620,7 +1867,8 @@ class IdentityIntegrationTest {
         List<String> paths = List.of("/admin/permissions", "/admin/permissions/10", "/admin/permissions",
                 "/admin/permissions/10", "/admin/permissions/10");
         List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE");
-        List<String> bodies = List.of("", "", permissionCreateBody("test:article:export"), permissionBody("文章", "blog", 1), "");
+        List<String> bodies = List.of("", "", permissionCreateBody("test:article:export"),
+                permissionBody("文章", "blog", 1), "");
         jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name) VALUES(9,'operator','操作员')");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
         for (int i = 0; i < paths.size(); i++) {
@@ -1628,14 +1876,18 @@ class IdentityIntegrationTest {
             assertCode(call(methods.get(i), paths.get(i), null, body), 401, "UNAUTHENTICATED");
             assertCode(call(methods.get(i), paths.get(i), token, body), 403, "FORBIDDEN");
         }
-        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:permission:%'");
+        jdbc.update(
+                "INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission " +
+                 "WHERE permission_code LIKE 'sys:permission:%'");
         for (int i = 0; i < paths.size(); i++) {
-            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403,
+                    "FORBIDDEN");
         }
         jdbc.update("DELETE FROM sys_role_permission WHERE role_id=9");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
         for (int i = 0; i < paths.size(); i++) {
-            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403, "FORBIDDEN");
+            assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i).isEmpty() ? null : bodies.get(i)), 403,
+                    "FORBIDDEN");
         }
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,110)");
         assertCode(call("GET", "/admin/permissions", token, null), 200, "OK");
@@ -1660,19 +1912,27 @@ class IdentityIntegrationTest {
         assertThat(data(created).get("description").isNull()).isTrue();
         assertThat(data(created).get("status").asInt()).isEqualTo(1);
         assertThat(data(created).get("createTime").asString()).matches(".*\\.\\d{3}Z");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isZero();
-        assertThat(data(call("GET", "/me/capabilities", admin, null)).get("permissionCodes").toString()).doesNotContain("test:article:deleteOwn");
-        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:deleteOwn")), 409, "UNIQUE_CONFLICT");
-        for (String code : List.of("test", "test:access", "Test:article:query", "test:a_b:query", "test:article:Query", "test:资源:query", "test:a:" + "a".repeat(100))) {
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
+                id)).isZero();
+        assertThat(data(call("GET", "/me/capabilities", admin, null)).get("permissionCodes").toString()).doesNotContain(
+                "test:article:deleteOwn");
+        assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:deleteOwn")), 409,
+                "UNIQUE_CONFLICT");
+        for (String code : List.of("test", "test:access", "Test:article:query", "test:a_b:query", "test:article:Query",
+                "test:资源:query", "test:a:" + "a".repeat(100))) {
             assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody(code)), 400, "VALIDATION_ERROR");
         }
         for (String extra : List.of("\"permissionId\":\"999\"", "\"roleIds\":[]", "\"createTime\":null",
                 "\"status\":null", "\"status\":\"1\"", "\"status\":1.5", "\"status\":true", "\"status\":2",
                 "\"module\":\"Test\"", "\"module\":\"test\"")) {
-            assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:other").replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+            assertCode(call("POST", "/admin/permissions", admin,
+                            permissionCreateBody("test:article:other").replace("}", "," + extra + "}")), 400,
+                    "VALIDATION_ERROR");
         }
-        for (String missing : List.of("\"permissionCode\":\"test:article:other\",", "\"permissionName\":\"导出文章\",", ",\"module\":\"test\"")) {
-            assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:other").replace(missing, "")), 400, "VALIDATION_ERROR");
+        for (String missing : List.of("\"permissionCode\":\"test:article:other\",", "\"permissionName\":\"导出文章\",",
+                ",\"module\":\"test\"")) {
+            assertCode(call("POST", "/admin/permissions", admin,
+                    permissionCreateBody("test:article:other").replace(missing, "")), 400, "VALIDATION_ERROR");
         }
         assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:unicode")
                 .replace("导出文章", "😀".repeat(64))), 201, "OK");
@@ -1693,7 +1953,10 @@ class IdentityIntegrationTest {
         String first = createPermission(admin, "test:article:first");
         String second = createPermission(admin, "test:article:second");
         String third = createPermission(admin, "test:article:third");
-        jdbc.update("UPDATE sys_permission SET permission_name='literal%_字', module='test_other', status=0 WHERE permission_id=?", second);
+        jdbc.update(
+                "UPDATE sys_permission SET permission_name='literal%_字', module='test_other', status=0 WHERE " +
+                 "permission_id=?",
+                second);
         MvcResult page = mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
                 .param("keyword", " test:article: ").param("module", "test").param("status", "1")
                 .param("page", "2").param("pageSize", "1")).andReturn();
@@ -1719,7 +1982,8 @@ class IdentityIntegrationTest {
         assertThat(data(beyond).get("page").asInt()).isEqualTo(100000);
         assertThat(data(beyond).get("records").isEmpty()).isTrue();
         assertThat(data(call("GET", "/admin/permissions/" + first, admin, null)).properties()).hasSize(8);
-        for (Map.Entry<String, String> invalid : Map.of("page", "0", "pageSize", "101", "status", "2", "module", "Test", "keyword", " ").entrySet()) {
+        for (Map.Entry<String, String> invalid : Map.of("page", "0", "pageSize", "101", "status", "2", "module", "Test",
+                "keyword", " ").entrySet()) {
             assertCode(mvc.perform(req("GET", "/admin/permissions").header("Authorization", "Bearer " + admin)
                     .param(invalid.getKey(), invalid.getValue())).andReturn(), 400, "VALIDATION_ERROR");
         }
@@ -1735,14 +1999,20 @@ class IdentityIntegrationTest {
         for (String invalid : List.of("*", "abc", revision + "," + revision, revision.replace("\"", ""))) {
             assertCode(adminPut(path, admin, invalid, permissionBody("导出", "test", 1)), 400, "VALIDATION_ERROR");
         }
-        for (String field : List.of("\"permissionName\":\"导出\",", "\"module\":\"test\",", "\"description\":null,", ",\"status\":1")) {
-            assertCode(adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace(field, "")), 400, "VALIDATION_ERROR");
+        for (String field : List.of("\"permissionName\":\"导出\",", "\"module\":\"test\",", "\"description\":null,",
+                ",\"status\":1")) {
+            assertCode(adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace(field, "")), 400,
+                    "VALIDATION_ERROR");
         }
-        for (String extra : List.of("\"permissionCode\":\"test:article:changed\"", "\"permissionId\":\"1\"", "\"roleIds\":[]", "\"updateTime\":null")) {
-            assertCode(adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+        for (String extra : List.of("\"permissionCode\":\"test:article:changed\"", "\"permissionId\":\"1\"",
+                "\"roleIds\":[]", "\"updateTime\":null")) {
+            assertCode(
+                    adminPut(path, admin, revision, permissionBody("导出", "test", 1).replace("}", "," + extra + "}")),
+                    400, "VALIDATION_ERROR");
         }
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,?)", id);
-        MvcResult updated = adminPut(path, admin, revision, permissionBody("  导出  ", " other_module ", 1).replace("null", "\"   \""));
+        MvcResult updated = adminPut(path, admin, revision,
+                permissionBody("  导出  ", " other_module ", 1).replace("null", "\"   \""));
         assertCode(updated, 200, "OK");
         assertThat(data(updated).get("permissionCode").asString()).isEqualTo("test:article:export");
         assertThat(data(updated).get("permissionName").asString()).isEqualTo("导出");
@@ -1752,7 +2022,9 @@ class IdentityIntegrationTest {
         assertThat(current).matches("\"[0-9a-f]{64}\"").isNotEqualTo(revision);
         assertCode(call("GET", "/me", admin, null), 200, "OK");
         assertCode(adminPut(path, admin, revision, permissionBody("旧版本", "test", 1)), 412, "REVISION_CONFLICT");
-        jdbc.update("UPDATE sys_permission SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE permission_id=?", id);
+        jdbc.update(
+                "UPDATE sys_permission SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE permission_id=?",
+                id);
         assertThat(permissionRevision(admin, id)).isEqualTo(current);
         MvcResult unchanged = adminPut(path, admin, current, permissionBody("导出", "other_module", 1));
         assertCode(unchanged, 200, "OK");
@@ -1768,8 +2040,10 @@ class IdentityIntegrationTest {
         String disabledRole = createRole(admin, "disabled_editor");
         String firstId = data(register("first_user")).get("userId").asString();
         String secondId = data(register("second_user")).get("userId").asString();
-        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(?,?),(?,?),(?,1)", role, id, disabledRole, id, role);
-        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?),(?,?),(?,?)", firstId, role, firstId, disabledRole, secondId, disabledRole);
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(?,?),(?,?),(?,1)", role, id,
+                disabledRole, id, role);
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?),(?,?),(?,?)", firstId, role, firstId,
+                disabledRole, secondId, disabledRole);
         jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(?,100),(?,110)", role, role);
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=?", disabledRole);
         String first = login("first_user");
@@ -1778,24 +2052,33 @@ class IdentityIntegrationTest {
         jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", secondId);
         try {
             jdbc.update("UPDATE sys_menu SET permission_id=? WHERE menu_id=110", id);
-            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains("test:article:export");
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains(
+                    "test:article:export");
             assertThat(authorization.menus(Long.parseLong(firstId))).hasSize(1);
-            MvcResult disabled = adminPut("/admin/permissions/" + id, admin, permissionRevision(admin, id), permissionBody("导出", "test", 0));
+            MvcResult disabled = adminPut("/admin/permissions/" + id, admin, permissionRevision(admin, id),
+                    permissionBody("导出", "test", 0));
             assertCode(disabled, 200, "OK");
             for (String token : List.of(first, another, second)) {
                 assertThat(StpUtil.getStpLogic().getLoginIdByToken(token)).isNull();
             }
             verify(sessions, times(1)).revokeAll(Long.parseLong(firstId));
             verify(sessions, times(1)).revokeAll(Long.parseLong(secondId));
-            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).doesNotContain("test:article:export");
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).doesNotContain(
+                    "test:article:export");
             assertThat(authorization.menus(Long.parseLong(firstId))).isEmpty();
-            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(Long.parseLong(id));
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isEqualTo(2);
+            assertThat(
+                    jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(
+                    Long.parseLong(id));
+            assertThat(
+                    jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
+                            id)).isEqualTo(2);
             String whileDisabled = login("first_user");
-            assertCode(adminPut("/admin/permissions/" + id, admin, disabled.getResponse().getHeader("X-Revision"), permissionBody("导出", "test", 1)), 200, "OK");
+            assertCode(adminPut("/admin/permissions/" + id, admin, disabled.getResponse().getHeader("X-Revision"),
+                    permissionBody("导出", "test", 1)), 200, "OK");
             assertCode(call("GET", "/me", whileDisabled, null), 401, "UNAUTHENTICATED");
             assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
-            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains("test:article:export");
+            assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains(
+                    "test:article:export");
             assertThat(authorization.menus(Long.parseLong(firstId))).hasSize(1);
             assertCode(call("GET", "/me", login("first_user"), null), 200, "OK");
         } finally {
@@ -1807,15 +2090,19 @@ class IdentityIntegrationTest {
     void permissionDeletionRejectsFixedCodesAndAnyMenuReference() throws Exception {
         String admin = adminLogin("adminroot");
         for (String code : AuthorizationProvider.ADMIN_PERMISSIONS) {
-            String id = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?", String.class, code);
-            assertCode(roleDelete("/admin/permissions/" + id, admin, permissionRevision(admin, id)), 409, "STATE_CONFLICT");
+            String id = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?",
+                    String.class, code);
+            assertCode(roleDelete("/admin/permissions/" + id, admin, permissionRevision(admin, id)), 409,
+                    "STATE_CONFLICT");
         }
         String id = createPermission(admin, "test:article:export");
         String revision = permissionRevision(admin, id);
         try {
             jdbc.update("UPDATE sys_menu SET permission_id=?, status=0 WHERE menu_id=110", id);
             assertCode(roleDelete("/admin/permissions/" + id, admin, revision), 409, "RESOURCE_IN_USE");
-            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(Long.parseLong(id));
+            assertThat(
+                    jdbc.queryForObject("SELECT permission_id FROM sys_menu WHERE menu_id=110", Long.class)).isEqualTo(
+                    Long.parseLong(id));
             assertThat(permissionRevision(admin, id)).isEqualTo(revision);
         } finally {
             jdbc.update("UPDATE sys_menu SET permission_id=10, status=1 WHERE menu_id=110");
@@ -1843,14 +2130,16 @@ class IdentityIntegrationTest {
         assertCode(roleDelete(path, admin, revision), 503, "SERVICE_UNAVAILABLE");
         assertThat(permissionRevision(admin, id)).isEqualTo(revision);
         assertThat(roleRevision(admin, role)).isEqualTo(roleRevision);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
+                id)).isEqualTo(1);
         assertCode(call("GET", "/me", first, null), 200, "OK");
         reset(sessions);
         MvcResult deleted = roleDelete(path, admin, revision);
         assertCode(deleted, 200, "OK");
         assertThat(data(deleted).isNull()).isTrue();
         assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class, id)).isZero();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
+                id)).isZero();
         assertThat(roleRevision(admin, role)).isNotEqualTo(roleRevision);
         for (String token : List.of(first, second)) {
             assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
@@ -1866,14 +2155,17 @@ class IdentityIntegrationTest {
         long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
         String revision = permissionRevision(admin, id);
         doThrow(new RedisConnectionFailureException("injected")).when(sessions).revokeAll(actor);
-        assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "other", 0)), 503, "SERVICE_UNAVAILABLE");
+        assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "other", 0)), 503,
+                "SERVICE_UNAVAILABLE");
         assertThat(permissionRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/admin/permissions/" + id, admin, null)).get("status").asInt()).isEqualTo(1);
         reset(sessions);
         for (String code : AuthorizationProvider.ADMIN_PERMISSIONS) {
-            String fixedId = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?", String.class, code);
+            String fixedId = jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code=?",
+                    String.class, code);
             String fixedRevision = permissionRevision(admin, fixedId);
-            assertCode(adminPut("/admin/permissions/" + fixedId, admin, fixedRevision, permissionBody("不可停用", "sys", 0)), 409, "LAST_ADMIN");
+            assertCode(adminPut("/admin/permissions/" + fixedId, admin, fixedRevision,
+                    permissionBody("不可停用", "sys", 0)), 409, "LAST_ADMIN");
             assertThat(permissionRevision(admin, fixedId)).isEqualTo(fixedRevision);
         }
         assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("导出", "test", 0)), 200, "OK");
@@ -1896,15 +2188,19 @@ class IdentityIntegrationTest {
                     () -> adminPut("/admin/permissions/" + id, second, revision, permissionBody("并发乙", "test", 1)));
             var results = executor.invokeAll(writes);
             assertThat(results.stream().map(result -> {
-                try { return result.get().getResponse().getStatus(); }
-                catch (Exception exception) { throw new IllegalStateException(exception); }
+                try {
+                    return result.get().getResponse().getStatus();
+                } catch (Exception exception) {
+                    throw new IllegalStateException(exception);
+                }
             }).sorted().toList()).containsExactly(200, 412);
             String user = data(call("GET", "/me", first, null)).get("userId").asString();
             String userRevision = adminRevision(second, user);
             String protectedRevision = permissionRevision(second, "80");
             List<Callable<MvcResult>> protectedWrites = List.of(
                     () -> adminPut("/admin/users/" + user, second, userRevision, userBody("叶", 0)),
-                    () -> adminPut("/admin/permissions/80", second, protectedRevision, permissionBody("不可停用", "sys", 0)));
+                    () -> adminPut("/admin/permissions/80", second, protectedRevision,
+                            permissionBody("不可停用", "sys", 0)));
             var protectedResults = executor.invokeAll(protectedWrites);
             assertCode(protectedResults.get(0).get(), 200, "OK");
             assertCode(protectedResults.get(1).get(), 409, "LAST_ADMIN");
@@ -1928,9 +2224,11 @@ class IdentityIntegrationTest {
                         .update(eq(Long.parseLong(id)), any(PermissionUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
-                    var response = executor.submit(() -> adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "test", 1)));
-                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
-                    catch (InterruptedException exception) {
+                    var response = executor.submit(() -> adminPut("/admin/permissions/" + id, admin, revision,
+                            permissionBody("不应保存", "test", 1)));
+                    try {
+                        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new IllegalStateException(exception);
                     }
@@ -1938,13 +2236,17 @@ class IdentityIntegrationTest {
                         jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", actor);
                     } else {
                         jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
-                        if ("token".equals(change)) { sessions.revokeAll(actor); }
+                        if ("token".equals(change)) {
+                            sessions.revokeAll(actor);
+                        }
                     }
                     return response;
                 });
                 assertCode(pending.get(10, TimeUnit.SECONDS), "token".equals(change) ? 401 : 403,
-                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
-                assertThat(jdbc.queryForObject("SELECT permission_name FROM sys_permission WHERE permission_id=?", String.class, id)).isEqualTo("导出文章");
+                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(
+                                change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT permission_name FROM sys_permission WHERE permission_id=?",
+                        String.class, id)).isEqualTo("导出文章");
                 if ("disabled".equals(change)) {
                     jdbc.update("UPDATE sys_user SET status=1 WHERE user_id=?", actor);
                 } else {
@@ -1959,15 +2261,20 @@ class IdentityIntegrationTest {
         String user = data(register("menu_operator")).get("userId").asString();
         String token = login("menu_operator");
         List<String> methods = List.of("GET", "GET", "POST", "PUT", "DELETE");
-        List<String> paths = List.of("/admin/menus", "/admin/menus/110", "/admin/menus", "/admin/menus/110", "/admin/menus/110");
-        List<String> bodies = List.of("", "", menuCreateBody("Auth", null, "D", null), menuBody("Auth", null, "D", null), "");
-        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'menu_operator','菜单管理','SELF')");
+        List<String> paths = List.of("/admin/menus", "/admin/menus/110", "/admin/menus", "/admin/menus/110",
+                "/admin/menus/110");
+        List<String> bodies = List.of("", "", menuCreateBody("Auth", null, "D", null),
+                menuBody("Auth", null, "D", null), "");
+        jdbc.update(
+                "INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'menu_operator','菜单管理','SELF')");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", user);
         for (int index = 0; index < methods.size(); index++) {
             assertCode(call(methods.get(index), paths.get(index), null, bodies.get(index)), 401, "UNAUTHENTICATED");
             assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
         }
-        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission WHERE permission_code LIKE 'sys:menu:%'");
+        jdbc.update(
+                "INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission " +
+                 "WHERE permission_code LIKE 'sys:menu:%'");
         for (int index = 0; index < methods.size(); index++) {
             assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
         }
@@ -1991,7 +2298,8 @@ class IdentityIntegrationTest {
     void menuCreationDefaultsShapeUnicodeAndImmutableUniqueCodes() throws Exception {
         String admin = adminLogin("adminroot");
         String body = "{\"parentId\":null,\"menuCode\":\"test:Defaults\",\"menuName\":\"  " + "🌿".repeat(64)
-                + "  \",\"menuType\":\"D\",\"routeName\":\"TestDefaults\",\"path\":\"/test/defaults\",\"component\":\"Layout\"}";
+                + "  \",\"menuType\":\"D\",\"routeName\":\"TestDefaults\",\"path\":\"/test/defaults\"," +
+                 "\"component\":\"Layout\"}";
         MvcResult created = call("POST", "/admin/menus", admin, body);
         assertCode(created, 201, "OK");
         JsonNode value = data(created);
@@ -2008,7 +2316,8 @@ class IdentityIntegrationTest {
         assertThat(value.get("isVisible").asInt()).isEqualTo(1);
         assertThat(value.get("status").asInt()).isEqualTo(1);
         assertThat(value.get("createTime").asString()).matches(".*\\.\\d{3}Z");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class, id)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class, id)).isZero();
         assertCode(call("POST", "/admin/menus", admin, body), 409, "UNIQUE_CONFLICT");
         assertCode(call("POST", "/admin/menus", admin, body.replace("test:Defaults", "test:DuplicateRoute")
                 .replace("/test/defaults", "/test/duplicate")), 409, "UNIQUE_CONFLICT");
@@ -2018,13 +2327,15 @@ class IdentityIntegrationTest {
                 .replace("TestDefaults", "Testdefaults").replace("/test/defaults", "/test/Defaults")), 201, "OK");
         assertCode(call("POST", "/admin/menus", admin, body.replace("🌿".repeat(64), "🌿".repeat(65))
                 .replace("test:Defaults", "test:Long")), 400, "VALIDATION_ERROR");
-        String button = "{\"parentId\":\"110\",\"menuCode\":\"test:Button\",\"menuName\":\"按钮\",\"menuType\":\"B\",\"permissionId\":\"11\"}";
+        String button = "{\"parentId\":\"110\",\"menuCode\":\"test:Button\",\"menuName\":\"按钮\",\"menuType\":\"B\"," +
+         "\"permissionId\":\"11\"}";
         MvcResult action = call("POST", "/admin/menus", admin, button);
         assertCode(action, 201, "OK");
         assertThat(data(action).get("isVisible").asInt()).isZero();
         assertThat(data(action).get("routeName").isNull()).isTrue();
         for (String field : List.of("sortOrder", "isVisible", "keepAlive", "status")) {
-            assertCode(call("POST", "/admin/menus", admin, body.replace("}", ",\"" + field + "\":null}")), 400, "VALIDATION_ERROR");
+            assertCode(call("POST", "/admin/menus", admin, body.replace("}", ",\"" + field + "\":null}")), 400,
+                    "VALIDATION_ERROR");
         }
     }
 
@@ -2033,15 +2344,19 @@ class IdentityIntegrationTest {
         String admin = adminLogin("adminroot");
         String body = menuCreateBody("Strict", "100", "M", "10");
         for (String extra : List.of("\"menuId\":\"9\"", "\"roleIds\":[]", "\"createTime\":null", "\"updateTime\":null",
-                "\"parentPresent\":true", "\"visiblePresent\":true", "\"completeCreate\":true", "\"menuName\":\"重复\"")) {
-            assertCode(call("POST", "/admin/menus", admin, body.replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
+                "\"parentPresent\":true", "\"visiblePresent\":true", "\"completeCreate\":true",
+                "\"menuName\":\"重复\"")) {
+            assertCode(call("POST", "/admin/menus", admin, body.replace("}", "," + extra + "}")), 400,
+                    "VALIDATION_ERROR");
         }
         Map<String, List<String>> invalid = Map.ofEntries(
                 Map.entry("menuCode", List.of("null", "12", "\"菜单\"", "\"test.bad\"", "\"" + "a".repeat(65) + "\"")),
                 Map.entry("menuName", List.of("null", "12", "\"  \"")),
                 Map.entry("menuType", List.of("null", "1", "\"m\"", "\"X\"")),
-                Map.entry("routeName", List.of("null", "12", "\"1Name\"", "\"A-B\"", "\"中文\"", "\"" + "a".repeat(65) + "\"")),
-                Map.entry("parentId", List.of("100", "\"0\"", "\"01\"", "\"-1\"", "\"1.0\"", "\"9223372036854775808\"")),
+                Map.entry("routeName",
+                        List.of("null", "12", "\"1Name\"", "\"A-B\"", "\"中文\"", "\"" + "a".repeat(65) + "\"")),
+                Map.entry("parentId",
+                        List.of("100", "\"0\"", "\"01\"", "\"-1\"", "\"1.0\"", "\"9223372036854775808\"")),
                 Map.entry("permissionId", List.of("10", "null", "\"01\"", "\"9223372036854775807\"")),
                 Map.entry("component", List.of("null", "\"Unknown\"", "\"https://remote.test/a.js\"", "\"alert(1)\"")),
                 Map.entry("icon", List.of("12", "\"unknown\"", "\"<svg>\"")),
@@ -2049,23 +2364,27 @@ class IdentityIntegrationTest {
                 Map.entry("status", List.of("\"1\"", "true", "2", "-1", "1.1")),
                 Map.entry("isVisible", List.of("2", "true", "\"1\"")),
                 Map.entry("keepAlive", List.of("2", "true", "\"1\"")));
-        Map<String, Object> fields = json.readValue(body, new TypeReference<>() { });
+        Map<String, Object> fields = json.readValue(body, new TypeReference<>() {
+        });
         for (var entry : invalid.entrySet()) {
             for (String value : entry.getValue()) {
                 Map<String, Object> changed = new LinkedHashMap<>(fields);
                 changed.remove(entry.getKey());
-                String replaced = json.writeValueAsString(changed).replace("}", ",\"" + entry.getKey() + "\":" + value + "}");
+                String replaced = json.writeValueAsString(changed)
+                        .replace("}", ",\"" + entry.getKey() + "\":" + value + "}");
                 assertCode(call("POST", "/admin/menus", admin, replaced), 400, "VALIDATION_ERROR");
             }
         }
-        for (String key : List.of("parentId", "menuCode", "menuName", "menuType", "routeName", "component", "path", "permissionId")) {
+        for (String key : List.of("parentId", "menuCode", "menuName", "menuType", "routeName", "component", "path",
+                "permissionId")) {
             Map<String, Object> missing = new LinkedHashMap<>(fields);
             missing.remove(key);
             assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(missing)), 400, "VALIDATION_ERROR");
         }
         for (String path : List.of("01", "0", "-1", "1.0", "9223372036854775808")) {
             for (String method : List.of("GET", "PUT", "DELETE")) {
-                assertCode(call(method, "/admin/menus/" + path, admin, "PUT".equals(method) ? menuBody("Strict", "100", "M", "10") : null), 400, "VALIDATION_ERROR");
+                assertCode(call(method, "/admin/menus/" + path, admin,
+                        "PUT".equals(method) ? menuBody("Strict", "100", "M", "10") : null), 400, "VALIDATION_ERROR");
             }
         }
         assertCode(call("GET", "/admin/menus/9223372036854775807", admin, null), 404, "NOT_FOUND");
@@ -2074,36 +2393,51 @@ class IdentityIntegrationTest {
     @Test
     void menuPathsAndTypeShapesAreValidatedBeforePersistence() throws Exception {
         String admin = adminLogin("adminroot");
-        Map<String, Object> fields = json.readValue(menuCreateBody("Path", null, "M", "10"), new TypeReference<>() { });
+        Map<String, Object> fields = json.readValue(menuCreateBody("Path", null, "M", "10"), new TypeReference<>() {
+        });
         for (String path : List.of("https://remote.test/a", "//remote.test/a", "relative", "/a/../b", "/a..b", "/a\\b",
-                "/a?b=1", "/a#b", "/a:b", "/中文", "/a b", "/a\nb", "/%2e%2e/a", "/%5c/a", "/%3f/a", "/%ff", "/" + "a".repeat(255))) {
+                "/a?b=1", "/a#b", "/a:b", "/中文", "/a b", "/a\nb", "/%2e%2e/a", "/%5c/a", "/%3f/a", "/%ff",
+                "/" + "a".repeat(255))) {
             fields.put("path", path);
             assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(fields)), 400, "VALIDATION_ERROR");
         }
         for (String type : List.of("D", "M", "B")) {
-            Map<String, Object> shape = json.readValue(menuCreateBody("Shape" + type, "B".equals(type) ? "110" : null, type, "D".equals(type) ? null : "10"), new TypeReference<>() { });
+            Map<String, Object> shape = json.readValue(
+                    menuCreateBody("Shape" + type, "B".equals(type) ? "110" : null, type,
+                            "D".equals(type) ? null : "10"), new TypeReference<>() {
+                    });
             if ("B".equals(type)) {
                 for (String field : List.of("routeName", "path", "component", "isVisible", "keepAlive")) {
                     Map<String, Object> wrong = new LinkedHashMap<>(shape);
-                    wrong.put(field, field.equals("isVisible") || field.equals("keepAlive") ? 1 : field.equals("routeName") ? "TestShapeB" : field.equals("path") ? "/test/shape" : "Layout");
-                    assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(wrong)), 400, "VALIDATION_ERROR");
+                    wrong.put(field, field.equals("isVisible") || field.equals("keepAlive") ? 1 : field.equals(
+                            "routeName") ? "TestShapeB" : field.equals("path") ? "/test/shape" : "Layout");
+                    assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(wrong)), 400,
+                            "VALIDATION_ERROR");
                 }
             } else if ("D".equals(type)) {
                 shape.put("permissionId", "10");
-                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400, "VALIDATION_ERROR");
+                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400,
+                        "VALIDATION_ERROR");
                 shape.put("permissionId", null);
                 shape.put("keepAlive", 1);
-                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400, "VALIDATION_ERROR");
+                assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(shape)), 400,
+                        "VALIDATION_ERROR");
             }
         }
         for (String type : List.of("D", "M", "B")) {
             for (String parent : List.of("9223372036854775807", "110", "1011")) {
-                if ("B".equals(type) && "110".equals(parent)) { continue; }
-                assertCode(call("POST", "/admin/menus", admin, menuCreateBody("Parent" + type, parent, type, "D".equals(type) ? null : "10")), 400, "VALIDATION_ERROR");
+                if ("B".equals(type) && "110".equals(parent)) {
+                    continue;
+                }
+                assertCode(call("POST", "/admin/menus", admin,
+                                menuCreateBody("Parent" + type, parent, type, "D".equals(type) ? null : "10")), 400,
+                        "VALIDATION_ERROR");
             }
         }
-        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("RootB", null, "B", "10")), 400, "VALIDATION_ERROR");
-        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("DirectoryB", "100", "B", "10")), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("RootB", null, "B", "10")), 400,
+                "VALIDATION_ERROR");
+        assertCode(call("POST", "/admin/menus", admin, menuCreateBody("DirectoryB", "100", "B", "10")), 400,
+                "VALIDATION_ERROR");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
         assertCode(call("POST", "/admin/menus", admin, menuCreateBody("DisabledGate", "100", "M", "10")), 201, "OK");
     }
@@ -2128,7 +2462,8 @@ class IdentityIntegrationTest {
         assertThat(branch.get("children").get(1).get("menuId").asString()).isEqualTo(first);
         assertThat(branch.get("children").get(2).get("menuId").asString()).isEqualTo(empty);
         assertThat(findMenu(branch.get("children"), button).get("children").isEmpty()).isTrue();
-        assertThat(findMenu(branch.get("children"), second).get("permissionCode").asString()).isEqualTo("blog:category:query");
+        assertThat(findMenu(branch.get("children"), second).get("permissionCode").asString()).isEqualTo(
+                "blog:category:query");
         assertThat(branch.properties()).hasSize(18);
         assertThat(findMenu(data(call("GET", "/me/menus", admin, null)), root)).isNull();
         MvcResult detail = call("GET", "/admin/menus/" + root, admin, null);
@@ -2149,13 +2484,15 @@ class IdentityIntegrationTest {
             assertCode(adminPut(path, admin, invalid, body), 400, "VALIDATION_ERROR");
             assertCode(roleDelete(path, admin, invalid), 400, "VALIDATION_ERROR");
         }
-        Map<String, Object> fields = json.readValue(body, new TypeReference<>() { });
+        Map<String, Object> fields = json.readValue(body, new TypeReference<>() {
+        });
         for (String key : fields.keySet()) {
             Map<String, Object> incomplete = new LinkedHashMap<>(fields);
             incomplete.remove(key);
             assertCode(adminPut(path, admin, revision, json.writeValueAsString(incomplete)), 400, "VALIDATION_ERROR");
         }
-        for (String extra : List.of("\"menuCode\":\"test:Other\"", "\"menuId\":\"9\"", "\"roleIds\":[]", "\"present\":[\"icon\"]",
+        for (String extra : List.of("\"menuCode\":\"test:Other\"", "\"menuId\":\"9\"", "\"roleIds\":[]",
+                "\"present\":[\"icon\"]",
                 "\"completeReplace\":true", "\"createTime\":null", "\"updateTime\":null")) {
             assertCode(adminPut(path, admin, revision, body.replace("}", "," + extra + "}")), 400, "VALIDATION_ERROR");
         }
@@ -2192,16 +2529,21 @@ class IdentityIntegrationTest {
         String button = createMenu(admin, "NestedButton", page, "B", "11");
         String revision = menuRevision(admin, root);
         for (String parent : List.of(root, directory, page, button)) {
-            assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", parent, "D", null)), 400, "VALIDATION_ERROR");
+            assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", parent, "D", null)), 400,
+                    "VALIDATION_ERROR");
         }
-        assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", null, "M", "10")), 400, "VALIDATION_ERROR");
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", directory, "D", null)), 400, "VALIDATION_ERROR");
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", "110", "B", "11")), 400, "VALIDATION_ERROR");
+        assertCode(adminPut("/admin/menus/" + root, admin, revision, menuBody("Ancestor", null, "M", "10")), 400,
+                "VALIDATION_ERROR");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
+                menuBody("NestedPage", directory, "D", null)), 400, "VALIDATION_ERROR");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
+                menuBody("NestedPage", "110", "B", "11")), 400, "VALIDATION_ERROR");
         assertThat(menuRevision(admin, root)).isEqualTo(revision);
         assertCode(roleDelete("/admin/menus/" + root, admin, revision), 409, "RESOURCE_IN_USE");
         assertCode(roleDelete("/admin/menus/" + page, admin, menuRevision(admin, page)), 409, "RESOURCE_IN_USE");
         assertCode(roleDelete("/admin/menus/" + button, admin, menuRevision(admin, button)), 200, "OK");
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("NestedPage", directory, "D", null)), 200, "OK");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
+                menuBody("NestedPage", directory, "D", null)), 200, "OK");
     }
 
     @Test
@@ -2220,37 +2562,49 @@ class IdentityIntegrationTest {
         String second = login("menu_viewer");
         String roleVersion = roleRevision(admin, role);
         String grants = data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString();
-        Map<String, Object> fields = json.readValue(menuBody("GrantedPage", root, "M", "10"), new TypeReference<>() { });
+        Map<String, Object> fields = json.readValue(menuBody("GrantedPage", root, "M", "10"), new TypeReference<>() {
+        });
         fields.put("isVisible", 0);
         fields.put("keepAlive", 1);
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)), 200, "OK");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)),
+                200, "OK");
         assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page).get("isVisible").asInt()).isZero();
         assertThat(findMenu(data(call("GET", "/me/menus", token, null)), button)).isNotNull();
         fields.put("status", 0);
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)), 200, "OK");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)),
+                200, "OK");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").toString()).contains("blog:article:query");
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("GrantedPage", root, "M", "20")), 200, "OK");
+        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").toString()).contains(
+                "blog:article:query");
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
+                menuBody("GrantedPage", root, "M", "20")), 200, "OK");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(grants);
-        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), menuBody("GrantedPage", other, "M", "10")), 200, "OK");
+        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(
+                grants);
+        assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
+                menuBody("GrantedPage", other, "M", "10")), 200, "OK");
         assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(roleRevision(admin, role)).isEqualTo(roleVersion);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=? AND menu_id=?", Integer.class, role, other)).isZero();
+        assertThat(
+                jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=? AND menu_id=?", Integer.class,
+                        role, other)).isZero();
         assertCode(adminPut("/admin/roles/" + role + "/grants", admin, roleVersion,
                 grantBody(List.of(1L, 10L, 11L), List.of(Long.parseLong(button)))), 200, "OK");
         token = login("menu_viewer");
         second = login("menu_viewer");
         assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page)).isNotNull();
         String beforeDelete = roleRevision(admin, role);
-        doThrow(new RedisConnectionFailureException("must not revoke menu sessions")).when(sessions).revokeAll(Long.parseLong(user));
+        doThrow(new RedisConnectionFailureException("must not revoke menu sessions")).when(sessions)
+                .revokeAll(Long.parseLong(user));
         MvcResult deleted = roleDelete("/admin/menus/" + button, admin, menuRevision(admin, button));
         assertCode(deleted, 200, "OK");
         assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
         assertThat(data(deleted).isNull()).isTrue();
         assertThat(roleRevision(admin, role)).isNotEqualTo(beforeDelete);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class, button)).isZero();
-        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(grants);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE menu_id=?", Integer.class,
+                button)).isZero();
+        assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(
+                grants);
         assertCode(call("GET", "/me", token, null), 200, "OK");
         assertCode(call("GET", "/me", second, null), 200, "OK");
         assertCode(roleDelete("/admin/menus/" + button, admin, "\"" + "0".repeat(64) + "\""), 404, "NOT_FOUND");
@@ -2268,15 +2622,20 @@ class IdentityIntegrationTest {
                     () -> adminPut("/admin/menus/" + left, admin, firstRevision, menuBody("Left", right, "D", null)),
                     () -> adminPut("/admin/menus/" + right, admin, secondRevision, menuBody("Right", left, "D", null)));
             var results = executor.invokeAll(moves);
-            assertThat(List.of(results.get(0).get().getResponse().getStatus(), results.get(1).get().getResponse().getStatus()))
+            assertThat(List.of(results.get(0).get().getResponse().getStatus(),
+                    results.get(1).get().getResponse().getStatus()))
                     .containsExactlyInAnyOrder(200, 400);
             String revision = menuRevision(admin, left);
-            String parent = data(call("GET", "/admin/menus/" + left, admin, null)).get("parentId").isNull() ? null : right;
+            String parent = data(call("GET", "/admin/menus/" + left, admin, null)).get("parentId")
+                    .isNull() ? null : right;
             List<Callable<MvcResult>> writes = List.of(
-                    () -> adminPut("/admin/menus/" + left, admin, revision, menuBody("Left", parent, "D", null).replace("菜单", "甲")),
-                    () -> adminPut("/admin/menus/" + left, admin, revision, menuBody("Left", parent, "D", null).replace("菜单", "乙")));
+                    () -> adminPut("/admin/menus/" + left, admin, revision,
+                            menuBody("Left", parent, "D", null).replace("菜单", "甲")),
+                    () -> adminPut("/admin/menus/" + left, admin, revision,
+                            menuBody("Left", parent, "D", null).replace("菜单", "乙")));
             var changed = executor.invokeAll(writes);
-            assertThat(List.of(changed.get(0).get().getResponse().getStatus(), changed.get(1).get().getResponse().getStatus()))
+            assertThat(List.of(changed.get(0).get().getResponse().getStatus(),
+                    changed.get(1).get().getResponse().getStatus()))
                     .containsExactlyInAnyOrder(200, 412);
         }
     }
@@ -2287,8 +2646,10 @@ class IdentityIntegrationTest {
         long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
         String id = createMenu(admin, "Guarded", null, "D", null);
         String revision = menuRevision(admin, id);
-        doThrow(new RedisConnectionFailureException("injected active check failure")).when(sessions).requireActive(admin, actor);
-        assertCode(adminPut("/admin/menus/" + id, admin, revision, menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")), 503, "SERVICE_UNAVAILABLE");
+        doThrow(new RedisConnectionFailureException("injected active check failure")).when(sessions)
+                .requireActive(admin, actor);
+        assertCode(adminPut("/admin/menus/" + id, admin, revision,
+                menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")), 503, "SERVICE_UNAVAILABLE");
         reset(sessions);
         assertThat(menuRevision(admin, id)).isEqualTo(revision);
         try (var executor = Executors.newSingleThreadExecutor()) {
@@ -2301,9 +2662,11 @@ class IdentityIntegrationTest {
                         .update(eq(Long.parseLong(id)), any(MenuUpdateDTO.class), eq(revision));
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
-                    var response = executor.submit(() -> adminPut("/admin/menus/" + id, admin, revision, menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")));
-                    try { assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue(); }
-                    catch (InterruptedException exception) {
+                    var response = executor.submit(() -> adminPut("/admin/menus/" + id, admin, revision,
+                            menuBody("Guarded", null, "D", null).replace("菜单", "不应保存")));
+                    try {
+                        assertThat(entered.await(10, TimeUnit.SECONDS)).isTrue();
+                    } catch (InterruptedException exception) {
                         Thread.currentThread().interrupt();
                         throw new IllegalStateException(exception);
                     }
@@ -2311,13 +2674,17 @@ class IdentityIntegrationTest {
                         jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", actor);
                     } else {
                         jdbc.update("DELETE FROM sys_user_role WHERE user_id=? AND role_id=1", actor);
-                        if ("token".equals(change)) { sessions.revokeAll(actor); }
+                        if ("token".equals(change)) {
+                            sessions.revokeAll(actor);
+                        }
                     }
                     return response;
                 });
                 assertCode(pending.get(10, TimeUnit.SECONDS), "token".equals(change) ? 401 : 403,
-                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
-                assertThat(jdbc.queryForObject("SELECT menu_name FROM sys_menu WHERE menu_id=?", String.class, id)).isEqualTo("菜单");
+                        "token".equals(change) ? "UNAUTHENTICATED" : "disabled".equals(
+                                change) ? "ACCOUNT_DISABLED" : "FORBIDDEN");
+                assertThat(jdbc.queryForObject("SELECT menu_name FROM sys_menu WHERE menu_id=?", String.class,
+                        id)).isEqualTo("菜单");
                 if ("disabled".equals(change)) {
                     jdbc.update("UPDATE sys_user SET status=1 WHERE user_id=?", actor);
                 } else {
@@ -2348,7 +2715,8 @@ class IdentityIntegrationTest {
         return menuBody(key, parent, type, permission).replace("{", "{\"menuCode\":\"test:" + key + "\",");
     }
 
-    private String createMenu(String token, String key, String parent, String type, String permission) throws Exception {
+    private String createMenu(String token, String key, String parent, String type,
+            String permission) throws Exception {
         MvcResult result = call("POST", "/admin/menus", token, menuCreateBody(key, parent, type, permission));
         assertCode(result, 201, "OK");
         return data(result).get("menuId").asString();
@@ -2362,9 +2730,13 @@ class IdentityIntegrationTest {
 
     private JsonNode findMenu(JsonNode nodes, String id) {
         for (JsonNode node : nodes) {
-            if (node.get("menuId").asString().equals(id)) { return node; }
+            if (node.get("menuId").asString().equals(id)) {
+                return node;
+            }
             JsonNode found = findMenu(node.get("children"), id);
-            if (found != null) { return found; }
+            if (found != null) {
+                return found;
+            }
         }
         return null;
     }
@@ -2444,7 +2816,8 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult register(String username) throws Exception {
-        return call("POST", "/auth/register", null, "{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\"}");
+        return call("POST", "/auth/register", null,
+                "{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\"}");
     }
 
     private String login(String username) throws Exception {
@@ -2474,7 +2847,8 @@ class IdentityIntegrationTest {
     }
 
     private MockHttpServletRequestBuilder req(String method, String path) {
-        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1").servletPath(path.split("\\?", 2)[0]);
+        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1")
+                .servletPath(path.split("\\?", 2)[0]);
     }
 
     private JsonNode data(MvcResult result) throws Exception {
@@ -2482,15 +2856,18 @@ class IdentityIntegrationTest {
     }
 
     private void assertCode(MvcResult result, int status, String code) throws Exception {
-        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).isEqualTo(status);
-        assertThat(json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).get("code").asString()).isEqualTo(code);
+        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .isEqualTo(status);
+        assertThat(json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).get("code")
+                .asString()).isEqualTo(code);
     }
 
     @Test
     void identityModelsRejectUndeclaredRepeatedAndBlankQueryInputs() throws Exception {
         String token = adminLogin("model_queries");
         String id = data(call("GET", "/me", token, null)).get("userId").asString();
-        for (String path : List.of("/auth/oauth/providers", "/me", "/me/capabilities", "/me/menus", "/me/oauth-bindings",
+        for (String path : List.of("/auth/oauth/providers", "/me", "/me/capabilities", "/me/menus",
+                "/me/oauth-bindings",
                 "/admin/users", "/admin/users/" + id, "/admin/roles", "/admin/roles/1",
                 "/admin/permissions", "/admin/permissions/1", "/admin/menus", "/admin/menus/100")) {
             assertCode(call("GET", path + "?userId=1", token, null), 400, "VALIDATION_ERROR");
@@ -2511,9 +2888,12 @@ class IdentityIntegrationTest {
     @Test
     void rejectedIdentityInputsDoNotCreateUsersLogoutOrUnbind() throws Exception {
         String token = adminLogin("model_writes");
-        assertCode(call("POST", "/auth/register?status=0", null, createUserBody("must_not_exist")), 400, "VALIDATION_ERROR");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='must_not_exist'", Integer.class)).isZero();
-        assertCode(call("POST", "/auth/login?userId=1", null, loginBody("model_writes", PASSWORD)), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/auth/register?status=0", null, createUserBody("must_not_exist")), 400,
+                "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='must_not_exist'",
+                Integer.class)).isZero();
+        assertCode(call("POST", "/auth/login?userId=1", null, loginBody("model_writes", PASSWORD)), 400,
+                "VALIDATION_ERROR");
         assertCode(call("POST", "/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
         assertCode(call("POST", "/auth/logout?userId=1", token, null), 400, "VALIDATION_ERROR");
         assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, "{}"), 400, "VALIDATION_ERROR");
@@ -2527,8 +2907,9 @@ class IdentityIntegrationTest {
         OAuthFlow flow = start("LOGIN", null, null);
         for (String extra : List.of("userId", "state", "code")) {
             assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
-                    .param("code", "model_identity").param(extra, "unexpected")
-                    .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400, "VALIDATION_ERROR");
+                            .param("code", "model_identity").param(extra, "unexpected")
+                            .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400,
+                    "VALIDATION_ERROR");
             assertThat(store.containsKey(flow.state())).isTrue();
         }
         String ticket = callbackTicket(flow, "model_identity");
@@ -2540,29 +2921,40 @@ class IdentityIntegrationTest {
         String token = adminLogin("model_target_lock");
         long actor = Long.parseLong(data(call("GET", "/me", token, null)).get("userId").asString());
         for (String kind : List.of("roles", "permissions")) {
-            String id = kind.equals("roles") ? createRole(token, "model_lock") : createPermission(token, "test:model:lock");
+            String id = kind.equals("roles") ? createRole(token, "model_lock") : createPermission(token,
+                    "test:model:lock");
             String path = "/admin/" + kind + "/" + id;
             String version = call("GET", path, token, null).getResponse().getHeader("X-Revision");
             String table = kind.equals("roles") ? "sys_role" : "sys_permission";
             String key = kind.equals("roles") ? "role_id" : "permission_id";
-            for (String operation : kind.equals("roles") ? List.of("update", "delete", "grant", "grantPermission") : List.of("update", "delete")) {
+            for (String operation : kind.equals("roles") ? List.of("update", "delete", "grant",
+                    "grantPermission") : List.of("update", "delete")) {
                 String active = login("model_target_lock");
                 boolean grant = operation.startsWith("grant");
-                String body = grant ? grantBody(operation.equals("grantPermission") ? List.of(1L) : List.of(), List.of())
-                        : kind.equals("roles") ? roleBody("不能保存", "SELF", 1) : permissionBody("不能保存", "test", 1);
+                String body = grant ? grantBody(operation.equals("grantPermission") ? List.of(1L) : List.of(),
+                        List.of())
+                        : kind.equals("roles") ? roleBody("不能保存", "SELF", 1) : permissionBody("不能保存", "test",
+                        1);
                 String lockedTable = operation.equals("grantPermission") ? "sys_permission" : table;
                 String lockedKey = operation.equals("grantPermission") ? "permission_id" : key;
                 String lockedId = operation.equals("grantPermission") ? "1" : id;
                 try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
                     var pending = new TransactionTemplate(transactionManager).execute(state -> {
-                        jdbc.queryForList("SELECT " + lockedKey + " FROM " + lockedTable + " WHERE " + lockedKey + "=? FOR UPDATE", lockedId);
+                        jdbc.queryForList(
+                                "SELECT " + lockedKey + " FROM " + lockedTable + " WHERE " + lockedKey + "=? FOR " +
+                                 "UPDATE",
+                                lockedId);
                         var writer = executor.submit(() -> operation.equals("delete")
                                 ? roleDelete(path, active, version)
                                 : adminPut(path + (grant ? "/grants" : ""), active, version, body));
                         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
                         boolean waiting = false;
                         while (System.nanoTime() < deadline) {
-                            if (jdbc.queryForObject("SELECT COUNT(*) FROM performance_schema.data_lock_waits w JOIN performance_schema.data_locks l ON l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID WHERE l.OBJECT_NAME=?", Integer.class, lockedTable) > 0) {
+                            if (jdbc.queryForObject(
+                                    "SELECT COUNT(*) FROM performance_schema.data_lock_waits w JOIN " +
+                                     "performance_schema.data_locks l ON l.ENGINE_LOCK_ID=w.REQUESTING_ENGINE_LOCK_ID" +
+                                      " WHERE l.OBJECT_NAME=?",
+                                    Integer.class, lockedTable) > 0) {
                                 waiting = true;
                                 break;
                             }
@@ -2584,7 +2976,9 @@ class IdentityIntegrationTest {
             }
         }
         awaitAudits();
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE result=0 AND error_message='UNAUTHENTICATED'", Integer.class)).isEqualTo(6);
+        assertThat(jdbc.queryForObject(
+                "SELECT COUNT(*) FROM sys_operation_log WHERE result=0 AND error_message='UNAUTHENTICATED'",
+                Integer.class)).isEqualTo(6);
     }
 
     private OAuthFlow start(String operation, String token, String browser) throws Exception {
@@ -2601,13 +2995,15 @@ class IdentityIntegrationTest {
         String cookie = result.getResponse().getHeader("Set-Cookie");
         assertThat(cookie).contains("Secure", "HttpOnly", "SameSite=Lax", "Path=/", "Max-Age=600");
         String url = data(result).get("authorizationUrl").asString();
-        String state = URLDecoder.decode(url.substring(url.indexOf("state=") + 6).split("&")[0], StandardCharsets.UTF_8);
+        String state = URLDecoder.decode(url.substring(url.indexOf("state=") + 6).split("&")[0],
+                StandardCharsets.UTF_8);
         return new OAuthFlow(state, cookie.substring(cookie.indexOf('=') + 1, cookie.indexOf(';')));
     }
 
     private MvcResult callback(OAuthFlow flow, String identity) throws Exception {
-        return mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state()).param("code", identity)
-                .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn();
+        return mvc.perform(
+                req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state()).param("code", identity)
+                        .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn();
     }
 
     private String callbackTicket(OAuthFlow flow, String identity) throws Exception {
@@ -2628,25 +3024,48 @@ class IdentityIntegrationTest {
         return mvc.perform(request).andReturn();
     }
 
-    record OAuthFlow(String state, String browser) { }
-    interface ArticleTestMapper extends BaseMapper<BlogArticle> { }
-    interface FileTestMapper extends BaseMapper<BlogFile> { }
+    record OAuthFlow(String state, String browser) {
 
-    /** 只有平台网络返回身份用替身，state 检查和平台 URL 仍走实际 JustAuth。 */
+    }
+
+    interface ArticleTestMapper extends BaseMapper<BlogArticle> {
+
+    }
+
+    interface FileTestMapper extends BaseMapper<BlogFile> {
+
+    }
+
+    /**
+     * 只有平台网络返回身份用替身，state 检查和平台 URL 仍走实际 JustAuth。
+     */
     @TestConfiguration
     static class Boundaries {
+
         @Bean
         @Primary
         OAuthProviderClient platform(JustAuthClient actual, RedisOAuthStore cache) {
             return new OAuthProviderClient() {
                 @Override
-                public List<Provider> providers() { return actual.providers(); }
+                public List<Provider> providers() {
+                    return actual.providers();
+                }
+
                 @Override
-                public Set<String> enabledSources() { return actual.enabledSources(); }
+                public Set<String> enabledSources() {
+                    return actual.enabledSources();
+                }
+
                 @Override
-                public void requireEnabled(String source) { actual.requireEnabled(source); }
+                public void requireEnabled(String source) {
+                    actual.requireEnabled(source);
+                }
+
                 @Override
-                public String authorize(String source, String state) { return actual.authorize(source, state); }
+                public String authorize(String source, String state) {
+                    return actual.authorize(source, state);
+                }
+
                 @Override
                 public Identity verify(String source, String state, String code) {
                     AuthChecker.checkState(state, AuthDefaultSource.valueOf(source), cache);
@@ -2656,27 +3075,46 @@ class IdentityIntegrationTest {
         }
 
         @Bean
-        TestAdminController testAdminController() { return new TestAdminController(); }
+        TestAdminController testAdminController() {
+            return new TestAdminController();
+        }
     }
 
-    /** 这个入口只放测试 classpath，用来检查真实 Sa-Token 过滤和注解能否一起生效。 */
+    /**
+     * 这个入口只放测试 classpath，用来检查真实 Sa-Token 过滤和注解能否一起生效。
+     */
     @RestController
     static class TestAdminController {
+
         @GetMapping("/admin/test/rate-user")
         @SaCheckPermission("sys:user:query")
         @RateLimit(value = "test.user", limit = 2, dimension = RateLimit.Dimension.USER)
-        public Result<Void> rateUser() { return Result.ok(null); }
+        public Result<Void> rateUser() {
+            return Result.ok(null);
+        }
+
         @GetMapping("/admin/test/rate-token")
         @SaCheckPermission("sys:user:query")
         @RateLimit(value = "test.token", limit = 2, dimension = RateLimit.Dimension.TOKEN)
-        public Result<Void> rateToken() { return Result.ok(null); }
+        public Result<Void> rateToken() {
+            return Result.ok(null);
+        }
+
         @GetMapping("/admin/test/query")
         @SaCheckPermission("blog:article:query")
-        Result<Void> query() { return Result.ok(null); }
+        Result<Void> query() {
+            return Result.ok(null);
+        }
+
         @GetMapping("/admin/test/users")
         @SaCheckPermission("sys:user:query")
-        Result<Void> users() { return Result.ok(null); }
+        Result<Void> users() {
+            return Result.ok(null);
+        }
+
         @GetMapping("/admin/test/no-permission")
-        Result<Void> noPermission() { return Result.ok(null); }
+        Result<Void> noPermission() {
+            return Result.ok(null);
+        }
     }
 }

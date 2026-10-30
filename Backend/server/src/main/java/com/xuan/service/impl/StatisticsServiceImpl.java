@@ -1,7 +1,5 @@
 package com.xuan.service.impl;
 
-import java.time.DateTimeException;
-
 import com.xuan.dto.StatisticsQueryDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.StatisticsMapper;
@@ -9,18 +7,20 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IStatisticsService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
-import com.xuan.vo.PublicStatisticsVO;
 import com.xuan.vo.AdminStatisticsVO;
+import com.xuan.vo.ArticleViewMetricVO;
+import com.xuan.vo.ProvinceMetricVO;
+import com.xuan.vo.PublicStatisticsVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
-import com.xuan.vo.ProvinceMetricVO;
-import com.xuan.vo.ArticleViewMetricVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigInteger;
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -30,7 +30,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 报表在一致快照读取，UTC自然日含两端，明细SQL仍用半开时间区间。 */
+/**
+ * 报表在一致快照读取，UTC自然日含两端，明细SQL仍用半开时间区间。
+ */
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements IStatisticsService {
@@ -103,6 +105,8 @@ public class StatisticsServiceImpl implements IStatisticsService {
     }
     /** SQL的PUBLIC截止时间同样由UTC时钟给出。 */
     private LocalDateTime now() { return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC); }
-    /** 只在本次报表调用内部传递时间条件。 */
+    /**
+     * 只在本次报表调用内部传递时间条件。
+     */
     private record Range(LocalDate begin, LocalDate end, LocalDateTime lower, LocalDateTime upper) { }
 }

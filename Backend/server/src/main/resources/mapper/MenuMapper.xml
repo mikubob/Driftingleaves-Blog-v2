@@ -8,6 +8,7 @@
         LEFT JOIN sys_permission p ON p.permission_id = m.permission_id
         ORDER BY m.sort_order ASC, m.menu_id ASC
     </select>
+
     <!-- 关联保持不变，按登录、授权写入的同样顺序锁住分支关联用户。 -->
     <select id="userIds" resultType="long">
         SELECT DISTINCT ur.user_id FROM sys_user_role ur
@@ -16,17 +17,19 @@
         <foreach collection="menuIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY ur.user_id
     </select>
+
     <!-- 先锁结构检查点、用户，再锁节点，按最新提交的数据查版本和结构。 -->
     <select id="lockById" resultType="com.xuan.entity.SysMenu">
         SELECT * FROM sys_menu WHERE menu_id = #{menuId} FOR UPDATE
     </select>
+
     <!-- 这里不能用忽略 NULL 的通用更新，切换类型时可能需要清空路由、组件和访问权限。 -->
     <update id="updateMenu">
         UPDATE sys_menu SET parent_id = #{menu.parentId}, menu_name = #{menu.menuName},
-            menu_type = #{menu.menuType}, route_name = #{menu.routeName}, path = #{menu.path},
-            component = #{menu.component}, icon = #{menu.icon}, permission_id = #{menu.permissionId},
-            sort_order = #{menu.sortOrder}, is_visible = #{menu.isVisible}, keep_alive = #{menu.keepAlive},
-            status = #{menu.status}
+        menu_type = #{menu.menuType}, route_name = #{menu.routeName}, path = #{menu.path},
+        component = #{menu.component}, icon = #{menu.icon}, permission_id = #{menu.permissionId},
+        sort_order = #{menu.sortOrder}, is_visible = #{menu.isVisible}, keep_alive = #{menu.keepAlive},
+        status = #{menu.status}
         WHERE menu_id = #{menu.menuId}
     </update>
 </mapper>

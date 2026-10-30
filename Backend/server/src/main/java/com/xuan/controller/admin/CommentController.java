@@ -23,11 +23,14 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 后台入口之外，查询、审核、管理删除还要分别检查自己的权限和文章范围。 */
+/**
+ * 后台入口之外，查询、审核、管理删除还要分别检查自己的权限和文章范围。
+ */
 @RestController
 @RequestMapping("/admin/comments")
 @RequiredArgsConstructor
 public class CommentController {
+
     private final ICommentService comments;
 
     /** 列表不带逐条版本，编辑前先取详情。 */
@@ -64,6 +67,9 @@ public class CommentController {
         return Result.ok(null);
     }
 
+    /**
+     * 把业务版本写入 X-Revision，响应体保留后台评论资料。
+     */
     private ResponseEntity<Result<CommentAdminVO>> profile(CommentProfileVO value) {
         return ResponseEntity.ok().header("X-Revision", value.revision()).body(Result.ok(value.comment()));
     }

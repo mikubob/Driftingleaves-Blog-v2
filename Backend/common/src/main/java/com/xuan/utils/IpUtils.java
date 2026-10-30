@@ -1,16 +1,22 @@
 package com.xuan.utils;
 
 import jakarta.servlet.http.HttpServletRequest;
+
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
 
-/** 只解析 IP 地址，从右往左跳过明确配置的可信代理，不查主机名。 */
+/**
+ * 只解析 IP 地址，从右往左跳过明确配置的可信代理，不查主机名。
+ */
 public final class IpUtils {
-    private IpUtils() { }
+
+    private IpUtils() {
+    }
 
     /**
      * 取得规范的客户端 IP，不查 DNS；转发链有问题就用直连地址。
+     *
      * @param request 当前请求，容器的自动转发头处理必须关闭
      * @param trustedProxies 受信代理的精确 IPv4/IPv6 地址，不接受网段和主机名
      * @return 客户端地址；容器未提供合法地址时返回 null
@@ -38,12 +44,16 @@ public final class IpUtils {
     /** 访问统计只保留IPv4 /24或IPv6 /48网段，不把完整客户端IP落库。 */
     public static String anonymize(String value) {
         String ip = normalize(value);
-        if (ip == null) { return null; }
+        if (ip == null) {
+            return null;
+        }
         try {
             byte[] bytes = InetAddress.getByName(ip).getAddress();
             java.util.Arrays.fill(bytes, bytes.length == 4 ? 3 : 6, bytes.length, (byte) 0);
             return InetAddress.getByAddress(bytes).getHostAddress();
-        } catch (UnknownHostException error) { return null; }
+        } catch (UnknownHostException error) {
+            return null;
+        }
     }
 
     /** 先把地址整理成统一写法再比较，避免同一个 IPv6 地址写法不同而漏掉检查。 */

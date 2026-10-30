@@ -8,14 +8,17 @@
             <if test="publicOnly">AND status = 1</if>
             <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
             <if test="!publicOnly and query.keyword != null">AND (INSTR(name, #{query.keyword}) &gt; 0)</if>
-            
+
         </where>
         ORDER BY sort_order ASC, skill_id ASC
     </select>
+
     <select id="lockById" resultType="com.xuan.entity.CvSkill">
         SELECT * FROM cv_skill WHERE skill_id = #{id} FOR UPDATE
     </select>
+
     <update id="replace">
-        UPDATE cv_skill SET name=#{row.name}, description=#{row.description}, icon=#{row.icon}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE skill_id = #{row.skillId}
+        UPDATE cv_skill SET name=#{row.name}, description=#{row.description}, icon=#{row.icon},
+        sort_order=#{row.sortOrder}, status=#{row.status} WHERE skill_id = #{row.skillId}
     </update>
 </mapper>

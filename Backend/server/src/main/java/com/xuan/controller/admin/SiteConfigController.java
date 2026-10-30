@@ -16,9 +16,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.util.List;
 
-/** 配置列表、详情、完整替换都走后台入口及自己的业务权限，不开放建键和删键。 */
+/**
+ * 配置列表、详情、完整替换都走后台入口及自己的业务权限，不开放建键和删键。
+ */
 @RestController
 @RequestMapping("/admin/configs")
 @RequiredArgsConstructor

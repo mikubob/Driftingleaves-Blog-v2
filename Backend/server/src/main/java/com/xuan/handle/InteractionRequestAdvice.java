@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.servlet.HandlerMapping;
+
 import java.util.Set;
 
 /** 第9章只接收文档声明的查询参数，避免 userId 等身份字段被 MVC 静默忽略。 */
@@ -12,6 +13,7 @@ import java.util.Set;
         com.xuan.controller.me.CommentController.class, com.xuan.controller.admin.CommentController.class,
         com.xuan.controller.blog.ArticleLikeController.class})
 public class InteractionRequestAdvice {
+
     /** 只在绑定前查一次参数名和重复值；值的类型、长度由各入口原有校验负责。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {

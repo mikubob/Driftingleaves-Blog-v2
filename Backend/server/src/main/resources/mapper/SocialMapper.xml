@@ -8,15 +8,21 @@
             <if test="publicOnly">AND status = 1</if>
             <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
             <if test="!publicOnly and query.keyword != null">AND (INSTR(name, #{query.keyword}) &gt; 0)</if>
-            
+
         </where>
         ORDER BY sort_order ASC, social_id ASC
     </select>
+
     <select id="lockById" resultType="com.xuan.entity.HomeSocialLink">
         SELECT * FROM home_social_link WHERE social_id = #{id} FOR UPDATE
     </select>
+
     <update id="replace">
-        UPDATE home_social_link SET name=#{row.name}, icon=#{row.icon}, url=#{row.url}, sort_order=#{row.sortOrder}, status=#{row.status} WHERE social_id = #{row.socialId}
+        UPDATE home_social_link SET name=#{row.name}, icon=#{row.icon}, url=#{row.url}, sort_order=#{row.sortOrder},
+        status=#{row.status} WHERE social_id = #{row.socialId}
     </update>
-    <select id="publicItems" resultType="com.xuan.entity.HomeSocialLink">SELECT * FROM home_social_link WHERE status=1 ORDER BY sort_order, social_id</select>
+
+    <select id="publicItems" resultType="com.xuan.entity.HomeSocialLink">SELECT * FROM home_social_link WHERE status=1
+        ORDER BY sort_order, social_id
+    </select>
 </mapper>

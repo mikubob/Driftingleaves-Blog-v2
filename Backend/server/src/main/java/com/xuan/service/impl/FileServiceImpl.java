@@ -27,9 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
@@ -40,11 +38,17 @@ import java.time.ZoneOffset;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 
-/** 文件和文章共用附件解析与存储，所有写入先锁操作者，文件锁始终早于文章锁。 */
+/**
+ * 文件和文章共用附件解析与存储，所有写入先锁操作者，文件锁始终早于文章锁。
+ */
 @Service
 @RequiredArgsConstructor
 public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implements IFileService {
+
     private static final int MAX_BYTES = 10 * 1024 * 1024;
     private final FileMapper files;
     private final ArticleMapper articles;
@@ -92,6 +96,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         Path temporary = resources.temporary();
         BlogFile row = new BlogFile();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public void afterCompletion(int status) {
                 resources.cleanup(temporary, status == STATUS_COMMITTED ? null : row);
@@ -146,7 +153,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 if (article.getMarkdownContent() == null) {
                     throw unavailable();
                 }
-                if (resources.inspect(article.getArticleId(), article.getMarkdownContent(), article.getCoverUrl()).fileIds().contains(id)) {
+                if (resources.inspect(article.getArticleId(), article.getMarkdownContent(), article.getCoverUrl())
+                        .fileIds().contains(id)) {
                     throw new BusinessException(409, "RESOURCE_IN_USE", "文件仍被文章引用");
                 }
                 after = article.getArticleId();
@@ -156,6 +164,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         requireFile(articles.scopedFile(id, scope));
         resources.delete(row);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            /**
+             * {@inheritDoc}
+             */
             @Override
             public void afterCompletion(int status) {
                 if (status != STATUS_COMMITTED) {
@@ -188,7 +199,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         if (body == null) {
             throw unavailable();
         }
-        if (!resources.inspect(articleId, body.getMarkdownContent(), article.getCoverUrl()).fileIds().contains(fileId)) {
+        if (!resources.inspect(articleId, body.getMarkdownContent(), article.getCoverUrl()).fileIds()
+                .contains(fileId)) {
             throw missing();
         }
         return content(file);
@@ -213,7 +225,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 if (width < 1 || height < 1 || width > 10000 || height > 10000 || (long) width * height > 25000000) {
                     throw invalid();
                 }
-                reader.addIIOReadWarningListener((source, warning) -> { throw invalid(); });
+                reader.addIIOReadWarningListener((source, warning) -> {
+                    throw invalid();
+                });
                 if (reader.read(0) == null) {
                     throw invalid();
                 }
@@ -244,7 +258,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     /** 元数据只取白名单字段，不把实体直接交给 HTTP 序列化。 */
     private FileVO view(BlogFile row) {
         return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), row.getMimeType(),
-                row.getSizeBytes(), row.getStorageType(), row.getCreateTime(), "/api/v1/admin/files/" + row.getFileId() + "/content");
+                row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
+                "/api/v1/admin/files/" + row.getFileId() + "/content");
     }
 
     /** 先完成鉴权和范围过滤，再给缺失或越界统一 404。 */
@@ -261,9 +276,17 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     }
 
     /** 图片校验失败不回显文件内容、名称或解析器异常。 */
-    private BusinessException invalid() { return new BusinessException(400, "VALIDATION_ERROR", "文件名称、类型或图片结构不符合要求"); }
+    private BusinessException invalid() {
+        return new BusinessException(400, "VALIDATION_ERROR", "文件名称、类型或图片结构不符合要求");
+    }
+
     /** 私密资源和不存在资源共用错误，避免透露其状态。 */
-    private BusinessException missing() { return new BusinessException(404, "NOT_FOUND", "文件或文章不存在"); }
+    private BusinessException missing() {
+        return new BusinessException(404, "NOT_FOUND", "文件或文章不存在");
+    }
+
     /** 存储故障让事务失败，不能返回空图片成功。 */
-    private BusinessException unavailable() { return new BusinessException(503, "SERVICE_UNAVAILABLE", "文件存储暂不可用"); }
+    private BusinessException unavailable() {
+        return new BusinessException(503, "SERVICE_UNAVAILABLE", "文件存储暂不可用");
+    }
 }

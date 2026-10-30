@@ -8,17 +8,22 @@ import com.xuan.properties.AliOssProperties;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.env.YamlPropertySourceLoader;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 实际检查配置、组件加载和关闭，不向 OSS 发网络请求。 */
+/**
+ * 实际检查配置、组件加载和关闭，不向 OSS 发网络请求。
+ */
 class InfrastructureConfigTest {
+
     @Test
     void virtualExecutorRunsRealVirtualThreadsAndClosesWithContainer() throws Exception {
         ExecutorService executor;
@@ -27,7 +32,8 @@ class InfrastructureConfigTest {
             assertThat(executor.submit(() -> Thread.currentThread().isVirtual()).get()).isTrue();
         }
         assertThat(executor.isTerminated()).isTrue();
-        assertThatThrownBy(() -> executor.execute(() -> { })).isInstanceOf(RejectedExecutionException.class);
+        assertThatThrownBy(() -> executor.execute(() -> {
+        })).isInstanceOf(RejectedExecutionException.class);
     }
 
     @Test
@@ -49,13 +55,15 @@ class InfrastructureConfigTest {
     /** 加载实际application配置验证默认启用，SDK使用虚构凭据装配，不请求云端。 */
     @Test
     void applicationDefaultsToOssAndRejectsMissingCredentials() throws Exception {
-        var application = new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml")).getFirst();
+        var application = new YamlPropertySourceLoader().load("application", new ClassPathResource("application.yml"))
+                .getFirst();
         var runner = new ApplicationContextRunner().withUserConfiguration(PropertiesConfig.class, OssConfig.class)
                 .withInitializer(context -> context.getEnvironment().getPropertySources().addLast(application))
                 .withPropertyValues("OSS_ACCESS_KEY_ID=", "OSS_ACCESS_KEY_SECRET=");
         runner.run(context -> assertThat(context).hasFailed());
         runner.withPropertyValues("OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com", "OSS_REGION=cn-hangzhou",
-                "OSS_BUCKET=isolated-test-bucket", "OSS_ACCESS_KEY_ID=boundary-id", "OSS_ACCESS_KEY_SECRET=boundary-secret")
+                        "OSS_BUCKET=isolated-test-bucket", "OSS_ACCESS_KEY_ID=boundary-id",
+                        "OSS_ACCESS_KEY_SECRET=boundary-secret")
                 .run(context -> {
                     assertThat(context).hasNotFailed().hasSingleBean(OSS.class).hasSingleBean(AliOssClient.class);
                     assertThat(context.getEnvironment().getProperty("app.oss.enabled", Boolean.class)).isTrue();
@@ -64,5 +72,7 @@ class InfrastructureConfigTest {
 
     @Configuration(proxyBeanMethods = false)
     @EnableConfigurationProperties(AliOssProperties.class)
-    static class PropertiesConfig { }
+    static class PropertiesConfig {
+
+    }
 }

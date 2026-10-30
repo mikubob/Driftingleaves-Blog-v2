@@ -4,13 +4,17 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 删除评论时清空原内容、改成占位文案并设 status=3，回复链要保留。 */
+import java.time.LocalDateTime;
+
+/**
+ * 删除评论时清空原内容、改成占位文案并设 status=3，回复链要保留。
+ */
 @Data
 @TableName("blog_comment")
 public class BlogComment {
+
     /** 评论ID。 */
     @TableId(value = "comment_id", type = IdType.AUTO)
     private Long commentId;

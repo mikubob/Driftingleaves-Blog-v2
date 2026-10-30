@@ -1,8 +1,8 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
-import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.LinkQueryDTO;
+import com.xuan.dto.LinkWriteDTO;
 import com.xuan.entity.BlogFriendLink;
 import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
@@ -24,13 +24,17 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
 import java.net.URI;
 
-/** 后台友链接口，先过后台入口和业务权限检查，再交给业务事务处理。 */
+/**
+ * 后台友链接口，先过后台入口和业务权限检查，再交给业务事务处理。
+ */
 @RestController
 @RequestMapping("/admin/links")
 @RequiredArgsConstructor
 public class FriendLinkController {
+
     private final IFriendLinkService links;
 
     /** 获取友链分页，列表不提供每条记录的版本，编辑前要先取详情。 */

@@ -22,13 +22,17 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
-/** 后台文件元数据、上传和原图入口，图片通过 Bearer fetch 后再显示临时 object URL。 */
+/**
+ * 后台文件元数据、上传和原图入口，图片通过 Bearer fetch 后再显示临时 object URL。
+ */
 @RestController
 @RequiredArgsConstructor
 public class FileController {
+
     private final IFileService files;
 
     /** 元数据分页不附每条业务版本，上传者筛选不能扩大当前 query 范围。 */
@@ -81,7 +85,8 @@ public class FileController {
         return ResponseEntity.ok().contentType(MediaType.parseMediaType(value.mimeType()))
                 .contentLength(value.bytes().length).header("Cache-Control", "no-store")
                 .header("X-Content-Type-Options", "nosniff")
-                .header("Content-Disposition", ContentDisposition.inline().filename(value.name(), StandardCharsets.UTF_8).build().toString())
+                .header("Content-Disposition",
+                        ContentDisposition.inline().filename(value.name(), StandardCharsets.UTF_8).build().toString())
                 .body(value.bytes());
     }
 }

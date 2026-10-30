@@ -13,13 +13,17 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-/** 点赞只写 MySQL 明细，文章锁让它与发布、下架、回收互斥，不另存缓存计数。 */
+/**
+ * 点赞只写 MySQL 明细，文章锁让它与发布、下架、回收互斥，不另存缓存计数。
+ */
 @Service
 @RequiredArgsConstructor
 public class ArticleLikeServiceImpl implements IArticleLikeService {
+
     private final ArticleLikeMapper likes;
     private final ArticleMapper articles;
     private final UserMapper users;
@@ -56,6 +60,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return likes.state(article, actor);
     }
 
+    /**
+     * 先锁用户再锁文章，等待结束后重新确认点赞权限与文章公开状态。
+     */
     private long lockArticle(long article) {
         long actor = requireCurrent(true);
         users.lockById(actor);
@@ -66,6 +73,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return actor;
     }
 
+    /**
+     * 检查原 Token 与启用账号，写操作还要有点赞权限。
+     */
     private long requireCurrent(boolean write) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -75,6 +85,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return actor;
     }
 
+    /**
+     * 只允许对公开文章读取或修改点赞，其他状态统一返回 404。
+     */
     private void requirePublic(long article) {
         if (articles.publicById(article, LocalDateTime.now(ZoneOffset.UTC)) == null) {
             throw new BusinessException(404, "NOT_FOUND", "文章不存在");

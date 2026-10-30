@@ -1,8 +1,7 @@
 package com.xuan.service.impl;
 
-import com.xuan.annotation.OperationLog;
-import com.xuan.utils.TokenUtils;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.xuan.annotation.OperationLog;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.entity.SysMenu;
@@ -15,6 +14,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMenuService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.MenuProfileVO;
 import com.xuan.vo.MenuVO;
@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.net.URI;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -35,10 +36,13 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** 菜单结构和授权写入共用固定检查点，实时读库；改菜单不撤销独立接口权限或会话。 */
+/**
+ * 菜单结构和授权写入共用固定检查点，实时读库；改菜单不撤销独立接口权限或会话。
+ */
 @Service
 @RequiredArgsConstructor
 public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements IMenuService {
+
     /** 这些键与 SQL 种子的前端注册约定一致，键存在不代表对应页面或业务已经实现。 */
     private static final Set<String> COMPONENTS = Set.of("Layout", "content/article/index", "content/category/index",
             "content/tag/index", "content/comment/index", "content/link/index", "content/file/index",
@@ -58,6 +62,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 同一快照里先查后台入口和查询权限，再取完整后台树，不套用本人菜单筛选。
+     *
      * @return 全状态菜单，保留空目录、隐藏及按钮，逐层按排序值和 ID 升序
      */
     @Override
@@ -73,6 +78,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 同一只读快照里先检查权限，再取资料和版本，禁用项仍能管理。
+     *
      * @param menuId 目标菜单
      * @return 详情与带引号版本；不存在返回 404
      */
@@ -85,6 +91,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 先拿保护锁和操作者锁，再查身份、字段、祖先和访问权限，创建后不自动关联角色。
+     *
      * @param request 已经格式校验和默认值处理的创建字段
      * @return 回查数据库审计时间的菜单；校验或唯一冲突整笔回滚
      */
@@ -116,6 +123,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 同一个结构锁事务里重查原 Token、后台和业务权限、版本，再完整替换并检查所有受影响后代。
+     *
      * @param menuId 目标菜单
      * @param request 全部允许修改的字段，编码和审计字段不可输入
      * @param revision 单个带引号版本；缺失 428、格式错误 400、过期 412
@@ -143,12 +151,14 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         menu.setIsVisible(request.getIsVisible());
         menu.setKeepAlive(request.getKeepAlive());
         menu.setStatus(request.getStatus());
+
         // 2. 把候选菜单放回整棵树里检查，不能引用自己、移到后代或因改类型破坏整个分支。
         validateFields(menu);
         nodes.put(menuId, menu);
         for (long id : descendants(menuId, nodes)) {
             validateChain(nodes.get(id), nodes);
         }
+
         // 3. 角色关联都保留，下次查询本人菜单时按新结构和访问权限实时计算。
         menus.updateMenu(menu);
         return profile(menus.selectById(menuId));
@@ -156,6 +166,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 结构锁事务里先查权限、锁用户和菜单、查版本，确认没有子节点后再删。
+     *
      * @param menuId 目标菜单
      * @param revision 当前详情版本，先于资源引用检查
      * @throws BusinessException 子节点存在返回 RESOURCE_IN_USE；叶子仅级联 role_menu，失败回滚
@@ -177,6 +188,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 实时查启用账号、原 Token、后台入口和菜单业务权限，SELF 不缩小整棵菜单树。
+     *
      * @param permission 当前 sys:menu 操作权限
      */
     private void requireAdmin(String permission) {
@@ -188,6 +200,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 写事务先锁固定检查点，再升序锁操作者和受影响用户；目标节点锁到后，入口还要重查身份和权限。
+     *
      * @param menuId 目标菜单；创建为 null，仅锁操作者
      * @return 结构锁保护下最新提交的整树，不持有授权缓存；Redis 身份定位失败阻止写入
      */
@@ -210,6 +223,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 持有结构锁时找出目标和全部后代，用来锁关联用户、检查类型变化，记录访问过的节点避免循环。
+     *
      * @param menuId 分支根 ID
      * @param nodes 已读取的整树
      * @return 包含根的去重 ID 集合，即使目标不存在也保留根以继续标准 404 流程
@@ -233,6 +247,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 检查字段组合、前端允许的键和访问权限是否存在；禁用权限也可保留，不能因此自动放行。
+     *
      * @param menu 已完成格式校验和默认值处理的候选菜单，调用方持有结构锁
      * @throws BusinessException 类型形状、路径、组件、图标或权限引用无效时返回 400
      */
@@ -259,6 +274,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 内部路由只收 ASCII，解码后也要查，协议、父目录、查询、片段、反斜线和控制字符都拒绝。
+     *
      * @param path 已确认非空的 D/M 路径
      * @throws BusinessException 非法 URI 或路径返回 400；不将路由解释为 API 授权规则
      */
@@ -280,6 +296,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 结构锁内查整条祖先链和父类型；启停不改变结构是否合法，也不要求父节点必须启用。
+     *
      * @param menu 候选节点或受影响后代
      * @param nodes 包含候选变更的整树
      * @throws BusinessException 自引用、移入后代、无效父节点或 D/M/B 层级错误均返回 400
@@ -308,6 +325,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 调用方持有同一快照，节点已按排序值和 ID 排好，这里逐层组装完整树。
+     *
      * @param parentId 当前父 ID，根为 null
      * @param children 完整节点的父子分组
      * @return 保留全部状态、空目录和按钮的 MenuNode 列表
@@ -326,6 +344,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 先检查权限，再确认菜单是否存在，禁用项也能查到。
+     *
      * @param menu 数据库查询结果
      * @return 存在的菜单，不存在返回 404
      */
@@ -338,6 +357,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 拿到菜单锁后先查单个带引号版本，再查结构、状态和删除引用限制。
+     *
      * @param menu 当前锁定节点
      * @param revision 客户端原样传递的详情版本
      */
@@ -355,6 +375,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 在同一快照或菜单锁事务里按固定顺序计算业务字段摘要，时间不算版本。
+     *
      * @param menu 当前菜单
      * @return 对外详情与带引号 SHA-256 版本；子节点和角色关联不属于菜单可写模型
      */
@@ -368,11 +389,13 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
 
     /**
      * 只把约定字段放进菜单响应，实体以后加字段也不能自动泄露出去。
+     *
      * @param menu 一致快照或锁事务内已确认存在的菜单
      * @return 菜单资料和数据库维护的 UTC 审计时间
      */
     private MenuVO view(SysMenu menu) {
-        return new MenuVO(menu.getMenuId(), menu.getParentId(), menu.getMenuCode(), menu.getMenuName(), menu.getMenuType(),
+        return new MenuVO(menu.getMenuId(), menu.getParentId(), menu.getMenuCode(), menu.getMenuName(),
+                menu.getMenuType(),
                 menu.getRouteName(), menu.getPath(), menu.getComponent(), menu.getIcon(), menu.getPermissionId(),
                 menu.getSortOrder(), menu.getIsVisible(), menu.getKeepAlive(), menu.getStatus(),
                 menu.getCreateTime(), menu.getUpdateTime());

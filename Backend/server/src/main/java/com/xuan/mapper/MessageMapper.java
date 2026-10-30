@@ -6,10 +6,13 @@ import com.xuan.entity.BlogMessage;
 import com.xuan.model.MessageNode;
 import com.xuan.model.MessageRow;
 import org.apache.ibatis.annotations.Param;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
-/** 留言写入按操作者、message配置、根到目标加锁，归属在SQL中限定。 */
+/**
+ * 留言写入按操作者、message配置、根到目标加锁，归属在SQL中限定。
+ */
 public interface MessageMapper extends BaseMapper<BlogMessage> {
     /** 只查父链字段，不取隐藏原文。 */
     List<MessageNode> nodes();

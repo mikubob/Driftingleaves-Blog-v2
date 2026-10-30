@@ -24,12 +24,16 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+
 import java.util.Arrays;
 
-/** 分类和成功日志一起提交，删分类时由外键把文章的分类置空。 */
+/**
+ * 分类和成功日志一起提交，删分类时由外键把文章的分类置空。
+ */
 @Service
 @RequiredArgsConstructor
 public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategory> implements ICategoryService {
+
     private final CategoryMapper categories;
     private final UserMapper users;
     private final IUserService identities;

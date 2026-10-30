@@ -7,10 +7,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
+
 import java.time.Duration;
 import java.util.List;
 
-/** 邮件票据单独命名，确认原子消费，退订票据只读以支持幂等。 */
+/**
+ * 邮件票据单独命名，确认原子消费，退订票据只读以支持幂等。
+ */
 @Component
 @RequiredArgsConstructor
 public class SubscriptionTicketStore {
