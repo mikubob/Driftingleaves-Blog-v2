@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 文章评论与回复；删除时清空内容为占位文案并置status=3，保留回复链。 */
+/** 删除评论时清空原内容、改成占位文案并设 status=3，回复链要保留。 */
 @Data
 @TableName("blog_comment")
 public class BlogComment {
@@ -27,7 +27,7 @@ public class BlogComment {
     @TableField("parent_id")
     private Long parentId;
 
-    /** 纯文本或经过白名单过滤的内容。 */
+    /** 纯文本或只保留安全标签的内容。 */
     @TableField("content")
     private String content;
 
@@ -35,11 +35,11 @@ public class BlogComment {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

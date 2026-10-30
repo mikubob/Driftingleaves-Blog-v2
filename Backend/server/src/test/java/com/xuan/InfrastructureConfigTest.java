@@ -15,7 +15,7 @@ import java.util.concurrent.RejectedExecutionException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 配置真实装配与资源生命周期测试，不执行 OSS 网络请求。 */
+/** 实际检查配置、组件加载和关闭，不向 OSS 发网络请求。 */
 class InfrastructureConfigTest {
     @Test
     void virtualExecutorRunsRealVirtualThreadsAndClosesWithContainer() throws Exception {

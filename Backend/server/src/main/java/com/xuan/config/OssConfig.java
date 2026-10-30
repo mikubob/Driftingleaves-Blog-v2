@@ -11,11 +11,11 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-/** 条件装配共享 OSS SDK；关闭时不创建客户端、不要求凭据、不接触云资源。 */
+/** OSS 只在开关启用时创建，关闭时不用凭据，也不访问云资源。 */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "app.oss", name = "enabled", havingValue = "true")
 public class OssConfig {
-    /** 启用时校验外部配置并使用 V4 签名；复用单例，关闭容器时释放连接资源。 */
+    /** 启用后先查配置，再用 V4 签名创建共用 SDK；容器退出时关闭连接。 */
     @Bean(destroyMethod = "shutdown")
     public OSS oss(AliOssProperties properties) {
         properties.validateEnabled();
@@ -30,7 +30,7 @@ public class OssConfig {
                 .clientConfiguration(config).build();
     }
 
-    /** 应用业务只能通过限定前缀的客户端访问文件，不返回云端公开地址。 */
+    /** 业务只能通过限定前缀的客户端读写文件，不能返回云端公开直链。 */
     @Bean
     public AliOssClient aliOssClient(OSS oss, AliOssProperties properties) {
         return new AliOssClient(oss, properties);

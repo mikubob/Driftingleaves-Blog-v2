@@ -8,7 +8,7 @@ import java.math.BigInteger;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 文章元数据；发布、可见范围与回收站状态独立。 */
+/** 这里只存文章基本资料；发布、公开或私密、回收站分别控制。 */
 @Data
 @TableName("blog_article")
 public class BlogArticle {
@@ -52,7 +52,7 @@ public class BlogArticle {
     @TableField("status")
     private Integer status;
 
-    /** 1公开 2私密；私密仅作者或具备相应ALL权限者可读。 */
+    /** 1公开 2私密；私密文章只能由作者或有对应 ALL 权限的人读取。 */
     @TableField("visibility")
     private Integer visibility;
 
@@ -64,7 +64,7 @@ public class BlogArticle {
     @TableField("allow_comment")
     private Integer allowComment;
 
-    /** 浏览计数；点赞/评论数由明细聚合。 */
+    /** 浏览量保存在这里，点赞和评论数从明细计算。 */
     @TableField("view_count")
     private BigInteger viewCount;
 
@@ -76,11 +76,11 @@ public class BlogArticle {
     @TableField("deleted_at")
     private LocalDateTime deletedAt;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

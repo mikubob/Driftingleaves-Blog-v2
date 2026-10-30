@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 登录用户点赞，复合主键防重复；取消点赞物理删除；复合键为 article_id, user_id，不提供单 ID CRUD。 */
+/** 点赞用 article_id、user_id 两列一起确定一条记录，防止重复；取消就物理删除，不能用单个 ID 做增删改查。 */
 @Data
 @TableName("blog_article_like")
 public class BlogArticleLike {
@@ -17,7 +17,7 @@ public class BlogArticleLike {
     @TableField("user_id")
     private Long userId;
 
-    /** 点赞时间；由数据库默认值维护，应用不填充。 */
+    /** 点赞时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 }

@@ -4,7 +4,7 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
-/** 用户列表过滤；角色包含已分配但禁用的关联，关键词按字面包含查询。 */
+/** 按字面关键词筛选用户；按角色查找时，已经分配但被禁用的角色也算关联。 */
 public record AdminUserQueryDTO(@Min(1) @Max(100000) Integer page,
                                 @Min(1) @Max(100) Integer pageSize,
                                 @TextLength(min = 1, max = 100) String keyword,

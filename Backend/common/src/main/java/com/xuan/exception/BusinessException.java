@@ -2,7 +2,7 @@ package com.xuan.exception;
 
 import lombok.Getter;
 
-/** 可安全对外显示的业务失败；HTTP 转换由应用模块负责。 */
+/** 这里的错误文案可以给用户看，转成 HTTP 响应由应用负责。 */
 @Getter
 public class BusinessException extends RuntimeException {
     private final int status;

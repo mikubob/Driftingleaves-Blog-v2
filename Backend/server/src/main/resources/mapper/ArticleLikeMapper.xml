@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 文章锁保证 PUT/DELETE 串行，完整复合主键保证数据库里没有重复点赞。 -->
+<mapper namespace="com.xuan.mapper.ArticleLikeMapper">
+    <select id="state" resultType="com.xuan.vo.LikeStateVO">
+        SELECT EXISTS(SELECT 1 FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}) AS liked,
+            (SELECT COUNT(*) FROM blog_article_like WHERE article_id = #{article}) AS like_count
+    </select>
+    <insert id="add">INSERT INTO blog_article_like(article_id, user_id) VALUES(#{article}, #{user})</insert>
+    <delete id="remove">DELETE FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}</delete>
+</mapper>

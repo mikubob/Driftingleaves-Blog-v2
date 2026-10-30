@@ -4,7 +4,7 @@ import org.jsoup.Jsoup;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 解析和安全清理的真实行为测试，覆盖危险 HTML、URL 与文章派生规则。 */
+/** 实际解析和清理 HTML，检查危险标签、URL、字数和阅读时间。 */
 class MarkdownUtilsTest {
     @Test
     void sanitizesExecutableHtmlAndUnsafeUrlsIncludingEncodedProtocols() {

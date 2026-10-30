@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 菜单创建白名单；父节点必须显式提供，按钮默认隐藏，其余默认值按菜单模型。 */
+/** 创建菜单只收这些字段，父节点要明确传入；按钮默认隐藏，其余按菜单约定取默认值。 */
 @Getter
 public class MenuCreateDTO {
     private Long parentId;

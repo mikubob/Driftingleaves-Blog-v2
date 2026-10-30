@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 接口/操作权限字典；不依赖前端菜单是否存在或可见。 */
+/** 接口权限单独保存，菜单存不存在、看不看得见都不能代替权限检查。 */
 @Data
 @TableName("sys_permission")
 public class SysPermission {
@@ -15,7 +15,7 @@ public class SysPermission {
     @TableId(value = "permission_id", type = IdType.AUTO)
     private Long permissionId;
 
-    /** 模块:资源:动作；后端注解/鉴权使用，多个接口可复用。 */
+    /** 按“模块:资源:动作”命名，后端注解和权限检查使用，多个接口可以共用。 */
     @TableField("permission_code")
     private String permissionCode;
 
@@ -35,11 +35,11 @@ public class SysPermission {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

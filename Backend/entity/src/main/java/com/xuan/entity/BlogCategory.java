@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 文章单分类；归档按文章发布时间查询，不另建归档表。 */
+/** 一篇文章只选一个分类；归档按发布时间查，不另建归档表。 */
 @Data
 @TableName("blog_category")
 public class BlogCategory {
@@ -35,11 +35,11 @@ public class BlogCategory {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 新建角色白名单；省略状态与范围时使用启用和 SELF，授权另行配置。 */
+/** 新建角色默认启用、范围为 SELF，权限要另外配置。 */
 @Getter
 public class RoleCreateDTO {
     @NotNull @Pattern(regexp = "[a-z][a-z0-9_]{0,63}")

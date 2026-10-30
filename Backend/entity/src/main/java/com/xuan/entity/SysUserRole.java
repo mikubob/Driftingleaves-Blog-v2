@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 用户多角色；复合主键防重复授权；复合键为 user_id, role_id，不提供单 ID CRUD。 */
+/** 用户可以有多个角色，user_id、role_id 一起确定一条关联并防重复，不能用单个 ID 做增删改查。 */
 @Data
 @TableName("sys_user_role")
 public class SysUserRole {
@@ -17,7 +17,7 @@ public class SysUserRole {
     @TableField("role_id")
     private Long roleId;
 
-    /** 用户获授该角色的时间；由数据库默认值维护，应用不填充。 */
+    /** 给用户授予角色的时间，由数据库填写。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 }

@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 权限字典访问；同一 Service 事务保护关联及授权，菜单外键保留 RESTRICT。 -->
+<!-- 字典和授权在同一业务事务处理，菜单外键保留 RESTRICT，不能随权限删除门禁。 -->
 <mapper namespace="com.xuan.mapper.PermissionMapper">
-    <!-- 分页与计数共用条件；INSTR 将百分号、下划线、反斜杠当字面字符。 -->
+    <!-- 分页和计数共用条件，INSTR 把百分号、下划线、反斜杠当普通字符。 -->
     <select id="permissionPage" resultType="com.xuan.entity.SysPermission">
         SELECT * FROM sys_permission
         <where>
@@ -14,23 +14,23 @@
         </where>
         ORDER BY permission_id ASC
     </select>
-    <!-- 所有角色和用户状态均纳入影响面，多角色关联同一用户只撤销一次。 -->
+    <!-- 禁用角色和用户也算受影响，多角色关联同一用户只撤销一次会话。 -->
     <select id="userIds" resultType="long">
         SELECT DISTINCT ur.user_id FROM sys_user_role ur
         JOIN sys_role_permission rp ON rp.role_id = ur.role_id
         WHERE rp.permission_id = #{permissionId} ORDER BY ur.user_id
     </select>
-    <!-- 固定保护锁和升序用户锁之后取得目标权限锁，读取最新状态及版本字段。 -->
+    <!-- 先拿固定保护锁和升序用户锁，再锁目标权限，读取最新状态及版本字段。 -->
     <select id="lockById" resultType="com.xuan.entity.SysPermission">
         SELECT * FROM sys_permission WHERE permission_id = #{permissionId} FOR UPDATE
     </select>
-    <!-- 编码不可改；禁用保留角色授权及菜单门禁，重新启用不恢复旧 Token。 -->
+    <!-- 编码不能改，禁用不删角色授权或菜单限制，重新启用也不能恢复旧 Token。 -->
     <update id="updatePermission">
         UPDATE sys_permission SET permission_name = #{permission.permissionName}, module = #{permission.module},
             description = #{permission.description}, status = #{permission.status}
         WHERE permission_id = #{permission.permissionId}
     </update>
-    <!-- 禁用和隐藏菜单同样构成引用，不允许因删除权限而移除门禁。 -->
+    <!-- 禁用、隐藏菜单也算引用，不能因为删权限就撤掉它们的访问限制。 -->
     <select id="menuReferences" resultType="long">
         SELECT COUNT(*) FROM sys_menu WHERE permission_id = #{permissionId}
     </select>

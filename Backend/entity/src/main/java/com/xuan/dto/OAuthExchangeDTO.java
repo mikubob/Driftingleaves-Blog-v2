@@ -3,5 +3,5 @@ package com.xuan.dto;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 
-/** 随机结果票据仅用于一次兑换，不是本站登录凭据。 */
+/** 结果票据只能兑换一次，不能直接拿它当本站登录 Token。 */
 public record OAuthExchangeDTO(@NotNull @Pattern(regexp = "[A-Za-z0-9_-]{43}") String ticket) { }

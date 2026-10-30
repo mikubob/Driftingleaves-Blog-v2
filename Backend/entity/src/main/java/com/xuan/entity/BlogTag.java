@@ -23,11 +23,11 @@ public class BlogTag {
     @TableField("slug")
     private String slug;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

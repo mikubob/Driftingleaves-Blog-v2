@@ -7,7 +7,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** BCrypt 输入边界，字符数按 Unicode 码点计算，不 trim 或截断。 */
+/** 密码按 Unicode 字符计数，不去空白、不截断，还要满足 BCrypt 的字节限制。 */
 @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = PasswordValidator.class)

@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 角色；角色之间不按权重隐式继承权限。 */
+/** 角色没有权重继承，谁有哪项权限要明确授权。 */
 @Data
 @TableName("sys_role")
 public class SysRole {
@@ -27,7 +27,7 @@ public class SysRole {
     @TableField("description")
     private String description;
 
-    /** ALL全部 SELF本人；按授予当前权限的角色计算。 */
+    /** ALL全部、SELF本人；只合并授予当前这项权限的角色范围。 */
     @TableField("data_scope")
     private String dataScope;
 
@@ -35,11 +35,11 @@ public class SysRole {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

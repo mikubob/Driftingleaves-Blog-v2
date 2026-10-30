@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 
-/** 权限字典分页，编码或名称字面包含，模块与状态精确过滤。 */
+/** 按编码或名称里的文字查权限，模块和状态要精确匹配。 */
 public record PermissionQueryDTO(@Min(1) @Max(100000) Integer page,
                                  @Min(1) @Max(100) Integer pageSize,
                                  @TextLength(min = 1, max = 100) String keyword,

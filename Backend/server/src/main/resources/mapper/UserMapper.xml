@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!--
-    用户身份持久化 SQL；行锁必须由 Service 事务持有，权限和版本检查不在 Mapper 中替代。
--->
+<!-- 用户行锁必须由业务事务持有，权限和版本仍由业务层检查，不能靠 Mapper 代替。 -->
 <mapper namespace="com.xuan.mapper.UserMapper">
-    <!-- 列表和分页插件生成的总数使用相同条件，INSTR 不解释 SQL 通配符。 -->
+    <!-- 列表和分页插件的总数用同样条件，INSTR 把 SQL 通配符当普通字符。 -->
     <select id="adminPage" resultType="com.xuan.entity.SysUser">
         SELECT u.* FROM sys_user u
         <where>
@@ -19,29 +17,29 @@
         </where>
         ORDER BY u.create_time DESC, u.user_id DESC
     </select>
-    <!-- 管理写事务第一把锁；不按角色状态过滤，避免保护检查点被禁用绕过。 -->
+    <!-- 这是管理写事务的第一把锁，禁用角色也得锁，避免绕过最后管理员检查。 -->
     <select id="lockAdminGuard" resultType="long">
         SELECT role_id FROM sys_role WHERE role_id = 1 FOR UPDATE
     </select>
-    <!-- 用户锁后按角色 ID 升序加锁，存在性及状态由 Service 统一校验。 -->
+    <!-- 用户锁后再按角色 ID 升序加锁，是否存在、启用由业务层一起检查。 -->
     <select id="lockRoles" resultType="com.xuan.entity.SysRole">
         SELECT * FROM sys_role WHERE role_id IN
         <foreach collection="roleIds" item="id" open="(" separator="," close=")">#{id}</foreach>
         ORDER BY role_id FOR UPDATE
     </select>
-    <!-- 仅后台资料及状态白名单，不修改用户名、密码、审计或角色关联。 -->
+    <!-- 只写后台资料和状态，用户名、密码、时间和角色关联不改。 -->
     <update id="updateAdmin">
         UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email}, avatar = #{user.avatar},
             intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
     </update>
-    <!-- 完整替换前删除全部关联，失败时与后续插入共同回滚。 -->
+    <!-- 完整替换前清掉旧关联，后续插入失败时一起回滚。 -->
     <delete id="deleteRoles">DELETE FROM sys_user_role WHERE user_id = #{userId}</delete>
-    <!-- 通过完整复合键写入已校验集合，空集合由 Service 跳过此语句。 -->
+    <!-- 用完整的两列主键写入检查过的关联，空集合由业务层跳过。 -->
     <insert id="insertRoles">
         INSERT INTO sys_user_role (user_id, role_id) VALUES
         <foreach collection="roleIds" item="id" separator=",">(#{userId}, #{id})</foreach>
     </insert>
-    <!-- 检查写入后的管理员有效性；明确初始权限白名单，新权限不会自动扩大保护集合。 -->
+    <!-- 按固定系统管理权限检查修改后的有效管理员，新增权限不会自动扩大保护名单。 -->
     <select id="effectiveAdminCount" resultType="long">
         <bind name="requiredCount" value="permissions.size()"/>
         SELECT COUNT(*) FROM sys_user u
@@ -54,47 +52,29 @@
             <foreach collection="permissions" item="code" open="(" separator="," close=")">#{code}</foreach>
         ) = #{requiredCount}
     </select>
-    <!-- 用户锁统一序列化登录、密码、绑定与解绑。时间只由数据库维护。 -->
-    <!--
-        按用户名读取完整内部用户实体并取得排他行锁。
-        不按 status 提前过滤；密码验证后的启用检查及统一认证失败响应由 Service 完成。
-    -->
+    <!-- 登录、密码、绑定和解绑共用用户锁，时间由数据库维护。 -->
+    <!-- 按用户名取完整内部资料并拿排他行锁，先不过滤 status；密码通过后由业务层检查启用状态，认证失败统一报错。 -->
     <select id="lockByUsername" resultType="com.xuan.entity.SysUser">
         SELECT * FROM sys_user WHERE username = #{username} FOR UPDATE
     </select>
-    <!--
-        按用户 ID 取得与登录、密码变更和绑定操作共用的行锁。
-        同一用户的安全方式变更在该锁下串行处理；不存在的记录由调用方按业务场景处理。
-    -->
+    <!-- 按用户 ID 拿登录、密码和绑定共用的行锁，同一用户的安全操作在这里排队，不存在时由调用方按场景报错。 -->
     <select id="lockById" resultType="com.xuan.entity.SysUser">
         SELECT * FROM sys_user WHERE user_id = #{userId} FOR UPDATE
     </select>
-    <!--
-        仅更新本人资料允许写入的四个字段。
-        PATCH 缺失保持已由 Service 合并，传入 NULL 在此明确清空；不更新账号、密码或角色。
-    -->
+    <!-- 这里只更新本人允许修改的四个字段，PATCH 没传的值已由业务层合并；NULL 要清空，账号、密码和角色不改。 -->
     <update id="updateProfile">
         UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email},
             avatar = #{user.avatar}, intro = #{user.intro} WHERE user_id = #{user.userId}
     </update>
-    <!--
-        仅更新指定用户的本站密码哈希，NULL 表示清除密码。
-        Service 须先校验最近认证、现有凭据和剩余登录方式，并在提交前完成 Redis 会话撤销。
-    -->
+    <!-- 这里只更新目标用户密码哈希，NULL 就清除；业务层先查最近认证、旧凭据和剩余登录方式，提交前还要撤销 Redis 会话。 -->
     <update id="updatePassword">
         UPDATE sys_user SET password_hash = #{hash} WHERE user_id = #{userId}
     </update>
-    <!--
-        使用数据库当前毫秒时间记录本次成功登录。
-        连接时区由配置固定为 UTC；与用户锁和会话签发共同参与登录事务。
-    -->
+    <!-- 最近登录用数据库当前毫秒时间，连接固定 UTC，并与用户锁和会话签发在同一事务。 -->
     <update id="updateLastLogin">
         UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3) WHERE user_id = #{userId}
     </update>
-    <!--
-        仅为新用户插入启用 member 角色的关联。
-        user_id 与 role_id 是完整复合键；未找到可用角色时插入零行，由 Service 回滚注册事务。
-    -->
+    <!-- 只给新用户插入启用的 member 关联，user_id、role_id 一起作主键；没有可用角色时插入零行，业务层必须回滚注册。 -->
     <insert id="assignMember">
         INSERT INTO sys_user_role (user_id, role_id)
         SELECT #{userId}, role_id FROM sys_role WHERE role_code = 'member' AND status = 1

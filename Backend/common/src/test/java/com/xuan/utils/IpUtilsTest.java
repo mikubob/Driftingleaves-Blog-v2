@@ -5,7 +5,7 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** 真实地址解析测试，不使用 DNS 或外部地域数据库。 */
+/** 实际解析 IP 地址，不查 DNS 或外部地域库。 */
 class IpUtilsTest {
     @Test
     void ignoresHeadersFromUntrustedPeerAndStopsAtFirstUntrustedHop() {

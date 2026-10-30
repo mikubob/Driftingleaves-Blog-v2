@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 标签没有隐藏状态，公开查询只少返回后台的时间字段。 -->
+<mapper namespace="com.xuan.mapper.TagMapper">
+    <!-- INSTR 把百分号、下划线当普通文字，总数和列表不会各用一套条件。 -->
+    <select id="tagPage" resultType="com.xuan.entity.BlogTag">
+        SELECT * FROM blog_tag
+        <where>
+            <if test="query.keyword != null">INSTR(tag_name, #{query.keyword}) &gt; 0</if>
+        </where>
+        ORDER BY tag_id ASC
+    </select>
+    <!-- 先锁字典再删除，文章保存持有共享锁时这里会等待。 -->
+    <select id="lockById" resultType="com.xuan.entity.BlogTag">
+        SELECT * FROM blog_tag WHERE tag_id = #{id} FOR UPDATE
+    </select>
+</mapper>

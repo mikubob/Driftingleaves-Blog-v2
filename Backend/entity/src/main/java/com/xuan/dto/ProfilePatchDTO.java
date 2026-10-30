@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Email;
 import lombok.Getter;
 import lombok.AccessLevel;
 
-/** PATCH 通过 setter 记录出现性，区分缺失、null 与空串。 */
+/** setter 记下字段有没有出现，才能分清没传、传 null 和传空串。 */
 @Getter
 public class ProfilePatchDTO {
     @TextLength(min = 1, max = 64)
@@ -56,19 +56,19 @@ public class ProfilePatchDTO {
     private String normalize(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }
-    /** 是否显式提交该字段。 */
+    /** 记下客户端有没有传这个字段。 */
     public boolean hasNickname() {
         return nicknamePresent;
     }
-    /** 是否显式提交该字段。 */
+    /** 记下客户端有没有传这个字段。 */
     public boolean hasEmail() {
         return emailPresent;
     }
-    /** 是否显式提交该字段。 */
+    /** 记下客户端有没有传这个字段。 */
     public boolean hasAvatar() {
         return avatarPresent;
     }
-    /** 是否显式提交该字段。 */
+    /** 记下客户端有没有传这个字段。 */
     public boolean hasIntro() {
         return introPresent;
     }

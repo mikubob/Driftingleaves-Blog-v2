@@ -5,7 +5,7 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.net.URI;
 
-/** 外部 OSS 配置；默认关闭，不通过 toString 暴露密钥，启用时由装配层校验。 */
+/** OSS 默认关闭，启用后再检查配置；不要生成会暴露密钥的 toString。 */
 @Getter
 @Setter
 @ConfigurationProperties("app.oss")
@@ -16,12 +16,12 @@ public class AliOssProperties {
     private String bucket;
     private String accessKeyId;
     private String accessKeySecret;
-    /** 可选 STS 凭据；当前由外部配置提供，不自动续期。 */
+    /** STS 凭据从外部配置读取，目前不会自动续期。 */
     private String securityToken;
-    /** 所有读写操作限制在专属前缀内，不接受空前缀。 */
+    /** 读写都限制在这个专属前缀内，前缀不能留空。 */
     private String keyPrefix = "drifting-leaves-v2/";
 
-    /** 校验启用后的完整配置，错误消息只包含字段职责，不回显凭据或地址。 */
+    /** 启用后先检查配置是否齐全，报错只说哪项有问题，不带凭据或地址。 */
     public void validateEnabled() {
         URI uri;
         try {

@@ -2,18 +2,18 @@ package com.xuan.result;
 
 import java.util.List;
 
-/** HTTP 业务结果；所有分支均保留 data 和 errors 字段。 */
+/** 成功或失败都带上 data 和 errors，前端不用猜字段有没有。 */
 public record Result<T>(String code, String msg, T data, List<FieldError> errors) {
-    /** 创建成功结果，无返回值时传入 null。 */
+    /** 生成成功响应，没有业务结果就传 null。 */
     public static <T> Result<T> ok(T data) {
         return new Result<>("OK", "成功", data, List.of());
     }
 
-    /** 创建不包含内部异常信息的失败结果。 */
+    /** 生成失败响应，不带内部异常详情。 */
     public static Result<Void> error(String code, String message) {
         return new Result<>(code, message, null, List.of());
     }
 
-    /** 字段错误仅描述约束，不回显输入值。 */
+    /** 这里只写哪个字段不合要求，不回显用户输入。 */
     public record FieldError(String field, String message) { }
 }

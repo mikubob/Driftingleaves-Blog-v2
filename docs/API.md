@@ -1,8 +1,8 @@
 # DriftingLeavesV2 总接口文档
 
-> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-30（Asia/Shanghai）。当前已实现第 1..6 章的 36 个身份、本人安全、后台用户、角色授权、权限字典及菜单管理接口和基础设施；其余接口均为待实现契约。隔离测试不代表真实平台已联调或新增业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
+> **文档说明**：依据 V2 当前 POM、28 表数据库设计、现有鉴权实现和旧项目实际业务编写，沿用逐接口格式。更新日期：2026-10-30（Asia/Shanghai）。当前已实现第 1..11 章共 87 个接口，覆盖身份、本人安全、系统管理、文章、归档、热门榜、分类标签、评论点赞、友链、站点配置及文件附件；其余接口均为待实现契约。隔离测试不代表真实平台已联调或业务接口已上线，运行说明见 [后端运行说明](后端运行说明.md)。
 >
-> **扩充范围**：第 15..20 章补充主页、简历、留言、音乐、邮件订阅、访问统计及操作日志；第 7、10、12..14 章同步文章导航/热门榜、配置白名单、共享模型、业务一致性和错误码。新增表中 sys_operation_log 已有实体与后台写操作审计，其余 9 表尚无实体；第 7..20 章业务 HTTP 接口仍待实现。来源与迁移取舍见第 21 章，数据库约束见 [数据库说明](../sql/README.md)。保留原有章节编号和 api-1..api-86 锚点。
+> **扩充范围**：第 15..20 章补充主页、简历、留言、音乐、邮件订阅、访问统计及操作日志；第 7、10、12..14 章同步文章导航/热门榜、配置白名单、共享模型、业务一致性和错误码。新增表中 sys_operation_log 已有实体与后台写操作审计，其余 9 表尚无实体；第 15..20 章业务 HTTP 接口仍待实现。来源与迁移取舍见第 21 章，数据库约束见 [数据库说明](../sql/README.md)。保留原有章节编号和 api-1..api-86 锚点。
 >
 > **维护提示**：每个接口同步维护基本信息、参数表、请求/响应示例、访问要求和业务说明。各示例使用独立的虚构场景；`<...>` 是占位值，部署 origin 和 OAuth 应用需实际配置。
 
@@ -132,7 +132,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ### 0.8 业务范围与接口索引
 
-共 **153 个不重复的 HTTP 方法与路径组合**，其中第 1..6 章 36 个已实现，其余为待实现契约。本次新增 67 个方法与路径组合；公开查询不等于已经加入当前运行配置的白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
+共 **153 个不重复的 HTTP 方法与路径组合**，其中第 1..11 章 87 个已实现，其余为待实现契约。第 7.11、15..20 章在原索引基础上新增 67 个方法与路径组合；公开查询不等于已经加入当前运行配置的白名单。关联表不单独暴露 CRUD；未规划用户物理删除、文章永久删除、密码找回、账号登录邮箱验证、公开友链申请、独立评论编辑或第三方 Token 托管。RSS 订阅邮箱确认独立定义在第 18 章。首位管理员由受控初始化创建，无公开初始化接口和默认密码。
 
 | 模块 | 接口数 | 方法与完整路径索引 |
 | --- | --- | --- |
@@ -3485,6 +3485,8 @@ Cache-Control: no-store
 
 ## 7. 文章与归档
 
+本章 7.1..7.11 共 11 个接口已实现。文章元数据、Markdown/服务端安全 HTML、完整标签集合及成功审计共同提交；写事务使用 READ COMMITTED，并按操作者、升序文件、文章的顺序加锁，锁后重新检查原 Token、当前操作范围、聚合版本与状态。单条后台详情采用一致快照，创建及需要版本的更新返回 X-Revision。具体验证证据与文件引用部署配置见[后端运行说明](后端运行说明.md)。
+
 <a id="api-37"></a>
 
 ### 7.1 分页查询公开文章
@@ -3941,7 +3943,7 @@ updateTime DESC,articleId DESC；trash 默认 0。SELF 强制本人，authorId �
 | Content-Type | 无请求体 |
 | 访问要求 | 登录且启用 + `admin:access` + `blog:article:query`；按对应操作校验范围 |
 | 成功状态 | 200 OK |
-| 并发校验 | 无 If-Revision 要求 |
+| 并发校验 | 返回 X-Revision；读取不要求 If-Revision |
 
 #### 请求参数
 
@@ -4193,6 +4195,8 @@ Cache-Control: no-store
 #### 业务说明
 
 作者固定当前用户，status 固定 0；文章、正文、标签同事务。创建并取得 ID 后再添加本站附件引用。
+
+创建成功返回详情 Location 与当前聚合 X-Revision；封面中的等价绝对本站附件 URL 保存为规范公开相对路径。后台详情的 coverUrl 也保留此规范写入值，HTML 内的本站附件属性则转换为后台文章上下文；后台预览封面需使用对应后台上下文并以 Bearer fetch 获取，不能向图片 URL 添加 Token。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -4544,6 +4548,8 @@ Cache-Control: no-store
 
 仅写 deletedAt，不物理清理；保留正文、slug、标签与互动。同版本且已回收可幂等成功。
 
+本接口及恢复接口均无请求体；实际发送 JSON 或其他载荷返回 400，不静默忽略身份、状态等未声明字段。
+
 先检查权限及资源范围，再在同一事务内验证聚合版本并修改；缺失返回 428，不匹配返回 412，不自动覆盖。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
@@ -4686,7 +4692,7 @@ Cache-Control: no-store
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/article-rankings` |
-| 接口描述 | 查询文章热门榜（待实现） |
+| 接口描述 | 查询文章热门榜 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；仅按本接口声明的能力与可见范围访问 |
 | 成功状态 | 200 OK |
@@ -4760,6 +4766,8 @@ Content-Type: application/json; charset=UTF-8
 <a id="group-8"></a>
 
 ## 8. 分类与标签
+
+本章 8.1..8.12 共 12 个接口已实现，复用现有身份、权限、严格绑定、分页和写事务审计。分类、标签为全局字典，SELF 不缩小操作范围；详情返回 X-Revision，更新和删除在 READ COMMITTED 行锁内重查权限及版本。分类删除以外键 SET NULL 清空文章分类，标签删除 CASCADE 清理文章标签关联，文章及正文保留，关联变化使文章聚合版本失效；成功日志失败时字典与关联一起回滚。名称、slug 或分类展示状态变化立即反映在文章字典响应中，不改变未变化的文章关联版本。
 
 <a id="api-47"></a>
 
@@ -4932,7 +4940,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-sortOrder ASC,categoryId ASC；全局字典，不使用 SELF 本人过滤。
+sortOrder ASC,categoryId ASC；全局字典，不使用 SELF 本人过滤。keyword 去首尾空白后按 categoryName 字面包含匹配，status 精确匹配；所有条件 AND 组合，总数与列表使用相同条件。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -5437,7 +5445,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-tagId ASC；全局字典，不使用 SELF 本人过滤。
+tagId ASC；全局字典，不使用 SELF 本人过滤。keyword 去首尾空白后按 tagName 字面包含匹配，总数与列表使用相同条件。公开标签列表不要求已关联文章，公开分类列表也不要求已存在文章。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -5757,6 +5765,10 @@ Cache-Control: no-store
 
 ## 9. 评论审核与点赞
 
+本章 9.1..9.11 共 11 个接口已实现。公开评论和全部点赞路径共用文章 PUBLIC 条件，管理员 Token 不扩大可见性。评论写事务按操作者→comment 配置→文章→目标/父评论加锁；锁后重查原 Token、启用身份、当前操作权限及 SQL 范围、文章/父链状态，使用 READ COMMITTED 和 STATEMENT 本地缓存范围。只有审核要求 If-Revision；本人及后台删除均幂等占位、不要求版本。后台两个写方法复用成功同事务审计与回滚后失败审计。评论仍读取现有 comment 对象；配置维护由第 10 章接口完成，两者锁同一行。
+
+评论创建按用户+IP 共用 60 秒 10 次窗口，点赞 PUT/DELETE 按用户+IP 共用 60 秒 60 次窗口；使用现有 Redis 注解限流且每个入口只计一次。未知、重复或空查询参数及无请求体接口的载荷返回 400。纯文本评论原文不作 Markdown/HTML 解析，JSON content 由展示端使用文本节点渲染。文章列表、详情和点赞热门榜立即从真实明细取数，评论计数排除占位及不可见后代；互动变化不改变文章 X-Revision。
+
 <a id="api-59"></a>
 
 ### 9.1 分页查询文章公开评论
@@ -5852,7 +5864,7 @@ Content-Type: application/json; charset=UTF-8
 
 #### 业务说明
 
-每页最多 50；不传 parentId 为根节点，传入只查直接回复。祖先 0/2 隐藏整支；3 占位 content 固定且 author=null。
+每页最多 50；不传 parentId 为根节点，传入只查直接回复；createTime DESC,commentId DESC。祖先 0/2 隐藏整支；3 占位 content 固定且 author=null。replyCount 只计可见直接子节点，包含可展开的占位，不计更深层后代。
 
 ---
 
@@ -6656,6 +6668,14 @@ Cache-Control: no-store
 <a id="group-10"></a>
 
 ## 10. 友链与站点配置
+
+本章 10.1..10.10 共 10 个接口已实现。友链只在 status=1 时公开，按 sortOrder/linkId 升序；后台 keyword 按 linkName 字面包含。名称和 URL 允许重复，只保存外部 HTTP(S) URL，不抓取资源，不接受本站附件 API 作为 URL 或头像。创建默认待审；PUT 完整替换，DELETE 物理删除，均在行锁内检查 If-Revision。
+
+配置只管理现有 site/comment/message 三个键，不开放任意新增或删除。configValue 返回对象，内外字段、类型、Unicode 长度、日期及16KiB限制均校验；可空 description 也必须显式传入。site 只有 isPublic=1 时公开，comment/message 始终私有，即使数据库误标公开也不会从公开接口返回。业务版本不计更新时间和 JSON 属性顺序。
+
+后台每个操作独立检查 admin:access 及自己的权限，SELF 对这两类全站资源同样有效。写事务按操作者→友链/配置加锁，等待后重查原 Token、账号和权限，再检查版本；READ COMMITTED 和 STATEMENT 本地缓存范围保持不变。四个写方法接入成功同事务、失败回滚后审计，日志不保存 URL 或配置原值；配置键不是数字 ID，配置审计 targetId 为 null。六项固定权限禁止删除，不扩大最后管理员保护名单。
+
+配置更新与评论创建使用同一 comment 配置行锁，关闭站点评论或切换审核策略后，新增按最新提交策略执行；历史查询、本人删除和后台审核不受关闭开关影响。没有新增配置缓存；message 配置只保存，留言接口仍待第16章，文件 HTTP 仍待第11章。
 
 <a id="api-70"></a>
 
@@ -7556,6 +7576,8 @@ Cache-Control: no-store
 
 ## 11. 文件与附件
 
+本章 11.1..11.7 共七个接口已实现，使用现有 blog_file、ArticleResources 和文章文件锁。上传和删除的成功审计与元数据同事务提交；存储不参与 MySQL 事务，失败清理与重试规则见第 13.4 节。元数据不可编辑，详情和删除不增加 X-Revision/If-Revision。
+
 <a id="api-80"></a>
 
 ### 11.1 分页查询文件元数据
@@ -7606,7 +7628,7 @@ Authorization: Bearer <site-token>
 | `data.records[].originalName` | string | 安全化展示文件名，无路径 |
 | `data.records[].mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.records[].sizeBytes` | string | 文件实际字节数字符串 |
-| `data.records[].storageType` | string | 首期固定 local |
+| `data.records[].storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
 | `data.records[].createTime` | Time | 创建 UTC 时间 |
 | `data.records[].previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7646,7 +7668,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-SELF 仅本人；createTime DESC,fileId DESC。
+SELF 仅本人；createTime DESC,fileId DESC。keyword 按 originalName 字面包含，mimeType 按服务端确认的 MIME 精确匹配；uploaderId 筛选不能扩大 SELF。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -7693,7 +7715,7 @@ Authorization: Bearer <site-token>
 | `data.originalName` | string | 安全化展示文件名，无路径 |
 | `data.mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.sizeBytes` | string | 文件实际字节数字符串 |
-| `data.storageType` | string | 首期固定 local |
+| `data.storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7780,7 +7802,7 @@ Content-Type: image/png
 | `data.originalName` | string | 安全化展示文件名，无路径 |
 | `data.mimeType` | string | 服务端识别的 image/png 或 image/jpeg |
 | `data.sizeBytes` | string | 文件实际字节数字符串 |
-| `data.storageType` | string | 首期固定 local |
+| `data.storageType` | string | 默认 local，显式启用 OSS 后新上传为 oss |
 | `data.createTime` | Time | 创建 UTC 时间 |
 | `data.previewUrl` | string | 需 Bearer 的后台文件内容路径 |
 
@@ -7813,7 +7835,7 @@ Cache-Control: no-store
 
 #### 业务说明
 
-单文件非空，PNG/JPEG ≤10MiB；multipart ≤11MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。
+单文件非空，PNG/JPEG ≤10MiB；multipart ≤11MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。每个请求按用户和可信 IP 共用每 60 秒 10 次窗口，仅计一次；超限 429/RATE_LIMITED 并返回 Retry-After。默认 local；启用现有 OSS 配置后新上传为 oss，旧对象不迁移，响应不返回直链。
 
 本接口还必须满足有效 `admin:access`；全局字典操作无“仅本人”子集。文章、文件及评论按当前操作权限计算 ALL/SELF；缺少权限返回 403，范围外资源统一 404。
 
@@ -8180,7 +8202,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | CommentCreate | content:string 必填，trim 后1..2000字符纯文本；parentId:ID? 可选默认null；articleId仅取路径，userId取会话 |
 | CommentPublic | commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1或3、replyCount:string、createTime/updateTime:Time |
 | CommentOwn | commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2/3、createTime/updateTime:Time；不含其他用户私人信息 |
-| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}、articleTitle:string；已删除用户不物理清除，作者关联仍存在 |
+| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string；占位 author=null，用户不物理清除，作者关联仍存在 |
 | CommentReview | `{status:1或2}` 必填；1通过，2驳回，无审核备注字段 |
 | LikeState | `{liked:boolean,likeCount:string}` |
 
@@ -8214,11 +8236,11 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 ### 12.8 文件模型与读取响应
 
-blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名访问。文件 HTTP 业务仍待实现，默认本地存储契约为 storageType=local、bucket=""。现已按明确需求提供可选 OSS 配置及客户端基础设施，默认关闭，尚未接入文件 HTTP 业务或提供多存储切换 API；启用基础设施不迁移历史文件，也不把私有附件改成公开直链。
+blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名访问。第 11 章文件 HTTP 已接入文章真实引用与现有存储；默认 storageType=local、bucket=""。可选 OSS 默认关闭；启用现有 OSS 配置后新上传使用 oss，旧文件按各自元数据读取，不迁移历史对象，不提供多存储切换 API，也不把私有附件改成公开直链。
 
 | 模型 | 字段与约束 |
 | --- | --- |
-| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"local"、createTime:Time、previewUrl:string（后台内容接口，非公开直链） |
+| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"local"（默认）或"oss"（显式启用后新上传）、createTime:Time、previewUrl:string（后台内容接口，非公开直链） |
 | Upload | multipart只有file，单个、非空；不接uploaderId、文件路径、bucket、objectKey、isPublic |
 
 设计决定：首期只允许PNG/JPEG图片，单文件≤10MiB、单次multipart总大小≤11MiB；扩展名白名单`.png/.jpg/.jpeg`必须与服务端内容识别一致，不信Content-Type。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。图片不承诺压缩转码；以后有其他附件需求再明确类型及校验契约。
@@ -8323,7 +8345,7 @@ PV是保留的page_view条数；UV是所选区间内不同非null visitorId数�
 
 仅服务端写日志，记录实际会话操作人、模块、动作、目标、权限码快照和结果；不接受客户端创建、修改日志。列表不返回大段摘要，详情operationData为白名单脱敏JSON对象或null。不得保存密码、授权头、OAuth code/state/ticket、RSS票据、密钥、原始SQL或异常堆栈。user_id外键SET NULL保证账号物理清理后保留日志；日志不承担授权凭据作用。
 
-日志为不可编辑记录，查询和删除不需要X-Revision；清理需sys:log:delete+ALL，删除行为追加一条新的审计，不递归记录写日志本身。业务成功日志随数据库变更同事务写入；业务失败回滚后另行写脱敏失败日志，不能用已回滚事务保存失败记录。当前后台用户、角色、权限、菜单的13个写方法已实际写入审计：成功日志写入失败使业务回滚，回滚后由独立虚拟线程事务记录失败；operationData固定为null，错误只记固定白名单码。尚未进入业务写方法的参数绑定/校验/HTTP权限拒绝不产生该业务审计。失败投递为进程内异步任务，数据库或进程故障不提供跨宕机可靠投递保证，写入失败输出固定错误；第20章查询/清理API仍待实现。
+日志为不可编辑记录，查询和删除不需要X-Revision；清理需sys:log:delete+ALL，删除行为追加一条新的审计，不递归记录写日志本身。业务成功日志随数据库变更同事务写入；业务失败回滚后另行写脱敏失败日志，不能用已回滚事务保存失败记录。当前后台用户、角色、权限、菜单、文章、分类标签及评论审核/管理删除、友链及配置的30个写方法已实际写入审计：成功日志写入失败使业务回滚，回滚后由独立虚拟线程事务记录失败；operationData固定为null，错误只记固定白名单码。尚未进入业务写方法的参数绑定/校验/HTTP权限拒绝不产生该业务审计。失败投递为进程内异步任务，数据库或进程故障不提供跨宕机可靠投递保证，写入失败输出固定错误；第20章查询/清理API仍待实现。
 
 ### 12.15 文章导航、推荐与热门榜
 
@@ -8515,7 +8537,9 @@ Cache-Control: no-store
 
 后续验收覆盖 Sa-Token 过期/注销/撤权，按权限 ALL/SELF，OAuth LOGIN/BIND 弹窗与原会话、state/ticket 一次性及重放，纯第三方无密码与最后登录方式，最后管理员，文章可见性/聚合版本，评论审核与占位，点赞幂等，文件私密访问、引用竞态与存储失败。
 
-第 1..6 章已实现，并通过真实隔离 MySQL/Redis 与 MVC 链验证；用户、角色及权限字典管理已落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先，权限禁用保留关联及门禁、删除遵守菜单引用限制。菜单管理落实完整树与本人树职责、结构锁防环、类型及后代约束、前端键白名单、完整替换及业务版本；菜单变化不静默扩大角色授权或撤销独立权限与会话。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 7..11、15..20 章及第7.11节均为待实现契约，不提供成功空壳，其管理写入和资源SQL授权仍随对应业务实现。配置、命令和测试边界见 [后端运行说明](后端运行说明.md)。
+第 1..11 章共 87 个接口已实现。用户、角色及权限字典管理落实双权限、聚合版本、最后管理员保护及会话撤销回滚，角色权限与菜单共同替换并补齐祖先；菜单管理落实结构锁、完整树、类型约束及前端键白名单。文章落实 PUBLIC 过滤、按操作独立 SQL 范围、正文/标签聚合版本、状态与回收恢复、文件引用锁和存储可用性、阅读派生字段及四类热门榜；文章、文件查询/上传/删除、分类标签、评论点赞及友链配置的固定权限已纳入不可删除列表，最后管理员保护白名单保持原有系统管理范围。Markdown 始终由当前 CommonMark/jsoup 链重新渲染清理，不信任历史 HTML 缓存。平台网络使用边界替身，尚未进行真实平台 App 回调及浏览器弹窗联调。第 8 章完成分类、标签的前后台分页、详情和维护，以及文章当前字典响应、隐藏分类筛选、外键删除和聚合版本联动。第 9 章完成完整祖先链公开评论、服务端审核策略、本人管理、按文章作者独立范围的后台审核/占位、审核版本与审计、复合键点赞幂等，以及真实互动计数联动。第 10 章完成友链审核展示联动、配置白名单及公开过滤、配置版本与审计，以及配置 HTTP 与评论开关/审核策略的真实联动。第 11 章完成文件元数据分页/详情、PNG/JPEG 上传、后台原图、文件删除和前后台文章附件共七个入口，复用 ArticleResources、文件锁、UrlPolicy 与现有可选 OSS 客户端；上传/删除接入同事务成功审计及回滚后失败审计。图片实际解码、独立 SQL 范围、PUBLIC 与真实引用检查、删除全状态文章分批扫描和存储补偿均已接入。第 15..20 章仍为待实现契约，不提供成功空壳；message 配置保存不代表留言 HTTP 已实现。配置、命令和真实隔离验证边界见 [后端运行说明](后端运行说明.md)。
+
+第11章最终验证：2026-10-30 19:58:54（Asia/Shanghai），完整 Maven verify 退出0，203项全部通过，其中175项真实隔离MySQL/Redis集成，无失败、错误或跳过。新增25项文件测试，覆盖上传、私密读取、独立范围、行锁后复核、引用竞争与失败补偿；真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证。日志与完整边界见 [后端运行说明](后端运行说明.md)。
 
 <a id="group-15"></a>
 

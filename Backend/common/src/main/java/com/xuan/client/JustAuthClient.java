@@ -21,7 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/** 固定普通 GET 回调平台白名单；默认全关闭，缺配置的平台不能用于登录方式保护。 */
+/** 只支持名单里的普通 GET 回调平台，默认都关闭；配置不全的平台不算可用登录方式。 */
 @Component
 @RequiredArgsConstructor
 public class JustAuthClient implements OAuthProviderClient {
@@ -54,25 +54,25 @@ public class JustAuthClient implements OAuthProviderClient {
 
     @Override
     public Identity verify(String source, String state, String code) {
-        // 1. 按服务端白名单取得平台适配器，不接收客户端声明的身份。
+        // 1. 先从服务端名单里找平台客户端，不能相信客户端自报的身份。
         requireEnabled(source);
         AuthCallback callback = AuthCallback.builder().state(state).code(code).build();
         AuthRequest request = request(source);
-        // 2. 显式执行 JustAuth 相同的校验，避免其 login() 内部打印带平台响应的异常。
+        // 2. 这里自己执行 JustAuth 的同样检查，避免 login() 把带平台响应的异常打进日志。
         AuthChecker.checkCode(AuthDefaultSource.valueOf(source), callback);
         AuthChecker.checkState(state, AuthDefaultSource.valueOf(source), states);
-        // 3. 使用授权码换取平台身份，只将必要资料传入本站业务，不传递平台 Token。
+        // 3. 用授权码换取平台确认的身份，只向本站传必要资料，不传平台 Token。
         AuthUser user = request.getUserInfo(request.getAccessToken(callback));
         return new Identity(user.getUuid(), user.getNickname(), user.getAvatar());
     }
 
     private AuthRequest request(String source) {
-        // 1. 从服务端配置构造授权参数，保持 JustAuth 的 state 校验开启。
+        // 1. 先按服务端配置准备授权参数，JustAuth 的 state 检查不能关。
         AuthProperties.Provider provider = properties.getProviders().get(source);
         AuthConfig config = AuthConfig.builder().clientId(provider.getClientId())
                 .clientSecret(provider.getClientSecret()).redirectUri(provider.getRedirectUri())
                 .ignoreCheckState(false).build();
-        // 2. 只实例化固定平台适配器，并共用 Redis state 缓存。
+        // 2. 只创建名单里的平台客户端，state 缓存共用 Redis。
         return switch (source) {
             case "GITHUB" -> new AuthGithubRequest(config, states);
             case "GITEE" -> new AuthGiteeRequest(config, states);
@@ -82,14 +82,14 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     private boolean configured(String source) {
-        // 1. 先检查启用开关、凭据和地址完整性，不完整的平台不计为可用登录方式。
+        // 1. 先看开关、凭据和地址是否齐全，缺配置的平台不能算可用登录方式。
         AuthProperties.Provider provider = properties.getProviders().get(source);
         if (provider == null || !provider.isEnabled() || blank(provider.getClientId()) || blank(provider.getClientSecret())
                 || !UrlPolicy.valid(provider.getRedirectUri()) || blank(provider.getRedirectUri())
                 || !UrlPolicy.valid(properties.getFrontendCompleteUrl()) || blank(properties.getFrontendCompleteUrl())) {
             return false;
         }
-        // 2. 再核对 HTTPS、固定回调路径和前端 origin，禁止动态回跳。
+        // 2. 再检查 HTTPS、固定回调路径和前端 origin，不能临时换回跳地址。
         URI callback = URI.create(provider.getRedirectUri());
         URI complete = URI.create(properties.getFrontendCompleteUrl());
         String origin = complete.getScheme() + "://" + complete.getRawAuthority();

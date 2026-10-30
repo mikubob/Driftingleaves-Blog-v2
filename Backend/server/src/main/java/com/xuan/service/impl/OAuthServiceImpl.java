@@ -24,7 +24,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.Objects;
 
-/** 平台边界与本站会话分离；先原子消费，再换码或写库，失败不恢复票据。 */
+/** 平台验证和本站会话分开处理，先一次性消费流程再换码或写库，失败不把票据放回去。 */
 @Service
 @RequiredArgsConstructor
 public class OAuthServiceImpl implements IOAuthService {
@@ -37,9 +37,7 @@ public class OAuthServiceImpl implements IOAuthService {
     private final Clock clock;
 
     /**
-     * 创建与浏览器、平台和操作绑定的 300 秒一次性授权流程。
-     * <p>BIND 额外保存当前用户、原 Token 摘要和最近认证时间；不接受客户端指定目标身份。</p>
-     *
+     * 创建 300 秒有效的一次性流程，关联浏览器、平台和操作；绑定还要存当前用户、原 Token 摘要和认证时间，不能自选目标用户。
      * @param source 服务端启用的平台标识
      * @param operation 登录或绑定操作
      * @param browser HTTP 入口提供的浏览器随机标识，仅用于关联流程
@@ -47,42 +45,39 @@ public class OAuthServiceImpl implements IOAuthService {
      */
     @Override
     public OAuthAuthorizeVO authorize(String source, Operation operation, String browser) {
-        // 1. 只允许服务端配置完整的平台参与授权。
+        // 1. 先确认平台配置齐全，才能发起授权。
         providers.requireEnabled(source);
         Long userId = null;
         String tokenHash = null;
         long authenticatedAt = 0;
-        // 2. BIND 绑定当前用户、原 Token 摘要与最近认证时间；LOGIN 不借用本站身份。
+        // 2. 绑定记录当前用户、原 Token 摘要和最近认证时间，登录流程不借用本站身份。
         if (operation == Operation.BIND) {
             userId = users.requireCurrent();
             authenticatedAt = sessions.requireRecent(sessions.currentToken(), userId, false);
             tokenHash = TokenUtils.digest(sessions.currentToken());
         }
-        // 3. 生成不可预测的 state，并关联当前浏览器和操作，支持同浏览器多流程。
+        // 3. 生成不可预测的 state，关联当前浏览器和操作，同一浏览器可以同时有多个流程。
         String state = TokenUtils.random();
         OAuthFlow flow = new OAuthFlow(TokenUtils.digest(browser), source, operation, userId, tokenHash,
                 authenticatedAt, clock.millis());
-        // 4. 保留 JustAuth 自身的 state 校验缓存，另存 300 秒的本站一次性流程。
+        // 4. JustAuth 的 state 缓存照常保留，另存 300 秒有效的本站一次性流程。
         String url = providers.authorize(source, state);
         store.save("state", state, json.writeValueAsString(flow), Duration.ofSeconds(300));
         return new OAuthAuthorizeVO(url, 300);
     }
 
     /**
-     * 验证并原子消费授权流程，取得平台身份后执行本站注册、身份解析或绑定。
-     * <p>可信流程成功时签发 60 秒 ticket；消费后的业务或事务失败回跳固定错误页，
-     * 不可信浏览器或 state 关系直接报错。处理结束清理 JustAuth state，不恢复已消费流程。</p>
-     *
+     * 核对并一次性消费流程后再取平台身份，完成本站注册、识别或绑定；可信流程成功发 60 秒 ticket，失败跳固定错误页，不可信关系直接报错，最后清理 JustAuth state，不能恢复流程。
      * @param source 回调路径中的平台标识
      * @param state 平台返回的流程随机值
      * @param code 平台授权码，取消或失败时可缺失
      * @param error 平台取消或失败标记，仅判断是否存在，不透传其内容
      * @param browser 当前浏览器 Cookie 中的随机标识
-     * @return 固定前端完成页地址，fragment 仅包含 ticket 或白名单业务错误码
+     * @return 固定前端完成页地址，fragment 仅包含 ticket 或允许的业务错误码
      */
     @Override
     public String callback(String source, String state, String code, String error, String browser) {
-        // 1. 先校验平台、浏览器和流程关联，不匹配时不消费合法 state。
+        // 1. 先查平台、浏览器和流程关联，不匹配时不能消费合法 state。
         providers.requireEnabled(source);
         String raw = store.read("state", state);
         OAuthFlow flow = json.readValue(raw, OAuthFlow.class);
@@ -90,18 +85,18 @@ public class OAuthServiceImpl implements IOAuthService {
         if (!source.equals(flow.source())) {
             throw RedisOAuthStore.invalid();
         }
-        // 2. BIND 从服务端保存的摘要重查原会话，回调无需携带本站 Bearer。
+        // 2. 绑定按服务端保存的摘要重查原会话，平台回调不用带本站 Bearer。
         if (flow.operation() == Operation.BIND) {
             sessions.originalToken(flow.userId(), flow.tokenHash());
         }
-        // 3. 换码前原子消费本站流程，并发或重放不能再次调用平台。
+        // 3. 换码前先一次性消费本站流程，并发或重放不能再调一次平台。
         store.consume("state", state, raw);
         try {
-            // 4.1 平台取消也消耗本次流程，失败后必须重新发起。
+            // 4.平台取消也要消耗这次流程，失败后重新发起。
             if (error != null) {
                 throw new BusinessException(400, "OAUTH_DENIED", "平台授权已取消");
             }
-            // 4.2 由平台验证授权码并取得身份，异常只转换为脱敏业务错误。
+            // 4.由平台验证授权码并返回身份，异常只转成去掉敏感信息的业务错误。
             OAuthProviderClient.Identity identity;
             try {
                 identity = providers.verify(source, state, code);
@@ -110,12 +105,12 @@ public class OAuthServiceImpl implements IOAuthService {
             } catch (Exception exception) {
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方授权失败，请重新发起");
             }
-            // 4.3 只检查身份合法性，合法 uuid 保持原值，不 trim 或改变大小写。
+            // 4.这里只查身份是否合法，合法 uuid 原样保留，不能去空白或改大小写。
             if (identity == null || identity.uuid() == null || identity.uuid().isBlank()
                     || identity.uuid().codePointCount(0, identity.uuid().length()) > 255) {
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方身份无效");
             }
-            // 5. 在取得平台身份时记录认证时间，再执行本站登录身份解析或绑定事务。
+            // 5. 取得平台身份时记下认证时间，再执行本站身份识别或绑定事务。
             long at = clock.millis();
             long userId;
             OAuthBindingVO binding = null;
@@ -125,7 +120,7 @@ public class OAuthServiceImpl implements IOAuthService {
                 userId = flow.userId();
                 binding = users.bindOAuth(userId, flow.tokenHash(), source, identity.uuid());
             }
-            // 6. 只签发 60 秒结果票据并回跳固定完成页，不在 URL 中返回本站 Token。
+            // 6. 只发 60 秒有效的结果票据，再跳固定完成页，URL 里不能带本站 Token。
             String ticket = TokenUtils.random();
             OAuthTicket result = new OAuthTicket(flow.browserHash(), flow.source(), flow.operation(), userId,
                     flow.tokenHash(), flow.operation() == Operation.LOGIN ? at : flow.authenticatedAt(), binding, identity.uuid());
@@ -134,30 +129,27 @@ public class OAuthServiceImpl implements IOAuthService {
         } catch (BusinessException exception) {
             return properties.getFrontendCompleteUrl() + "#error=" + exception.getCode();
         } catch (DataAccessException | TransactionException exception) {
-            // 已消费的可信流程包含事务提交失败，统一回跳固定完成页且不签发票据。
+            // 可信流程消费后，业务或提交失败都跳固定完成页，不能再发票据。
             return properties.getFrontendCompleteUrl() + "#error=SERVICE_UNAVAILABLE";
         } finally {
-            // 7. 无论成功或失败均清理 JustAuth 校验值，不恢复已消费的本站流程。
+            // 7. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。
             store.deleteState(state);
         }
     }
 
     /**
-     * 校验浏览器并原子消费结果票据，按 LOGIN 或 BIND 返回对应结果。
-     * <p>BIND 必须携带发起时同一个有效 Token；LOGIN 在用户锁内重查绑定并签发会话。
-     * 票据消费后不因后续失败或响应丢失而恢复。</p>
-     *
+     * 核对浏览器后一次性消费结果票据；绑定必须带发起时同一枚有效 Token，登录在用户锁内重查绑定再发会话，失败或响应丢失都不恢复票据。
      * @param ticket 固定完成页交回的一次性结果票据
      * @param browser 当前浏览器 Cookie 中的随机标识
      * @return LOGIN 的本站会话结果，或 BIND 的绑定结果
      */
     @Override
     public Object exchange(String ticket, String browser) {
-        // 1. 读取尚未过期的票据并检查浏览器，错误浏览器不能消费他人的结果。
+        // 1. 先取未过期票据并核对浏览器，不能让其他浏览器消耗结果。
         String raw = store.read("ticket", ticket);
         OAuthTicket result = json.readValue(raw, OAuthTicket.class);
         requireBrowser(result.browserHash(), browser);
-        // 2. BIND 必须携带发起时同一个 Token，相同用户的其他 Token 也不能替代。
+        // 2. 绑定必须带发起时同一枚 Token，就算是同一用户的另一枚也不行。
         if (result.operation() == Operation.BIND) {
             String token = sessions.currentToken();
             if (token == null || !Objects.equals(result.tokenHash(), TokenUtils.digest(token))) {
@@ -165,9 +157,9 @@ public class OAuthServiceImpl implements IOAuthService {
             }
             sessions.requireActive(token, result.userId());
         }
-        // 3. 原子消费结果后才处理兑换，响应丢失也不能重用票据。
+        // 3. 一次性消费后才处理兑换，响应丢失也不能重复用票据。
         store.consume("ticket", ticket, raw);
-        // 4. LOGIN 在用户锁内重查绑定并签发会话；BIND 只确认身份并返回绑定结果。
+        // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
             return new OAuthLoginResultVO("LOGIN", users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt()));
         }
@@ -178,8 +170,7 @@ public class OAuthServiceImpl implements IOAuthService {
     }
 
     /**
-     * 验证浏览器标识格式及其与服务端流程摘要的关联，不消费流程。
-     *
+     * 这里只查浏览器标识的格式及其与服务端流程摘要是否对应，不消费流程。
      * @param expected 流程或票据保存的浏览器摘要
      * @param browser 当前请求的浏览器随机标识
      * @throws BusinessException 标识缺失、格式不合法或浏览器不匹配

@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
-/** 后台角色入口；公共拦截器检查有效身份和后台入口，各接口另需业务权限。 */
+/** 后台角色接口先检查身份和入口权限，各项操作还要检查对应业务权限。 */
 @RestController
 @RequestMapping("/admin/roles")
 @RequiredArgsConstructor
@@ -34,8 +34,8 @@ public class RoleController {
     private final IRoleService roles;
 
     /**
-     * 双权限检查后分页查询全局角色，SELF 不收缩字典资源。
-     * @param query 已校验的分页、关键词及状态
+     * 检查后台入口和查询权限后分页取全站角色，SELF 不缩小这个字典范围。
+     * @param query 已经检查过的分页、关键词及状态
      * @return 含完整授权关联的分页；无逐条 X-Revision
      */
     @GetMapping
@@ -45,7 +45,7 @@ public class RoleController {
     }
 
     /**
-     * 双权限检查后读取角色详情及聚合版本，允许查询禁用角色。
+     * 检查后台入口和查询权限后取角色详情及整体版本，禁用角色也能查。
      * @param roleId 正十进制角色 ID
      * @return 详情及 X-Revision；不存在返回 404
      */
@@ -56,8 +56,8 @@ public class RoleController {
     }
 
     /**
-     * 双权限检查后创建空授权角色，不接受关联和审计字段。
-     * @param body 已校验创建白名单
+     * 检查后台入口和创建权限后建空授权角色，不收关联集合和时间字段。
+     * @param body 已经检查过的允许的创建字段
      * @return 201 角色及详情 Location，无 X-Revision
      */
     @PostMapping
@@ -68,9 +68,9 @@ public class RoleController {
     }
 
     /**
-     * 双权限检查后完整替换资料及状态；版本和管理员保护由锁内事务落实。
+     * 检查后台入口和更新权限后完整替换资料、状态，版本和最后管理员在锁事务里检查。
      * @param roleId 角色 ID
-     * @param body 完整白名单，说明可为 null 但不可省略
+     * @param body 全部允许字段，说明可为 null 但不可省略
      * @param revision 单个详情版本，缺失交由 Service 返回 428
      * @return 更新详情及新 X-Revision
      */
@@ -83,7 +83,7 @@ public class RoleController {
     }
 
     /**
-     * 双权限检查后删除自定义角色，关联清理及全部会话撤销共同受事务失败约束。
+     * 检查后台入口和删除权限后删自定义角色，清关联、撤销全部会话有任何失败都要回滚。
      * @param roleId 目标角色
      * @param revision 当前详情版本，内置角色禁止删除
      * @return 200 空结果，无 X-Revision
@@ -97,7 +97,7 @@ public class RoleController {
     }
 
     /**
-     * 双权限检查后共同完整替换权限及菜单；补齐祖先但不隐式增加权限。
+     * 检查后台入口和授权权限后一起替换权限、菜单，补齐祖先，但不能自动增加接口权限。
      * @param roleId 目标角色
      * @param body 两个必填且不重复的集合，空数组允许清空
      * @param revision 资料和授权共用的详情版本
@@ -112,7 +112,7 @@ public class RoleController {
     }
 
     /**
-     * 校验路径 ID，拒绝前导零、符号、小数和 Long 溢出。
+     * 检查路径 ID，前导零、符号、小数或超过 Long 范围都拒绝。
      * @param value 原始路径文本
      * @return 内部 Long ID
      */
@@ -128,7 +128,7 @@ public class RoleController {
     }
 
     /**
-     * 将聚合版本放入响应头，响应体仅包含角色白名单。
+     * 角色整体版本放响应头，响应体只给约定的角色字段。
      * @param result 同一事务读取的角色及版本
      * @return 200 详情与 X-Revision
      */

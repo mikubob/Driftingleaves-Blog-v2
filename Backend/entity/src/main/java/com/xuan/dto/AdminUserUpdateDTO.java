@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 完整替换资料及状态；可空字段也必须显式出现，不接受用户名、密码和角色。 */
+/** 修改资料要填全，可空字段也不能漏；用户名、密码和角色不在这里修改。 */
 @Getter
 public class AdminUserUpdateDTO {
     @NotNull @TextLength(min = 1, max = 64)

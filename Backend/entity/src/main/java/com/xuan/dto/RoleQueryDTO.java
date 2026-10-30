@@ -4,7 +4,7 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
-/** 角色列表分页与字面关键词过滤。 */
+/** 按编码或名称里的文字查角色，并返回分页。 */
 public record RoleQueryDTO(@Min(1) @Max(100000) Integer page,
                            @Min(1) @Max(100) Integer pageSize,
                            @TextLength(min = 1, max = 100) String keyword,

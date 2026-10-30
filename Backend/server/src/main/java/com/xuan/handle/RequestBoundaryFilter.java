@@ -20,7 +20,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
-/** 在 JSON 解析前实施 8MiB 边界，认证响应和错误均禁止缓存。 */
+/** JSON 解析前先限制为 8MiB，认证响应和错误响应都不能缓存。 */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
 @RequiredArgsConstructor
@@ -31,16 +31,16 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        // 1. 在进入业务前设置禁止缓存和引用来源策略，失败响应同样受保护。
+        // 1. 进入业务前先设置禁止缓存和来源策略，报错时也要生效。
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("Referrer-Policy", "no-referrer");
-        // 2. 只对 JSON 请求实施此边界，其他媒体类型继续交由对应处理器。
+        // 2. 这里只限制 JSON 请求，其他类型交给各自处理器。
         String contentType = request.getContentType();
         if (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).contains("json")) {
             chain.doFilter(request, response);
             return;
         }
-        // 3. 最多多读一个字节判定超限，避免无上限缓冲整个请求体。
+        // 3. 最多多读一个字节来判断超限，不能把无限大的请求体整个读进内存。
         byte[] body = request.getInputStream().readNBytes(MAX_JSON_BYTES + 1);
         if (body.length > MAX_JSON_BYTES) {
             response.setStatus(413);
@@ -48,7 +48,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
             response.getWriter().write(json.writeValueAsString(Result.error("PAYLOAD_TOO_LARGE", "JSON请求体超过8MiB")));
             return;
         }
-        // 4. 将已检查的字节重新提供给 MVC，避免前置读取后业务层得到空请求体。
+        // 4. 检查过的字节还要交回 MVC，不能因为这里读过就让业务收到空请求体。
         chain.doFilter(new HttpServletRequestWrapper(request) {
             @Override
             public ServletInputStream getInputStream() {

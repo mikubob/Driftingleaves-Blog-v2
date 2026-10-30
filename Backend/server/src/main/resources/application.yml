@@ -1,4 +1,4 @@
-# 公共安全约定。环境差异通过环境变量或外部 application 配置覆盖，不默认激活 profile。
+# 环境差异用环境变量或外部 application 配置覆盖，这里不默认启用 profile。
 server:
   port: ${SERVER_PORT:8080}
   servlet:
@@ -9,6 +9,11 @@ server:
     include-stacktrace: never
     include-binding-errors: never
 spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 11MB
+      file-size-threshold: 0
   threads:
     virtual:
       enabled: true
@@ -38,6 +43,8 @@ mybatis-plus:
   mapper-locations: classpath:/mapper/*.xml
   configuration:
     map-underscore-to-camel-case: true
+    # READ COMMITTED 下等锁后要真正重查数据库，不能复用同一 SqlSession 在锁前缓存的正文或权限。
+    local-cache-scope: STATEMENT
   global-config:
     banner: false
 sa-token:
@@ -56,6 +63,9 @@ sa-token:
   is-print: false
   right-now-create-token-session: true
 app:
+  files:
+    local-root: ${UPLOAD_ROOT:./uploads}
+    public-origins: ${FILE_PUBLIC_ORIGINS:}
   oss:
     enabled: ${OSS_ENABLED:false}
     endpoint: ${OSS_ENDPOINT:}
@@ -92,7 +102,7 @@ app:
         client-id: ${OAUTH_QQ_CLIENT_ID:}
         client-secret: ${OAUTH_QQ_CLIENT_SECRET:}
         redirect-uri: ${OAUTH_QQ_REDIRECT_URI:}
-# 禁止框架和第三方客户端在调试日志中展开请求、回调查询和平台响应。
+# 关掉会展开请求、回调查询和平台响应的调试日志，避免把秘密内容记下来。
 logging:
   level:
     org.springframework.web: WARN

@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-    后端共享工具模块，产出普通 jar。
-    <p>承载公共结果、工具、配置和共享基础设施，不依赖 entity 或 server。</p>
-    @see ../pom.xml
--->
+<!-- 公共结果、工具和配置放在 common，打成普通 jar；这里不依赖 entity 或 server，父配置见 ../pom.xml。 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -17,17 +13,17 @@
     <artifactId>common</artifactId>
 
     <dependencies>
-        <!-- IP 地域解析及双协议内存数据库查询，由 server 装配并管理生命周期。 -->
+        <!-- 这里引入离线 IP 地域查询，加载和关闭查询器交给 server。 -->
         <dependency>
             <groupId>org.lionsoul</groupId>
             <artifactId>ip2region</artifactId>
         </dependency>
-        <!-- 共享对象存储客户端；凭据、启用条件和生命周期由应用装配。 -->
+        <!-- 这里提供对象存储客户端，凭据、启用开关和关闭操作由应用负责。 -->
         <dependency>
             <groupId>com.aliyun.oss</groupId>
             <artifactId>aliyun-sdk-oss</artifactId>
         </dependency>
-        <!-- 配置属性声明及校验注解；属性扫描和校验执行由 server 应用负责。 -->
+        <!-- 这里只声明配置和校验规则，扫描配置、执行校验由 server 负责。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot</artifactId>
@@ -40,7 +36,7 @@
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
-        <!-- Redis 存储与会话事务同步仅使用 API，连接工厂和驱动仍由 server 装配。 -->
+        <!-- 这里只用 Redis 和事务同步 API，连接工厂及驱动在 server 配置。 -->
         <dependency>
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-redis</artifactId>
@@ -49,18 +45,18 @@
             <groupId>org.springframework</groupId>
             <artifactId>spring-tx</artifactId>
         </dependency>
-        <!-- 请求限流只引用 Servlet API，不向 common 引入 MVC 或内嵌服务器。 -->
+        <!-- 限流只需要 Servlet API，不把 MVC 和内嵌服务器带进 common。 -->
         <dependency>
             <groupId>jakarta.servlet</groupId>
             <artifactId>jakarta.servlet-api</artifactId>
             <scope>provided</scope>
         </dependency>
-        <!-- 会话共享组件使用核心 API，Boot 适配和 Redis DAO 留在 server。 -->
+        <!-- 会话组件用核心 API，Boot 接入和 Redis DAO 放在 server。 -->
         <dependency>
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-core</artifactId>
         </dependency>
-        <!-- 平台客户端和固定的 Fastjson 1.x API 兼容包随共享组件下沉，不接管 MVC JSON。 -->
+        <!-- 平台客户端需要这套 Fastjson 1.x 兼容 API，MVC 的 JSON 仍用原来的配置。 -->
         <dependency>
             <groupId>me.zhyd.oauth</groupId>
             <artifactId>JustAuth</artifactId>
@@ -69,59 +65,43 @@
             <groupId>com.alibaba</groupId>
             <artifactId>fastjson</artifactId>
         </dependency>
-        <!--
-            在编译期生成样板代码，运行时无需 Lombok。
-        -->
+        <!-- Lombok 只在编译时生成代码，运行时不需要它。 -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
         </dependency>
-        <!--
-            提供 IPage 等分页结果 API，不引入数据源自动配置。
-        -->
+        <!-- 这里只用 IPage 等分页结果，不自动配置数据源。 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-core</artifactId>
         </dependency>
-        <!--
-            提供 Markdown 解析与 HTML 渲染。
-        -->
+        <!-- 用 CommonMark 解析 Markdown 并生成 HTML。 -->
         <dependency>
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark</artifactId>
         </dependency>
-        <!--
-            支持 Markdown 表格语法。
-        -->
+        <!-- 让 Markdown 能解析表格。 -->
         <dependency>
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark-ext-gfm-tables</artifactId>
         </dependency>
-        <!--
-            将正文中的裸链接解析为链接节点。
-        -->
+        <!-- 把正文里直接写出的 URL 转成链接。 -->
         <dependency>
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark-ext-autolink</artifactId>
         </dependency>
-        <!--
-            支持 Markdown 任务列表语法。
-        -->
+        <!-- 让 Markdown 能解析任务列表。 -->
         <dependency>
             <groupId>org.commonmark</groupId>
             <artifactId>commonmark-ext-task-list-items</artifactId>
         </dependency>
-        <!--
-            对渲染后的 HTML 做白名单清理，正文输出仍需实际调用清理逻辑。
-        -->
+        <!-- 渲染后还要实际调用 jsoup 清理 HTML，只引依赖不会自动过滤。 -->
         <dependency>
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
         </dependency>
-        <!--
-            提供共享工具的单元测试能力，仅进入测试类路径。
-        -->
+        <!-- 公共工具的测试用这些依赖，不带进运行包。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

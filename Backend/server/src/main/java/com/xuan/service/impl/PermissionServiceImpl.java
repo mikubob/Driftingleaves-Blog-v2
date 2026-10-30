@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.TreeSet;
 
-/** 全局权限字典事务；按保护锁、升序用户锁、权限锁执行，授权变更在撤销成功后提交。 */
+/** 权限字典写入依次锁保护点、升序用户和权限；授权改变时先退出相关会话，再提交数据库。 */
 @Service
 @RequiredArgsConstructor
 public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPermission> implements IPermissionService {
@@ -40,8 +40,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     private final JsonMapper json;
 
     /**
-     * 同一只读快照内验证双权限并查询，列表和统计共用过滤条件。
-     * @param query 已校验的分页、字面关键词、模块和状态
+     * 同一只读快照里先查后台入口和业务权限，列表、总数用同样条件。
+     * @param query 已经检查过的分页、字面关键词、模块和状态
      * @return 权限 ID 升序分页，无逐条版本；SELF 不缩小全局字典
      */
     @Override
@@ -53,7 +53,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 一致快照内鉴权后读取完整状态的字典资料及业务版本。
+     * 同一快照里先查权限，再取字典资料和版本，禁用项也保留。
      * @param permissionId 全局权限 ID
      * @return 详情及带引号版本，不存在返回 404
      */
@@ -65,8 +65,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 保护锁及操作者锁内复核权限，显式创建字典白名单字段，不建立角色关联。
-     * @param request 已校验的创建资料及默认值
+     * 保护锁和操作者锁内重查权限，只写允许的字典字段，不自动建立角色关联。
+     * @param request 已经检查过的创建资料及默认值
      * @return 回查数据库审计时间后的字典项；唯一冲突使事务回滚
      */
     @Override
@@ -85,9 +85,9 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 依次取得保护、用户和权限锁后复核身份与版本，完整替换资料，保留所有关联。
+     * 依次拿到保护锁、用户锁、权限锁后重查身份和版本，再完整替换资料，关联都保留。
      * @param permissionId 目标权限
-     * @param request 完整白名单，不接受权限码
+     * @param request 全部允许字段，不接受权限码
      * @param revision 详情业务版本；缺失、格式错误、过期分别返回 428、400、412
      * @return 新资料和版本；状态变化撤销全部关联用户会话，保护或 Redis 失败整笔回滚
      */
@@ -95,19 +95,19 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "sys:permission", permission = "sys:permission:update", targetIdArgument = 0)
     public PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision) {
-        // 1. 锁内复核原会话、当前有效身份、双权限和版本，不能以等待前的授权写入。
+        // 1. 锁内重查原会话、启用身份、后台和业务权限、版本，不能拿等待前的授权继续写。
         List<Long> affected = lockUsers(permissionId, "sys:permission:update");
         SysPermission permission = requirePermission(permissions.lockById(permissionId));
         checkRevision(permission, revision);
         boolean changed = !permission.getStatus().equals(request.getStatus());
-        // 2. 禁用仅改变有效授权，不删除角色关联或菜单门禁。
+        // 2. 禁用只让授权暂时无效，不删除角色关联或菜单访问限制。
         permission.setPermissionName(request.getPermissionName());
         permission.setModule(request.getModule());
         permission.setDescription(request.getDescription());
         permission.setStatus(request.getStatus());
         permissions.updatePermission(permission);
         if (changed) {
-            // 3. 先检查事务后管理员结果，再撤销全部受影响用户会话，成功后才允许提交。
+            // 3. 先确认修改后仍有有效管理员，再撤销所有关联用户的会话，成功后才允许提交。
             if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
                     && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
                 throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
@@ -118,7 +118,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 同一锁事务验证版本和删除限制后物理删除，数据库级联角色权限关联。
+     * 同一锁事务里查版本和删除限制，再物理删除，角色权限关联由数据库级联清理。
      * @param permissionId 目标权限
      * @param revision 当前版本；状态限制不能绕过版本检查
      * @throws BusinessException 固定后端权限禁止删除，任意菜单引用返回 RESOURCE_IN_USE；撤销失败回滚全部删除
@@ -130,19 +130,24 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         List<Long> affected = lockUsers(permissionId, "sys:permission:delete");
         SysPermission permission = requirePermission(permissions.lockById(permissionId));
         checkRevision(permission, revision);
-        if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())) {
+        if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.ARTICLE_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.TAXONOMY_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.INTERACTION_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.SITE_PERMISSIONS.contains(permission.getPermissionCode())
+                || AuthorizationProvider.FILE_PERMISSIONS.contains(permission.getPermissionCode())) {
             throw new BusinessException(409, "STATE_CONFLICT", "固定后端权限禁止删除");
         }
         if (permissions.menuReferences(permissionId) != 0) {
             throw new BusinessException(409, "RESOURCE_IN_USE", "权限仍被菜单引用");
         }
-        // 数据库保留菜单 RESTRICT；只有角色关联允许 CASCADE，撤销失败恢复字典和关联。
+        // 菜单外键仍是 RESTRICT，只有角色关联允许 CASCADE；撤销会话失败时字典和关联一起回滚。
         permissions.deleteById(permissionId);
         revoke(affected);
     }
 
     /**
-     * 实时验证启用用户、原 Token、后台入口及具体业务权限。
+     * 实时查启用账号、原 Token、后台入口和本次业务权限。
      * @param permission 当前 sys:permission 操作权限，SELF 对全局字典无本人语义
      */
     private void requireAdmin(String permission) {
@@ -153,7 +158,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 调用方写事务先取得固定保护锁，再升序锁操作者和全部关联用户，最后复核当前身份权限。
+     * 写事务先拿固定保护锁，再升序锁操作者及全部关联用户，最后重查身份和权限。
      * @param permissionId 目标权限，创建时为 null，仅锁操作者
      * @param permission 当前操作权限
      * @return 全部受影响用户，包含禁用角色和禁用用户，多角色关联去重
@@ -173,7 +178,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 已持有全部目标用户行锁时撤销全部会话，授权和菜单实时读库，无旧缓存。
+     * 全部目标用户锁到后再撤销会话，权限和菜单都实时查库，不沿用旧缓存。
      * @param affected 已去重的关联用户；Redis 失败直接抛出使数据库事务回滚
      */
     private void revoke(List<Long> affected) {
@@ -183,7 +188,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 在鉴权后检查权限是否存在，不过滤禁用状态。
+     * 先检查权限，再查字典项是否存在，禁用项也能取到。
      * @param permission 数据库查询结果
      * @return 存在的实体；不存在抛出 404
      */
@@ -195,7 +200,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 已持有权限行锁时验证单个带引号版本，先于任何写入、状态限制及会话撤销。
+     * 拿到权限行锁后先查单个带引号版本，再写入、查状态限制或撤销会话。
      * @param permission 当前锁定实体
      * @param revision 客户端详情版本，拒绝通配符和多个版本
      */
@@ -212,9 +217,9 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 从一致快照或锁事务的实体生成固定顺序业务摘要，审计时间不参与版本。
+     * 同一快照或锁事务里按固定顺序生成业务版本，时间字段不参与。
      * @param permission 当前实体，编码固定，资料及状态均参与摘要
-     * @return 白名单资料及带引号的 SHA-256 版本
+     * @return 约定资料及带引号的 SHA-256 版本
      */
     private PermissionProfileVO profile(SysPermission permission) {
         PermissionVO value = view(permission);
@@ -224,7 +229,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 显式投影字典资料，调用方负责快照或行锁一致性。
+     * 只返回约定的字典资料，调用方负责用同一快照或行锁读取。
      * @param permission 已确认存在的实体
      * @return 对外字段及数据库维护的 UTC 审计时间
      */

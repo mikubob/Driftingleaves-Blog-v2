@@ -12,30 +12,30 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import java.time.Clock;
 import java.util.Objects;
 
-/** 本站会话生命周期管理器；维护 Token 级最近认证、会话撤销及数据库失败时的签发补偿。 */
+/** 这里管理本站 Token、最近认证和退出登录，数据库提交失败时也要撤销刚发出的 Token。 */
 @Component
 @RequiredArgsConstructor
 public class SessionManager {
     private final Clock clock;
 
-    /** 需在用户行锁事务中调用；提交失败时撤销已创建 Token。 */
+    /** 调用前要在事务里锁住用户；数据库没提交成功，就撤销这次创建的 Token。 */
     public String create(long userId, long authenticatedAt, String method) {
-        // 1. 预先生成本次 Token，使后续签发或数据库提交失败时能定位并清理。
+        // 1. 先生成本次 Token，后面签发或提交出错时才能找到它并清理。
         String token = TokenUtils.random();
-        // 2. 在签发前登记事务完成回调，数据库未提交则撤销本次会话。
+        // 2. 签发前先登记事务回调，数据库没提交就撤销本次会话。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCompletion(int status) {
-                // 仅在回滚或提交结果未确认时补偿，不影响已经成功提交的 Token。
+                // 只有回滚或提交结果不确定时才撤销，已经提交成功的 Token 保留。
                 if (status != STATUS_COMMITTED) {
                     StpUtil.logoutByTokenValue(token);
                 }
             }
         });
-        // 3. 创建绝对有效 7200 秒、不滑动续期且不复用的本站会话。
+        // 3. 每次创建独立 Token，固定有效 7200 秒，不滑动续期，也不复用旧 Token。
         StpUtil.getStpLogic().createLoginSession(userId, new SaLoginParameter().setToken(token)
                 .setTimeout(7200).setActiveTimeout(-1).setIsShare(false));
-        // 4. 最近认证时间和认证方式保存在 Token 级会话，多端之间互不刷新。
+        // 4. 认证时间和方式跟着各自的 Token 保存，不能用一端登录刷新另一端的认证时间。
         SaSession session = StpUtil.getStpLogic().getTokenSessionByToken(token);
         session.set("authenticatedAt", authenticatedAt);
         session.set("method", method);
@@ -50,7 +50,7 @@ public class SessionManager {
         return StpUtil.getTokenValue();
     }
 
-    /** 写事务在取得用户锁后再次确认 Token 尚有效。 */
+    /** 写事务拿到用户锁后，再确认原 Token 还有效。 */
     public void requireActive(String token, long userId) {
         Object actual = StpUtil.getStpLogic().getLoginIdByToken(token);
         if (actual == null || !actual.toString().equals(Long.toString(userId))) {
@@ -58,15 +58,15 @@ public class SessionManager {
         }
     }
 
-    /** 原 Token 与认证信息均重新查询，不能仅凭浏览器 Cookie 恢复身份。 */
+    /** 原 Token 和认证信息都要重查，不能只靠浏览器 Cookie 恢复身份。 */
     public long requireRecent(String token, long userId, boolean requireOAuth) {
-        // 1. 重查 Token 当前归属及其会话，先排除已注销或属于其他用户的凭据。
+        // 1. 先重查 Token 归属和会话，已退出或属于别人的 Token 都不能用。
         Object loginId = StpUtil.getStpLogic().getLoginIdByToken(token);
         SaSession session = loginId == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
         if (loginId == null || !Objects.equals(loginId.toString(), Long.toString(userId)) || session == null) {
             throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
         }
-        // 2. 按当前 Token 的认证时间检查五分钟窗口，必要时限定为 OAuth 认证。
+        // 2. 再看这枚 Token 是否在五分钟内认证过，需要时还要确认它来自 OAuth 登录。
         Object value = session.get("authenticatedAt");
         long at = value instanceof Number number ? number.longValue() : 0;
         long age = clock.millis() - at;
@@ -76,12 +76,12 @@ public class SessionManager {
         return at;
     }
 
-    /** OAuth 只持有会话摘要，通过用户会话集合寻找仍有效的原 Token。 */
+    /** OAuth 流程只保存 Token 摘要，回到用户的会话里找仍然有效的原 Token。 */
     public String originalToken(long userId, String tokenHash) {
-        // 1. 只在目标用户现存会话中匹配摘要，不从 Cookie 或客户端 userId 恢复身份。
+        // 1. 只查这个用户现有的会话，不能从 Cookie 或客户端 userId 恢复身份。
         for (String token : StpUtil.getTokenValueListByLoginId(userId)) {
             if (TokenUtils.digest(token).equals(tokenHash)) {
-                // 2. 命中后仍重查归属和最近认证，摘要匹配不能代替会话有效性检查。
+                // 2. 找到摘要后仍要重查归属和最近认证，摘要相同不代表会话还有效。
                 requireRecent(token, userId, false);
                 return token;
             }
@@ -94,7 +94,7 @@ public class SessionManager {
     }
 
     public void logout() {
-        // 只撤销 Header 中提供的当前 Token；缺失或已失效保持幂等。
+        // 只撤销 Header 里的当前 Token；没传或早已失效时也算退出成功。
         String token = currentToken();
         if (token != null && !token.isBlank()) {
             StpUtil.logoutByTokenValue(token);

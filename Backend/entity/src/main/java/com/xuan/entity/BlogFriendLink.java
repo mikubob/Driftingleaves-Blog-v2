@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 友情链接；URL协议及长度由应用校验。 */
+/** 友链 URL 的协议和长度由应用检查。 */
 @Data
 @TableName("blog_friend_link")
 public class BlogFriendLink {
@@ -39,11 +39,11 @@ public class BlogFriendLink {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

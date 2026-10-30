@@ -116,7 +116,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request;
 
-/** 真实 MySQL/Redis、Service、Mapper 和 MVC 链；仅平台网络及确定性失败使用替身。 */
+/** 身份接口走真实 MySQL、Redis、Service、Mapper 和 MVC，只有平台网络和指定失败使用替身。 */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(IdentityIntegrationTest.Boundaries.class)
@@ -190,7 +190,7 @@ class IdentityIntegrationTest {
         jdbc.update("DELETE FROM blog_article");
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM sys_user");
-        // 自建菜单按叶子清理，先释放权限 RESTRICT 引用；不触碰初始化菜单及既有授权。
+        // 自建菜单从叶子开始清理，先释放权限的 RESTRICT 引用，不改初始化菜单和原有授权。
         while (jdbc.update("DELETE m FROM sys_menu m LEFT JOIN sys_menu c ON c.parent_id=m.menu_id WHERE m.menu_code LIKE 'test:%' AND c.menu_id IS NULL") > 0) { }
         jdbc.update("DELETE FROM sys_permission WHERE permission_code LIKE 'test:%'");
         jdbc.update("UPDATE sys_role SET status=1");
@@ -326,7 +326,7 @@ class IdentityIntegrationTest {
         }
     }
 
-    /** 等待实际失败审计完成后再清理隔离数据，避免测试之间遗留后台写入。 */
+    /** 等失败日志真正写完再清理隔离数据，避免后台写入串到下一条测试。 */
     @AfterEach
     void awaitAudits() throws Exception {
         for (CompletableFuture<Void> pending : pendingAudits) {
@@ -395,7 +395,7 @@ class IdentityIntegrationTest {
                 "{\"userId\":\"1\"}", "{\"nickname\":12}", "{\"intro\":\"a\",\"intro\":\"b\"}")) {
             assertCode(patch(token, original, body), 400, "VALIDATION_ERROR");
         }
-        // 绝对 URL 也不能将本站附件 API 当头像，包括编码和路径归一化后的等价值。
+        // 头像不能指向本站附件 API，绝对 URL、编码或整理后的等价路径也不行。
         for (String avatar : List.of("javascript:alert(1)", "https://user:password@example.test/a.png",
                 ORIGIN + "/api/v1/admin/files/1/content", ORIGIN + "/api/v1/blog/articles/1/files/2/content",
                 ORIGIN + "/api/v1/admin/articles/1/files/2/content",
@@ -583,7 +583,7 @@ class IdentityIntegrationTest {
         long id = Long.parseLong(data(register("leaf")).get("userId").asString());
         String token = login("leaf");
         OAuthFlow bind = start("BIND", token, null);
-        // 在真实绑定写入后注入事务异常，验证回滚与回跳，保留会话校验和 Mapper 执行。
+        // 实际写入绑定后再注入事务异常，检查回滚和跳转，会话校验及 Mapper 都照常执行。
         doAnswer(invocation -> {
             invocation.callRealMethod();
             throw new TransactionSystemException("injected transaction failure");
@@ -644,7 +644,7 @@ class IdentityIntegrationTest {
     void existingMappingsAndExpandedSchemaMatchRealMysql() throws Exception {
         List<String> tables = jdbc.queryForList("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE()", String.class);
         assertThat(tables).hasSize(28);
-        // 已实现的19个实体逐列核对；其余业务仍仅有数据库设计。
+        // 已经实现的 19 个实体逐列检查，其他业务仍只检查数据库设计。
         tables.removeAll(List.of("home_profile", "home_social_link", "cv_experience", "cv_skill",
                 "blog_message", "blog_music", "blog_rss_subscription", "blog_visitor", "blog_page_view"));
         assertThat(tables).hasSize(19);
@@ -685,11 +685,11 @@ class IdentityIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT @@session.time_zone", String.class)).isEqualTo("+00:00");
     }
 
-    /** 验证新增业务的真实MySQL约束、数据保留规则及默认菜单授权。 */
+    /** 实际检查 MySQL 约束、数据保留规则和默认菜单授权。 */
     @Test
     void expandedBusinessConstraintsAndGrantsMatchRealMysql() {
         new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
-            // 1. 测试数据随事务回滚，不影响身份用例的清理顺序。
+            // 1. 本用例的数据随事务回滚，不影响身份测试清理顺序。
             status.setRollbackOnly();
             jdbc.update("INSERT INTO sys_user(username,nickname) VALUES ('schema-check','schema-check')");
             long userId = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username='schema-check'", Long.class);
@@ -702,7 +702,7 @@ class IdentityIntegrationTest {
             assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_music(title,audio_url,lyric_url) VALUES ('音乐','https://example.test/audio.mp3','https://example.test/lyric.lrc')"))
                     .isInstanceOf(UncategorizedSQLException.class).hasMessageContaining("ck_music_lyric");
 
-            // 2. 留言只接受本站用户，删除父节点保留回复链，订阅邮箱必须确认且不能重复。
+            // 2. 留言只收本站用户，删除父节点也保留回复链，订阅邮箱要确认且不能重复。
             jdbc.update("INSERT INTO blog_message(user_id,content) VALUES (?,'根留言')", userId);
             long parentId = jdbc.queryForObject("SELECT message_id FROM blog_message WHERE user_id=?", Long.class, userId);
             jdbc.update("INSERT INTO blog_message(user_id,parent_id,content) VALUES (?,?,'回复')", userId, parentId);
@@ -718,7 +718,7 @@ class IdentityIntegrationTest {
             assertThatThrownBy(() -> jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES (?,'LEAF@example.test')", secondUser))
                     .isInstanceOf(DataIntegrityViolationException.class);
 
-            // 3. 清理统计标识或账号时保留浏览、操作审计，不让统计记录承担身份鉴权。
+            // 3. 清统计标识或账号时要保留浏览和操作日志，统计记录不能拿来当身份凭据。
             jdbc.update("INSERT INTO blog_visitor(fingerprint) VALUES ('schema-visitor')");
             long visitorId = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor WHERE fingerprint='schema-visitor'", Long.class);
             jdbc.update("INSERT INTO blog_page_view(visitor_id,user_id,site_code,page_path) VALUES (?,?,'blog','/articles/test')", visitorId, secondUser);
@@ -728,7 +728,7 @@ class IdentityIntegrationTest {
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL AND user_id IS NULL AND page_path='/articles/test'", Integer.class)).isEqualTo(1);
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE user_id IS NULL AND operation_target='schema-check'", Integer.class)).isEqualTo(1);
         });
-        // 4. 新权限全量显式授予管理员，作者和会员没有新增全局管理入口。
+        // 4. 新增权限明确授予管理员，作者和会员不能自动获得新增全站管理入口。
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission p LEFT JOIN sys_role_permission rp ON rp.permission_id=p.permission_id AND rp.role_id=1 WHERE rp.permission_id IS NULL", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu m LEFT JOIN sys_role_menu rm ON rm.menu_id=m.menu_id AND rm.role_id=1 WHERE rm.menu_id IS NULL", Integer.class)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id IN (2,3) AND permission_id>=120 AND permission_id NOT IN (163,164,165,183,184)", Integer.class)).isZero();
@@ -951,7 +951,7 @@ class IdentityIntegrationTest {
         assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
         assertCode(call("GET", "/admin/users", token, null), 200, "OK");
-        // 查询权限不能授予创建、修改和授权；入口身份与权限每次重新读取。
+        // 有查询权限不等于能创建、修改或授权，入口身份和权限每次都要重查。
         for (int i = 2; i < paths.size(); i++) {
             assertCode(call(methods.get(i), paths.get(i), token, bodies.get(i)), 403, "FORBIDDEN");
         }
@@ -1214,7 +1214,7 @@ class IdentityIntegrationTest {
                     return invocation.callRealMethod();
                 }).when(AopTestUtils.<IUserService>getUltimateTargetObject(users))
                         .adminUpdate(eq(Long.parseLong(target)), any(AdminUserUpdateDTO.class), eq(revision));
-                // 主线程先持有真实保护锁；请求通过 MVC 鉴权后进入 Service，随后等待此锁。
+                // 主线程先拿真实保护锁，另一个请求通过 MVC 检查后进入业务层，再等这把锁。
                 var pending = new TransactionTemplate(transactionManager).execute(status -> {
                     jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_id=1 FOR UPDATE", Long.class);
                     var response = executor.submit(() -> adminPut("/admin/users/" + target, admin, revision, userBody("不应保存", 1)));
@@ -1398,7 +1398,7 @@ class IdentityIntegrationTest {
         String current = granted.getResponse().getHeader("X-Revision");
         assertThat(current).isNotEqualTo(original);
         assertCode(adminPut("/admin/roles/" + id, admin, original, roleBody("旧资料", "SELF", 1)), 412, "REVISION_CONFLICT");
-        // 已禁用关联仍出现在详情和版本中，审计时间单独变化不改变摘要。
+        // 禁用关联也要出现在详情和版本里，只改时间不改变整体版本。
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=11");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=?", button);
         assertThat(roleRevision(admin, id)).isEqualTo(current);
@@ -2529,7 +2529,7 @@ class IdentityIntegrationTest {
     interface ArticleTestMapper extends BaseMapper<BlogArticle> { }
     interface FileTestMapper extends BaseMapper<BlogFile> { }
 
-    /** 平台网络是唯一身份替身，state 校验和平台 URL 仍走真实 JustAuth。 */
+    /** 只有平台网络返回身份用替身，state 检查和平台 URL 仍走实际 JustAuth。 */
     @TestConfiguration
     static class Boundaries {
         @Bean
@@ -2556,7 +2556,7 @@ class IdentityIntegrationTest {
         TestAdminController testAdminController() { return new TestAdminController(); }
     }
 
-    /** 仅测试 classpath 的入口，检验真实 Sa-Token 过滤和注解组合。 */
+    /** 这个入口只放测试 classpath，用来检查真实 Sa-Token 过滤和注解能否一起生效。 */
     @RestController
     static class TestAdminController {
         @GetMapping("/admin/test/rate-user")

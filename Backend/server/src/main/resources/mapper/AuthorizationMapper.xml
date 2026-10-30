@@ -1,53 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!--
-    授权读取 SQL；有效角色、权限与菜单各按自身状态过滤，角色名称不产生通配授权。
--->
+<!-- 角色、权限和菜单各自都要查启用状态，不能因为角色名是 admin 就自动给通配权限。 -->
 <mapper namespace="com.xuan.mapper.AuthorizationMapper">
-    <!-- 不缓存授权；禁用用户、角色、权限在下一请求立即生效。 -->
-    <!--
-        查询启用用户的启用角色码，按字典序返回。
-        此查询反映有效角色，不用显示名称或角色权重推导权限。
-    -->
+    <!-- 授权实时查库，不用旧缓存，下次请求马上能看到用户、角色或权限禁用。 -->
+    <!-- 查启用用户的启用角色码，按字典序返回，不用显示名称或角色权重推算权限。 -->
     <select id="roleCodes" resultType="string">
         SELECT r.role_code FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
         WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY r.role_code
     </select>
-    <!--
-        查询用户已分配的完整角色 ID 集合，按 ID 升序返回。
-        特意不按角色状态过滤：禁用角色关联仍影响用户聚合版本，不能用于有效权限判断。
-    -->
+    <!-- 查全部已分配角色 ID 并升序返回，禁用角色也参与用户整体版本，但不能用它判断有效权限。 -->
     <select id="roleIds" resultType="long">
         SELECT role_id FROM sys_user_role WHERE user_id = #{userId} ORDER BY role_id
     </select>
-    <!--
-        返回每个有效角色明确授予的启用权限及该角色的数据范围。
-        同一权限可以有多行，保留范围来源；Service 仅合并授予该权限的角色，不能借用无关 ALL 角色。
-    -->
+    <!-- 每个有效角色分别返回它授予的启用权限和范围，同权限保留多行；业务层只合并真正授予它的角色，不能借无关 ALL 角色扩大范围。 -->
     <select id="grants" resultType="com.xuan.mapper.AuthorizationMapper$Grant">
-        <!-- 1. 从用户的实际角色授权出发，保留逐角色的权限与数据范围。 -->
+        <!-- 从用户实际角色关联出发，保留各个角色的权限和数据范围。 -->
         SELECT p.permission_code, r.data_scope FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
         JOIN sys_role_permission rp ON rp.role_id = r.role_id
-        <!-- 2. 权限本身也必须启用，不能仅凭角色启用状态放行。 -->
+        <!-- 权限本身也要启用，不能只看角色启用了就放行。 -->
         JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
         WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY p.permission_code
     </select>
-    <!--
-        返回有效角色授予的启用菜单候选项，并取启用权限的字典编码。
-        DISTINCT 消除多角色重复菜单；保留隐藏项与按钮，权限交集、祖先链和空目录过滤由 Service 完成。
-    -->
+    <!-- 取有效角色授予的启用菜单及权限编码，DISTINCT 去掉多角色重复项；隐藏项和按钮保留，权限、祖先链和空目录交给业务层再查。 -->
     <select id="menus" resultType="com.xuan.mapper.AuthorizationMapper$MenuGrant">
-        <!-- 1. 按角色菜单授权取得启用节点，不将 is_visible 当作撤权条件。 -->
+        <!-- 按角色菜单授权取启用节点，is_visible 只管显示，不能当作撤权。 -->
         SELECT DISTINCT m.*, p.permission_code FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
         JOIN sys_role_menu rm ON rm.role_id = r.role_id
         JOIN sys_menu m ON m.menu_id = rm.menu_id AND m.status = 1
-        <!-- 2. 左连接保留无权限的结构目录；其余缺少有效权限的候选节点交由 Service 剔除。 -->
+        <!-- 左连接保留不需要权限的目录，其他缺有效权限的候选由业务层去掉。 -->
         LEFT JOIN sys_permission p ON p.permission_id = m.permission_id AND p.status = 1
         WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY m.sort_order, m.menu_id
     </select>

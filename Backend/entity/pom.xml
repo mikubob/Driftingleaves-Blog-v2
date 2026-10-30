@@ -1,9 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--
-    后端数据模型模块，产出普通 jar，对应老项目的 pojo 职责。
-    <p>承载实体、请求 DTO、响应 VO 和业务传输模型，不依赖 common 或 server。</p>
-    @see ../pom.xml
--->
+<!-- 实体、DTO、VO 和业务传输模型放在 entity，打成普通 jar；不依赖 common 或 server，父配置见 ../pom.xml。 -->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -17,31 +13,23 @@
     <artifactId>entity</artifactId>
 
     <dependencies>
-        <!--
-            在编译期生成模型样板代码，运行时无需 Lombok。
-        -->
+        <!-- Lombok 在编译时生成模型代码，运行时不需要它。 -->
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
         </dependency>
-        <!--
-            提供 DTO 字段校验注解；校验执行器由 server 的 Validation starter 提供。
-        -->
+        <!-- 这里只声明 DTO 校验规则，真正执行校验由 server 的 Validation starter 负责。 -->
         <dependency>
             <groupId>jakarta.validation</groupId>
             <artifactId>jakarta.validation-api</artifactId>
         </dependency>
-        <!--
-            提供实体表、主键和字段映射注解，避免模型模块引入数据库 starter。
-        -->
+        <!-- 这里只要表、主键和字段注解，不把数据库 starter 带进模型模块。 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-annotation</artifactId>
         </dependency>
-        <!--
-            提供模型相关的单元测试能力，仅进入测试类路径。
-        -->
+        <!-- 模型测试需要的依赖只在测试时使用。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

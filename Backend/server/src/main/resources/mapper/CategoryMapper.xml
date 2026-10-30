@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 分类不按作者划分，隐藏分类也能在后台查到。 -->
+<mapper namespace="com.xuan.mapper.CategoryMapper">
+    <!-- 公开列表只查展示中的分类，不要求分类已经有文章。 -->
+    <select id="categoryPage" resultType="com.xuan.entity.BlogCategory">
+        SELECT * FROM blog_category
+        <where>
+            <choose>
+                <when test="publicOnly">status = 1</when>
+                <otherwise>
+                    <if test="query.status != null">AND status = #{query.status}</if>
+                    <if test="query.keyword != null">AND INSTR(category_name, #{query.keyword}) &gt; 0</if>
+                </otherwise>
+            </choose>
+        </where>
+        ORDER BY sort_order ASC, category_id ASC
+    </select>
+    <!-- 文章保存会拿分类共享锁，删除要等那些保存结束，不能留失效关联。 -->
+    <select id="lockById" resultType="com.xuan.entity.BlogCategory">
+        SELECT * FROM blog_category WHERE category_id = #{id} FOR UPDATE
+    </select>
+    <!-- description 为 null 就清空，不改数据库维护的时间。 -->
+    <update id="updateCategory">
+        UPDATE blog_category SET category_name = #{category.categoryName}, slug = #{category.slug},
+            description = #{category.description}, sort_order = #{category.sortOrder}, status = #{category.status}
+        WHERE category_id = #{category.categoryId}
+    </update>
+</mapper>

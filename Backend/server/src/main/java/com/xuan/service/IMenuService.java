@@ -9,16 +9,16 @@ import com.xuan.vo.MenuProfileVO;
 import com.xuan.vo.MenuVO;
 import java.util.List;
 
-/** 全局菜单管理；有效身份、后台入口及具体菜单权限共同校验，菜单不改变独立接口授权。 */
+/** 菜单是全站资源，身份、后台入口和具体权限都要查，菜单授权不能代替接口授权。 */
 public interface IMenuService extends IService<SysMenu> {
-    /** 一致快照内读取完整树，保留空目录、禁用、隐藏和按钮，逐层稳定排序。 */
+    /** 同一快照里取完整树，空目录、禁用项、隐藏项和按钮都保留，每层排序固定。 */
     List<MenuNodeVO> tree();
-    /** 鉴权后读取完整菜单详情及业务版本，不存在返回 404。 */
+    /** 检查权限后取菜单详情和版本，不存在返回 404。 */
     MenuProfileVO detail(long menuId);
-    /** 结构锁内校验字段、祖先和门禁，创建但不隐式授予任何角色。 */
+    /** 持有结构锁时检查字段、祖先和访问权限，创建菜单不自动给角色授权。 */
     MenuVO create(MenuCreateDTO request);
-    /** 结构锁内复核身份、版本及全部受影响树，完整替换资料，不自动补角色祖先或权限。 */
+    /** 结构锁内重查身份、版本和受影响的树，再完整替换资料，不自动补角色祖先或权限。 */
     MenuProfileVO update(long menuId, MenuUpdateDTO request, String revision);
-    /** 锁内校验版本；有子节点返回 RESOURCE_IN_USE，叶子仅级联 role_menu，不撤销会话。 */
+    /** 锁内先查版本，有子节点就报 RESOURCE_IN_USE；删叶子只级联 role_menu，不撤销会话。 */
     void delete(long menuId, String revision);
 }

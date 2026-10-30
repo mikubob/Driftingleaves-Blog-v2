@@ -5,12 +5,12 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
 
-/** 客户端地址处理；只解析 IP 字面量，从右向左剥离精确配置的受信代理。 */
+/** 只解析 IP 地址，从右往左跳过明确配置的可信代理，不查主机名。 */
 public final class IpUtils {
     private IpUtils() { }
 
     /**
-     * 取得规范化客户端 IP，不进行 DNS 查询；无效转发链退回直连地址。
+     * 取得规范的客户端 IP，不查 DNS；转发链有问题就用直连地址。
      * @param request 当前请求，容器的自动转发头处理必须关闭
      * @param trustedProxies 受信代理的精确 IPv4/IPv6 地址，不接受网段和主机名
      * @return 客户端地址；容器未提供合法地址时返回 null
@@ -35,12 +35,12 @@ public final class IpUtils {
         return current;
     }
 
-    /** 规范化地址后比较，避免 IPv6 的等价写法绕开受信链判断。 */
+    /** 先把地址整理成统一写法再比较，避免同一个 IPv6 地址写法不同而漏掉检查。 */
     private static boolean trusted(String ip, List<String> proxies) {
         return proxies.stream().anyMatch(proxy -> ip.equals(normalize(proxy)));
     }
 
-    /** 校验并规范化 IP 字面量，不接受端口、zone ID、主机名或缩写 IPv4。 */
+    /** 只收完整 IP 地址，不接受端口、zone ID、主机名或 IPv4 缩写。 */
     public static String normalize(String value) {
         if (value == null || value.isEmpty() || value.length() > 45) {
             return null;

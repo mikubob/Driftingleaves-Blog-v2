@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 权限资料完整替换；编码不可改，可空说明也必须显式提供。 */
+/** 修改权限要填全，编码不能改，可空的说明也要传。 */
 @Getter
 public class PermissionUpdateDTO {
     @NotNull @TextLength(min = 1, max = 64)

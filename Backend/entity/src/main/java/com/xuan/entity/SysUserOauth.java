@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** JustAuth第三方身份绑定；每用户每平台一个账号，不存第三方Token。 */
+/** 一个用户在每个平台只绑定一个账号，不保存第三方 Token。 */
 @Data
 @TableName("sys_user_oauth")
 public class SysUserOauth {
@@ -23,11 +23,11 @@ public class SysUserOauth {
     @TableField("source")
     private String source;
 
-    /** JustAuth返回的稳定用户标识，区分大小写，不使用昵称或邮箱。 */
+    /** 使用 JustAuth 返回的稳定标识，保留大小写，不能用昵称或邮箱代替。 */
     @TableField("uuid")
     private String uuid;
 
-    /** 绑定时间；由数据库默认值维护，应用不填充。 */
+    /** 绑定时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 }

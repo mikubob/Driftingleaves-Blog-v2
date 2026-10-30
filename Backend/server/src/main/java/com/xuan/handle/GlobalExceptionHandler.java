@@ -21,16 +21,29 @@ import org.springframework.web.method.annotation.HandlerMethodValidationExceptio
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import java.util.List;
 
-/** HTTP 错误转换；仅输出可公开文案，不回显输入、SQL、平台响应或堆栈。 */
+/** 把错误转成 HTTP 响应，只给用户能看的文案，不带输入、SQL、平台响应或堆栈。 */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    /** 容器 multipart 上限也转换为统一 413，不回显内部临时目录。 */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Result<Void>> uploadTooLarge() {
+        return error(413, "PAYLOAD_TOO_LARGE", "文件或multipart请求超限");
+    }
+
+    /** 部件不完整等 multipart 格式错误不应变成内部错误。 */
+    @ExceptionHandler(MultipartException.class)
+    public ResponseEntity<Result<Void>> multipart() {
+        return error(400, "VALIDATION_ERROR", "multipart请求格式不符合要求");
+    }
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> business(BusinessException exception) {
-        // 1. 保留业务定义的 HTTP 状态，不能把失败包装成 200。
+        // 1. 保留业务错误的 HTTP 状态，不能把失败包成 200。
         ResponseEntity.BodyBuilder response = ResponseEntity.status(exception.getStatus());
-        // 2. 限流错误补充等待秒数，其余错误沿用统一脱敏响应。
+        // 2. 限流错误补上要等多少秒，其他错误按统一格式返回。
         if (exception.getRetryAfter() != null) {
             response.header("Retry-After", exception.getRetryAfter().toString());
         }
@@ -39,7 +52,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Result<Void>> validation(MethodArgumentNotValidException exception) {
-        // 仅提取字段名和约束说明，不把被拒绝的密码等输入值放入错误列表。
+        // 只提取字段名和校验说明，不把密码等被拒绝的输入放进错误列表。
         List<Result.FieldError> errors = exception.getBindingResult().getFieldErrors().stream()
                 .map(error -> new Result.FieldError(error.getField(), error.getDefaultMessage())).toList();
         return ResponseEntity.badRequest().body(new Result<>("VALIDATION_ERROR", "参数校验失败", null, errors));
@@ -89,7 +102,7 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Result<Void>> unexpected(Exception exception) {
-        // 只记录异常类型，避免平台、SQL或解析器的异常消息携带秘密输入。
+        // 日志只记异常类型，避免 SQL、平台或解析异常的消息夹带秘密输入。
         System.getLogger(getClass().getName()).log(System.Logger.Level.ERROR,
                 "未预期异常类型：" + exception.getClass().getName());
         return error(500, "INTERNAL_ERROR", "服务内部错误");

@@ -19,7 +19,7 @@ import java.util.stream.IntStream;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** 实际装配双协议 xdb 并离线查询，覆盖并发调用、代理取址及无效资源启动失败。 */
+/** 实际加载 IPv4、IPv6 的 xdb 离线库，检查并发查询、代理 IP 和资源无效时启动失败。 */
 class IpLocationConfigTest {
     private static AnnotationConfigApplicationContext context;
     private static IpLocationResolver resolver;

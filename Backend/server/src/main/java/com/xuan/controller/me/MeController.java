@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
-/** 本人资料和安全设置入口，不接收客户端目标用户 ID。 */
+/** 这里操作当前用户的资料和安全设置，不收客户端目标用户 ID。 */
 @RestController
 @RequestMapping("/me")
 @RequiredArgsConstructor
@@ -35,9 +35,7 @@ public class MeController {
     private final AuthorizationProvider authorization;
 
     /**
-     * 查询当前登录用户资料，并返回聚合版本响应头。
-     * <p>目标身份只从会话取得，X-Revision 供后续本人资料修改原样携带。</p>
-     *
+     * 从会话确定当前用户，返回资料和 X-Revision；修改时要原样带回这个版本。
      * @return 本人资料及 X-Revision 响应头
      */
     @GetMapping
@@ -46,10 +44,8 @@ public class MeController {
     }
 
     /**
-     * 按出现性语义修改本人资料，并返回新的聚合版本。
-     * <p>缺失字段保持原值，null 仅清空可空字段；缺失版本由 Service 返回 428，过期版本返回 412。</p>
-     *
-     * @param body 已校验的资料白名单字段及其出现性
+     * 只改实际传来的字段，没传就保持，null 只能清空可空字段；版本没传返回 428，过期返回 412。
+     * @param body 已经检查过的允许修改的资料字段，以及客户端有没有传
      * @param revision 原样携带的带引号 If-Revision；可缺失以交由业务层区分错误
      * @return 更新后的本人资料和对应 X-Revision
      */
@@ -60,10 +56,8 @@ public class MeController {
     }
 
     /**
-     * 设置或修改当前用户的本站密码。
-     * <p>最近认证、旧密码或 OAuth 身份检查及全会话撤销由 Service 完成，成功后前端需重新登录。</p>
-     *
-     * @param body 已校验长度和 UTF-8 字节边界的密码请求
+     * 设置或修改当前用户密码，最近认证、旧密码或 OAuth 身份和全部会话撤销都由业务层处理；成功后要重新登录。
+     * @param body 已经检查过的长度和 UTF-8 字节限制的密码请求
      * @return data 为 null 的成功结果
      */
     @PutMapping("/password")
@@ -74,10 +68,8 @@ public class MeController {
     }
 
     /**
-     * 清除当前用户的本站密码，并撤销全部本站会话。
-     * <p>Service 在用户锁内验证原密码和剩余可用登录方式，禁止删除最后一种登录方式。</p>
-     *
-     * @param body 包含当前密码的已校验请求
+     * 清除当前用户密码并撤销全部会话；用户锁内核对旧密码和剩余登录方式，不能删掉最后一种。
+     * @param body 包含当前密码的已经检查过的请求
      * @return data 为 null 的成功结果
      */
     @DeleteMapping("/password")
@@ -88,9 +80,7 @@ public class MeController {
     }
 
     /**
-     * 查询当前启用用户的有效角色、权限及逐权限数据范围。
-     * <p>普通 member 也可调用；返回结果不等于授予后台入口，也不代替资源 SQL 的归属过滤。</p>
-     *
+     * 查询当前启用用户的角色、权限及每项范围，member 也能查；这不表示获得后台入口，资源 SQL 仍要检查归属。
      * @return 按字典序排列的有效授权及权限到 ALL/SELF 的映射
      */
     @GetMapping("/capabilities")
@@ -99,9 +89,7 @@ public class MeController {
     }
 
     /**
-     * 查询当前用户可访问的后台菜单树。
-     * <p>无 admin:access 时为空列表；返回已授权隐藏项和按钮，按钮不应被前端当作页面路由。</p>
-     *
+     * 查询本人能访问的菜单；没有 admin:access 就返回空列表，已授权的隐藏项和按钮保留，按钮不能生成页面路由。
      * @return 完成权限交集和祖先链过滤的菜单树
      */
     @GetMapping("/menus")
@@ -110,9 +98,7 @@ public class MeController {
     }
 
     /**
-     * 查询当前用户的第三方绑定列表。
-     * <p>只列当前配置可用的平台，仅公开平台和绑定时间，不返回绑定记录 ID、uuid 或平台 Token。</p>
-     *
+     * 只列当前配置可用的平台和绑定时间，不返回绑定 ID、uuid 或平台 Token。
      * @return 按平台升序排列的绑定列表，无绑定时为空列表
      */
     @GetMapping("/oauth-bindings")
@@ -121,10 +107,8 @@ public class MeController {
     }
 
     /**
-     * 解绑当前用户指定平台的身份，并撤销全部本站会话。
-     * <p>Service 检查最近认证及最后登录方式；未绑定或平台未启用时按业务契约返回错误。</p>
-     *
-     * @param source 待解绑的服务端白名单平台标识
+     * 解绑本人指定平台并撤销全部会话；先查最近认证和剩余登录方式，未绑定或平台关闭按约定报错。
+     * @param source 待解绑的服务端允许的平台标识
      * @return data 为 null 的成功结果
      */
     @DeleteMapping("/oauth-bindings/{source}")
@@ -134,14 +118,12 @@ public class MeController {
     }
 
     /**
-     * 将本人资料查询结果转换为 HTTP 响应。
-     * <p>版本只放入 X-Revision 响应头，正文使用脱敏资料模型，不泄露内部聚合结构。</p>
-     *
-     * @param result 用户服务生成的资料投影与带引号版本
+     * 把本人资料转成 HTTP 响应，版本只放 X-Revision，响应体只给已去掉敏感信息的资料。
+     * @param result 用户服务生成的返回资料与带引号版本
      * @return 统一成功响应及原样保留的版本响应头
      */
     private ResponseEntity<Result<MeVO>> profile(UserProfileVO result) {
-        // 将服务生成的带引号版本原样放入响应头，响应体仅包含公开资料投影。
+        // 服务端生成的带引号版本原样放响应头，响应体只返回约定的资料。
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.user()));
     }
 }

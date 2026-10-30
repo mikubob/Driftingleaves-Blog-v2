@@ -15,20 +15,20 @@ import org.springframework.transaction.annotation.EnableTransactionManagement;
 import java.time.Clock;
 import java.util.List;
 
-/** 装配分页、密码、时钟和事务顺序；虚拟线程与独立失败审计由专用配置协调。 */
+/** 这里配置分页、密码、时钟和事务顺序，虚拟线程和失败日志由各自配置负责。 */
 @Configuration
 @EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
-    /** 复用官方 Redis DAO 的键包装扩展，隔离本站会话命名空间。 */
+    /** 沿用官方 Redis DAO 的键处理方式，加上本站前缀，避免混用其他应用的会话。 */
     @Bean
     @Primary
     public SaTokenDaoForRedisTemplate sessionDao(RedisConnectionFactory factory, AuthProperties properties) {
-        // 1. 复用官方 DAO，仅扩展保留 TTL 和隔离键前缀的行为。
+        // 1. 沿用官方 DAO，只补上保留 TTL 和本站键前缀的行为。
         SaTokenDaoForRedisTemplate dao = new SaTokenDaoForRedisTemplate() {
-            /** 本机 Redis 5 无 KEEPTTL；原子保留 TTL，且不复活已过期会话。 */
+            /** 本机 Redis 5 没有 KEEPTTL，用脚本保留 TTL，也不能让过期会话重新生效。 */
             @Override
             public void setStringAndKeepTTL(String finalKey, String value) {
-                // 在同次 Lua 执行中取得原 TTL 并恢复到新值，已过期键不能被更新复活。
+                // 一次 Lua 里读旧 TTL 并设置新值，键已经过期就不能更新复活。
                 stringRedisTemplate.execute(new DefaultRedisScript<>("""
                         local ttl = redis.call('PTTL', KEYS[1])
                         if ttl == -2 then return 0 end
@@ -43,7 +43,7 @@ public class InfrastructureConfig {
                 return properties.getRedisPrefix() + "session:" + key;
             }
         };
-        // 2. 使用现有连接工厂初始化 DAO，不额外创建一套 Redis 客户端。
+        // 2. 用现有连接工厂初始化 DAO，不再创建另一套 Redis 客户端。
         dao.init(factory);
         return dao;
     }

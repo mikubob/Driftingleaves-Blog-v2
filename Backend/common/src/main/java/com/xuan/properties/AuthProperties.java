@@ -12,14 +12,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 共享身份基础设施参数；由应用扫描绑定，凭据只来自环境或外部配置。 */
+/** 登录相关配置由应用扫描加载，凭据从环境或外部配置读取。 */
 @Data
 @Validated
 @ConfigurationProperties("app.auth")
 public class AuthProperties {
     private List<String> allowedOrigins = new ArrayList<>();
     private String frontendCompleteUrl;
-    /** 从右向左剥离这些精确代理地址，不信任任意转发头或最左地址。 */
+    /** 从右往左跳过这些明确配置的代理，不能直接相信转发头里的最左地址。 */
     private List<String> trustedProxies = new ArrayList<>();
     @NotBlank
     private String redisPrefix = "dl:v2:";

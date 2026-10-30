@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 
-/** 分离本站一次性流程与 JustAuth state；compare-and-delete 由 Redis 单次 Lua 完成。 */
+/** 本站一次性流程和 JustAuth state 分开存，用一次 Redis Lua 完成比较和删除。 */
 @Component
 @RequiredArgsConstructor
 public class RedisOAuthStore implements AuthStateCache {
@@ -25,11 +25,11 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     public String read(String kind, String secret) {
-        // 1. 在访问 Redis 前检查外部票据格式，不接受任意键片段。
+        // 1. 先检查票据格式，再访问 Redis，不能让外部输入随意拼接键。
         if (secret == null || !secret.matches("[A-Za-z0-9_-]{43}")) {
             throw invalid();
         }
-        // 2. 只读取未过期记录，过期、重放和格式错误统一为流程失效。
+        // 2. 只取没过期的记录，格式不对、过期或重复使用都报流程失效。
         String value = redis.opsForValue().get(key(kind, secret));
         if (value == null) {
             throw invalid();
@@ -37,11 +37,11 @@ public class RedisOAuthStore implements AuthStateCache {
         return value;
     }
 
-    /** 先由调用方验证完整浏览器/操作/原会话关系，错误关联不会删除合法流程。 */
+    /** 调用方先核对浏览器、操作和原会话，关联不对时不能删掉别人的合法流程。 */
     public void consume(String kind, String secret, String expected) {
-        // 1. 将完整记录比较和删除放入一次 Lua 执行，只有一个并发请求能成功消费。
+        // 1. 在同一次 Lua 里比较完整记录并删除，并发请求只能有一个成功。
         Long consumed = redis.execute(CONSUME, List.of(key(kind, secret)), expected);
-        // 2. 记录变化、已过期或已被消费均拒绝，不恢复旧值。
+        // 2. 记录改了、过期了或已经用过就拒绝，不能把旧记录放回去。
         if (!Long.valueOf(1).equals(consumed)) {
             throw invalid();
         }
@@ -58,7 +58,7 @@ public class RedisOAuthStore implements AuthStateCache {
 
     @Override
     public void cache(String key, String value, long timeout) {
-        // JustAuth 的 timeout 单位是毫秒，不能按秒写入 Redis TTL。
+        // JustAuth 的 timeout 单位是毫秒，写 Redis TTL 时别当成秒。
         save("justauth", key, value, Duration.ofMillis(timeout));
     }
 

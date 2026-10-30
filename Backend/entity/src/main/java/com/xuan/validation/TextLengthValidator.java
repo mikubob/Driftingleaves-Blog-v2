@@ -3,7 +3,7 @@ package com.xuan.validation;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 
-/** 避免 UTF-16 代理对被算作两个数据库字符。 */
+/** 按 Unicode 字符计数，避免一个表情被 UTF-16 算成两个字符。 */
 public class TextLengthValidator implements ConstraintValidator<TextLength, String> {
     private int min;
     private int max;
@@ -16,11 +16,11 @@ public class TextLengthValidator implements ConstraintValidator<TextLength, Stri
 
     @Override
     public boolean isValid(String value, ConstraintValidatorContext context) {
-        // 1. 可空性由独立约束决定，长度校验不重复承担必填检查。
+        // 1. 这里只查长度，是否必填交给单独的校验。
         if (value == null) {
             return true;
         }
-        // 2. 按 Unicode 码点计数，使补充平面字符与数据库字符长度一致。
+        // 2. 按 Unicode 码点计数，表情这类字符也和数据库按同样方式计算。
         int length = value.codePointCount(0, value.length());
         return length >= min && length <= max;
     }

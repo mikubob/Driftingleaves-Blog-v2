@@ -1,4 +1,4 @@
 package com.xuan.vo;
 
-/** 服务内部角色聚合结果，版本只写入响应头。 */
+/** 内部一起传递角色资料和版本，版本只写到响应头。 */
 public record RoleProfileVO(RoleVO role, String revision) { }

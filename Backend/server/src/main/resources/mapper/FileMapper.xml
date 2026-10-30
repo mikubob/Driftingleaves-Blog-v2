@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<!-- 文件元数据不可编辑；查询、总数和删除各自带上当前操作的上传者范围。 -->
+<mapper namespace="com.xuan.mapper.FileMapper">
+    <select id="filePage" resultType="com.xuan.entity.BlogFile">
+        SELECT * FROM blog_file
+        <where>
+            <if test="uploader != null">uploader_id = #{uploader}</if>
+            <if test="filterUploader != null">AND uploader_id = #{filterUploader}</if>
+            <if test="query.keyword != null">AND INSTR(original_name, #{query.keyword}) &gt; 0</if>
+            <if test="query.mimeType != null">AND mime_type = #{query.mimeType}</if>
+        </where>
+        ORDER BY create_time DESC, file_id DESC
+    </select>
+    <!-- 存储已确认删除后才删元数据，事务或审计失败时允许再次清理已不存在的对象。 -->
+    <delete id="deleteScoped">
+        DELETE FROM blog_file WHERE file_id = #{id}
+        <if test="uploader != null">AND uploader_id = #{uploader}</if>
+    </delete>
+    <!-- 不能筛 PUBLIC 或使用 HTML 缓存，草稿、私密、下架和回收站同样保留引用。 -->
+    <select id="referencesAfter" resultType="com.xuan.mapper.FileMapper$ArticleReference">
+        SELECT a.article_id, a.cover_url, c.markdown_content FROM blog_article a
+        LEFT JOIN blog_article_content c ON c.article_id = a.article_id
+        WHERE a.article_id &gt; #{after} ORDER BY a.article_id LIMIT 100
+    </select>
+</mapper>

@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 账号与个人资料；注销/停用使用status，避免删除作者记录。 */
+/** 账号和个人资料放在这里，停用用 status，避免删除文章作者记录。 */
 @Data
 @TableName("sys_user")
 public class SysUser {
@@ -19,7 +19,7 @@ public class SysUser {
     @TableField("username")
     private String username;
 
-    /** 自适应密码哈希；NULL表示未设置本站密码，不可密码登录。 */
+    /** 密码保存为 BCrypt 哈希；NULL 表示没设本站密码，不能密码登录。 */
     @TableField("password_hash")
     private String passwordHash;
 
@@ -27,7 +27,7 @@ public class SysUser {
     @TableField("nickname")
     private String nickname;
 
-    /** 未绑定为NULL，空字符串由应用归一化为NULL。 */
+    /** 没绑定时为 NULL，传空串时由应用转成 NULL。 */
     @TableField("email")
     private String email;
 
@@ -47,11 +47,11 @@ public class SysUser {
     @TableField("last_login_time")
     private LocalDateTime lastLoginTime;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

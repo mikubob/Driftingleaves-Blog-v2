@@ -6,7 +6,7 @@ import jakarta.validation.constraints.Size;
 import java.util.HashSet;
 import java.util.List;
 
-/** 完整角色集合；空数组清空，不接受重复或空 ID。 */
+/** 角色数组表示全部角色，空数组就是清空，不能有重复或空 ID。 */
 public record UserRolesDTO(@NotNull @Size(max = 100) List<@NotNull Long> roleIds) {
     @AssertTrue(message = "roleIds不能重复")
     public boolean isUnique() {

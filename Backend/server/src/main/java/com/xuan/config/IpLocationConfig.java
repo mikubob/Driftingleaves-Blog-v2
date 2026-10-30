@@ -15,11 +15,11 @@ import org.springframework.core.io.Resource;
 import java.io.IOException;
 import java.io.BufferedInputStream;
 
-/** 装配随应用打包的离线 IPv4/IPv6 库，启动时验证格式，关闭时释放查询器。 */
+/** IPv4 和 IPv6 离线库随应用打包，启动时检查格式，退出时释放查询器。 */
 @Configuration(proxyBeanMethods = false)
 public class IpLocationConfig {
     /**
-     * 从资源流加载内存数据库，兼容可执行 jar，不把 classpath 资源强转磁盘文件。
+     * 从资源流加载数据库，这样打成可执行 jar 也能读取，不能硬转成磁盘文件。
      * @param ipv4Database 与 3.3.7 客户端匹配的 IPv4 xdb
      * @param ipv6Database 与 3.3.7 客户端匹配的 IPv6 xdb
      * @return 并发安全、由容器统一关闭的地域解析器
@@ -42,7 +42,7 @@ public class IpLocationConfig {
         }
     }
 
-    /** 3.3.7 对流资源协议不匹配的报错路径会引用空文件，先核对头部以保留明确的格式错误。 */
+    /** 3.3.7 遇到流资源协议不符时会引用空文件，先查文件头，才能报出明确的格式错误。 */
     private void verifyVersion(BufferedInputStream input, Version expected) throws IOException, XdbException {
         input.mark(Searcher.HeaderInfoLength);
         byte[] bytes = input.readNBytes(Searcher.HeaderInfoLength);

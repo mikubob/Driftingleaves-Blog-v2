@@ -4,11 +4,11 @@ import com.xuan.entity.SysOperationLog;
 import org.apache.ibatis.annotations.Insert;
 import org.apache.ibatis.annotations.Mapper;
 
-/** 审计专用写入边界，不提供日志管理 CRUD。 */
+/** 这里只写操作日志，不提供日志管理接口。 */
 @Mapper
 public interface OperationLogMapper {
     /**
-     * 写入不可编辑记录；成功记录使用调用方事务，失败记录使用回滚后的独立事务。
+     * 日志不提供编辑；成功日志随业务事务写，失败日志等回滚后在新事务写。
      * @param log 服务端元数据和固定脱敏错误，operationData 目前为 null
      * @return 插入行数
      */

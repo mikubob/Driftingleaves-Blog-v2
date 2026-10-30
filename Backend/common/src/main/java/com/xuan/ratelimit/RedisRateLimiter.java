@@ -7,7 +7,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 import java.util.List;
 
-/** 认证和接口注解共用的 Redis 原子固定窗口；故障关闭并统一返回等待秒数。 */
+/** 登录和注解限流共用 Redis 固定窗口；Redis 出错就拒绝请求，超限返回等待秒数。 */
 @Component
 @RequiredArgsConstructor
 public class RedisRateLimiter {
@@ -30,17 +30,17 @@ public class RedisRateLimiter {
             """, Long.class);
     private final StringRedisTemplate redis;
 
-    /** 所有维度在同一脚本内累计一次，超过任一维度限制则拒绝。 */
+    /** 一次脚本把各项计数都加上，任意一项超限就拒绝。 */
     public void hit(List<String> keys, int windowSeconds, int limit) {
         reject(redis.execute(HIT, keys, Integer.toString(windowSeconds), Integer.toString(limit)));
     }
 
-    /** 只检查已累计次数，供仅记录失败的密码登录复用。 */
+    /** 这里只看已有次数，不增加计数，密码登录只记录失败时用它。 */
     public void check(List<String> keys, int limit) {
         reject(redis.execute(CHECK, keys, Integer.toString(limit)));
     }
 
-    /** 将脚本结果转换为统一业务错误，禁止把 Redis 保护故障视为放行。 */
+    /** 把脚本结果转成业务错误，Redis 出错不能放行。 */
     private void reject(Long retryAfter) {
         if (retryAfter == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "请求保护暂不可用");

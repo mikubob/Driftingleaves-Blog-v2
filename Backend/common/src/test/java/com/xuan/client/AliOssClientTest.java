@@ -20,7 +20,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/** SDK 网络边界替身测试；实际客户端逻辑和配置校验均真实执行，不访问云 Bucket。 */
+/** OSS 网络调用用替身，客户端逻辑和配置检查照常执行，不访问真实 Bucket。 */
 class AliOssClientTest {
     private final OSS sdk = mock(OSS.class);
     private final AliOssProperties properties = properties();
@@ -56,6 +56,7 @@ class AliOssClientTest {
                 "test-prefix/a\\b.png", "other/a.png", "https://example.test/a.png", "test-prefix/a.png?secret=x")) {
             assertThatThrownBy(() -> client.open(key)).isInstanceOf(BusinessException.class);
             assertThatThrownBy(() -> client.delete(key)).isInstanceOf(BusinessException.class);
+            assertThatThrownBy(() -> client.exists(key)).isInstanceOf(BusinessException.class);
         }
         assertThatThrownBy(() -> client.upload(new byte[0], "png")).isInstanceOf(BusinessException.class);
         assertThatThrownBy(() -> client.upload(new byte[1], "../png")).isInstanceOf(BusinessException.class);
@@ -72,6 +73,12 @@ class AliOssClientTest {
                     assertThat(error.getMessage()).doesNotContain("secret");
                 });
         String key = "test-prefix/object.png";
+        when(sdk.doesObjectExist(properties.getBucket(), key)).thenReturn(true, false);
+        assertThat(client.exists(key)).isTrue();
+        assertThat(client.exists(key)).isFalse();
+        when(sdk.doesObjectExist(properties.getBucket(), key)).thenThrow(new ClientException("secret-bearing-sdk-message"));
+        assertThatThrownBy(() -> client.exists(key)).isInstanceOfSatisfying(BusinessException.class,
+                error -> assertThat(error.getStatus()).isEqualTo(503));
         OSSException missing = mock(OSSException.class);
         when(missing.getErrorCode()).thenReturn("NoSuchKey");
         when(sdk.getObject(properties.getBucket(), key)).thenThrow(missing);
@@ -92,6 +99,16 @@ class AliOssClientTest {
         properties.setKeyPrefix("test-prefix/");
         properties.setAccessKeySecret("");
         assertThatThrownBy(properties::validateEnabled).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void failedUploadCompensatesItsOwnRandomObjectKey() {
+        doThrow(new ClientException("boundary network failure")).when(sdk).putObject(any(PutObjectRequest.class));
+        assertThatThrownBy(() -> client.upload(new byte[]{1}, "png")).isInstanceOfSatisfying(BusinessException.class,
+                error -> assertThat(error.getStatus()).isEqualTo(503));
+        ArgumentCaptor<PutObjectRequest> upload = ArgumentCaptor.forClass(PutObjectRequest.class);
+        verify(sdk).putObject(upload.capture());
+        verify(sdk).deleteObject(properties.getBucket(), upload.getValue().getKey());
     }
 
     private static AliOssProperties properties() {

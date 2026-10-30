@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.AccessLevel;
 import lombok.Setter;
 
-/** 已有密码时须验证旧密码；无密码时必须省略该字段。 */
+/** 已有密码时要验证旧密码；原来没密码时不能传这个字段。 */
 @Getter
 public class PasswordSetDTO {
     @NotNull
@@ -22,7 +22,7 @@ public class PasswordSetDTO {
         currentPasswordPresent = true;
         currentPassword = value;
     }
-    /** 是否显式提交该字段。 */
+    /** 记下客户端有没有传这个字段。 */
     public boolean hasCurrentPassword() {
         return currentPasswordPresent;
     }

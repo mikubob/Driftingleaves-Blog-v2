@@ -8,7 +8,7 @@ import java.math.BigInteger;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 上传文件元数据；私有对象由服务端鉴权后签发地址。 */
+/** 这里只存文件资料，私有文件必须先检查权限，再由服务端读取返回。 */
 @Data
 @TableName("blog_file")
 public class BlogFile {
@@ -44,7 +44,7 @@ public class BlogFile {
     @TableField("size_bytes")
     private BigInteger sizeBytes;
 
-    /** 文件上传记录创建时间；由数据库默认值维护，应用不填充。 */
+    /** 上传记录的创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 }

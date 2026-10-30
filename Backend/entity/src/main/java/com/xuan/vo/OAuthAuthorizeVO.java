@@ -2,5 +2,5 @@ package com.xuan.vo;
 
 
 
-/** 平台授权入口和 state 有效秒数。 */
+/** 返回平台授权地址和 state 还能用多少秒。 */
 public record OAuthAuthorizeVO(String authorizationUrl, int expiresIn) { }

@@ -12,7 +12,7 @@ import lombok.Setter;
 import java.util.HashSet;
 import java.util.Set;
 
-/** 菜单完整替换白名单；可空字段必须出现，menuCode 不接受输入。 */
+/** 修改菜单要填全，可空字段也不能漏；menuCode 不能在这里改。 */
 @Getter
 public class MenuUpdateDTO {
     private Long parentId;

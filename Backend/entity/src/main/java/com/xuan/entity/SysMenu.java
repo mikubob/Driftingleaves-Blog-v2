@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 后台目录/页面/按钮树；树环和跨层级规则由应用写入时校验。 */
+/** 菜单分目录、页面、按钮，写入时要检查父子类型和循环引用。 */
 @Data
 @TableName("sys_menu")
 public class SysMenu {
@@ -39,7 +39,7 @@ public class SysMenu {
     @TableField("path")
     private String path;
 
-    /** 前端组件注册键；仅允许前端白名单组件。 */
+    /** 前端组件注册键，只能选前端允许的组件。 */
     @TableField("component")
     private String component;
 
@@ -67,11 +67,11 @@ public class SysMenu {
     @TableField("status")
     private Integer status;
 
-    /** 创建时间；由数据库默认值维护，应用不填充。 */
+    /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /** 最后更新时间，记录修改时自动更新；由数据库默认值维护，应用不填充。 */
+    /** 修改记录时数据库自动更新时间，应用不用赋值。 */
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

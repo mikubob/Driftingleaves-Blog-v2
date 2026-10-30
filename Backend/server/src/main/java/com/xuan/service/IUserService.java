@@ -20,40 +20,40 @@ import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserProfileVO;
 import java.util.List;
 
-/** 本站身份及后台用户业务；操作者来自会话，后台目标 ID 不能充当身份。 */
+/** 本站身份从会话取得，后台传入的目标 ID 只能表示操作对象，不能代替操作者身份。 */
 public interface IUserService extends IService<SysUser> {
-    /** 双权限检查后按相同过滤条件分页，完整返回已分配角色，不提供逐条版本。 */
+    /** 检查后台和业务权限后分页，列表和总数用同样条件，全部已分配角色都返回，不带逐条版本。 */
     PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId);
-    /** 双权限检查后从一致快照读取用户资料、角色和聚合版本，不存在返回 404。 */
+    /** 检查后台和业务权限后，同一快照里取资料、角色和整体版本，用户不存在返回 404。 */
     AdminUserProfileVO adminDetail(long userId);
-    /** 后台创建密码账号，不分配默认角色；唯一冲突整笔回滚。 */
+    /** 后台创建密码账号不分默认角色，唯一键冲突就全部回滚。 */
     UserAdminVO adminCreate(AdminUserCreateDTO request);
-    /** 保护锁后按 ID 顺序锁用户，锁内复核身份、权限及版本；禁用前完成会话撤销。 */
+    /** 先拿保护锁，再按 ID 锁用户，锁内重查身份、权限和版本，禁用前先撤销会话。 */
     AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision);
-    /** 同一保护锁事务完整替换启用角色集合，保护最后管理员并在提交前撤销目标全部会话。 */
+    /** 同一保护锁事务里完整替换启用角色，保留最后管理员，提交前撤销目标用户全部会话。 */
     AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision);
-    /** 用户与 member 同事务创建；不自动登录。 */
+    /** 用户和 member 关联一起创建，注册成功不自动登录。 */
     MeVO register(RegisterDTO request);
-    /** 锁定用户后验证密码、签发独立 Token 并提交登录时间。 */
+    /** 先锁用户再验密码、发独立 Token、记录登录时间。 */
     SessionVO login(LoginDTO request);
-    /** 同一用户锁下取得资料与包含全部角色关联的聚合版本。 */
+    /** 同一用户锁内取资料，并用全部角色关联一起算整体版本。 */
     UserProfileVO me();
-    /** 缺失字段保持；同一行锁事务校验版本并写白名单资料。 */
+    /** 没传的字段不改，同一行锁事务里查版本并只写允许的资料。 */
     UserProfileVO patch(ProfilePatchDTO request, String revision);
-    /** 最近认证及旧密码验证成功后修改密码，提交前撤销全部会话。 */
+    /** 最近认证和旧密码都通过后才能改密码，提交前撤销全部会话。 */
     void setPassword(PasswordSetDTO request);
-    /** 保留至少一种配置可用的平台登录方式，提交前撤销全部会话。 */
+    /** 清密码后要保留至少一种配置可用的平台登录，提交前撤销全部会话。 */
     void clearPassword(PasswordClearDTO request);
-    /** 只返回当前配置可用的平台绑定及其创建时间。 */
+    /** 只返回当前配置可用的平台绑定和创建时间。 */
     List<OAuthBindingVO> bindings();
-    /** 用户行锁内保护最后登录方式，删除后撤销全部会话。 */
+    /** 用户锁内检查不能删掉最后登录方式，删除后撤销全部会话。 */
     void unbind(String source);
-    /** 供条件鉴权和拦截器检查当前账号，不信登录时状态快照。 */
+    /** 拦截器和绑定等操作用它查当前账号，不能只信登录时的状态。 */
     long requireCurrent();
-    /** 已验证平台身份的首次注册或查找；并发唯一冲突重新查询赢家。 */
+    /** 用验证过的平台身份查找或首次注册，并发唯一键冲突后再查成功写入的记录。 */
     long resolveOAuth(String source, String uuid, String nickname, String avatar);
-    /** BIND 在原用户锁内重新检查会话，不创建或切换其他账号。 */
+    /** 绑定在原用户锁内重查会话，不创建或切换其他账号。 */
     OAuthBindingVO bindOAuth(long userId, String tokenHash, String source, String uuid);
-    /** 票据消费后，用户锁内重查原身份仍绑定并签发会话；认证时间不因兑换延迟刷新。 */
+    /** 票据消费后，用户锁内重查原身份仍绑定再发会话，兑换等待不能刷新认证时间。 */
     SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt);
 }

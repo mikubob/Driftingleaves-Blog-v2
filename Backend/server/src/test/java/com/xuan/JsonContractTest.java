@@ -17,7 +17,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-/** Web 协议的真实解析与校验，不复制生产解析算法。 */
+/** 实际解析和检查 Web 输入，不复制生产解析算法来验证自己。 */
 class JsonContractTest {
     private final JsonMapper json;
 

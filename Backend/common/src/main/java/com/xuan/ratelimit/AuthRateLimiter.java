@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.Locale;
 
-/** 认证入口双维度 Redis 固定窗口限流；仅信任指定直连代理的客户端地址。 */
+/** 登录入口同时按 IP 和身份限流，客户端 IP 只从明确配置的直连代理读取。 */
 @Component
 @RequiredArgsConstructor
 public class AuthRateLimiter {
@@ -37,9 +37,9 @@ public class AuthRateLimiter {
     }
 
     private List<String> keys(String operation, HttpServletRequest request, String identity) {
-        // 1. 默认使用直连地址，仅在直连方属于受信代理时读取转发的客户端 IP。
+        // 1. 默认取直连地址，只有直连方是可信代理时才读取转发的客户端 IP。
         String ip = String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies()));
-        // 2. 分别构建 IP 与身份维度的键，身份缺失时退为 IP，摘要避免暴露原值。
+        // 2. 分别准备 IP 和身份的 Redis 键；没有身份就只限 IP，原值先做摘要再放进键。
         String prefix = properties.getRedisPrefix() + "rate:" + operation + ":";
         String dimension = identity == null ? ip : identity;
         return List.of(prefix + "ip:" + TokenUtils.digest(ip),

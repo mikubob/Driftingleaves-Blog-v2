@@ -1,4 +1,4 @@
 package com.xuan.vo;
 
-/** Service 内部权限详情和版本，版本仅写入响应头。 */
+/** 内部一起传递权限详情和版本，版本只写到响应头。 */
 public record PermissionProfileVO(PermissionVO permission, String revision) { }

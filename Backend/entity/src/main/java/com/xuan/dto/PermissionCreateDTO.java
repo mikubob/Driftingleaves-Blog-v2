@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 权限创建白名单；默认启用，不自动授予任何角色。 */
+/** 新建权限默认启用，不会自动授予任何角色。 */
 @Getter
 public class PermissionCreateDTO {
     @NotNull @TextLength(min = 1, max = 100)

@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import java.time.LocalDateTime;
 import lombok.Data;
 
-/** 角色接口权限；不从角色菜单表推导；复合键为 role_id, permission_id，不提供单 ID CRUD。 */
+/** 接口权限不能从菜单倒推；role_id、permission_id 一起确定一条授权，不能用单个 ID 做增删改查。 */
 @Data
 @TableName("sys_role_permission")
 public class SysRolePermission {
@@ -17,7 +17,7 @@ public class SysRolePermission {
     @TableField("permission_id")
     private Long permissionId;
 
-    /** 角色获授该权限的时间；由数据库默认值维护，应用不填充。 */
+    /** 给角色授予权限的时间，由数据库填写。 */
     @TableField("create_time")
     private LocalDateTime createTime;
 }

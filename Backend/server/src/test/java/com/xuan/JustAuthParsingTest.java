@@ -21,7 +21,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mockStatic;
 
-/** 外部 HTTP 响应替身验证固定 JustAuth 与 Fastjson 兼容包的真实解析。 */
+/** HTTP 响应用替身，JustAuth 和 Fastjson 兼容包仍实际解析。 */
 class JustAuthParsingTest {
     @Test
     void githubResponseParsingUsesCompatibleFastjsonApi() {

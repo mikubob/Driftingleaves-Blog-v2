@@ -5,16 +5,16 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** 写事务审计声明；仅提取显式数字 ID，不序列化方法参数或返回对象。 */
+/** 给写事务声明操作日志，只取明确的数字 ID，不把参数和返回对象整个记下来。 */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
 public @interface OperationLog {
-    /** 服务端固定操作类型。 */
+    /** 操作类型由服务端写死。 */
     String type();
-    /** 服务端固定资源名。 */
+    /** 资源名称由服务端写死。 */
     String target();
-    /** 业务实际检查的权限码快照。 */
+    /** 记录业务实际检查过的权限码，不用它来授予权限。 */
     String permission();
-    /** 数字目标 ID 在方法参数中的位置；创建时从明确的返回类型提取。 */
+    /** 这里指定目标 ID 是第几个参数；创建操作从已知返回类型里取 ID。 */
     int targetIdArgument() default -1;
 }

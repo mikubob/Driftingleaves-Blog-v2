@@ -18,7 +18,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 import java.util.ArrayList;
 import java.util.List;
 
-/** MVC 鉴权后执行注解限流；不重复拦截已有认证限流入口。 */
+/** MVC 检查权限后再执行注解限流，已有认证限流的入口不重复计数。 */
 @Aspect
 @Component
 @Order(50)
@@ -28,7 +28,7 @@ public class RateLimitAspect {
     private final AuthProperties properties;
     private final SessionManager sessions;
 
-    /** 根据稳定操作名、可信 IP 和服务端会话生成摘要键，超限前不执行目标方法。 */
+    /** 用操作名、可信 IP 和本站会话生成摘要键，超限就不执行目标方法。 */
     @Around("@annotation(rule)")
     public Object around(ProceedingJoinPoint point, RateLimit rule) throws Throwable {
         if (!rule.value().matches("[a-zA-Z0-9:._-]{1,100}") || rule.limit() < 1 || rule.windowSeconds() < 1) {

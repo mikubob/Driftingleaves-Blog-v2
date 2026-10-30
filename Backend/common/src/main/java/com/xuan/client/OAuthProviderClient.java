@@ -3,7 +3,7 @@ package com.xuan.client;
 import java.util.List;
 import java.util.Set;
 
-/** 外部授权平台客户端边界，业务只接收平台验证后的身份，不接收请求方声明的 uuid。 */
+/** 这里只接收平台验证过的身份，不能把客户端自报的 uuid 当作登录依据。 */
 public interface OAuthProviderClient {
     List<Provider> providers();
     Set<String> enabledSources();
@@ -11,9 +11,9 @@ public interface OAuthProviderClient {
     String authorize(String source, String state);
     Identity verify(String source, String state, String code);
 
-    /** 配置完整的公开平台描述，不携带应用凭据或依赖业务响应模型。 */
+    /** 给前台看的平台资料只含公开信息，不带应用凭据，也不依赖业务响应类。 */
     record Provider(String source, String displayName) { }
 
-    /** 不携带第三方 Token，uuid 原样保留大小写和空格。 */
+    /** 平台 Token 不往后传，uuid 的大小写和空格原样保留。 */
     record Identity(String uuid, String nickname, String avatar) { }
 }

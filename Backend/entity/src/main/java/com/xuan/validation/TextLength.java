@@ -7,7 +7,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
-/** 数据库字符长度按 Unicode 码点校验，可空性由其他约束决定。 */
+/** 长度按 Unicode 字符算，能不能传 null 由其他规则决定。 */
 @Target({ElementType.FIELD, ElementType.PARAMETER, ElementType.RECORD_COMPONENT})
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = TextLengthValidator.class)

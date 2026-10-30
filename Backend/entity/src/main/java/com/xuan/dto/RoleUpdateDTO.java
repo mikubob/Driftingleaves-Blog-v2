@@ -10,7 +10,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 完整替换角色资料及状态，编码不可修改，可空说明也须出现。 */
+/** 角色资料和状态要填全，编码不能改，可空的说明也要传。 */
 @Getter
 public class RoleUpdateDTO {
     @NotNull @TextLength(min = 1, max = 64)

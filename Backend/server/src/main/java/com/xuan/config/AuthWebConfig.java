@@ -35,12 +35,13 @@ import java.net.URI;
 import java.util.List;
 import java.util.Set;
 
-/** 精确公开白名单、Sa-Token 注解与后台双权限门禁，默认拒绝匿名业务请求。 */
+/** 公开入口逐条放行，其他业务默认要求登录；后台还要检查入口权限和具体业务权限。 */
 @Configuration
 @RequiredArgsConstructor
 public class AuthWebConfig implements WebMvcConfigurer {
     private static final Set<String> PUBLIC = Set.of("POST /auth/register", "POST /auth/login", "POST /auth/logout",
-            "GET /auth/oauth/providers", "POST /auth/oauth/exchange");
+            "GET /auth/oauth/providers", "POST /auth/oauth/exchange", "GET /blog/articles", "GET /blog/archives",
+            "GET /blog/article-rankings", "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs");
     private final IUserService users;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
@@ -48,12 +49,12 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
-        // 1. 先检查当前身份及后台入口；SaInterceptor 默认先执行注解，须拆开保证错误顺序。
+        // 1. 先查当前身份和后台入口；SaInterceptor 默认先查注解，这里拆开才能保证报错顺序。
         registry.addInterceptor(new SaInterceptor(handler -> guard(requests.getObject(), handler))
                 .isAnnotation(false)).addPathPatterns("/**");
-        // 2. 身份有效后再执行具体业务权限注解，不让权限错误覆盖账号状态或会话失效。
+        // 2. 身份有效后再检查业务权限，避免把账号禁用或会话失效报成缺权限。
         registry.addInterceptor(new SaInterceptor()).addPathPatterns("/**");
-        // 3. 后台处理方法还必须声明业务权限，不能仅凭 admin:access 进入业务。
+        // 3. 后台方法还得声明具体业务权限，只有 admin:access 不能操作业务。
         registry.addInterceptor(new HandlerInterceptor() {
             @Override
             public boolean preHandle(HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response,
@@ -69,23 +70,25 @@ public class AuthWebConfig implements WebMvcConfigurer {
     }
 
     private void guard(HttpServletRequest request, Object handler) {
-        // 1. 放行错误分派和预检；跨域是否允许由前置 CORS 过滤器判断。
+        // 1. 先放行错误分派和预检，跨域能不能通过由前面的 CORS 过滤器检查。
         if (request.getDispatcherType() == DispatcherType.ERROR || "OPTIONS".equals(request.getMethod())) {
             return;
         }
-        // 2. 按 HTTP 方法与完整路径匹配公开入口，不整段放开 auth 或 blog。
+        // 2. 按请求方法和完整路径逐条放行，不能把整个 auth 或 blog 都公开。
         String path = request.getServletPath();
         String route = request.getMethod() + " " + path;
-        if (PUBLIC.contains(route)) {
+        if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
+                && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
+                    || path.matches("/blog/articles/[^/]+/files/[^/]+/content")))) {
             return;
         }
-        // 3. OAuth 动态路径还需平台白名单；BIND 条件鉴权留在协调服务中执行。
+        // 3. OAuth 动态路径也要检查平台名单，绑定需要的原会话由业务服务检查。
         if (("POST".equals(request.getMethod()) && path.matches("/auth/oauth/[^/]+/authorize"))
                 || ("GET".equals(request.getMethod()) && path.matches("/auth/oauth/[^/]+/callback"))) {
             providers.requireEnabled(path.split("/")[3]);
             return;
         }
-        // 4. 其余入口实时检查登录及账号状态，后台另需有效的 admin:access。
+        // 4. 其余请求都实时检查登录和账号状态，后台再检查 admin:access。
         users.requireCurrent();
         if (path.startsWith("/admin/")) {
             StpUtil.checkPermission("admin:access");
@@ -94,7 +97,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter(JsonMapper json) {
-        // 1. 启动时核对每个配置项都是具体 origin，拒绝通配符、凭据和路径。
+        // 1. 启动时检查每个 origin，不能用通配符，也不能带凭据或路径。
         CorsConfiguration config = new CorsConfiguration();
         for (String origin : properties.getAllowedOrigins()) {
             URI uri = URI.create(origin);
@@ -104,14 +107,14 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 throw new IllegalArgumentException("allowed-origins必须是明确的HTTP(S) origin");
             }
         }
-        // 2. 只开放声明的方法及请求头，暴露版本、跳转和限流响应头以支持前端。
+        // 2. 只开放约定的方法和请求头，让前端能读到版本、跳转地址和等待秒数。
         config.setAllowedOrigins(properties.getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Revision"));
         config.setExposedHeaders(List.of("X-Revision", "Location", "Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(600L);
-        // 3. 为全部路径注册 CORS，并将跨域拒绝转换为统一 JSON 错误。
+        // 3. 全部路径共用 CORS，跨域被拒绝时也返回统一 JSON 错误。
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
         CorsFilter cors = new CorsFilter(source);
@@ -126,7 +129,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 response.flush();
             }
         });
-        // 4. 将 CORS 放在鉴权和请求体处理之前，使合法预检无需本站 Token。
+        // 4. CORS 放在鉴权和请求体处理前面，合法预检就不用带本站 Token。
         FilterRegistrationBean<CorsFilter> filter = new FilterRegistrationBean<>(cors);
         filter.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
         return filter;

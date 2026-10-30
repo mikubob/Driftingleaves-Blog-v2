@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
-/** 测试专用进程：全新临时 datadir、随机端口和回环监听，绝不连接已有服务。 */
+/** 测试自己启动临时数据目录、随机端口和回环监听的进程，不连接已经运行的服务。 */
 final class IsolatedServices implements AutoCloseable {
     final int mysqlPort;
     final int redisPort;

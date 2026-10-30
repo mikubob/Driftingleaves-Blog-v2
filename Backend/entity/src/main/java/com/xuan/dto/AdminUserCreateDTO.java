@@ -10,7 +10,7 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 后台创建白名单；缺省启用，角色只能通过专用接口分配。 */
+/** 后台创建用户只收这些字段，默认启用，角色要走单独的分配接口。 */
 @Getter
 public class AdminUserCreateDTO {
     @NotNull @Pattern(regexp = "[A-Za-z0-9_]{3,64}")
