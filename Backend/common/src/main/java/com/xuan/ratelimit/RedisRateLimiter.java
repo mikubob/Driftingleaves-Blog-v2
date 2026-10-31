@@ -17,10 +17,10 @@ public class RedisRateLimiter {
 
     private static final DefaultRedisScript<Long> HIT = new DefaultRedisScript<>("""
             local ttl = 0
-            for _, key in ipairs(KEYS) do
+            for i, key in ipairs(KEYS) do
                 local n = redis.call('INCR', key)
                 if n == 1 then redis.call('EXPIRE', key, ARGV[1]) end
-                if n > tonumber(ARGV[2]) then ttl = math.max(ttl, redis.call('TTL', key), 1) end
+                if n > tonumber(ARGV[i + 1]) then ttl = math.max(ttl, redis.call('TTL', key), 1) end
             end
             return ttl
             """, Long.class);
@@ -36,7 +36,18 @@ public class RedisRateLimiter {
 
     /** 一次脚本把各项计数都加上，任意一项超限就拒绝。 */
     public void hit(List<String> keys, int windowSeconds, int limit) {
-        reject(redis.execute(HIT, keys, Integer.toString(windowSeconds), Integer.toString(limit)));
+        hit(keys, windowSeconds, java.util.Collections.nCopies(keys.size(), limit));
+    }
+
+    /** 同一脚本允许 IP、统计标识和本站用户采用各自阈值。 */
+    public void hit(List<String> keys, int windowSeconds, List<Integer> limits) {
+        if (keys.isEmpty() || keys.size() != limits.size() || windowSeconds < 1 || limits.stream().anyMatch(n -> n < 1)) {
+            throw new IllegalArgumentException("限流窗口和维度无效");
+        }
+        java.util.List<String> args = new java.util.ArrayList<>();
+        args.add(Integer.toString(windowSeconds));
+        limits.forEach(n -> args.add(n.toString()));
+        reject(redis.execute(HIT, keys, args.toArray()));
     }
 
     /** 这里只看已有次数，不增加计数，密码登录只记录失败时用它。 */

@@ -10,6 +10,7 @@ import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
+import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogArticle;
 import com.xuan.entity.BlogArticleContent;
 import com.xuan.entity.BlogCategory;
@@ -38,11 +39,17 @@ import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.ArticlePublicDetailVO;
 import com.xuan.vo.ArticlePublicVO;
 import com.xuan.vo.HotArticleVO;
+import com.xuan.vo.AuthorPublicVO;
+import com.xuan.vo.LikedArticleVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -50,6 +57,7 @@ import java.time.LocalDateTime;
 import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayDeque;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -65,6 +73,7 @@ import java.util.TreeSet;
 public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> implements IArticleService {
 
     private final ArticleMapper articles;
+    private final ObjectProvider<IArticleService> self;
     private final SubscriptionNotifications notifications;
     private final UserMapper users;
     private final IUserService identities;
@@ -89,12 +98,74 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query) {
+        PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
+        List<ArticlePublicVO> records = cached.records().stream().map(item -> {
+            ArticlePublicVO copy = new ArticlePublicVO();
+            org.springframework.beans.BeanUtils.copyProperties(item, copy);
+            return copy;
+        }).toList();
+        PageResult<ArticlePublicVO> page = new PageResult<>(cached.page(), cached.pageSize(), cached.total(), cached.totalPages(), records);
+        for (ArticlePublicVO value : page.records()) {
+            ArticleRow current = articles.publicById(value.getArticleId(), now());
+            if (current == null) { return loadPublicArticles(query); }
+            value.setViewCount(current.getViewCount());
+            value.setLikeCount(current.getLikeCount());
+            value.setCommentCount(commentCount(current.getArticleId()));
+        }
+        return page;
+    }
+
+    /** 集合及静态字段缓存经容器代理调用，当前互动数由外层事务补齐。 */
+    @Override
+    @Caching(cacheable = {
+            @Cacheable(cacheNames = "articles", key = "@publicCacheKeys.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
+            @Cacheable(cacheNames = "search", key = "@publicCacheKeys.key(#root.methodName, #root.args)", condition = "#query.keyword() != null && #query.page() <= 3 && #query.pageSize() <= 20")
+    })
+    public PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query) {
+        PageResult<ArticlePublicVO> page = loadPublicArticles(query);
+        for (ArticlePublicVO value : page.records()) {
+            value.setViewCount(null); value.setLikeCount(null); value.setCommentCount(null);
+        }
+        return page;
+    }
+
+    private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
         YearMonth month = query.month() == null ? null : YearMonth.parse(query.month());
         ArticleFilter filter = new ArticleFilter(true, null, query.keyword(), IdUtils.parse(query.categoryId()),
-                IdUtils.parse(query.tagId()), null, null, null, 0,
+                IdUtils.parse(query.tagId()), IdUtils.parse(query.authorId()), null, null, 0,
                 month == null ? null : month.atDay(1).atStartOfDay(), upper(month), now());
         return PageResult.from(articles.articlePage(new Page<>(query.page(), query.pageSize()), filter)
                 .convert(row -> publicView(row, new ArticlePublicVO())));
+    }
+
+    /** 作者发现只依赖 PUBLIC 文章，列表与 total 使用同一只读快照。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "authors", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    public PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query) {
+        return PageResult.from(articles.authorPage(new Page<>(query.page(), query.pageSize()), now()));
+    }
+
+    /** 不能通过作者页判断没有公开作品的账号是否存在。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "authors", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    public AuthorPublicVO publicAuthor(long userId) {
+        AuthorPublicVO value = articles.publicAuthor(userId, now());
+        if (value == null) {
+            throw new BusinessException(404, "NOT_FOUND", "作者不存在");
+        }
+        return value;
+    }
+
+    /** 作者和点赞者是不同身份，查询本人点赞不需要后台或点赞写权限。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public PageResult<LikedArticleVO> likedArticles(PageQueryDTO query) {
+        long actor = identities.requireCurrent();
+        sessions.requireActive(sessions.currentToken(), actor);
+        return PageResult.from(articles.likedPage(new Page<>(query.page(), query.pageSize()), actor, now())
+                .convert(row -> new LikedArticleVO(row.getLikedAt(), publicView(row, new ArticlePublicVO()))));
     }
 
     /**
@@ -116,16 +187,31 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         // 先锁定文章并确认公开状态，再读正文、关联和互动；查推荐不会增加阅读量。
         String markdown = content(row.getArticleId()).getMarkdownContent();
         References references = resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
+        ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown, references.html());
+        ArticlePublicDetailVO value = new ArticlePublicDetailVO();
+        org.springframework.beans.BeanUtils.copyProperties(cached, value);
+        value.setViewCount(row.getViewCount());
+        value.setLikeCount(row.getLikeCount());
+        value.setCommentCount(commentCount(row.getArticleId()));
+        articles.incrementViews(row.getArticleId());
+        value.setViewCount(row.getViewCount().add(BigInteger.ONE));
+        return value;
+    }
+
+    /** 只缓存公开静态响应片段；原事务每次重新检查 PUBLIC、当前正文、附件及真实互动。 */
+    @Override
+    @Cacheable(cacheNames = "articleDetail", key = "T(com.xuan.utils.TokenUtils).digest(#row.slug + ':' + #row.articleId + ':' + #markdown + ':' + #row.coverUrl)")
+    public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown, String html) {
+        LocalDateTime at = now();
         ArticleContent parsed = MarkdownUtils.article(markdown);
         ArticlePublicDetailVO value = publicView(row, new ArticlePublicDetailVO());
-        value.setHtmlContent(references.html());
+        value.setHtmlContent(html);
         value.setWordCount(parsed.wordCount());
         value.setReadingMinutes(parsed.readingMinutes());
         value.setPrevArticle(articles.adjacent(row, true, at));
         value.setNextArticle(articles.adjacent(row, false, at));
         value.setRelatedArticles(value.getCategory() == null ? List.of() : articles.related(row, at));
-        articles.incrementViews(row.getArticleId());
-        value.setViewCount(row.getViewCount().add(BigInteger.ONE));
+        value.setViewCount(null); value.setLikeCount(null); value.setCommentCount(null);
         return value;
     }
 
@@ -138,6 +224,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "archives", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<ArchiveVO> archives(int page, int pageSize) {
         return PageResult.from(articles.archives(new Page<>(page, pageSize), now()));
     }
@@ -180,6 +267,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:article", permission = "blog:article:create")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public ArticleProfileVO create(ArticleWriteDTO request) {
         // 1. 锁住操作者后检查创建权限，再校验正文、封面和关联字典。
         users.lockById(sessions.currentUserId());
@@ -213,6 +314,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:article", permission = "blog:article:update", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public ArticleProfileVO update(long id, ArticleWriteDTO request, String revision) {
         validateWrite(request);
         References next = resources.inspect(id, request.getMarkdownContent(), request.getCoverUrl());
@@ -242,6 +357,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "status", target = "blog:article", permission = "blog:article:publish", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public ArticleProfileVO changeStatus(long id, int status, String revision) {
         LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
         ArticleRow article = locked.article();
@@ -277,6 +406,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:article", permission = "blog:article:delete", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public void recycle(long id, String revision) {
         ArticleRow article = lockArticle(id, "delete", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
@@ -295,6 +438,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "restore", target = "blog:article", permission = "blog:article:restore", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public ArticleProfileVO restore(long id, String revision) {
         ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
@@ -304,6 +461,58 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         article.setStatus(2);
         articles.updateArticle(article, requireAdmin("restore"));
         return profile(articles.scoped(id, null, false));
+    }
+
+    /** 先锁完整评论树，再按子到父删除；文件不删除，成功审计与聚合清理共同提交。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "purge", target = "blog:article", permission = "blog:article:purge", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public void purge(long id, String revision) {
+        ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
+        if (article.getDeletedAt() == null) {
+            throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
+        }
+        List<CommentNode> nodes = articles.lockComments(id);
+        requireArticle(articles.scoped(id, requireAdmin("purge"), false));
+
+        // 不假设父 ID 小于子 ID，也不使用有深度限制的递归 SQL。
+        Map<Long, Long> parents = new HashMap<>();
+        Map<Long, Integer> children = new HashMap<>();
+        for (CommentNode node : nodes) {
+            parents.put(node.getCommentId(), node.getParentId());
+            if (node.getParentId() != null) {
+                children.merge(node.getParentId(), 1, Integer::sum);
+            }
+        }
+        ArrayDeque<Long> leaves = new ArrayDeque<>();
+        for (CommentNode node : nodes) {
+            if (!children.containsKey(node.getCommentId())) {
+                leaves.add(node.getCommentId());
+            }
+        }
+        while (!leaves.isEmpty()) {
+            long comment = leaves.remove();
+            articles.deleteComment(id, comment);
+            Long parent = parents.get(comment);
+            if (parent != null && children.merge(parent, -1, Integer::sum) == 0) {
+                leaves.add(parent);
+            }
+        }
+        articles.deleteScoped(id, requireAdmin("purge"));
     }
 
     /**
@@ -316,6 +525,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "rankings", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<HotArticleVO> rankings(String period, String metric, int limit) {
         LocalDateTime at = now();
         YearMonth month = "month".equals(period) ? YearMonth.from(at) : null;
@@ -336,7 +546,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
         authorization.requireScope(actor, "admin:access");
-        return "ALL".equals(authorization.requireScope(actor, "blog:article:" + operation)) ? null : actor;
+        String scope = authorization.requireScope(actor, "blog:article:" + operation);
+        if ("purge".equals(operation) && !"ALL".equals(authorization.requireScope(actor, "blog:article:delete"))) {
+            return actor;
+        }
+        return "ALL".equals(scope) ? null : actor;
     }
 
     /**
@@ -365,6 +579,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             requireArticle(articles.scoped(id, requireAdmin("publish"), false));
         }
         articles.lockCurrentTags(id);
+        current = requireArticle(articles.scoped(id, requireAdmin(operation), false));
         checkRevision(current, revision);
         References latest = resources.inspect(id, content(id).getMarkdownContent(), current.getCoverUrl());
         if (!locked.containsAll(latest.fileIds())) {

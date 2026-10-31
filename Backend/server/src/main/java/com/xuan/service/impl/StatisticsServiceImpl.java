@@ -15,6 +15,9 @@ import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -41,9 +44,12 @@ public class StatisticsServiceImpl implements IStatisticsService {
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
     private final Clock clock;
+    private final com.xuan.ratelimit.AuthRateLimiter limiter;
+    private final org.springframework.beans.factory.ObjectProvider<jakarta.servlet.http.HttpServletRequest> requests;
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "statistics", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PublicStatisticsVO publicStatistics() {
         LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
         return statistics.publicStatistics(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), now());
@@ -51,12 +57,12 @@ public class StatisticsServiceImpl implements IStatisticsService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public AdminStatisticsVO overview(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); return statistics.overview(range.lower(), range.upper(), query.siteCode(), now()); }
+    public AdminStatisticsVO overview(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); limitReport(); return statistics.overview(range.lower(), range.upper(), query.siteCode(), now()); }
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ViewTrendVO> viewTrend(StatisticsQueryDTO query) {
-        requireAdmin(); Range range = range(query); Map<LocalDate, ViewTrendVO> rows = new HashMap<>();
+        requireAdmin(); Range range = range(query); limitReport(); Map<LocalDate, ViewTrendVO> rows = new HashMap<>();
         statistics.viewTrend(range.lower(), range.upper(), query.siteCode()).forEach(row -> rows.put(row.date(), row));
         List<ViewTrendVO> result = new ArrayList<>();
         for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) { result.add(rows.getOrDefault(day, new ViewTrendVO(day, "0", "0"))); }
@@ -66,7 +72,7 @@ public class StatisticsServiceImpl implements IStatisticsService {
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<VisitorTrendVO> visitorTrend(StatisticsQueryDTO query) {
-        requireAdmin(); Range range = range(query); Map<LocalDate, VisitorTrendVO> rows = new HashMap<>();
+        requireAdmin(); Range range = range(query); limitReport(); Map<LocalDate, VisitorTrendVO> rows = new HashMap<>();
         statistics.visitorTrend(range.lower(), range.upper(), query.siteCode()).forEach(row -> rows.put(row.date(), row));
         List<VisitorTrendVO> result = new ArrayList<>(); BigInteger cumulative = BigInteger.ZERO;
         for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) {
@@ -78,11 +84,16 @@ public class StatisticsServiceImpl implements IStatisticsService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public List<ProvinceMetricVO> provinces(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); return statistics.provinces(range.lower(), range.upper(), query.siteCode()); }
+    public List<ProvinceMetricVO> provinces(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); limitReport(); return statistics.provinces(range.lower(), range.upper(), query.siteCode()); }
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public List<ArticleViewMetricVO> articles(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); return statistics.articles(range.lower(), range.upper(), query.limit()); }
+    public List<ArticleViewMetricVO> articles(StatisticsQueryDTO query) { requireAdmin(); Range range = range(query); limitReport(); return statistics.articles(range.lower(), range.upper(), query.limit()); }
+    private void limitReport() {
+        if (org.springframework.web.context.request.RequestContextHolder.getRequestAttributes() != null) {
+            limiter.report(requests.getObject(), sessions.currentUserId());
+        }
+    }
     /** 公开接口不暴露日期探索能力，后台必须同时拥有入口权限和本次报表ALL。 */
     private void requireAdmin() {
         long actor = identities.requireCurrent(); sessions.requireActive(sessions.currentToken(), actor); authorization.requireScope(actor, "admin:access");

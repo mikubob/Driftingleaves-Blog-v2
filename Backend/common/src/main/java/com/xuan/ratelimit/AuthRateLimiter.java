@@ -49,6 +49,22 @@ public class AuthRateLimiter {
         hit("oauth", request, browser, properties.getRate().getOauth());
     }
 
+    /** 采集在任何行锁、地域解析和写入前原子累计全部独立维度。 */
+    public void analytics(String ip, String fingerprint, Long actor) {
+        String prefix = properties.getRedisPrefix() + "rate:analytics:";
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        java.util.List<Integer> limits = new java.util.ArrayList<>();
+        keys.add(prefix + "ip:" + TokenUtils.digest(String.valueOf(ip))); limits.add(60);
+        keys.add(prefix + "fingerprint:" + TokenUtils.digest(fingerprint)); limits.add(30);
+        if (actor != null) { keys.add(prefix + "user:" + TokenUtils.digest(actor.toString())); limits.add(60); }
+        limiter.hit(keys, 60, limits);
+    }
+
+    /** 五类后台报表共用可信 IP 与本站用户预算。 */
+    public void report(HttpServletRequest request, long actor) {
+        limiter.hit(keys("report", request, Long.toString(actor)), 60, 30);
+    }
+
     /**
      * 使用配置的窗口，同时累计 IP 与身份两个维度的次数。
      */

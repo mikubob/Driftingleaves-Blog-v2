@@ -43,6 +43,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
     private final SessionManager sessions;
     private final IpLocationResolver locations;
     private final Clock clock;
+    private final com.xuan.ratelimit.AuthRateLimiter limiter;
 
     /** {@inheritDoc} */
     @Override
@@ -53,6 +54,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         sites.requireSite(request.getSiteCode(), origin, path);
         String referer = SitePathUtils.referer(request.getReferer());
         Long actor = current();
+        limiter.analytics(ip, request.getFingerprint(), actor);
         if (actor != null) {
             users.lockById(actor);
             current();

@@ -10,6 +10,7 @@ import com.xuan.entity.BlogTag;
 import com.xuan.model.ArticleFilter;
 import com.xuan.model.ArticleRow;
 import com.xuan.vo.ArchiveVO;
+import com.xuan.vo.AuthorPublicVO;
 import com.xuan.vo.ArticlePublicVO.Navigation;
 import lombok.Data;
 import org.apache.ibatis.annotations.Mapper;
@@ -32,6 +33,25 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      * @return 同一过滤条件的元数据分页
      */
     IPage<ArticleRow> articlePage(IPage<ArticleRow> page, @Param("filter") ArticleFilter filter);
+
+    /** 作者数、文章数和资料共用 PUBLIC 条件，不按角色或账号私密资料枚举用户。 */
+    IPage<AuthorPublicVO> authorPage(IPage<AuthorPublicVO> page, @Param("now") LocalDateTime now);
+
+    /** 没有 PUBLIC 文章时返回 null，公开投影不含邮箱、登录名或权限。 */
+    AuthorPublicVO publicAuthor(@Param("id") long id, @Param("now") LocalDateTime now);
+
+    /** 本人 ID 由会话提供，total 与记录都排除当前非 PUBLIC 文章。 */
+    IPage<ArticleRow> likedPage(IPage<ArticleRow> page, @Param("user") long user,
+            @Param("now") LocalDateTime now);
+
+    /** 持文章锁后锁定完整评论树，评论写入口也先持同一文章锁。 */
+    List<CommentNode> lockComments(@Param("id") long id);
+
+    /** 持文章与评论锁后从叶到根删除，保留 RESTRICT 外键检查。 */
+    void deleteComment(@Param("id") long id, @Param("comment") long comment);
+
+    /** 最后删除已回收文章，SQL 再限制独立权限合并后的作者范围。 */
+    void deleteScoped(@Param("id") long id, @Param("author") Long author);
 
     /**
      * 后台详情按当前操作的作者范围查，lock=true 时调用方要有 READ COMMITTED 写事务。

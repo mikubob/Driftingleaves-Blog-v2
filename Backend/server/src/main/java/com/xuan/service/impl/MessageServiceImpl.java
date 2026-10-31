@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.annotation.RateLimit;
 import com.xuan.content.MessageVisibility;
 import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.MessageAdminQueryDTO;
@@ -151,6 +152,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     /** {@inheritDoc} */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResourceVersion<MessagePrivateVO> edit(long id, MessageEditDTO request, String revision) {
         // 1. 先锁用户和开关，关闭留言后不能继续编辑，但仍保留查询和删除。
         long actor = requireMember("updateOwn");
@@ -257,6 +259,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
+    @RateLimit(value = "message-reply", limit = 10, dimension = RateLimit.Dimension.USER)
     public MessagePrivateVO replyAdmin(long id, MessageEditDTO request) {
         // 1. 后台回复也检查开关和完整父链，不能借管理员身份放宽私密范围。
         long actor = requireAdmin("review");

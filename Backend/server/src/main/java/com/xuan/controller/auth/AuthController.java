@@ -1,5 +1,6 @@
 package com.xuan.controller.auth;
 
+import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.OAuthAuthorizeDTO;
@@ -78,6 +79,7 @@ public class AuthController {
      * @return 仅成功登录返回的独立 Bearer 会话
      */
     @PostMapping("/login")
+    @RateLimit(value = "login-total", limit = 30)
     public Result<SessionVO> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
@@ -154,6 +156,7 @@ public class AuthController {
      * @return 可信流程的 303 Location 响应，不直接返回本站 Token
      */
     @GetMapping("/oauth/{source}/callback")
+    @RateLimit(value = "oauth-callback", limit = 30)
     public ResponseEntity<Void> callback(@PathVariable String source, @RequestParam(required = false) String state,
             @RequestParam(required = false) String code, @RequestParam(required = false) String error,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {

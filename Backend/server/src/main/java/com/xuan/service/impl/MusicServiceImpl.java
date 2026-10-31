@@ -21,6 +21,9 @@ import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.MusicPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -44,6 +47,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "music", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<MusicPublicVO> publicItems(DisplayQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
                 .convert(row -> new MusicPublicVO(row.getMusicId(), row.getTitle(), row.getArtist(),
@@ -71,6 +75,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:music", permission = "blog:music:create")
+    @CacheEvict(cacheNames = "music", allEntries = true)
     public ResourceVersion<BlogMusic> create(MusicWriteDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
@@ -85,6 +90,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:music", permission = "blog:music:update", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "music", allEntries = true)
     public ResourceVersion<BlogMusic> update(long id, MusicWriteDTO request, String revision) {
         validate(request);
         BlogMusic row = lock(id, "update");
@@ -98,6 +104,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:music", permission = "blog:music:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "music", allEntries = true)
     public void delete(long id, String revision) {
         BlogMusic row = lock(id, "delete");
         RevisionUtils.check(profile(row).revision(), revision);

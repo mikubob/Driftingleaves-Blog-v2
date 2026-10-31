@@ -22,6 +22,9 @@ import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.ExperiencePublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -45,6 +48,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "experiences", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<ExperiencePublicVO> publicItems(ExperienceQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
                 .convert(row -> new ExperiencePublicVO(row.getExperienceId(), row.getExperienceType(), row.getTitle(),
@@ -72,6 +76,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "cv:experience", permission = "cv:experience:create")
+    @CacheEvict(cacheNames = "experiences", allEntries = true)
     public ResourceVersion<CvExperience> create(ExperienceWriteDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
@@ -86,6 +91,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "cv:experience", permission = "cv:experience:update", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "experiences", allEntries = true)
     public ResourceVersion<CvExperience> update(long id, ExperienceWriteDTO request, String revision) {
         validate(request);
         CvExperience row = lock(id, "update");
@@ -99,6 +105,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "cv:experience", permission = "cv:experience:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "experiences", allEntries = true)
     public void delete(long id, String revision) {
         CvExperience row = lock(id, "delete");
         RevisionUtils.check(profile(row).revision(), revision);

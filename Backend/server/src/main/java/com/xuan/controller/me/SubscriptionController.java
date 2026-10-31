@@ -44,6 +44,7 @@ public class SubscriptionController {
     /** Bearer必须属于邮件申请的同一用户。 */
     @PostMapping("/confirm")
     @SaCheckPermission("blog:rss:subscribe")
+    @RateLimit(value = "subscription-confirm", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<SubscriptionVO> confirm(@Valid @RequestBody SubscriptionTicketDTO request) {
         return Result.ok(subscriptions.confirm(request.ticket()));
     }

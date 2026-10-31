@@ -20,6 +20,9 @@ public interface ICommentService extends IService<BlogComment> {
     /** 公开只看 PUBLIC 文章，父节点必须有完整可见祖先链。 */
     PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query);
 
+    /** 供已完成当前 PUBLIC 与祖先链检查的 publicComments 经代理调用。 */
+    PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query);
+
     /** 作者取会话，开关和审核策略取锁内最新配置，管理员也不免审。 */
     CommentOwnVO create(long article, CommentCreateDTO request);
 

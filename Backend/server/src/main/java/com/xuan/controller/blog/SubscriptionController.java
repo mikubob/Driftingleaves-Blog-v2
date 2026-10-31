@@ -1,5 +1,6 @@
 package com.xuan.controller.blog;
 
+import com.xuan.annotation.RateLimit;
 import com.xuan.dto.SubscriptionTicketDTO;
 import com.xuan.result.Result;
 import com.xuan.service.ISubscriptionService;
@@ -22,6 +23,7 @@ public class SubscriptionController {
 
     /** 只允许退订票据绑定的同一条订阅及轮次。 */
     @PostMapping("/unsubscribe")
+    @RateLimit(value = "subscription-unsubscribe", limit = 30)
     public Result<Void> cancel(@Valid @RequestBody SubscriptionTicketDTO request) {
         subscriptions.cancelTicket(request.ticket());
         return Result.ok(null);

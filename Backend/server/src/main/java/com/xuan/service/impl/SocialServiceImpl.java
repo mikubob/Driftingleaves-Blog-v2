@@ -21,6 +21,9 @@ import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.SocialPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -43,6 +46,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "social", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<SocialPublicVO> publicItems() {
         return items.publicItems().stream().map(row -> new SocialPublicVO(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder())).toList();
     }
@@ -67,6 +71,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "home:social", permission = "home:social:create")
+    @CacheEvict(cacheNames = "social", allEntries = true)
     public ResourceVersion<HomeSocialLink> create(SocialWriteDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
@@ -81,6 +86,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "home:social", permission = "home:social:update", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "social", allEntries = true)
     public ResourceVersion<HomeSocialLink> update(long id, SocialWriteDTO request, String revision) {
         validate(request);
         HomeSocialLink row = lock(id, "update");
@@ -94,6 +100,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "home:social", permission = "home:social:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "social", allEntries = true)
     public void delete(long id, String revision) {
         HomeSocialLink row = lock(id, "delete");
         RevisionUtils.check(profile(row).revision(), revision);

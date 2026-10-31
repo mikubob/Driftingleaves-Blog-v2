@@ -1,8 +1,10 @@
 # DriftingLeavesV2 接口文档
 
-> **文档说明**：按业务模块介绍接口调用方式，更新日期：2026-10-31。当前 153 个路由已实现；第 22 章的 6 个新路由与 1 项参数扩展待实现。
+> **文档说明**：按业务模块介绍接口调用方式，更新日期：2026-10-31。当前 159 个路由已实现，包含第 22 章的 6 个新路由及前台 authorId 参数扩展。
 >
 > **维护提示**：接口统一列出基本信息、请求参数、请求示例、响应参数与响应示例，特殊规则放在接口末尾。示例使用虚构数据；普通成功状态、鉴权、分页和版本要求统一见第 0 章。
+>
+> **缓存与限流实施状态（2026-10-31）**：[0.6](#request-protection) 的完整 Redis 限流与 [0.7](#public-cache) 的 Spring Cache 公开业务缓存已接入；关联失效、并发保护和真实隔离验证见[运行说明](后端运行说明.md#spring-cache-redis)。路由保持159个。
 
 ---
 
@@ -10,6 +12,9 @@
 
 - [按业务名称或完整路径查找全部接口](API_INDEX.md)
 - [0. 通用说明](#common)
+- [0.6 接口限流覆盖与阈值](#request-protection)
+- [0.7 Redis 业务缓存范围](#public-cache)
+- [0.8 新增、更新、删除后的完整缓存策略](#cache-lifecycle)
 - [1. 认证与第三方授权](#group-1)
 - [2. 本人资料与安全设置](#group-2)
 - [3. 用户管理](#group-3)
@@ -31,7 +36,7 @@
 - [19. 访客、浏览记录与统计报表](#group-19)
 - [20. 操作日志](#group-20)
 - [21. 旧项目来源与迁移对照](#legacy-sources)
-- [22. 文章发现与内容管理补充设计（待实现）](#group-22)
+- [22. 文章发现与内容管理补充](#group-22)
 
 ---
 
@@ -101,8 +106,126 @@
 
 - [完整接口索引](API_INDEX.md)：按模块、业务名称或完整路径查找。
 - [文章场景速查](#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
-- 当前 **153 个路由已实现**；[第 22 章](#group-22)另有 **6 个待实现路由和 1 项参数扩展**，不计入已实现数量。
+- 当前 **159 个路由已实现**；[第 22 章](#group-22)的 **6 个新路由和前台 authorId 参数扩展**均已接入业务实现。
 - 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，部署与历史验收见 [后端运行说明](后端运行说明.md)。
+
+<a id="request-protection"></a>
+
+### 0.6 接口限流覆盖与阈值
+
+以下路径均省略统一前缀 `/api/v1`。所有限流继续使用本站 Redis 原子固定窗口，不采用参考项目的进程内令牌桶。IP 仅取服务端识别的可信客户端地址；IP、用户、浏览器等是分别累计的维度，任一超限即拒绝，不能仅限制它们的组合。用户只能来自当前有效会话，fingerprint 和 OAuth 浏览器标识均不能代替本站身份。
+
+| 业务及路径 | 操作窗口与默认阈值 | 实施状态 |
+| --- | --- | --- |
+| `POST /auth/login` 凭据失败 | 60秒10次；IP、IP+归一用户名 | 已实现，可部署配置 |
+| `POST /auth/login` 总请求 | 60秒30次/IP，成功和失败都计数，进入 BCrypt 前执行；独立于失败次数 | 已实现，进入 BCrypt 前累计独立 IP 总预算 |
+| `POST /auth/register` | 60秒5次；IP、存在的浏览器标识；无标识按IP | 已实现，可部署配置 |
+| `POST /auth/oauth/{source}/authorize`、`POST /auth/oauth/exchange` | 共用60秒20次；IP、浏览器标识；无标识按IP | 已实现，可部署配置 |
+| `GET /auth/oauth/{source}/callback` | 所有平台共用60秒30次/IP，独立于发起/兑换窗口；超限不得消费state或调用平台 | 已实现 |
+| `PUT/DELETE /me/password` | 两种方法共用60秒10次；IP、用户 | 已实现 |
+| `POST /blog/articles/{articleId}/comments` | 60秒10次；IP、用户 | 已实现 |
+| `PUT/DELETE /blog/articles/{articleId}/like` | 两种方法及所有文章共用60秒60次；IP、用户 | 已实现 |
+| `POST /blog/messages` | 60秒10次；IP、用户 | 已实现，与本人编辑共享窗口 |
+| `PUT /me/messages/{messageId}` | 与创建留言共用60秒10次；IP、用户，跨留言ID累计 | 已实现，与创建共享窗口 |
+| `POST /admin/messages/{messageId}/replies` | 60秒10次；IP、用户，跨父留言ID累计 | 已实现，跨父留言累计 |
+| `POST /admin/files` 上传 | 60秒10次；IP、用户 | 已实现 |
+| `PUT /me/rss-subscription` 申请/重发 | 共用60秒5次；IP、用户 | 已实现 |
+| `POST /me/rss-subscription/confirm` | 60秒10次；IP、用户，限流在消费票据之前 | 已实现 |
+| `POST /blog/rss-subscriptions/unsubscribe` | 60秒30次/IP，跨票据累计；保持有效票据退订幂等 | 已实现 |
+| `POST /analytics/page-views` | 60秒60次/IP、30次/fingerprint；携带有效会话时另限60次/用户；home/blog/cv共用窗口 | 已实现，在行锁、地域解析和写入前按独立 IP、fingerprint、可选用户原子累计 |
+| 公开内容GET公共窗口 | 60秒120次/IP；覆盖 `/blog/articles`、文章详情、归档、热门榜、分类/标签列表与详情、作者列表与详情、评论列表、留言列表、友链、配置、音乐、统计、RSS、站点地图及 `/home/profile`、`/home/social-links`、`/cv/experiences`、`/cv/skills` | 已实现，所有这些入口共享，冷/热缓存同样计数 |
+| `GET /blog/articles` 且带 `keyword` | 另限60秒10次/IP，跨关键词、页码及作者/分类/标签筛选累计 | 已实现，跨关键词和筛选累计 |
+| `GET /blog/articles/{slug}` | 另限60秒60次/IP，跨slug累计 | 已实现，跨 slug 累计 |
+| `GET /blog/rss.xml`、`GET /blog/sitemap.xml` | 两种XML及所有子图页共用60秒30次/IP | 已实现，RSS/全部地图页共享 |
+| `GET /blog/articles/{articleId}/files/{fileId}/content` | 60秒120次/IP，跨文章及文件累计，独立于公开内容GET公共窗口 | 已实现，独立预算，保持 PUBLIC 和引用校验 |
+| `GET /admin/statistics/{overview,page-views,visitors,provinces,articles}` | 五类报表共用60秒30次；IP、用户，跨日期与站点条件累计；花括号内为五个既有路径的简写 | 已实现，实时 ALL 范围与日期检查后累计 |
+
+新增阈值为实现默认值，后续按真实页面请求数、代理/NAT及压测结果调整并同步文档；已在当前实现中启用；部署仍需正确配置可信代理。未列出的普通本人/后台CRUD保持当前鉴权、版本、事务及请求大小约束，不机械增加统一写限流。
+
+同一请求在同一业务窗口只计一次；公共窗口与专用窗口属于独立预算，各计一次，不叠加两套相同业务计数器。路径参数、关键词、查询日期和客户端自报身份不得拆分IP窗口。鉴权、严格输入检查先于业务限流；登录总请求限流先于密码计算；所有限流均先于业务副作用。超限统一 `429/RATE_LIMITED`，携带正整数秒 `Retry-After`，客户端等待后再试；被拒请求不消费state/ticket、不发送邮件、不增加阅读量或写入浏览明细。限流Redis不可用返回503，不跳过保护，也不降级匿名。OPTIONS不计数。
+
+<a id="public-cache"></a>
+
+### 0.7 Redis 业务缓存范围
+
+**本节已接入实现，验证记录见[运行说明](后端运行说明.md#spring-cache-redis)**，参考 FeiTwnd-Website 的按业务分区、差异TTL、读未命中回源和写后失效方式，适配本站Sa-Token、PUBLIC、ALL/SELF、审核与阅读计数规则。下列为服务端Redis缓存，与浏览器/CDN缓存独立；现有 `Cache-Control: no-store` 保持不变。TTL从成功写入起算，命中不续期；正常业务写入必须主动失效，不能等TTL才反映下架或资料变化。
+
+**实现方式明确采用Spring Cache注解缓存，Redis作为缓存后端。** 主页、社交链接、简历、友链、音乐、公开配置等简单查询在Service公开查询方法使用 `@Cacheable`；新增、更新、删除使用 `@CacheEvict`，有分页或多种筛选的业务使用 `allEntries=true`；需要同时清理多个业务域时使用 `@Caching(evict={...})`。不为这些简单缓存逐个编写RedisTemplate读写流程。统一通过 `@EnableCaching` 启用，由 `RedisCacheManager` 配置各业务TTL、键前缀和序列化；注解放置、事务与代理要求见[Spring Cache注解开发约定](API_CONTRACT.md#spring-cache-annotations)。当前已启用并新增 server 的 Boot cache starter；沿用现有 Redis 连接。
+
+| 缓存业务及GET路径 | 默认TTL | 缓存边界与变化来源 |
+| --- | --- | --- |
+| `/home/profile`、`/home/social-links` | 1小时 | 仅公开资料/可见社交链接；对应后台修改、增删、排序或显示状态变化失效 |
+| `/cv/experiences`、`/cv/skills` | 1小时 | 保留类型、分页等实际筛选；对应后台增删改及显示/排序变化失效 |
+| `/blog/links`、`/blog/music` | 1小时 | 只含审核通过友链/可见音乐；审核、增删改、排序或显示变化失效 |
+| `/blog/configs` | 1小时 | 只缓存site且is_public=1的公开响应；配置修改或撤销公开失效；不缓存comment/message写策略 |
+| `/blog/categories`、`/blog/categories/{slug}`、`/blog/tags`、`/blog/tags/{slug}` | 30分钟 | 字典当前资料及PUBLIC计数；字典变化及公开文章集合/关联变化失效 |
+| `/blog/authors`、`/blog/authors/{userId}` | 30分钟 | 只含有PUBLIC作品的作者公开资料和计数；作品变化及用户昵称/头像/简介修改失效 |
+| `/blog/articles` 不带keyword，包括作者/分类/标签/月组合筛选 | 10分钟 | 缓存文章集合、排序与公开静态资料；响应阅读/点赞/评论计数仍从数据库补充；仅page≤10且pageSize≤20写缓存，其他合法查询正常回源 |
+| `/blog/articles` 带keyword | 60秒 | 缓存同一完整查询的搜索集合；仅page≤3且pageSize≤20写缓存；防止大量一次性关键词长驻Redis；仍执行专用搜索限流 |
+| `/blog/articles/{slug}` | 15分钟 | 只缓存公开正文、安全HTML、派生阅读信息与公开关联；缓存命中仍校验PUBLIC，并按7.2锁内成功加一次阅读；不缓存整条含副作用的Service调用 |
+| `/blog/archives` | 30分钟 | 按页码/页大小缓存月份与PUBLIC数量；发布、下架、回收、恢复、永久删除或可见性变化失效 |
+| `/blog/article-rankings` | 60秒 | period、metric、limit及UTC月份分别入键；排行次序与分数使用同一缓存快照，阅读/点赞变化最多延迟60秒；文章下架、删除、标题/slug等资料变化主动失效 |
+| `/blog/articles/{articleId}/comments` | 30秒 | 仅公开评论及完整可见父链，不含待审/驳回原文；新增、审核、本人/后台占位删除、祖先状态及文章可见性变化失效 |
+| `/blog/statistics` | 5分钟 | 公开汇总；访问PV/UV允许最多5分钟延迟，UTC日期入键；文章/分类/标签变化及后台统计清理主动失效 |
+| `/blog/rss.xml`、`/blog/sitemap.xml` | 30分钟 | 缓存XML；RSS和地图分区，地图索引与各page分别入键；依赖内容、字典、公开配置、站点基址变化主动失效；子图仍遵守50000条/50MiB及不存在页404 |
+
+所有分页、筛选、parentId、类型和大小写敏感slug必须完整入键；不能只按路径缓存。当前文章viewCount、likeCount、commentCount保持数据库口径，列表/详情缓存不引入异步计数或Redis点赞副本；排行与公开统计的延迟仅限上表明确的字段。新产生的访问明细及每次阅读/点赞不清空所有文章正文缓存。
+
+**不缓存的业务响应**：`/auth`、`/me`、`/admin` 全部响应；`/blog/messages`（可含本人标记、私密分支及不同会话可见内容）；采集POST及全部业务写响应；文件字节、预览和临时下载地址。会话、OAuth及订阅票据继续使用独立Redis安全存储，不能当作普通查询缓存丢失后回源重建。权限、菜单、账号状态、最近认证、SQL归属及comment/message开关仍实时校验。
+
+缓存命中不得跳过请求校验、限流或原有鉴权/可见性检查；后台Token不扩大公开响应。失败、异常、404和私人数据不写公共缓存；合法空列表可缓存并随新增失效。缓存读故障可在限流及必要安全校验通过后直接读数据库；限流/会话故障仍503，不能以“缓存降级”绕过。事务失效、并发旧值回填、Redis恢复后的处理及后续验收见[缓存与限流开发约定](API_CONTRACT.md#cache-contract)。
+
+<a id="cache-lifecycle"></a>
+
+### 0.8 新增、更新、删除后的完整缓存策略
+
+本节将参考项目的Spring Cache注解 `@Cacheable` 读缓存、`@Caching` 联合清理、`@CacheEvict(allEntries=true)` 清理整个业务域的经验，落实到本站实际写接口。**统一采用“读未命中回源并缓存；新增/修改/删除提交后删除关联缓存；下一次读再重建”**，不使用 `@CachePut` 把写请求DTO直接变成公开响应，也不只依赖TTL。具体事务时机和故障规则见[开发约定0.8.4](API_CONTRACT.md#cache-contract)。
+
+#### 0.8.1 读取、写入与删除的顺序
+
+| 阶段 | 必须执行的缓存处理 |
+| --- | --- |
+| 首次读取或条目过期 | 完成校验、限流、可见性检查；数据库查询及响应组装成功后才缓存公开结果，设置0.7的TTL |
+| 缓存命中 | 使用当前有效业务代次，写入保护期间不命中；保持原有PUBLIC/鉴权及阅读副作用规则，不续TTL，不回写私人字段 |
+| 新增数据 | 数据库提交后清理所属列表、筛选页、total及派生汇总；此前缓存的空页/空集合也必须清掉，不能只处理新记录详情 |
+| 修改数据 | 锁内取得修改前的slug、关联和身份资料；提交后清理旧值和新值可能命中的详情、全部相关列表和派生缓存；重命名后旧slug不能继续读到旧内容 |
+| 删除、下架、转私密、回收 | 提交后删除对象详情缓存，同时使依赖它的列表、计数、导航、推荐、RSS和地图失效；不能只删除一个详情键，不能把已删除对象写回缓存 |
+| 删除或修改数据库失败 | 不缓存写请求结果、不伪造删除成功；数据库回滚时按原事务结果处理保护标记，已有已提交数据仍按原规则读取 |
+| 写入后的下一次读取 | 从已提交数据库数据重新计算当前集合、total和公开资料；已删除/不可见目标仍按原接口404或空集合返回，404不写缓存 |
+
+“删除缓存”分两种：可准确定位的单条数据键直接删除；同一业务有多页、多种组合参数时按业务域整体失效，避免漏掉未知组合键。后者按开发约定更换业务代次，使旧分区立即不可读、旧条目按TTL回收，效果不能变成等TTL才生效。禁止FLUSHDB/FLUSHALL或顺带删除会话、限流、OAuth及订阅票据；不在请求中用KEYS扫描整库。缓存清理针对服务端Redis，不放宽既有HTTP no-store策略。
+
+#### 0.8.2 写接口与缓存删除清单
+
+以下路径省略 `/api/v1`，`PUT/DELETE`表示同一路径的两种方法。为避免漏删，文章及字典元数据写入采用关联业务域整体失效，不为每个作者、分类、标签、关键词和页码枚举删除键。
+
+| 写接口 | 提交后必须删除或整体失效的缓存 |
+| --- | --- |
+| `POST /admin/articles`；`PUT /admin/articles/{articleId}` | 文章列表及全部组合筛选/搜索、文章详情域（含其他文章的上下篇/推荐）、归档、热门榜、分类/标签列表与详情计数、作者列表/详情、公开统计、RSS、全部地图索引/子页，以及该文章全部公开评论页；草稿写入也按此统一规则清理 |
+| `PUT /admin/articles/{articleId}/status` | 同上；下架不能等15分钟详情TTL或30分钟XML TTL；首次发布清理之前的空集合，重复发布不改变原有邮件发送规则 |
+| `DELETE /admin/articles/{articleId}`；`POST /admin/articles/{articleId}/restore` | 同文章元数据写入，并清理该文章的全部公开评论页；恢复保持下架，清缓存不代表恢复成PUBLIC |
+| `DELETE /admin/articles/{articleId}/permanent` | 同回收规则；成功后文章详情、评论、列表、导航、推荐和XML不得残留可访问条目；文件仍按原业务保留，不因清缓存删除存储对象 |
+| `POST /admin/categories`；`PUT/DELETE /admin/categories/{categoryId}` | 分类列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；覆盖改名、隐藏、排序、旧/新slug及删除后category_id置null |
+| `POST /admin/tags`；`PUT/DELETE /admin/tags/{tagId}` | 标签列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；删除还覆盖文章标签关联级联变化，不能只删标签详情 |
+| `PATCH /me/profile`；`PUT /admin/users/{userId}` 中公开字段变化 | 作者列表/详情、含作者资料的文章列表/搜索/详情、公开评论域；昵称/头像/简介变化不能继续使用缓存中的旧资料；邮箱等未公开字段不进入公共缓存 |
+| `POST /blog/articles/{articleId}/comments` | 该articleId下所有parentId、分页的公开评论缓存；待审新增也统一清理；文章列表/详情的评论数仍实时查库，不清空所有正文 |
+| `DELETE /me/comments/{commentId}`；`PUT /admin/comments/{commentId}/review`；`DELETE /admin/comments/{commentId}` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或占位影响后代，不能只删commentId对应的一条结果 |
+| `PUT/DELETE /blog/articles/{articleId}/like`；成功文章详情GET | 不删正文缓存，不建立Redis计数副本；本次互动数按数据库读取，排行榜最多延迟60秒；这是0.7明确允许的计数例外 |
+| `POST /admin/links`；`PUT/DELETE /admin/links/{linkId}` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
+| `PUT /admin/configs/site` | 公开site配置、RSS及地图；从公开改为不公开也必须删旧缓存，RSS继续按原规则检查必需公开配置 |
+| `PUT /admin/configs/comment`、`PUT /admin/configs/message` | 不建立或清理不存在的策略缓存；继续原配置行锁与锁内实时读取，新开关/审核策略立即用于后续写请求 |
+| `PUT /admin/home/profile` | 整个主页公开资料域；不与sys_user作者资料混为同一业务 |
+| `POST /admin/home/social-links`；`PUT/DELETE /admin/home/social-links/{socialId}` | 整个公开社交链接域，含显示、隐藏、排序及空列表 |
+| `POST /admin/cv/experiences`；`PUT/DELETE /admin/cv/experiences/{experienceId}` | 整个公开经历域，含全部类型和分页；改变type时旧类型与新类型都必须失效 |
+| `POST /admin/cv/skills`；`PUT/DELETE /admin/cv/skills/{skillId}` | 整个公开技能域，含实际筛选及分页；更新/隐藏/排序/删除均清理 |
+| `POST /admin/music`；`PUT/DELETE /admin/music/{musicId}` | 整个公开播放列表域，含所有分页；显示、排序和地址变化一并生效 |
+| `POST /analytics/page-views` | 不缓存写入响应，不逐次清空公开统计；PV/UV按0.7允许的5分钟TTL更新；不改变文章累计阅读量 |
+| `DELETE /admin/visitors/{visitorId}`；`DELETE /admin/page-views/{viewId}` | 公开统计域主动失效；封禁/解封统计标识仍实时读库，不创建访客身份缓存 |
+| 文件上传/删除、留言创建/编辑/审核/删除/回复、邮件订阅各类写接口、日志清理及其余身份/授权写接口 | 对应业务响应没有公共查询缓存，不机械清空整站。文件删除先按原规则拒绝仍被引用的文件；留言私密可见性、订阅轮次及会话撤销照旧执行，不能借公共缓存清理删除安全状态 |
+
+无实际业务变化的幂等写入可以不重复清缓存，但仍须完成鉴权、版本及状态检查；前次提交后缓存清理失败且保护尚未解除时，不能因“数据库已是目标值”跳过失效恢复。所有写入口（HTTP或现有内部调用）都在真正落库的Service负责关联清理，不能只在Controller清理。参考项目的异步摘要回填也会主动清理文章缓存；本站今后若增加内部写入，须沿用同一规则，本次不新增摘要任务。
+
+参考方法、实际清理缓存名及本站补齐项见[参考项目写入清理对照](API_CONTRACT.md#reference-cache-eviction)；并发、回滚及提交后Redis故障仍按[事务失效规则](API_CONTRACT.md#cache-contract)处理。当前已在真正落库的 Service 接入；实际缓存域与恢复步骤见运行说明。
 
 ---
 
@@ -2106,6 +2229,7 @@ If-Revision: "<revision-from-detail>"
 | `keyword` | string | 否 | 可选 S(100)，按本接口指定字段字面包含，不按 SQL 通配符解释 |
 | `categoryId` | ID | 否 | 可选，分类筛选 |
 | `tagId` | ID | 否 | 可选，标签筛选 |
+| `authorId` | ID | 否 | 可选，作者筛选；与分类、标签、关键词和月份同时满足，不作为登录身份 |
 | `month` | string | 否 | 可选，合法 YYYY-MM，年份 1000..9999；按 UTC 月份过滤 |
 
 #### 请求示例
@@ -2141,7 +2265,7 @@ GET /api/v1/blog/articles?page=1&pageSize=10
 
 全部过滤 AND 组合；isTop DESC,publishTime DESC,articleId DESC。keyword 标题、摘要与Markdown原文字面包含，隐藏分类不暴露。
 
-按分类、标签、关键词和月份查询的独立调用示例见 [7.12](#article-scenarios)。当前公开查询不接受 `authorId`，传入会返回 400；前台作者筛选的新增契约见 [22.1](#article-author-query)，尚待实现。
+按分类、标签、关键词和月份查询的独立调用示例见 [7.12](#article-scenarios)。公开查询支持可选 `authorId`，与其他筛选按 AND 组合；完整约定见 [22.1](#article-author-query)。
 
 ---
 
@@ -2191,6 +2315,8 @@ GET /api/v1/blog/articles/first-leaf
 ```
 
 每次成功原子增加 view_count；失败不计数，这是阅读次数而非独立访客。仅输出清理后的HTML；字数/阅读时长、上下篇和相关推荐见 [文章导航与阅读统计](API_CONTRACT.md#model-12-15)，所有关联文章也必须PUBLIC。
+
+已实现的[详情缓存](#public-cache)只复用公开内容片段，命中仍执行上述成功计数及当前PUBLIC校验；详情与[公开GET限流](#request-protection)同样适用于缓存命中，不引入访客去重口径。
 
 ---
 
@@ -2626,7 +2752,7 @@ If-Revision: "<revision-from-detail>"
 
 仅写 deletedAt，不物理清理；保留正文、slug、标签与互动。同版本且已回收可幂等成功。
 
-这是当前“删除文章”的业务入口，删除后不再满足 PUBLIC。需要找回时按 [7.10](#api-46) 恢复；需要不可恢复清理时，新增设计见 [22.7](#api-159)，当前尚不支持永久删除。
+这是普通“删除文章”的业务入口，删除后不再满足 PUBLIC。需要找回时按 [7.10](#api-46) 恢复；需要不可恢复清理时，在回收站按 [22.7](#api-159) 永久删除。
 
 本接口及恢复接口均无请求体；实际发送 JSON 或其他载荷返回 400，不静默忽略身份、状态等未声明字段。
 
@@ -2763,7 +2889,7 @@ GET /api/v1/blog/article-rankings?period=month&metric=view&limit=5
 | 恢复文章 | `POST /api/v1/admin/articles/101/restore` | 已实现；[7.10](#api-46)，先读取回收站详情取得版本，恢复为下架，不自动公开 |
 | 后台预览草稿或下架内容 | `GET /api/v1/admin/articles/101` | 已实现；[7.5](#api-41) 返回 Markdown 与安全 HTML，公开详情不会因 Token 放宽可见性 |
 | 阅读上下篇和同分类推荐 | `GET /api/v1/blog/articles/first-leaf` | 已实现；[7.2](#api-38) 返回 prevArticle、nextArticle、relatedArticles，同分类推荐最多 6 条；详情成功会增加阅读量 |
-| 前台按作者查询公开文章 | `GET /api/v1/blog/articles?authorId=12&page=1&pageSize=10` | **待实现**；[22.1](#article-author-query)，当前请求会被查询白名单拒绝 |
+| 前台按作者查询公开文章 | `GET /api/v1/blog/articles?authorId=12&page=1&pageSize=10` | 已实现；[22.1](#article-author-query)，与其他筛选按 AND 组合 |
 
 删除流程：在对应权限范围内获取后台详情及 X-Revision → 携带 If-Revision 删除 → 从正常列表移除；回收站若要恢复，重新取详情取得最新版本。缺少版本返回 428，版本过期返回 412。回收站文章仍占用 slug，恢复时沿用原 slug；永久删除的单独设计见 [22.7](#api-159)。
 
@@ -5929,9 +6055,9 @@ Cache-Control: no-store
 
 公开文章（PUBLIC）须同时满足：已发布 `status=1`、公开 `visibility=1`、未回收、首次发布时间非空且不晚于当前 UTC。所有前台列表、详情、搜索、互动、Feed、地图及附件文章上下文共用此条件，管理员 Token 不扩大前台可见范围。
 
-隐藏分类不隐藏文章，文章的 category 返回 null；按隐藏/不存在分类或不存在标签筛选返回空页。公开列表所有条件 AND 组合；keyword 为标题、摘要与 Markdown 原文字面包含。前台 authorId 仍待实现，后台 authorId 已可用。
+隐藏分类不隐藏文章，文章的 category 返回 null；按隐藏/不存在分类或不存在标签筛选返回空页。公开列表所有条件 AND 组合；keyword 为标题、摘要与 Markdown 原文字面包含。前后台均支持 authorId 筛选，不能扩大 PUBLIC 条件或当前后台权限范围。
 
-普通删除只移入回收站，保留正文、标签、互动和 slug；恢复为下架，不自动公开。永久删除的待实现设计见 [22.7](#api-159)。详情包含上下篇及最多 6 条同分类公开推荐，无须额外查询接口。
+普通删除只移入回收站，保留正文、标签、互动和 slug；恢复为下架，不自动公开。永久删除见 [22.7](#api-159)，须先回收并同时满足 delete 与 purge 权限范围。详情包含上下篇及最多 6 条同分类公开推荐，无须额外查询接口。
 
 ### 13.3 互动、订阅与统计
 
@@ -8766,6 +8892,8 @@ Content-Type: application/json
 
 IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。携带Bearer时必须有效，匿名不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
 
+已实现的[采集限流](#request-protection)在访客创建、地域解析与明细写入前执行；429不得写入数据或返回recorded=true。fingerprint只增加统计维度限制，不能代替独立IP限流；本POST响应不缓存。
+
 ---
 
 <a id="api-138"></a>
@@ -9182,7 +9310,7 @@ GET /api/v1/blog/statistics
 }
 ```
 
-仅公开汇总，不接受任意userId或日期探索后台数据；当前未公开文章/分类及待审、私密互动不进入内容汇总。数据随源表变化更新，不输出IP、邮箱或UA。
+仅公开汇总，不接受任意userId或日期探索后台数据；当前未公开文章/分类及待审、私密互动不进入内容汇总。不输出IP、邮箱或UA。当前[公开统计缓存](#public-cache)允许访问PV/UV最多延迟5分钟，内容发布/下架及统计清理主动失效，UTC跨日不复用昨日键。
 
 ---
 
@@ -9584,9 +9712,9 @@ V2 沿用旧站的主页、简历、文章、留言、音乐、订阅与访问�
 
 <a id="group-22"></a>
 
-## 22. 文章发现与内容管理补充设计（待实现）
+## 22. 文章发现与内容管理补充
 
-**本章待实现**：6 个新路由与 1 项前台作者筛选扩展。以下示例是设计，不代表当前可调用；已实现的文章用法见 [7.12](#article-scenarios)。本章 GET 不增加阅读量，公开条件与既有接口相同。
+**本章后端已实现**：6 个新路由与 1 项前台作者筛选扩展，合计 159 个已实现路由。文章常用调用见 [7.12](#article-scenarios)。本章 GET 不增加阅读量，公开条件与既有接口相同；前端页面尚未建设。
 
 <a id="article-author-query"></a>
 
@@ -9600,7 +9728,7 @@ V2 沿用旧站的主页、简历、文章、留言、音乐、订阅与访问�
 | 接口描述 | 作者主页分页读取该作者的公开文章，并可与分类、标签、关键词和月份组合 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开，只查询 PUBLIC 文章 |
-| 实施状态 | **待实现参数扩展**；当前传 authorId 返回 400，不新增路由计数 |
+| 实施状态 | 已实现参数扩展，不新增路由计数 |
 
 #### 请求参数
 
@@ -9646,7 +9774,7 @@ GET /api/v1/blog/articles?authorId=12&categoryId=1&tagId=1&page=1&pageSize=10
 | 接口描述 | 作者发现页及作者筛选器，只列出至少有一篇 PUBLIC 文章的作者 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开 |
-| 实施状态 | 待实现 |
+| 实施状态 | 已实现 |
 
 #### 请求参数
 
@@ -9699,7 +9827,7 @@ GET /api/v1/blog/authors?page=1&pageSize=10
 | 接口描述 | 公开作者主页的资料区与公开文章数 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；目标须至少有一篇 PUBLIC 文章 |
-| 实施状态 | 待实现 |
+| 实施状态 | 已实现 |
 
 #### 请求参数
 
@@ -9746,7 +9874,7 @@ GET /api/v1/blog/authors/12
 | 接口描述 | 直接打开分类页时解析 slug，取得分类资料、ID 和公开文章数 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；分类 status=1 |
-| 实施状态 | 待实现 |
+| 实施状态 | 已实现 |
 
 #### 请求参数
 
@@ -9800,7 +9928,7 @@ GET /api/v1/blog/categories/tech
 | 接口描述 | 直接打开标签页时解析 slug，取得标签 ID 和公开文章数 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开；标签无 status 字段 |
-| 实施状态 | 待实现 |
+| 实施状态 | 已实现 |
 
 #### 请求参数
 
@@ -9845,7 +9973,7 @@ GET /api/v1/blog/tags/java
 | 接口描述 | 个人中心回看自己点赞过、当前仍公开的文章 |
 | Content-Type | 无请求体 |
 | 访问要求 | 登录本人且账号启用，无额外后台权限 |
-| 实施状态 | 待实现 |
+| 实施状态 | 已实现 |
 
 #### 请求参数
 
@@ -9908,7 +10036,7 @@ userId 只从当前会话取得，拒绝客户端 userId、authorId 等未声明
 | Content-Type | 无请求体 |
 | 访问要求 | 后台 `blog:article:delete` + 新增 `blog:article:purge`；分别满足各自数据范围 |
 | 并发校验 | 必填 If-Revision |
-| 实施状态 | 待实现；purge 权限尚未加入初始化授权或后端权限检查 |
+| 实施状态 | 已实现；purge 权限加入初始化及固定码保护，默认只显式授予内置管理员角色 |
 
 #### 请求参数
 
@@ -9935,7 +10063,7 @@ If-Revision: "<revision-from-trash-detail>"
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-仅允许永久删除回收站文章；正常文章返回 409，已不存在的目标返回 404。delete 与 purge 分别检查权限范围，详情查询仍需 query 权限；purge 尚待显式初始化与授权。
+仅允许永久删除回收站文章；正常文章返回 409，已不存在的目标返回 404。delete 与 purge 分别检查权限范围，详情查询仍需 query 权限。新库基线已显式授予内置管理员角色 purge；已有 V2 库使用[权限增量脚本](../sql/migrations/20261031_article_purge_permission.sql)，不重新导入建库基线，不自动授予 author/member。
 
 | 数据 | 删除影响 |
 | --- | --- |
@@ -9951,4 +10079,4 @@ If-Revision: "<revision-from-trash-detail>"
 
 ### 22.8 实施说明
 
-上述新增设计不计入 153 个已实现接口；实现后再更新对应状态与接口数量。开发范围与验收条件见 [补充设计验收](API_CONTRACT.md#planned-acceptance)。
+本章 6 个新路由已计入 159 个已实现接口，authorId 为既有路由扩展。开发范围与验收条件见 [补充业务验收](API_CONTRACT.md#planned-acceptance)，实际验证记录见[后端运行说明](后端运行说明.md)。

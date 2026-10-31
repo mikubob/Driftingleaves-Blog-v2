@@ -18,12 +18,18 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagProfileVO;
+import com.xuan.vo.TagPublicDetailVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 
 /**
@@ -43,10 +49,23 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     /** 前台按 ID 升序取标签，不返回创建和修改时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "tags", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<Tag> publicTags(PageQueryDTO query) {
         return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()),
                         new TagQueryDTO(query.page(), query.pageSize(), null))
                 .convert(row -> new Tag(row.getTagId(), row.getTagName(), row.getSlug())));
+    }
+
+    /** 当前标签和 PUBLIC 数量在同一快照中取得，读取不增加文章阅读。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "tags", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    public TagPublicDetailVO publicDetail(String slug) {
+        TagPublicDetailVO value = tags.publicBySlug(slug, LocalDateTime.now(ZoneOffset.UTC));
+        if (value == null) {
+            throw new BusinessException(404, "NOT_FOUND", "标签不存在");
+        }
+        return value;
     }
 
     /** 先检查后台和标签查询权限，再按名称查找，不按当前作者缩小范围。 */
@@ -69,6 +88,18 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:tag", permission = "blog:tag:create")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public BlogTag create(TagWriteDTO request) {
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
@@ -83,6 +114,18 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:tag", permission = "blog:tag:update", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public TagProfileVO update(long id, TagWriteDTO request, String revision) {
         BlogTag row = lockTag(id, "update");
         checkRevision(row, revision);
@@ -96,6 +139,18 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:tag", permission = "blog:tag:delete", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public void delete(long id, String revision) {
         BlogTag row = lockTag(id, "delete");
         checkRevision(row, revision);

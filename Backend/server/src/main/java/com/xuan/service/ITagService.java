@@ -8,6 +8,7 @@ import com.xuan.entity.BlogTag;
 import com.xuan.result.PageResult;
 import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagProfileVO;
+import com.xuan.vo.TagPublicDetailVO;
 
 /**
  * 标签是全站字典，文章关联的保存仍走文章接口。
@@ -16,6 +17,9 @@ public interface ITagService extends IService<BlogTag> {
 
     /** 获取前台标签列表，没有关联文章的标签也会返回。 */
     PageResult<Tag> publicTags(PageQueryDTO query);
+
+    /** 按大小写敏感 slug 查询标签，空标签的公开文章数为零。 */
+    TagPublicDetailVO publicDetail(String slug);
 
     /** 获取后台标签列表，按名称字面筛选。 */
     PageResult<BlogTag> listTags(TagQueryDTO query);

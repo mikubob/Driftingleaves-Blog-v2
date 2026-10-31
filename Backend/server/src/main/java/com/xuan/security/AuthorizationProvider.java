@@ -35,7 +35,7 @@ public class AuthorizationProvider implements StpInterface {
             "sys:permission:query", "sys:permission:create", "sys:permission:update", "sys:permission:delete");
     /** 文章接口已经使用这些固定权限，不能删除；它们不加入最后管理员保护名单。 */
     public static final Set<String> ARTICLE_PERMISSIONS = Set.of("blog:article:query", "blog:article:create",
-            "blog:article:update", "blog:article:publish", "blog:article:delete", "blog:article:restore",
+            "blog:article:update", "blog:article:publish", "blog:article:delete", "blog:article:restore", "blog:article:purge",
             "blog:file:query");
     /** 这些权限已有分类、标签接口使用，不能删除；不加入最后管理员保护名单。 */
     public static final Set<String> TAXONOMY_PERMISSIONS = Set.of("blog:category:query", "blog:category:create",

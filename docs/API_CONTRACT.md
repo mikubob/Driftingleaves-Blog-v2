@@ -1,8 +1,9 @@
 # 接口开发约定
 
-本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。章节编号沿用原接口文档；本文不新增路由，也不改变已实现与待实现的范围。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
+本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。章节编号沿用原接口文档；本文不新增路由，既有159个路由的实现状态保持不变。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；独立验证结果及恢复步骤见运行说明，既有路由数本身不代表缓存验收。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
+- [缓存、限流与后续验收](#cache-contract)
 - [共享模型与状态](#models)
 - [OAuth、授权、文件与事务](#business)
 - [迁移对照](#legacy-sources)
@@ -83,6 +84,8 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，不增加验证码系统。日志不得记录密码、Authorization、OAuth code/state/ticket 或第三方 Token。跨域只允许明确前端 origin，预检允许 Authorization/If-Revision，暴露 X-Revision/Location/Retry-After；带 OAuth Cookie 请求允许 credentials，不能使用通配 origin。非白名单业务路由默认拒绝匿名。
 
+全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，创建/编辑留言共享窗口按表中要求扩展。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
+
 初始角色按当前 SQL 显式授权；匿名访客不对应数据库角色：
 
 | 角色码 | 初始能力 |
@@ -107,6 +110,131 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | OAuth 回调 | 回调白名单仅允许具体平台地址；绑定回调验证服务端存储的原会话，不要求平台附加本站 Authorization |
 
 框架核对依据：[Sa-Token 固定版本会话配置](https://raw.githubusercontent.com/dromara/Sa-Token/v1.46.0/sa-token-core/src/main/java/cn/dev33/satoken/config/SaTokenConfig.java)、[JustAuth 1.16.7 AuthStateCache](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/me/zhyd/oauth/cache/AuthStateCache.java)、[JustAuth 与本站用户整合](https://www.justauth.cn/features/integrate-existing-systems/)。有效期、票据、白名单与业务授权组合是本站设计，不是框架默认值。
+
+<a id="cache-contract"></a>
+
+### 0.8 Redis业务缓存、事务失效与限流验收
+
+本节为当前实现契约。已增加 RedisCacheManager、Spring Cache 注解及缺失限流入口，只新增 server 的 Boot cache starter，不新增路由或表。[业务缓存表](API.md#public-cache)是缓存范围及TTL的统一来源；[限流表](API.md#request-protection)是入口与阈值的统一来源。缓存只减少公开读取的重复工作，不能接管本站身份、安全票据或业务写入的正确性。
+
+#### 0.8.1 参考依据与适配取舍
+
+只读参考项目为 `D:/CodingFiles/Blog/fet/FeiTwnd-Website`，下表文件路径相对其 `Backend/FeiTwnd-server/src/main/java/cc/feitwnd/`。参考的是实际源码中的业务覆盖与缓存生命周期，不迁移其鉴权、部署值或凭据。
+
+| 参考源码与行为 | V2采用方式 |
+| --- | --- |
+| `config/RedisConfiguration.java`：RedisCacheManager按业务设置TTL；静态展示1小时、分类标签/归档30分钟、列表10分钟、详情15分钟、统计5分钟、RSS/地图30分钟 | 沿用业务分区与主要TTL；V2搜索缩短为60秒，新增热门榜60秒、公开评论30秒及公开作者缓存，见业务缓存表 |
+| `service/article/impl/ArticleServiceImpl.java`：按slug/分页/分类/标签/关键词缓存，文章增删改清理关联缓存 | 缓存键必须覆盖V2全部组合条件，含authorId、month、parentId及分页；失效还覆盖PUBLIC、回收/恢复/永久删除、祖先审核及用户公开资料变化 |
+| `service/profile/impl/*ServiceImpl.java`、`service/system/impl/SystemConfigServiceImpl.java`：读缓存，后台写入清理对应业务缓存 | 仅迁移公开展示缓存；不照搬后台all结果缓存，comment/message写策略仍锁内实时读库 |
+| `controller/blog/RssFeedController.java`、`SitemapController.java`：缓存XML | 缓存经过PUBLIC过滤与编码的XML；地图索引、各子图及站点基址分别识别，关联变更统一失效 |
+| `controller/blog/ArticleController.java`：搜索及详情限流，详情缓存与阅读计数分开 | 沿用分开处理的职责；用本站Redis固定窗口代替参考项目进程内Bucket4j；不移植访客Token、30分钟阅读去重或Redis增量定时回写 |
+
+<a id="reference-cache-eviction"></a>
+
+##### 写入清理源码对照
+
+参考项目不只是给读取加缓存，也在写方法声明 `CacheEvict(allEntries=true)`，多个缓存域通过 `Caching(evict=...)` 一起处理；内部直接写库的路径还会调用CacheManager清理。下表记录本次只读核对到的实际方法与缓存名，不能把本站补充要求说成参考项目已经具备的能力。
+
+| 参考文件与写方法 | 源码明确清理的缓存域 | 本站吸取的经验及补齐范围 |
+| --- | --- | --- |
+| `service/article/impl/ArticleServiceImpl.java`：createArticle、updateArticle、batchDelete、publishOrCancel | articleList、articleDetail、articleArchive、blogReport，均为allEntries=true | 新增、修改、删除、发布/下架都联合清理，不能只删除当前文章详情；V2另补筛选计数、作者、热门榜、RSS/地图及可见性关联 |
+| 同文件：toggleTop | articleList、articleDetail | 排序字段变化也会影响列表与详情；V2置顶通过既有文章PUT更新，沿用文章清理清单，不新增置顶接口 |
+| `service/article/impl/ArticleCategoryServiceImpl.java`：addCategory、updateCategory、batchDelete | articleCategories、articleList、blogReport | 字典写入清自己及依赖业务；V2还要清嵌入分类资料的详情、旧/新slug与隐藏分类筛选 |
+| `service/article/impl/ArticleTagServiceImpl.java`：addTag、updateTag、batchDelete | articleTags、blogReport | 标签写入不能仅清标签域；V2额外覆盖文章列表/详情中的当前标签及级联关联变化 |
+| `service/profile/impl/PersonalInfoServiceImpl.java`：updatePersonalInfo | personalInfo | 清整个主页资料域，不能只清某一种返回模型 |
+| `service/profile/impl/SocialMediaServiceImpl.java`：addSocialMedia、updateSocialMedia、batchDelete | socialMedia | 新增/修改/删除均清理整个链接域，覆盖visible及所有读取变体；V2只缓存公开变体 |
+| `service/profile/impl/ExperienceServiceImpl.java`：addExperience、updateExperience、batchDelete | experiences | 按类型读缓存时，类型变化必须同时影响旧、新类型；采用整个经历域失效防漏删 |
+| `service/profile/impl/SkillServiceImpl.java`：addSkill、updateSkill、batchDelete | skills | 技能增删改清整个技能域，涵盖公开展示结果 |
+| `service/profile/impl/FriendLinkServiceImpl.java`：addFriendLink、updateFriendLink、batchDelete | friendLinks | 友链增删改清整个域；V2审核、隐藏与排序通过同一写入口清理 |
+| `service/profile/impl/MusicServiceImpl.java`：addMusic、updateMusic、batchDelete | musicList | 音乐增删改清整个播放列表域，包含排序与显示状态变化 |
+| `service/system/impl/SystemConfigServiceImpl.java`：addConfig、updateConfig、batchDelete | systemConfig | 更新/删除会使按configKey读取的旧值失效；V2只允许已有白名单键PUT，不照搬任意配置增删接口 |
+| `service/async/impl/SummaryBackfillAsyncServiceImpl.java`：backfillSummaryAsync成功写库后调用evictArticleCaches | 通过CacheManager逐个clear articleList、articleDetail、articleArchive、blogReport | 内部写库同样清缓存，不能只覆盖HTTP写请求；V2本次不引入AI或异步摘要功能 |
+
+源码检索中RSS/地图存在Cacheable和TTL配置，但上述写方法的清理列表未覆盖rssFeed/sitemap；分类/标签写入也未统一覆盖嵌入字典资料的文章详情。本站必须按实际响应依赖补齐这些失效，不原样复制遗漏。参考CacheManager未显式开启transactionAware，写方法注解也不能单凭形式证明事务提交后才清理；本站以0.8.4的提交、回滚、并发回填规则为准，不把注解调用结束视为事务一致性验收。
+
+本站每个写接口的新增、更新和删除清理范围集中列于[接口缓存生命周期与清理清单](API.md#cache-lifecycle)，下文0.8.3提供依赖依据，0.8.4规定执行顺序；三者必须一起落实。
+
+本站阅读量继续表示成功详情请求次数，不变成独立访客数。MySQL仍保存已提交的阅读/点赞/评论明细及计数事实；公开列表和详情不因缓存返回过期互动计数。仅排行榜的热度快照及公开统计PV/UV允许业务缓存表明确的短暂延迟，后台报表仍实时读库。
+
+#### 0.8.2 缓存位置、键与公开范围
+
+- 在现有公开查询Service接入Spring Cache注解，Controller仍负责入口和响应，Mapper继续负责数据库读取；复用现有Redis连接与JSON能力，不能为缓存新建平行业务Service或修改对外响应结构。简单缓存必须采用下述注解方式，统一落实事务与并发要求，不逐接口编写RedisTemplate的get/set/delete流程。
+- 键统一在已配置的 `app.auth.redis-prefix` 下隔离为 `cache:public:<结构及渲染规则版本>:<业务名>:<业务代次>:<规范查询摘要>`；不得使用会话/OAuth/订阅/rate命名空间，不把Token、票据、邮箱或Markdown原文拼入键。代次是服务端内部失效标识，与客户端X-Revision无关；不能重用已失效代次。
+- 先按现有DTO规则校验并补齐默认值，再按固定字段顺序生成键。文章查询包含page/pageSize、keyword、categoryId、tagId、authorId、month；评论包含articleId、parentId及分页；其他列表包含各自全部已声明筛选，XML包含索引/子页区别；排行榜包含period/metric/limit及适用UTC月份，公开统计包含UTC自然日。不得擅自小写化slug或改变关键词的既有匹配语义。
+- 缓存值仅为明确的公开VO或公开查询片段，不保存后台实体、密码哈希、未公开邮箱、IP/UA、权限快照、私密或待审原文；主页明确公开的publicEmail仍按原白名单返回。只返回共同公开字段的接口可供匿名和登录请求复用同一数据缓存；登录校验、响应头与私人字段不能混入缓存。`/blog/messages`即使匿名请求也不缓存整页，以免以后复用时混入isOwn或悄悄话。
+- PUBLIC以及字典显示、完整评论祖先链、文件引用等现有条件继续生效。文章详情命中仍在原有事务中校验当前PUBLIC、当前内容及引用；只有内容与渲染规则匹配才复用正文片段。列表/导航/推荐不能依靠旧候选ID向客户端返回已下架内容，也不能事后简单滤掉记录却保留错误total或漏补分页；无法确认缓存集合有效时整次查询回源。
+- 详情正文缓存与阅读递增分开，不能给含incrementViews的publicDetail整体加Cacheable。列表/详情的viewCount、likeCount、commentCount在本次数据库读取中补充；详情只有公开读取整体成功才在原文章锁内加一次阅读，失败回滚。旧数据库html_content不作为可信缓存；服务端渲染规则升级必须换缓存版本或失效旧HTML。
+- 合法空页/空集合可以按同样的失效规则缓存；失败、404、异常结果和未验证的外部输入不缓存。每个数据条目必须有有限TTL，命中不续期；列表和搜索只缓存业务表规定的前几页，深页和其他合法pageSize回源，不新增400或截断结果。本站不引入缓存预热、布隆过滤器、多级本地缓存或异步计数系统。
+
+<a id="spring-cache-annotations"></a>
+
+##### Spring Cache注解方式
+
+简单缓存统一选择Spring Cache声明式缓存，由RedisCacheManager提供Redis存储；不新增自定义缓存注解或独立缓存Service。下表已接入实际 Service 与配置，真实隔离验收记录见运行说明。
+
+| 场景 | 指定方式 |
+| --- | --- |
+| 启用和统一装配 | 在server配置层使用 `@EnableCaching`，装配 `RedisCacheManager`；复用本站连接，按0.7各业务配置TTL、本站前缀与明确的公开VO序列化，不使用默认永久缓存或本地Map替代Redis |
+| 简单公开查询 | Service实现类上经Spring代理从外部调用的public查询方法使用 `@Cacheable(cacheNames="业务名", key="明确的SpEL键")`；无参数公开查询使用固定公开键，有参数查询包含实际全部筛选条件；真实键仍遵循上文版本及代次规则 |
+| 条件与空值 | 用 `condition` 限定0.7规定的可缓存页码及pageSize；需要排除null时使用 `unless="#result == null"`，缓存管理器也禁用null缓存；正常空集合可以缓存，不把异常或Result错误包装作为可缓存业务值 |
+| 新增、修改、删除及状态变更 | 在实际写Service方法上使用 `@CacheEvict`；简单列表业务采用 `@CacheEvict(cacheNames="业务名", allEntries=true)`，一次清掉该域所有分页/类型/公开变体；只有可准确定位且不影响集合的单条缓存才用key定点删除 |
+| 多域关联清理 | 同一个写方法使用 `@Caching(evict={...})` 组合各域的 `@CacheEvict`；文章、分类、标签按接口0.8.2逐项声明关联域，主页/社交/简历/友链/音乐等只声明实际受影响的业务域 |
+| 写入后缓存内容 | 采用删除后由下一次查询重建，不使用 `@CachePut` 更新公开DTO；不把写请求缺少的关联资料、PUBLIC条件和服务端派生字段当成完整缓存值 |
+
+注解的命中会跳过查询方法体，因此鉴权、限流、当前PUBLIC检查及阅读计数必须放在仍会执行的外层流程；只给可以复用的纯查询部分加Cacheable，不能给publicDetail等带副作用的整体业务方法加缓存。同类内部直接调用不会经过默认Spring缓存代理，不能把注解只放在private方法或仅被self-invocation调用的方法上并宣称缓存生效。
+
+写清理保留 `beforeInvocation=false`，不在执行数据库写入前无条件删除缓存；RedisCacheManager启用 `transactionAware()` 配合现有事务，落实成功提交后清理。注解声明、事务感知以及0.8.4的并发回填/故障要求必须同时成立，不能把默认CacheEvict的方法返回时机等同数据库提交。`allEntries=true`由统一缓存装配落实业务域失效；需要实际批量删除时使用SCAN批次策略，避免默认KEYS扫描。业务方法不手工重复执行同一份注解清理。
+
+注解语义与代理规则依据[Spring声明式缓存官方文档](https://docs.spring.io/spring-framework/reference/integration/cache/annotations.html)；RedisCacheManager、按域TTL、事务感知及批量清理配置依据[Spring Data Redis官方文档](https://docs.spring.io/spring-data/redis/reference/redis/redis-cache.html)。适配仓库 Spring Data Redis 4.1.2，使用 TtlFunction API，按业务配置有限 TTL。
+
+#### 0.8.3 写入影响与主动失效
+
+以下失效由实际业务变化触发，覆盖该业务缓存的全部分页和组合查询。可以清理单条或更换业务代次来使旧条目不可达；不要在请求中使用Redis KEYS扫描全库，也不要为每次阅读清空整站缓存。
+
+单条缓存删除与业务域失效均由真正执行写事务的Service发起，不在Controller里按客户端DTO猜测关联。修改/删除前在原锁内保存旧slug、旧分类/标签等清理所需信息，提交后同时覆盖旧、新关联；不在删除后为了找旧键再查询已不存在的对象。按类别/标签/作者/关键词/月/分页保存的列表无法只凭一个主键枚举全部键，应按对应公开业务域整体失效；文章详情域整体失效也覆盖其他文章中缓存的上下篇与推荐。参考项目的allEntries清理经验在本站按此执行，不新增面向前端的清缓存接口。
+
+| 实际变更来源 | 必须失效的公开缓存 |
+| --- | --- |
+| 文章创建/编辑、发布/下架、回收/恢复/永久删除；正文、标题、slug、摘要、封面、作者关联、分类/标签关联、置顶、可见性变化 | 公开文章列表/搜索、相关详情及上下篇/推荐、归档、热门榜、分类/标签列表与详情计数、公开作者列表/详情、公开统计、RSS及全部地图索引/子页，以及该文章全部公开评论页；旧slug和新slug均覆盖 |
+| 分类或标签增删改、重命名、slug、排序及分类显示状态变化 | 对应字典列表/详情，以及嵌入当前字典或依赖关联筛选的文章列表/搜索/详情、归档、热门榜、公开作者/统计、RSS/地图；包括外键SET NULL/CASCADE造成的关联变化 |
+| 用户本人资料PATCH或后台修改用户昵称、头像、简介等公开字段 | 公开作者列表/详情、含该作者资料的文章列表/搜索/详情及公开评论；不能只失效后台用户缓存；账号状态是否影响文章PUBLIC仍按原业务定义判断，不擅自隐藏其作品 |
+| 评论创建、审核、本人删除、管理删除及任一祖先状态变化 | 对应文章的全部公开评论页与回复页；列表/详情的评论数继续实时补充，不因一条评论清空所有正文缓存 |
+| 点赞/取消点赞或一次成功详情读取 | 不失效正文；本次列表/详情互动数由数据库读取；热门榜快照最多60秒后重建，不引入Redis计数副本 |
+| 主页、社交链接、经历、技能、友链、音乐的增删改、审核、排序或显示变化 | 对应公开业务全部查询；公开资料被隐藏或删除后，成功写入后的请求不能继续读到旧展示 |
+| site配置内容/公开标记变化，或服务端站点基址、渲染规则改变 | 公开配置及依赖它的RSS/地图/HTML；部署配置或渲染规则变更应同时切换相关缓存版本，不能继续使用旧基址或旧清理规则的结果 |
+| 新访问采集 | 不逐条清空公开统计，PV/UV最多5分钟延迟；UTC跨日使用新日期键，不能把昨日todayPageViewCount带到今日 |
+| 后台删除浏览记录或访客统计记录 | 公开统计；保留“删除访客使UV减少但PV不变、删除明细不反扣文章阅读量”的原口径 |
+| 角色/权限/菜单/授权、密码或第三方绑定变更；comment/message策略变化 | 继续现有会话撤销、实时授权和配置行锁；本节不新增权限、菜单、写策略或私人响应缓存，公共内容缓存不能替代锁后复核 |
+
+不缓存未提交的事务结果。成功写入返回后开始的查询必须看见新公开状态、资料及集合；仅延迟清理旧键或给普通CacheEvict增加TTL不能满足此要求。特别要覆盖“读请求持有旧数据库快照，写请求清缓存后，旧读再把旧值填回”的路径。
+
+#### 0.8.4 事务、并发回填与故障处理
+
+为满足现有下架/私密/删除立即生效要求，采用业务代次和写入保护标记控制缓存使用，复用现有事务完成回调；这里的标记仅控制是否使用缓存，不承担业务行锁或授权。
+
+1. 公开数据写事务在原有锁内校验通过、实际修改前，先登记受影响业务的写入保护标记；每笔事务使用自己的标识，多笔并发写不能互相清掉保护。登记失败返回503并回滚，不在无法保证缓存失效时继续提交公开数据修改。
+2. 保护标记存在时，相应公开读取直接查数据库且不回填缓存；数据回源仍执行全部可见性、计数和事务规则。缓存未命中时须在建立用于回填的数据库读取快照前记住当前业务代次，查询完成后原子确认“代次未变且无写入保护”才能回填，避免旧快照在失效之后复活；不能先持有旧快照再读取新代次并回填。
+3. 数据库提交后，使受影响业务旧代次失效，再移除本次保护标记；在这两个步骤确认完成后返回写入成功。数据库回滚则清除本次标记，不把未提交结果放入缓存；缓存操作失败不能吞掉原业务异常。旧代次条目按原TTL自然回收。
+4. 保护标记不能仅因短TTL到期就恢复旧缓存。进程中断或事务完成后的Redis清理失败时，保留保护、继续绕过该业务缓存；待确认数据库事务已结束并轮换该业务代次后清理遗留标记。Redis恢复后也不得直接放行旧条目；从备份恢复Redis时，应在启用查询缓存前统一轮换公共业务代次。这里允许暂时降低命中率，不允许恢复已下架内容。
+5. 提交后的缓存失效失败返回503时，数据库及同事务成功审计可能已经提交，不能声称已回滚，也不能自动重放业务写入；客户端先查询最新状态/版本再决定重试。MySQL与Redis没有共同事务，本节不引入跨存储事务或后台可靠消息系统。
+6. 纯缓存读取/回填失败且本次限流、会话和其他必要校验已经通过时，可直接返回数据库查询结果且不使用旧缓存。Redis限流、会话或一次性票据校验失败依旧返回503；不得降级为匿名、成功空页或已记录采集。读取缓存结构不兼容时视为未命中并按当前规则回源，不返回未验证对象。
+
+#### 0.8.5 实现验收清单
+
+以下为实现验收要求，实际执行结果以[运行说明](后端运行说明.md#spring-cache-redis)和对应日志为准；复用现有 JUnit/MVC、真实隔离 MySQL/Redis，不连接业务数据库。
+
+| 范围 | 必须验证的真实行为 |
+| --- | --- |
+| 命中、TTL与查询键 | 首次回源、再次命中、到期重新读取；数据键均有限TTL且命中不续期；默认参数等价，作者/分类/标签/关键词/月/parentId/分页/大小写slug互不串值；空结果新增后失效；深页及超出缓存pageSize正常查询 |
+| Spring Cache注解接入 | 经容器代理调用真实Service，验证Cacheable第二次不重复查询、CacheEvict在增删改提交后清理、Caching覆盖全部关联域；回滚不发布未提交值，同类内部调用不能冒充注解命中；验证Redis中实际条目和TTL，不只检查源码存在注解 |
+| 当前鉴权 | 过期/撤销Token和禁用账号仍按原入口规则拒绝；ALL/SELF及锁后权限不从缓存读取；管理员Token不扩大PUBLIC；本人点赞、私密留言、订阅、后台详情及文件响应不进入公共缓存 |
+| 关联失效 | 各类写事务后验证上表所有受影响业务，包含旧/新slug、字典级联、修改作者昵称、评论祖先审核/占位、RSS/地图所有子页与total；统计清理及UTC日/月边界不复用旧结果 |
+| 写接口逐项覆盖 | 对照接口0.8.2逐行验证POST新增、PUT/PATCH更新、DELETE及状态写入后的清理；先预热所有受影响查询再执行写入，确认无旧值、错误total或旧slug，下一次读取回源重建，随后才命中；未发生变化的幂等写不跳过遗留保护恢复 |
+| 副作用与计数 | 详情冷/热缓存都只在成功时加一次阅读，失败不计；采集POST不重复加文章阅读；列表/详情实时互动数不被缓存覆盖；热门榜和公开PV/UV仅在规定时间内延迟，排名与分数快照一致 |
+| 并发及故障 | 旧快照回填遇到代次变化被拒；写保护期间旁路；并发写不误清标记；回滚、提交后Redis故障、进程中断遗留标记、Redis恢复不暴露旧PUBLIC数据；缓存降级不能绕过安全Redis失败 |
+| 限流 | 每个新增入口的阈值前后边界、共享窗口、独立IP/用户维度、并发原子计数、TTL不被拒绝请求续期；换slug/关键词/日期/fingerprint不重置IP预算；登录成功也消耗总请求预算，AUTH_FAILED单独计失败；冷/热缓存、不同实例共享限制；429含Retry-After且无写入/消费/邮件/计数副作用 |
+
+实现与运行说明同步维护；当前159个路由数、历史测试记录及参考项目存在Cacheable均不能代替本节真实行为验收。
 
 ---
 
@@ -571,7 +699,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 <a id="permanent-delete-rules"></a>
 
-## 22.7 永久删除开发约定（待实现）
+## 22.7 永久删除开发约定
 
 必须先按现有接口移入回收站；仅 `deletedAt != null` 可永久删除，正常文章返回 `409/STATE_CONFLICT`，不允许用参数绕过。需要有效 admin:access，delete 与 purge 的 ALL/SELF 分别检查；任何一个权限仅 SELF 都要求当前用户为文章作者，不把一个权限的 ALL 扩大到另一个。新 purge 权限须实施时显式初始化并授权，不自动赋予 author/member，也不因角色名为 admin 而绕过授权。查看详情另外遵循既有 query 权限范围。
 
@@ -586,15 +714,15 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | 操作日志 | 保留历史审计，新增 purge 成功审计与数据库清理同事务提交；失败回滚，沿用既有失败审计，不记录已删正文 |
 | slug、公开入口与恢复 | 删除后释放文章 slug；文章详情、关联文件的该文章访问上下文返回 404；不再进入 Feed/站点地图/公开推荐，恢复接口返回 404 |
 
-前端操作放在回收站并明确提示“永久删除文章及全部评论、点赞，无法恢复”，与普通删除分开。本文只定义业务；本轮未执行任何删除，也未修改 SQL 外键或存储对象。
+前端操作放在回收站并明确提示“永久删除文章及全部评论、点赞，无法恢复”，与普通删除分开。后端已实现；验证只在隔离数据库执行删除，不修改现有 SQL 外键或实际存储对象。前端页面尚未建设。
 
 ---
 
 <a id="planned-acceptance"></a>
 
-### 22.8 实施范围与验收条件（待执行）
+### 22.8 实施范围与验收条件
 
-本章模型只服务对应新增消费者，不要求改动既有公开列表字段或新增数据库表。实施时复用当前 Controller→Service 接口/实现→Mapper/XML、DTO/VO、ArticleFilter、公开响应转换、权限范围、分页与审计机制；不得只加入空路由或权限字典后标记完成。
+本章后端已复用当前 Controller→Service 接口/实现→Mapper/XML、DTO/VO、ArticleFilter、公开响应转换、权限范围、分页与审计机制；没有新增数据库表或改变既有公开列表字段。新增权限及菜单在基线初始化，已有 V2 库按[增量脚本](../sql/migrations/20261031_article_purge_permission.sql)显式授予内置管理员角色，不自动授予 author/member。
 
 | 改动位置 | 必须完成的业务及验证 |
 | --- | --- |
@@ -602,6 +730,6 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | 公开作者、分类/标签详情入口及公开准入白名单 | 按方法/路径逐项增加 4 个公开路由；验证分页排序、公开计数、空集合、隐藏分类、slug 大小写及作者资料白名单，管理员 Token 不扩大公开结果 |
 | 本人点赞列表入口与本人路由校验 | 身份来自会话，验证账号 A 不能查 B、拒绝 userId、过期会话 401；取消/重复/再次点赞的时间顺序，以及文章下架后 records/total 同时排除 |
 | 永久删除业务、权限初始化/固定码保护、事务审计 | 复用 delete 与新增 purge 的独立范围；验证正常文章拒删、SELF 越权、缺失/过期版本、锁等待后的会话/权限/状态复核，多层评论 RESTRICT 顺序清理、成功审计及失败整笔回滚；确认字典/文件保留、浏览关联置 null、删除后不能恢复或公开读取 |
-| 文档与客户端 | 新能力通过对应测试后再更新本章实施状态与路由统计；作者主页/筛选页、分类/标签页、个人点赞页与回收站分别接入对应接口，永久删除必须明确说明不可恢复 |
+| 文档与客户端 | 后端已实现并通过隔离集成测试，路由统计为 159；前端尚无工程，作者主页/筛选页、分类/标签页、个人点赞页与回收站后续分别接入对应接口，永久删除必须明确说明不可恢复 |
 
 错误沿用 [第 14 章](API.md#errors)：严格输入 400/VALIDATION_ERROR，未认证 401/UNAUTHENTICATED，权限不足 403/FORBIDDEN，隐藏/不存在/范围外 404/NOT_FOUND，状态冲突 409/STATE_CONFLICT，旧版本 412/REVISION_CONFLICT，缺版本 428/PRECONDITION_REQUIRED，业务存储不可用按既有规则返回 503。本章没有新增错误码，不能将存储故障转换为成功空页或删除成功。

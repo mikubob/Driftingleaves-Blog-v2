@@ -1,6 +1,12 @@
 # 接口索引
 
-按业务名称或完整路径查找；调用参数与示例见 [接口文档](API.md)。共 153 个已实现路由、6 个待实现路由，另有 1 项现有路由参数扩展。
+按业务名称或完整路径查找；调用参数与示例见 [接口文档](API.md)。共 159 个已实现路由，前台 authorId 参数扩展也已实现。
+
+2026-10-31补充了[限流覆盖、阈值与实施状态](API.md#request-protection)、[Redis业务缓存范围与TTL](API.md#public-cache)，以及[缓存失效、鉴权边界与后续验收](API_CONTRACT.md#cache-contract)。业务查询缓存与补充限流现已接入；实际隔离验收及故障恢复步骤见[运行说明](后端运行说明.md#spring-cache-redis)。下表仍为原有159个业务路由，不新增清缓存接口。
+
+新增、更新、删除、下架和回收后具体清哪些缓存，见[写接口缓存删除清单](API.md#cache-lifecycle)；对应参考项目的方法与CacheEvict缓存名见[源码经验对照](API_CONTRACT.md#reference-cache-eviction)，包含内部写库同样清理的规则。
+
+简单缓存指定采用[Spring Cache注解方案](API_CONTRACT.md#spring-cache-annotations)：Cacheable读取、CacheEvict增删改清理、Caching联合清理，RedisCacheManager统一管理TTL；已启用；关联失效、事务与并发保护统一由缓存基础设施执行。
 
 ## 1. 认证与第三方授权
 
@@ -240,14 +246,14 @@
 | [20.2 查询操作日志详情](API.md#api-152) | `GET /api/v1/admin/operation-logs/{logId}` | 已实现 |
 | [20.3 清理单条操作日志](API.md#api-153) | `DELETE /api/v1/admin/operation-logs/{logId}` | 已实现 |
 
-## 22. 文章发现与内容管理补充设计（待实现）
+## 22. 文章发现与内容管理补充
 
 | 业务 | 方法与完整路径 | 状态 |
 | --- | --- | --- |
-| [22.1 前台按作者查询公开文章（扩展既有接口）](API.md#article-author-query) | `GET /api/v1/blog/articles`，新增可选 `authorId` | 待实现参数扩展 |
-| [22.2 分页查询公开作者](API.md#api-154) | `GET /api/v1/blog/authors` | 待实现 |
-| [22.3 查询作者公开主页资料](API.md#api-155) | `GET /api/v1/blog/authors/{userId}` | 待实现 |
-| [22.4 按 slug 查询公开分类详情](API.md#api-156) | `GET /api/v1/blog/categories/{slug}` | 待实现 |
-| [22.5 按 slug 查询公开标签详情](API.md#api-157) | `GET /api/v1/blog/tags/{slug}` | 待实现 |
-| [22.6 分页查询本人点赞的文章](API.md#api-158) | `GET /api/v1/me/liked-articles` | 待实现 |
-| [22.7 永久删除回收站文章](API.md#api-159) | `DELETE /api/v1/admin/articles/{articleId}/permanent` | 待实现 |
+| [22.1 前台按作者查询公开文章（扩展既有接口）](API.md#article-author-query) | `GET /api/v1/blog/articles`，新增可选 `authorId` | 已实现参数扩展 |
+| [22.2 分页查询公开作者](API.md#api-154) | `GET /api/v1/blog/authors` | 已实现 |
+| [22.3 查询作者公开主页资料](API.md#api-155) | `GET /api/v1/blog/authors/{userId}` | 已实现 |
+| [22.4 按 slug 查询公开分类详情](API.md#api-156) | `GET /api/v1/blog/categories/{slug}` | 已实现 |
+| [22.5 按 slug 查询公开标签详情](API.md#api-157) | `GET /api/v1/blog/tags/{slug}` | 已实现 |
+| [22.6 分页查询本人点赞的文章](API.md#api-158) | `GET /api/v1/me/liked-articles` | 已实现 |
+| [22.7 永久删除回收站文章](API.md#api-159) | `DELETE /api/v1/admin/articles/{articleId}/permanent` | 已实现 |

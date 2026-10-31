@@ -16,6 +16,9 @@ import com.xuan.vo.ConfigProfileVO;
 import com.xuan.vo.ConfigVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -48,6 +51,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     /** SQL 同时限制 site 与公开标记，不会因为错误公开 comment 而暴露审核策略。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "configs", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<ConfigVO> publicConfigs() {
         return configs.configs(true).stream().map(this::view).toList();
     }
@@ -73,6 +77,11 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:config", permission = "blog:config:update")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "configs", allEntries = true, condition = "#key == 'site'"),
+            @CacheEvict(cacheNames = "rss", allEntries = true, condition = "#key == 'site'"),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true, condition = "#key == 'site'")
+    })
     public ConfigProfileVO update(String key, ConfigWriteDTO request, String revision) {
         users.lockById(sessions.currentUserId());
         requireAdmin("update");

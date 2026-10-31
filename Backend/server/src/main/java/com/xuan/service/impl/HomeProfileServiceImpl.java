@@ -19,6 +19,9 @@ import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.HomeProfilePublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -44,6 +47,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "home", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public HomeProfilePublicVO publicProfile() {
         HomeProfile row = profiles.selectById(1L);
         return row == null ? null : new HomeProfilePublicVO(row.getNickname(), row.getTagline(), row.getDescription(),
@@ -62,6 +66,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "home:profile", permission = "home:profile:update")
+    @CacheEvict(cacheNames = "home", allEntries = true)
     public ResourceVersion<HomeProfile> replace(HomeProfileWriteDTO request, String revision) {
         if (!UrlPolicy.valid(request.getAvatar()) || !UrlPolicy.valid(request.getWebsite()) || !UrlPolicy.valid(
                 request.getGithubUrl())) {

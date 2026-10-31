@@ -10,6 +10,9 @@ import com.xuan.properties.PublicSiteProperties;
 import com.xuan.service.IFeedService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
@@ -41,6 +44,7 @@ public class FeedServiceImpl implements IFeedService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "rss", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public String rss() {
         String base = sites.base("blog").toString();
         BlogSiteConfig config = configs.selectById("site");
@@ -65,6 +69,7 @@ public class FeedServiceImpl implements IFeedService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public String sitemap(Integer requested) {
         int wanted = requested == null ? 1 : requested;
         SitemapPages pages = new SitemapPages(wanted);

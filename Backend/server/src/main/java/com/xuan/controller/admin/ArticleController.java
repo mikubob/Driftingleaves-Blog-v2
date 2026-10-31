@@ -144,6 +144,17 @@ public class ArticleController {
         return profile(articles.restore(IdUtils.parse(articleId), revision));
     }
 
+    /** 永久删除只用于回收站，delete 与 purge 权限及各自范围由锁事务分别检查。 */
+    @DeleteMapping("/{articleId}/permanent")
+    @SaCheckPermission({"blog:article:delete", "blog:article:purge"})
+    public Result<Void> purge(@PathVariable String articleId,
+            @RequestHeader(value = "If-Revision", required = false) String revision,
+            @RequestBody(required = false) String body) {
+        requireNoBody(body);
+        articles.purge(IdUtils.parse(articleId), revision);
+        return Result.ok(null);
+    }
+
     /** 这些接口没有请求体，传了实际内容就拒绝，不能悄悄接受身份、状态或时间字段。 */
     private void requireNoBody(String body) {
         if (body != null) {

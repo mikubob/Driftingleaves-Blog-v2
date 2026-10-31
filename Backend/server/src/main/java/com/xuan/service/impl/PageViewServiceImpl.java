@@ -18,6 +18,9 @@ import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.SitePathUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -56,6 +59,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:view", permission = "blog:view:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void delete(long id) {
         users.lockById(sessions.currentUserId());
         requireAdmin("delete");

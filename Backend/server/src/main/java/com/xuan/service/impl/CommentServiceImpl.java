@@ -30,6 +30,9 @@ import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -50,6 +53,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
 
     private static final String DELETED = "该评论已删除";
     private final CommentMapper comments;
+    private final org.springframework.beans.factory.ObjectProvider<ICommentService> self;
     private final ArticleMapper articles;
     private final UserMapper users;
     private final IUserService identities;
@@ -66,13 +70,21 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         if (parent != null && !CommentVisibility.visible(articles.commentNodes(article)).contains(parent)) {
             throw missing();
         }
-        return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, parent)
+        return self.getObject().cachedPublicComments(article, query);
+    }
+
+    /** 外层已在当前快照校验 PUBLIC 与祖先链，缓存只保存共同公开结果。 */
+    @Override
+    @Cacheable(cacheNames = "comments", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
+        return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, IdUtils.parse(query.parentId()))
                 .convert(this::publicView));
     }
 
     /** 配置和文章锁内重新检查开关、审核策略和父节点，不把锁前的公开检查当成写入依据。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     public CommentOwnVO create(long article, CommentCreateDTO request) {
         long actor = requireMember("blog:comment:create");
         users.lockById(actor);
@@ -129,6 +141,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     /** 本人占位删除不要求版本，ALL 也不能把别人评论变成本人。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     public void deleteOwn(long id) {
         CommentRow row = lockComment(id, "deleteOwn", true);
         placeholder(row, null, sessions.currentUserId());
@@ -155,6 +168,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "review", target = "blog:comment", permission = "blog:comment:review", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     public CommentProfileVO review(long id, int status, String expected) {
         CommentRow row = lockComment(id, "review", false);
         checkRevision(row, expected);
@@ -172,6 +186,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:comment", permission = "blog:comment:moderate", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     public void moderate(long id) {
         CommentRow row = lockComment(id, "moderate", false);
         placeholder(row, requireAdmin("moderate"), null);

@@ -21,6 +21,9 @@ import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -44,6 +47,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     /** 获取展示中的友链，排序相同时按 ID 排，不返回后台状态和时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "links", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<LinkPublicVO> publicLinks(PageQueryDTO query) {
         return PageResult.from(links.linkPage(new Page<>(query.page(), query.pageSize()), null, true)
                 .convert(row -> new LinkPublicVO(row.getLinkId(), row.getLinkName(), row.getUrl(),
@@ -70,6 +74,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:link", permission = "blog:link:create")
+    @CacheEvict(cacheNames = "links", allEntries = true)
     public BlogFriendLink create(LinkWriteDTO request) {
         validateUrls(request);
         users.lockById(sessions.currentUserId());
@@ -89,6 +94,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:link", permission = "blog:link:update", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "links", allEntries = true)
     public LinkProfileVO update(long id, LinkWriteDTO request, String revision) {
         validateUrls(request);
         BlogFriendLink row = lockLink(id, "update");
@@ -107,6 +113,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:link", permission = "blog:link:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "links", allEntries = true)
     public void delete(long id, String revision) {
         BlogFriendLink row = lockLink(id, "delete");
         checkRevision(row, revision);

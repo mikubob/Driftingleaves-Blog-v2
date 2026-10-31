@@ -2,6 +2,15 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 标签没有隐藏状态，公开查询只少返回后台的时间字段。 -->
 <mapper namespace="com.xuan.mapper.TagMapper">
+    <!-- 标签没有隐藏状态，文章数仍严格使用 PUBLIC 条件。 -->
+    <select id="publicBySlug" resultType="com.xuan.vo.TagPublicDetailVO">
+        SELECT t.tag_id,t.tag_name,t.slug,
+        CAST((SELECT COUNT(*) FROM blog_article_tag r JOIN blog_article a ON a.article_id=r.article_id
+        WHERE r.tag_id=t.tag_id AND
+        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count
+        FROM blog_tag t WHERE t.slug=#{slug}
+    </select>
+
     <!-- INSTR 把百分号、下划线当普通文字，总数和列表不会各用一套条件。 -->
     <select id="tagPage" resultType="com.xuan.entity.BlogTag">
         SELECT * FROM blog_tag

@@ -32,11 +32,11 @@
                         <otherwise>a.deleted_at IS NULL</otherwise>
                     </choose>
                     <if test="filter.scopeAuthor != null">AND a.author_id = #{filter.scopeAuthor}</if>
-                    <if test="filter.authorId != null">AND a.author_id = #{filter.authorId}</if>
                     <if test="filter.status != null">AND a.status = #{filter.status}</if>
                     <if test="filter.visibility != null">AND a.visibility = #{filter.visibility}</if>
                 </otherwise>
             </choose>
+            <if test="filter.authorId != null">AND a.author_id = #{filter.authorId}</if>
             <if test="filter.keyword != null">
                 AND (INSTR(a.title, #{filter.keyword}) &gt; 0 OR INSTR(a.summary, #{filter.keyword}) &gt; 0
                 OR INSTR(c.markdown_content, #{filter.keyword}) &gt; 0)
@@ -59,6 +59,47 @@
             <otherwise>ORDER BY a.update_time DESC, a.article_id DESC</otherwise>
         </choose>
     </select>
+
+    <!-- 只枚举公开文章的作者，字段投影不包含账号和安全资料。 -->
+    <sql id="authorSummary">
+        SELECT u.user_id,u.nickname,u.avatar,u.intro,CAST(COUNT(*) AS CHAR) AS article_count,
+        MAX(a.publish_time) AS last_publish_time
+        FROM blog_article a JOIN sys_user u ON u.user_id=a.author_id
+        WHERE <include refid="publicCondition"/>
+    </sql>
+
+    <select id="authorPage" resultType="com.xuan.vo.AuthorPublicVO">
+        <include refid="authorSummary"/>
+        GROUP BY u.user_id,u.nickname,u.avatar,u.intro ORDER BY COUNT(*) DESC,u.user_id ASC
+    </select>
+
+    <select id="publicAuthor" resultType="com.xuan.vo.AuthorPublicVO">
+        <include refid="authorSummary"/> AND u.user_id=#{id}
+        GROUP BY u.user_id,u.nickname,u.avatar,u.intro
+    </select>
+
+    <!-- 点赞排序不受文章置顶影响，复合键避免重复，取消再点赞产生新的时间。 -->
+    <select id="likedPage" resultType="com.xuan.model.ArticleRow">
+        SELECT <include refid="columns"/>,l.create_time AS liked_at
+        FROM blog_article_like l JOIN blog_article a ON a.article_id=l.article_id
+        JOIN sys_user u ON u.user_id=a.author_id
+        WHERE l.user_id=#{user} AND <include refid="publicCondition"/>
+        ORDER BY l.create_time DESC,a.article_id DESC
+    </select>
+
+    <select id="lockComments" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id,parent_id,status FROM blog_comment WHERE article_id=#{id} ORDER BY comment_id FOR UPDATE
+    </select>
+
+    <delete id="deleteComment">
+        DELETE FROM blog_comment WHERE article_id=#{id} AND comment_id=#{comment}
+    </delete>
+
+    <!-- 正文、标签关联、点赞级联清理；浏览明细的 article_id 由外键置空。 -->
+    <delete id="deleteScoped">
+        DELETE FROM blog_article WHERE article_id=#{id} AND deleted_at IS NOT NULL
+        <if test="author != null">AND author_id=#{author}</if>
+    </delete>
 
     <!-- 操作范围也写进 SQL；先锁文件再锁文章，等待后业务层重查原 Token 和最新范围。 -->
     <select id="scoped" resultType="com.xuan.model.ArticleRow">
@@ -90,7 +131,8 @@
 
     <!-- 评论和点赞不能因后台 Token 放宽公开条件，和 slug 详情共用同一判断。 -->
     <select id="publicById" resultType="com.xuan.model.ArticleRow">
-        SELECT a.* FROM blog_article a WHERE a.article_id = #{id} AND
+        SELECT a.*, (SELECT COUNT(*) FROM blog_article_like l WHERE l.article_id=a.article_id) AS like_count
+        FROM blog_article a WHERE a.article_id = #{id} AND
         <include refid="publicCondition"/>
     </select>
 

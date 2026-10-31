@@ -520,6 +520,7 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (13, 'blog:article:delete', '回收文章', 'blog'),
   (14, 'blog:article:publish', '发布或下架文章', 'blog'),
   (15, 'blog:article:restore', '恢复回收站文章', 'blog'),
+  (16, 'blog:article:purge', '永久删除回收站文章（无法恢复）', 'blog'),
   (20, 'blog:category:query', '查询管理分类', 'blog'),
   (21, 'blog:category:create', '创建分类', 'blog'),
   (22, 'blog:category:update', '编辑分类', 'blog'),
@@ -643,7 +644,7 @@ INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, permission_id, sort_order, is_visible)
 SELECT 1000 + p.permission_id,
   CASE
-    WHEN p.permission_id BETWEEN 11 AND 15 THEN 110
+    WHEN p.permission_id BETWEEN 11 AND 16 THEN 110
     WHEN p.permission_id BETWEEN 21 AND 23 THEN 120
     WHEN p.permission_id BETWEEN 31 AND 33 THEN 130
     WHEN p.permission_id BETWEEN 41 AND 42 THEN 140
@@ -667,7 +668,7 @@ SELECT 1000 + p.permission_id,
   END,
   p.permission_code, p.permission_name, 'B', p.permission_id, p.permission_id, 0
 FROM sys_permission p
-WHERE p.permission_id IN (11,12,13,14,15,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,91,92,93,94,101,102,103,111,112,113,
+WHERE p.permission_id IN (11,12,13,14,15,16,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,91,92,93,94,101,102,103,111,112,113,
   121,131,132,133,141,142,143,151,152,153,161,162,171,172,173,181,182,191,192,193,201,221);
 
 INSERT INTO sys_role_menu (role_id, menu_id) SELECT 1, menu_id FROM sys_menu;

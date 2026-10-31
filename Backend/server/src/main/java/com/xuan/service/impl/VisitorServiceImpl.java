@@ -19,6 +19,9 @@ import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -95,6 +98,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:visitor", permission = "blog:visitor:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void delete(long id, String revision) {
         BlogVisitor row = lock(id, "delete");
         RevisionUtils.check(profile(row).revision(), revision);

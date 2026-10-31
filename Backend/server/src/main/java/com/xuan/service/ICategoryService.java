@@ -9,6 +9,7 @@ import com.xuan.entity.BlogCategory;
 import com.xuan.result.PageResult;
 import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.CategoryProfileVO;
+import com.xuan.vo.CategoryPublicDetailVO;
 
 /**
  * 分类是全站字典，SELF 权限也能操作整个字典，不按当前作者筛选。
@@ -17,6 +18,9 @@ public interface ICategoryService extends IService<BlogCategory> {
 
     /** 获取展示中的分类，只返回前台需要的资料。 */
     PageResult<Category> publicCategories(PageQueryDTO query);
+
+    /** 按大小写敏感 slug 查询展示中的分类，计数只含公开文章。 */
+    CategoryPublicDetailVO publicDetail(String slug);
 
     /** 获取后台分类列表，隐藏分类也能查。 */
     PageResult<BlogCategory> listCategories(CategoryQueryDTO query);

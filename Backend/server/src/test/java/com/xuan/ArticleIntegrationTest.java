@@ -76,6 +76,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 第7..11章走真实 MVC、Service、Mapper 和隔离 MySQL/Redis，不替换核心业务，也不连接现有服务。
  */
 @SpringBootTest
+@org.springframework.context.annotation.Import(CacheQueryProbe.Config.class)
 @AutoConfigureMockMvc
 @EnabledIfSystemProperty(named = "test.mysql.bin", matches = ".+")
 class ArticleIntegrationTest {
@@ -89,6 +90,11 @@ class ArticleIntegrationTest {
 
     @Autowired
     JsonMapper json;
+
+    @Autowired CacheQueryProbe cacheProbe;
+    @Autowired org.springframework.cache.CacheManager publicCaches;
+    @Autowired com.xuan.cache.PublicCacheStore publicCacheStore;
+    @Autowired com.xuan.service.ISocialService publicSocials;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -160,6 +166,7 @@ class ArticleIntegrationTest {
 
     @BeforeEach
     void resetData() throws Exception {
+        cacheProbe.reset();
         reset(failures, mail, mailTasks);
         doAnswer(invocation -> {
             Future<?> future = (Future<?>) invocation.callRealMethod();
@@ -182,6 +189,7 @@ class ArticleIntegrationTest {
         jdbc.update("DELETE FROM blog_file");
         jdbc.update("DELETE FROM blog_category");
         jdbc.update("DELETE FROM blog_tag");
+        publicCaches.getCache("tags").clear();
         while (jdbc.update(
                 "DELETE m FROM blog_message m LEFT JOIN blog_message child ON child.parent_id=m.message_id WHERE " +
                  "child.message_id IS NULL") > 0) {
@@ -554,6 +562,7 @@ class ArticleIntegrationTest {
         code(status(token, publicId, 1), 200, "OK");
         code(status(token, hiddenCategory, 1), 200, "OK");
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
+        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
         String draft = create(token, "Draft", "body");
         String privateId = create(token, "Private", "body");
         String down = create(token, "Down", "body");
@@ -716,9 +725,11 @@ class ArticleIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isEqualTo(1);
         assertThat(revision(token, ids.get(4))).isEqualTo(version);
         jdbc.update("UPDATE blog_article SET visibility=2 WHERE article_id=?", ids.get(3));
+        publicCaches.getCache("articleDetail").clear();
         assertThat(data(call("GET", "/blog/articles/Nav-4", null, null)).get("prevArticle").get("articleId")
                 .asString()).isEqualTo(ids.get(2));
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
+        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
         assertThat(data(call("GET", "/blog/articles/Nav-4", null, null)).get("relatedArticles").isEmpty()).isTrue();
     }
 
@@ -1199,6 +1210,7 @@ class ArticleIntegrationTest {
         assertThat(empty.get("page").asInt()).isEqualTo(100);
         assertThat(empty.get("records").isEmpty()).isTrue();
         jdbc.update("DELETE FROM blog_tag");
+        publicCaches.getCache("tags").clear();
         JsonNode zero = data(call("GET", "/blog/tags", null, null));
         assertThat(zero.get("total").asString()).isEqualTo("0");
         assertThat(zero.get("totalPages").asString()).isEqualTo("0");
@@ -2549,6 +2561,7 @@ class ArticleIntegrationTest {
         assertThat(admin.get(1).get("configKey").asString()).isEqualTo("message");
         assertThat(admin.get(2).get("configKey").asString()).isEqualTo("site");
         jdbc.update("UPDATE blog_site_config SET is_public=0 WHERE config_key='site'");
+        publicCaches.getCache("configs").clear();
         assertThat(data(call("GET", "/blog/configs", null, null)).isEmpty()).isTrue();
         for (String key : List.of("secret", "Site", "unknown")) {
             code(call("GET", "/admin/configs/" + key, token, null), 404, "NOT_FOUND");
@@ -4426,6 +4439,7 @@ class ArticleIntegrationTest {
         String original = sites.getBlogBaseUrl();
         try {
             sites.setBlogBaseUrl(ORIGIN + "/" + "中".repeat(1000));
+        publicCaches.getCache("sitemap").clear();
             MvcResult bounded = call("GET", "/blog/sitemap.xml?page=1", null, null);
             assertThat(bounded.getResponse().getStatus()).isEqualTo(200);
             byte[] bytes = bounded.getResponse().getContentAsByteArray();
@@ -4524,6 +4538,905 @@ class ArticleIntegrationTest {
                 Integer.class)).isEqualTo(3);
     }
 
+    @Test
+    void discoveryAuthorFilterCombinesAllConditionsAndKeepsPublicIsolation() throws Exception {
+        String owner = actor("discovery_owner", 1);
+        String other = actor("discovery_other", 2);
+        seedDictionary();
+        Map<String, Object> value = body("Discovery-match", "literal needle%_");
+        value.put("categoryId", "700");
+        value.put("tagIds", List.of("701"));
+        String id = data(call("POST", "/admin/articles", owner, json.writeValueAsString(value)))
+                .get("articleId").asString();
+        code(status(owner, id, 1), 200, "OK");
+        String foreign = published(other, "Discovery-foreign");
+        String privateId = published(owner, "Discovery-private");
+        String future = published(owner, "Discovery-future");
+        String recycled = published(owner, "Discovery-recycled");
+        create(owner, "Discovery-draft", "literal needle%_");
+        jdbc.update("UPDATE blog_article SET visibility=2 WHERE article_id=?", privateId);
+        jdbc.update("UPDATE blog_article SET publish_time=UTC_TIMESTAMP(3)+INTERVAL 1 DAY WHERE article_id=?", future);
+        code(write("DELETE", "/admin/articles/" + recycled, owner, revision(owner, recycled), null), 200, "OK");
+        String prefix = "/blog/articles?authorId=" + userId("discovery_owner");
+        String month = LocalDateTime.now(ZoneOffset.UTC).toString().substring(0, 7);
+        MvcResult response = mvc.perform(req("GET", prefix + "&categoryId=700&tagId=701&month=" + month)
+                .header("Authorization", "Bearer " + owner).param("keyword", "needle%_")).andReturn();
+        code(response, 200, "OK");
+        assertThat(data(response).get("total").asString()).isEqualTo("1");
+        assertThat(data(response).get("records").get(0).get("articleId").asString()).isEqualTo(id);
+        assertThat(data(call("GET", prefix, null, null)).get("total").asString()).isEqualTo("1");
+        for (String suffix : List.of("&tagId=702", "&categoryId=999999", "&keyword=absent")) {
+            assertThat(data(call("GET", prefix + suffix, null, null)).get("total").asString()).isEqualTo("0");
+        }
+        assertThat(data(call("GET", "/blog/articles?authorId=9223372036854775807", null, null)).get("total")
+                .asString()).isEqualTo("0");
+        assertThat(data(call("GET", "/blog/articles?authorId=" + userId("discovery_other"), null, null))
+                .get("records").get(0).get("articleId").asString()).isEqualTo(foreign);
+        jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
+        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        assertThat(data(call("GET", prefix + "&categoryId=700", owner, null)).get("total").asString()).isEqualTo("0");
+        assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isZero();
+    }
+
+    @Test
+    void discoveryAuthorsUsePublicCountsStablePaginationAndSafeCurrentProfiles() throws Exception {
+        String first = actor("discovery_author_first", 1);
+        String second = actor("discovery_author_second", 2);
+        String third = actor("discovery_author_third", 2);
+        String empty = actor("discovery_author_empty", 3);
+        String firstId = userId("discovery_author_first");
+        String one = published(first, "Author-first-one");
+        published(first, "Author-first-two");
+        String two = published(second, "Author-second");
+        published(third, "Author-third");
+        jdbc.update("UPDATE sys_user SET nickname='公开昵称',intro='公开简介',email='private@example.test' WHERE user_id=?",
+                firstId);
+        JsonNode page = data(call("GET", "/blog/authors?pageSize=1", null, null));
+        assertThat(page.get("total").asString()).isEqualTo("3");
+        assertThat(page.get("totalPages").asString()).isEqualTo("3");
+        JsonNode author = page.get("records").get(0);
+        assertThat(author.get("userId").asString()).isEqualTo(firstId);
+        assertThat(author.get("articleCount").asString()).isEqualTo("2");
+        assertThat(author.get("nickname").asString()).isEqualTo("公开昵称");
+        assertThat(author.get("intro").asString()).isEqualTo("公开简介");
+        assertThat(author.get("lastPublishTime").asString()).matches(".*\\.\\d{3}Z");
+        assertThat(author.toString()).doesNotContain("username", "email", "password", "role", "lastLogin", "private@");
+        assertThat(data(call("GET", "/blog/authors/" + firstId, first, null))).isEqualTo(author);
+        assertThat(data(call("GET", "/blog/authors?page=2&pageSize=1", null, null)).get("records").get(0)
+                .get("userId").asString()).isEqualTo(userId("discovery_author_second"));
+        assertThat(data(call("GET", "/blog/authors?page=9&pageSize=1", null, null)).get("records").isEmpty()).isTrue();
+        code(call("GET", "/blog/authors/" + userId("discovery_author_empty"), first, null), 404, "NOT_FOUND");
+        code(call("GET", "/blog/authors/9223372036854775807", first, null), 404, "NOT_FOUND");
+        code(status(second, two, 2), 200, "OK");
+        code(call("GET", "/blog/authors/" + userId("discovery_author_second"), first, null), 404, "NOT_FOUND");
+        jdbc.update("UPDATE blog_article SET visibility=2 WHERE author_id=?", firstId);
+        code(call("GET", "/blog/authors/" + firstId, first, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/authors", null, null)).get("total").asString()).isEqualTo("1");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, one))
+                .isZero();
+        assertThat(empty).isNotBlank();
+    }
+
+    @Test
+    void discoveryTaxonomyDetailsCountOnlyPublicAndPreserveCaseAndEmptyResources() throws Exception {
+        String token = actor("discovery_taxonomy", 1);
+        seedDictionary();
+        jdbc.update("INSERT INTO blog_category(category_id,category_name,slug) VALUES(703,'空分类','Empty-Category')");
+        String visible = published(token, "Taxonomy-visible");
+        String hidden = published(token, "Taxonomy-hidden");
+        String draft = create(token, "Taxonomy-draft", "body");
+        for (String article : List.of(visible, hidden, draft)) {
+            jdbc.update("UPDATE blog_article SET category_id=700 WHERE article_id=?", article);
+            jdbc.update("INSERT INTO blog_article_tag(article_id,tag_id) VALUES(?,701)", article);
+        }
+        jdbc.update("UPDATE blog_article SET visibility=2 WHERE article_id=?", hidden);
+        MvcResult category = call("GET", "/blog/categories/category", null, null);
+        code(category, 200, "OK");
+        assertThat(data(category).get("articleCount").asString()).isEqualTo("1");
+        assertThat(data(category).get("categoryId").asString()).isEqualTo("700");
+        assertThat(category.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(data(call("GET", "/blog/tags/tag-one", token, null)).get("articleCount").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/tags/tag-two", null, null)).get("articleCount").asString()).isEqualTo("0");
+        assertThat(data(call("GET", "/blog/categories/Empty-Category", null, null)).get("articleCount").asString())
+                .isEqualTo("0");
+        for (String path : List.of("/blog/categories/empty-category", "/blog/tags/Tag-one", "/blog/tags/absent")) {
+            code(call("GET", path, token, null), 404, "NOT_FOUND");
+        }
+        assertThat(data(call("GET", "/blog/categories", null, null)).get("records").get(0).has("articleCount")).isFalse();
+        assertThat(data(call("GET", "/blog/tags", null, null)).get("records").get(0).has("articleCount")).isFalse();
+        jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
+        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        code(call("GET", "/blog/categories/category", token, null), 404, "NOT_FOUND");
+        jdbc.update("UPDATE blog_tag SET slug='Renamed' WHERE tag_id=701");
+        publicCaches.getCache("tags").clear();
+        code(call("GET", "/blog/tags/tag-one", null, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/tags/Renamed", null, null)).get("articleCount").asString()).isEqualTo("1");
+        assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isZero();
+    }
+
+    @Test
+    void discoveryRoutesRejectUndeclaredDuplicateBlankBodiesAndInvalidIdentifiers() throws Exception {
+        String token = actor("discovery_input", 1);
+        String article = published(token, "Discovery-input");
+        seedDictionary();
+        for (String path : List.of("/blog/authors", "/me/liked-articles")) {
+            for (String query : List.of("page=0", "pageSize=101", "page=1&page=2", "page=", "userId=1", "authorId=1")) {
+                code(call("GET", path + "?" + query, token, null), 400, "VALIDATION_ERROR");
+            }
+        }
+        for (String path : List.of("/blog/authors/" + userId("discovery_input"), "/blog/categories/category",
+                "/blog/tags/tag-one", "/blog/authors", "/me/liked-articles")) {
+            code(call("GET", path, token, "{}"), 400, "VALIDATION_ERROR");
+            code(call("GET", path + "?unknown=1", token, null), 400, "VALIDATION_ERROR");
+        }
+        for (String id : List.of("0", "01", "-1", "1.0", "9223372036854775808")) {
+            code(call("GET", "/blog/articles?authorId=" + id, null, null), 400, "VALIDATION_ERROR");
+            code(call("GET", "/blog/authors/" + id, null, null), 400, "VALIDATION_ERROR");
+        }
+        for (String slug : List.of("bad_slug", "-", "a".repeat(101))) {
+            code(call("GET", "/blog/categories/" + slug, null, null), 400, "VALIDATION_ERROR");
+            code(call("GET", "/blog/tags/" + slug, null, null), 400, "VALIDATION_ERROR");
+        }
+        code(call("GET", "/blog/articles?authorId=", null, null), 400, "VALIDATION_ERROR");
+        code(call("GET", "/blog/articles?authorId=1&authorId=2", null, null), 400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article))
+                .isZero();
+    }
+
+    @Test
+    void discoveryLikedArticlesAreOwnCompletePublicAndSortedByStableLikeTime() throws Exception {
+        String admin = actor("discovery_like_admin", 1);
+        String member = actor("discovery_like_member", 3);
+        String other = actor("discovery_like_other", 3);
+        String first = published(admin, "Discovery-like-first");
+        String second = published(admin, "Discovery-like-second");
+        String third = published(admin, "Discovery-like-third");
+        jdbc.update("UPDATE blog_article SET is_top=1 WHERE article_id=?", first);
+        code(call("PUT", likePath(first), member, null), 200, "OK");
+        code(call("PUT", likePath(second), member, null), 200, "OK");
+        code(call("PUT", likePath(third), other, null), 200, "OK");
+        jdbc.update("UPDATE blog_article_like SET create_time='2026-01-01 00:00:00.000' WHERE user_id=?",
+                userId("discovery_like_member"));
+        MvcResult response = call("GET", "/me/liked-articles?pageSize=1", member, null);
+        code(response, 200, "OK");
+        assertThat(data(response).get("total").asString()).isEqualTo("2");
+        JsonNode record = data(response).get("records").get(0);
+        assertThat(record.get("article").get("articleId").asString()).isEqualTo(second);
+        assertThat(record.get("likedAt").asString()).isEqualTo("2026-01-01T00:00:00.000Z");
+        assertThat(record.get("article").has("tags")).isTrue();
+        assertThat(record.get("article").has("commentCount")).isTrue();
+        assertThat(record.get("article").toString()).doesNotContain("markdownContent", "password", "authorId");
+        code(call("PUT", likePath(first), member, null), 200, "OK");
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").get(0).get("article")
+                .get("articleId").asString()).isEqualTo(second);
+        code(call("DELETE", likePath(first), member, null), 200, "OK");
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        code(call("PUT", likePath(first), member, null), 200, "OK");
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").get(0).get("article")
+                .get("articleId").asString()).isEqualTo(first);
+        code(status(admin, first, 2), 200, "OK");
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        jdbc.update("UPDATE blog_article SET visibility=2 WHERE article_id=?", second);
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("0");
+        code(status(admin, first, 1), 200, "OK");
+        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/me/liked-articles", other, null)).get("records").get(0).get("article")
+                .get("articleId").asString()).isEqualTo(third);
+        assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isZero();
+    }
+
+    @Test
+    void discoveryLikedArticlesRequireCurrentEnabledIdentityWithoutWritePermission() throws Exception {
+        code(call("GET", "/me/liked-articles", null, null), 401, "UNAUTHENTICATED");
+        String token = actor("discovery_like_identity", 3);
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=3 AND permission_id=45");
+        code(call("GET", "/me/liked-articles", token, null), 200, "OK");
+        code(call("GET", "/me/liked-articles?userId=" + userId("discovery_like_identity"), token, null), 400,
+                "VALIDATION_ERROR");
+        jdbc.update("UPDATE sys_user SET status=0 WHERE username='discovery_like_identity'");
+        code(call("GET", "/me/liked-articles", token, null), 403, "ACCOUNT_DISABLED");
+        jdbc.update("UPDATE sys_user SET status=1 WHERE username='discovery_like_identity'");
+        sessions.revokeAll(Long.parseLong(userId("discovery_like_identity")));
+        code(call("GET", "/me/liked-articles", token, null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void discoveryPurgeChecksPermissionsRevisionTrashAndStrictInputBeforeDeleting() throws Exception {
+        String token = actor("discovery_purge_input", 1);
+        String author = actor("discovery_purge_author", 2);
+        String article = published(token, "Purge-input");
+        String path = "/admin/articles/" + article + "/permanent";
+        String normalVersion = revision(token, article);
+        code(write("DELETE", path, token, normalVersion, null), 409, "STATE_CONFLICT");
+        code(write("DELETE", "/admin/articles/" + article, token, normalVersion, null), 200, "OK");
+        String version = revision(token, article);
+        code(call("DELETE", path, null, null), 401, "UNAUTHENTICATED");
+        code(call("DELETE", path, author, null), 403, "FORBIDDEN");
+        code(call("DELETE", path, token, null), 428, "PRECONDITION_REQUIRED");
+        code(write("DELETE", path, token, "invalid", null), 400, "VALIDATION_ERROR");
+        code(write("DELETE", path, token, normalVersion, null), 412, "REVISION_CONFLICT");
+        code(write("DELETE", path + "?force=true", token, version, null), 400, "VALIDATION_ERROR");
+        code(write("DELETE", path, token, version, Map.of()), 400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=?", Integer.class, article))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='purge' AND result=1",
+                Integer.class)).isZero();
+        MvcResult result = write("DELETE", path, token, version, null);
+        code(result, 200, "OK");
+        assertThat(data(result).isNull()).isTrue();
+        assertThat(result.getResponse().getHeader("X-Revision")).isNull();
+        code(write("DELETE", path, token, version, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void discoveryPurgeRequiresIndependentDeleteAndPurgeScopesAndProtectsFixedPermission() throws Exception {
+        String admin = actor("discovery_scope_admin", 1);
+        String writer = actor("discovery_scope_writer", 2);
+        String other = create(admin, "Purge-scope-other", "body");
+        code(write("DELETE", "/admin/articles/" + other, admin, revision(admin, other), null), 200, "OK");
+        String otherVersion = revision(admin, other);
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(4,'purger','清理权限','ALL')");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,4)", userId("discovery_scope_writer"));
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(4,16)");
+        code(write("DELETE", "/admin/articles/" + other + "/permanent", writer, otherVersion, null), 404, "NOT_FOUND");
+        // 交换 ALL 与 SELF 后仍不能越过另一项权限的作者范围。
+        jdbc.update("DELETE FROM sys_role_permission WHERE role_id=4");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(4,13),(2,16)");
+        code(write("DELETE", "/admin/articles/" + other + "/permanent", writer, otherVersion, null), 404, "NOT_FOUND");
+        String own = create(writer, "Purge-scope-own", "body");
+        code(write("DELETE", "/admin/articles/" + own, writer, revision(writer, own), null), 200, "OK");
+        String version = revision(writer, own);
+        jdbc.update("DELETE FROM sys_role_permission WHERE permission_id=13 AND role_id IN(2,4)");
+        code(write("DELETE", "/admin/articles/" + own + "/permanent", writer, version, null), 403, "FORBIDDEN");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(2,13)");
+        code(write("DELETE", "/admin/articles/" + own + "/permanent", writer, version, null), 200, "OK");
+        String permissionVersion = dictionaryRevision(admin, "/admin/permissions/16");
+        code(write("DELETE", "/admin/permissions/16", admin, permissionVersion, null), 409, "STATE_CONFLICT");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=?", Integer.class, other))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void discoveryPurgeDeletesDeepCommentAggregateAndPreservesFilesDictionariesHistoryAndAudit() throws Exception {
+        String token = actor("discovery_purge_tree", 1);
+        seedDictionary();
+        String article = create(token, "Purge-tree", "body");
+        String file = uploaded(token, "retained.png");
+        Path stored = objectPath(file);
+        Map<String, Object> value = body("Purge-tree", "![保留文件](" + context(article, file) + ")");
+        value.put("categoryId", "700");
+        value.put("tagIds", List.of("701", "702"));
+        code(write("PUT", "/admin/articles/" + article, token, revision(token, article), value), 200, "OK");
+        code(status(token, article, 1), 200, "OK");
+        long author = Long.parseLong(userId("discovery_purge_tree"));
+        comment(9000, article, author, null, 0);
+        long parent = 9000;
+        for (long id = 1; id <= 1005; id++) {
+            comment(id, article, author, parent, (int) (id % 4));
+            parent = id;
+        }
+        String other = published(token, "Purge-retained");
+        comment(10000, other, author, null, 1);
+        code(call("PUT", likePath(article), token, null), 200, "OK");
+        jdbc.update("INSERT INTO blog_page_view(article_id,site_code,page_path,page_title) VALUES(?,'blog',?,'保留标题')",
+                article, "/articles/Purge-tree");
+        code(write("DELETE", "/admin/articles/" + article, token, revision(token, article), null), 200, "OK");
+        int logs = jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
+                Integer.class, article);
+        code(write("DELETE", "/admin/articles/" + article + "/permanent", token, revision(token, article), null),
+                200, "OK");
+        for (String table : List.of("blog_article", "blog_article_content", "blog_article_tag", "blog_article_like",
+                "blog_comment")) {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE article_id=?", Integer.class,
+                    article)).as(table).isZero();
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE article_id=?", Integer.class, other))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_category", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_tag", Integer.class)).isEqualTo(2);
+        assertThat(stored).exists();
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_file WHERE file_id=?", Integer.class, file))
+                .isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE article_id IS NULL AND "
+                + "page_path='/articles/Purge-tree' AND page_title='保留标题'", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
+                Integer.class, article)).isEqualTo(logs + 1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='purge' AND "
+                + "permission_code='blog:article:purge' AND result=1 AND target_id=?", Integer.class, article)).isEqualTo(1);
+        code(call("GET", "/blog/articles/Purge-tree", null, null), 404, "NOT_FOUND");
+        code(call("GET", context(article, file).substring("/api/v1".length()), null, null), 404, "NOT_FOUND");
+        code(write("POST", "/admin/articles/" + article + "/restore", token, "\"" + "0".repeat(64) + "\"", null),
+                404, "NOT_FOUND");
+        assertThat(call("GET", "/blog/rss.xml", null, null).getResponse().getContentAsString()).doesNotContain("Purge-tree");
+        assertThat(call("GET", "/blog/sitemap.xml", null, null).getResponse().getContentAsString()).doesNotContain("Purge-tree");
+        assertThat(data(call("GET", "/blog/statistics", null, null)).get("pageViewCount").asString()).isEqualTo("1");
+        assertThat(create(token, "Purge-tree", "新文章重用 slug")).isNotEqualTo(article);
+        code(call("DELETE", "/admin/files/" + file, token, null), 200, "OK");
+    }
+
+    @Test
+    void discoveryPurgeRollsBackEveryChildAndPreservesFailureAuditWhenDeleteOrAuditFails() throws Exception {
+        String token = actor("discovery_purge_rollback", 1);
+        for (String target : List.of("article", "audit")) {
+            String article = published(token, "Purge-rollback-" + target);
+            long user = Long.parseLong(userId("discovery_purge_rollback"));
+            long root = target.equals("article") ? 7001 : 7003;
+            comment(root, article, user, null, 0);
+            comment(root + 1, article, user, root, 1);
+            code(call("PUT", likePath(article), token, null), 200, "OK");
+            code(write("DELETE", "/admin/articles/" + article, token, revision(token, article), null), 200, "OK");
+            String version = revision(token, article);
+            if (target.equals("article")) {
+                jdbc.execute("CREATE TRIGGER part7_fail BEFORE DELETE ON blog_article FOR EACH ROW "
+                        + "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated purge failure'");
+            } else {
+                jdbc.execute("CREATE TRIGGER part7_fail BEFORE INSERT ON sys_operation_log FOR EACH ROW BEGIN "
+                        + "IF NEW.result=1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated audit failure'; END IF; END");
+            }
+            try {
+                code(write("DELETE", "/admin/articles/" + article + "/permanent", token, version, null), 503,
+                        "SERVICE_UNAVAILABLE");
+                assertThat(revision(token, article)).isEqualTo(version);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE article_id=?", Integer.class,
+                        article)).isEqualTo(2);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article_like WHERE article_id=?", Integer.class,
+                        article)).isEqualTo(1);
+                verify(failures, timeout(3000).atLeastOnce()).write(any(SysOperationLog.class));
+            } finally {
+                jdbc.execute("DROP TRIGGER part7_fail");
+            }
+            code(write("DELETE", "/admin/articles/" + article + "/permanent", token, version, null), 200, "OK");
+        }
+    }
+
+    @Test
+    void discoveryPurgeRechecksTokenBothPermissionsScopeAndVersionAfterArticleWait() throws Exception {
+        String admin = actor("discovery_purge_wait_admin", 1);
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(4,'purger','清理权限','ALL')");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(4,16),(4,13)");
+        for (String change : List.of("token", "delete", "purge", "scope", "revision", "state")) {
+            String name = "discovery_purge_wait_" + change;
+            String writer = actor(name, 2);
+            jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,4)", userId(name));
+            String article = create(admin, "Purge-wait-" + change, "body");
+            String normalVersion = revision(admin, article);
+            code(write("DELETE", "/admin/articles/" + article, writer, normalVersion, null), 200, "OK");
+            String version = change.equals("state") ? normalVersion : revision(admin, article);
+            MvcResult result = waitingInteraction("blog_article", "SELECT * FROM blog_article WHERE article_id=? FOR UPDATE",
+                    article, () -> write("DELETE", "/admin/articles/" + article + "/permanent", writer, version, null),
+                    () -> {
+                        switch (change) {
+                            case "token" -> sessions.revokeAll(Long.parseLong(userId(name)));
+                            case "delete" -> jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=13");
+                            case "purge" -> jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=16");
+                            case "scope" -> jdbc.update("UPDATE sys_role SET data_scope='SELF' WHERE role_id=4");
+                            case "revision" -> jdbc.update("UPDATE blog_article SET title='已修改' WHERE article_id=?", article);
+                            case "state" -> jdbc.update("UPDATE blog_article SET deleted_at=NULL WHERE article_id=?", article);
+                        }
+                    }, true);
+            int expected = switch (change) {
+                case "token" -> 401;
+                case "delete", "purge" -> 403;
+                case "scope" -> 404;
+                case "state" -> 409;
+                default -> 412;
+            };
+            String error = switch (expected) {
+                case 401 -> "UNAUTHENTICATED";
+                case 403 -> "FORBIDDEN";
+                case 404 -> "NOT_FOUND";
+                case 409 -> "STATE_CONFLICT";
+                default -> "REVISION_CONFLICT";
+            };
+            code(result, expected, error);
+            jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id IN(13,16)");
+            jdbc.update("UPDATE sys_role SET data_scope='ALL' WHERE role_id=4");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=?", Integer.class, article))
+                    .isEqualTo(1);
+        }
+        assertThat(admin).isNotBlank();
+    }
+
+    @Test
+    void discoveryPurgeRechecksOriginalTokenAfterUserFileTagAndCommentLocks() throws Exception {
+        seedDictionary();
+        for (String stage : List.of("user", "file", "tag", "comment")) {
+            String name = "discovery_purge_lock_" + stage;
+            String token = actor(name, 1);
+            String article = create(token, "Purge-lock-" + stage, "body");
+            String user = userId(name);
+            String table;
+            String sql;
+            Object key;
+            switch (stage) {
+                case "user" -> {
+                    table = "sys_user";
+                    sql = "SELECT * FROM sys_user WHERE user_id=? FOR UPDATE";
+                    key = user;
+                }
+                case "file" -> {
+                    addFile(9001, user, "purge-lock.png");
+                    jdbc.update("UPDATE blog_article_content SET markdown_content=? WHERE article_id=?",
+                            "![锁](" + context(article, "9001") + ")", article);
+                    table = "blog_file";
+                    sql = "SELECT * FROM blog_file WHERE file_id=? FOR UPDATE";
+                    key = 9001;
+                }
+                case "tag" -> {
+                    jdbc.update("INSERT INTO blog_article_tag(article_id,tag_id) VALUES(?,701)", article);
+                    table = "blog_tag";
+                    sql = "SELECT * FROM blog_tag WHERE tag_id=? FOR UPDATE";
+                    key = 701;
+                }
+                default -> {
+                    comment(9002, article, Long.parseLong(user), null, 1);
+                    table = "blog_comment";
+                    sql = "SELECT * FROM blog_comment WHERE comment_id=? FOR UPDATE";
+                    key = 9002;
+                }
+            }
+            code(write("DELETE", "/admin/articles/" + article, token, revision(token, article), null), 200, "OK");
+            String version = revision(token, article);
+            MvcResult response = waitingInteraction(table, sql, key,
+                    () -> write("DELETE", "/admin/articles/" + article + "/permanent", token, version, null),
+                    () -> sessions.revokeAll(Long.parseLong(user)), true);
+            code(response, 401, "UNAUTHENTICATED");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=?", Integer.class, article))
+                    .isEqualTo(1);
+        }
+    }
+
+    @Test
+    void discoveryPurgePermissionMigrationIsRepeatableAndDoesNotGrantAuthorsOrMembers() throws Exception {
+        Path migration = Path.of("../../sql/migrations/20261031_article_purge_permission.sql");
+        jdbc.update("DELETE FROM sys_menu WHERE menu_code='blog:article:purge'");
+        jdbc.update("DELETE FROM sys_permission WHERE permission_code='blog:article:purge'");
+        jdbc.update("INSERT INTO sys_permission(permission_id,permission_code,permission_name,module) "
+                + "VALUES(16,'custom:existing:action','已有权限','custom')");
+        try {
+            for (int i = 0; i < 2; i++) {
+                try (var connection = jdbc.getDataSource().getConnection()) {
+                    org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
+                            new org.springframework.core.io.FileSystemResource(migration));
+                }
+            }
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission WHERE permission_code='blog:article:purge'",
+                    Integer.class)).isEqualTo(1);
+            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code='blog:article:purge'",
+                    Long.class)).isNotEqualTo(16L);
+            assertThat(jdbc.queryForObject("SELECT permission_code FROM sys_permission WHERE permission_id=16", String.class))
+                    .isEqualTo("custom:existing:action");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu WHERE menu_code='blog:article:purge'", Integer.class))
+                    .isEqualTo(1);
+            assertThat(jdbc.queryForList("SELECT r.role_id FROM sys_role_permission r JOIN sys_permission p ON "
+                    + "p.permission_id=r.permission_id WHERE p.permission_code='blog:article:purge'", Integer.class))
+                    .containsExactly(1);
+        } finally {
+            jdbc.update("DELETE FROM sys_menu WHERE menu_code='blog:article:purge'");
+            jdbc.update("DELETE FROM sys_permission WHERE permission_code IN('blog:article:purge','custom:existing:action')");
+            jdbc.update("INSERT INTO sys_permission(permission_id,permission_code,permission_name,module) "
+                    + "VALUES(16,'blog:article:purge','永久删除回收站文章（无法恢复）','blog')");
+            jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,16)");
+            jdbc.update("INSERT INTO sys_menu(menu_id,parent_id,menu_code,menu_name,menu_type,permission_id,sort_order,is_visible) "
+                    + "VALUES(1016,110,'blog:article:purge','永久删除回收站文章（无法恢复）','B',16,16,0)");
+            jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(1,1016)");
+        }
+    }
+
+    @Test
+    void cacheRealHitsUseFiniteTtlAndNormalizedKeysForEveryPublicDomain() throws Exception {
+        String token = actor("cache_domains", 1);
+        seedDictionary();
+        String article = published(token, "Cache-domains");
+        Map<String, Object> home = new LinkedHashMap<>();
+        home.put("userId", userId("cache_domains")); home.put("nickname", "公开主人"); home.put("tagline", "");
+        for (String field : List.of("description", "avatar", "website", "publicEmail", "githubUrl", "location")) { home.put(field, null); }
+        code(write("PUT", "/admin/home/profile", token,
+                call("GET", "/admin/home/profile", token, null).getResponse().getHeader("X-Revision"), home), 200, "OK");
+        Map<String, String> routes = new LinkedHashMap<>();
+        routes.put("home", "/home/profile"); routes.put("social", "/home/social-links");
+        routes.put("experiences", "/cv/experiences"); routes.put("skills", "/cv/skills");
+        routes.put("links", "/blog/links"); routes.put("music", "/blog/music"); routes.put("configs", "/blog/configs");
+        routes.put("categories", "/blog/categories"); routes.put("tags", "/blog/tags");
+        routes.put("authors", "/blog/authors"); routes.put("articles", "/blog/articles");
+        routes.put("search", "/blog/articles?keyword=Cache"); routes.put("articleDetail", "/blog/articles/Cache-domains");
+        routes.put("archives", "/blog/archives"); routes.put("rankings", "/blog/article-rankings");
+        routes.put("comments", "/blog/articles/" + article + "/comments"); routes.put("statistics", "/blog/statistics");
+        routes.put("rss", "/blog/rss.xml"); routes.put("sitemap", "/blog/sitemap.xml");
+        for (var entry : routes.entrySet()) {
+            MvcResult first = call("GET", entry.getValue(), null, null);
+            assertThat(first.getResponse().getStatus()).as(entry.getKey()).isEqualTo(200);
+            String key = cacheDataKey(entry.getKey());
+            long ttl = redis.getExpire(key, TimeUnit.MILLISECONDS);
+            int expected = List.of("home", "social", "experiences", "skills", "links", "music", "configs").contains(entry.getKey()) ? 3600
+                    : entry.getKey().equals("articles") ? 600 : entry.getKey().equals("articleDetail") ? 900
+                    : List.of("search", "rankings").contains(entry.getKey()) ? 60 : entry.getKey().equals("comments") ? 30
+                    : entry.getKey().equals("statistics") ? 300 : 1800;
+            assertThat(ttl).as(entry.getKey()).isBetween(expected * 1000L - 5000, expected * 1000L);
+            Map<String, Integer> before = new LinkedHashMap<>();
+            cacheProbe.calls.forEach((name, count) -> before.put(name, count.get()));
+            call("GET", entry.getValue(), null, null);
+            assertThat(redis.getExpire(key, TimeUnit.MILLISECONDS)).isLessThanOrEqualTo(ttl);
+            String cachedQuery = switch (entry.getKey()) {
+                case "articles", "search" -> "com.xuan.mapper.ArticleMapper.articlePage";
+                case "articleDetail" -> "com.xuan.mapper.ArticleMapper.adjacent";
+                case "comments" -> "com.xuan.mapper.CommentMapper.publicPage";
+                default -> null;
+            };
+            if (cachedQuery != null) { assertThat(cacheProbe.count(cachedQuery)).as(entry.getKey()).isEqualTo(before.getOrDefault(cachedQuery, 0)); }
+            if (!List.of("articles", "search", "articleDetail", "comments").contains(entry.getKey())) {
+                before.forEach((name, count) -> {
+                    if (!name.startsWith("com.xuan.mapper.UserMapper") && !name.startsWith("com.xuan.mapper.AuthorizationMapper")) {
+                        assertThat(cacheProbe.count(name)).as(entry.getKey() + " " + name).isEqualTo(count);
+                    }
+                });
+            }
+        }
+        String articleKey = cacheDataKey("articles");
+        code(call("GET", "/blog/articles?page=1&pageSize=10", null, null), 200, "OK");
+        assertThat(cacheDataKey("articles")).isEqualTo(articleKey);
+        for (String query : List.of("page=11", "pageSize=21", "keyword=Cache&page=4")) {
+            int before = cacheProbe.calls.entrySet().stream().filter(e -> e.getKey().startsWith("com.xuan.mapper.ArticleMapper.articlePage")).mapToInt(e -> e.getValue().get()).sum();
+            call("GET", "/blog/articles?" + query, null, null); call("GET", "/blog/articles?" + query, null, null);
+            int after = cacheProbe.calls.entrySet().stream().filter(e -> e.getKey().startsWith("com.xuan.mapper.ArticleMapper.articlePage")).mapToInt(e -> e.getValue().get()).sum();
+            assertThat(after).isGreaterThanOrEqualTo(before + 2);
+        }
+        String expired = cacheDataKey("social");
+        redis.expire(expired, java.time.Duration.ofMillis(1));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (Boolean.TRUE.equals(redis.hasKey(expired)) && System.nanoTime() < deadline) { Thread.onSpinWait(); }
+        int socialQueries = cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems");
+        call("GET", "/home/social-links", null, null);
+        assertThat(cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems")).isEqualTo(socialQueries + 1);
+    }
+
+    @Test
+    void cacheAssociatedArticleTaxonomyAuthorAndXmlWritesRemoveOldPublicResults() throws Exception {
+        String token = actor("cache_associations", 1);
+        seedDictionary();
+        Map<String, Object> request = body("Cache-associations", "正文");
+        request.put("categoryId", "700"); request.put("tagIds", List.of("701"));
+        MvcResult created = call("POST", "/admin/articles", token, json.writeValueAsString(request)); code(created, 201, "OK");
+        String article = data(created).get("articleId").asString(); code(status(token, article, 1), 200, "OK");
+        var beforePrivate = redis.keys("dl:article-test:cache:public:*");
+        for (String path : List.of("/me", "/me/liked-articles", "/admin/articles/" + article, "/blog/messages")) {
+            code(call("GET", path, token, null), 200, "OK");
+        }
+        assertThat(redis.keys("dl:article-test:cache:public:*")).isEqualTo(beforePrivate);
+        List<String> warm = List.of("/blog/articles", "/blog/articles?keyword=Cache", "/blog/articles/Cache-associations", "/blog/archives",
+                "/blog/article-rankings", "/blog/categories", "/blog/categories/category", "/blog/tags", "/blog/tags/tag-one",
+                "/blog/authors", "/blog/authors/" + userId("cache_associations"), "/blog/statistics", "/blog/rss.xml", "/blog/sitemap.xml", "/blog/sitemap.xml?page=1",
+                "/blog/articles/" + article + "/comments");
+        for (String path : warm) { assertThat(call("GET", path, null, null).getResponse().getStatus()).as(path).isEqualTo(200); }
+        request.put("slug", "Cache-renamed"); request.put("title", "Renamed title");
+        code(write("PUT", "/admin/articles/" + article, token, revision(token, article), request), 200, "OK");
+        code(call("GET", "/blog/articles/Cache-associations", null, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/articles?keyword=Cache", null, null)).get("total").asString()).isEqualTo("0");
+        assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("title").asString()).isEqualTo("Renamed title");
+        for (String path : List.of("/blog/rss.xml", "/blog/sitemap.xml", "/blog/sitemap.xml?page=1")) {
+            assertThat(call("GET", path, null, null).getResponse().getContentAsString(StandardCharsets.UTF_8)).contains("Cache-renamed").doesNotContain("Cache-associations");
+        }
+        String categoryRevision = call("GET", "/admin/categories/700", token, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/categories/700", token, categoryRevision, categoryBody("renamed category", "Renamed-category", null, 1, 1)), 200, "OK");
+        code(call("GET", "/blog/categories/category", null, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("category").get("slug").asString()).isEqualTo("Renamed-category");
+        code(write("DELETE", "/admin/tags/701", token, call("GET", "/admin/tags/701", token, null).getResponse().getHeader("X-Revision"), null), 200, "OK");
+        code(call("GET", "/blog/tags/tag-one", null, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("tags").isEmpty()).isTrue();
+        String meVersion = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        code(write("PATCH", "/me/profile", token, meVersion, Map.of("nickname", "New public author")), 200, "OK");
+        assertThat(data(call("GET", "/blog/authors", null, null)).get("records").get(0).get("nickname").asString()).isEqualTo("New public author");
+        assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("author").get("nickname").asString()).isEqualTo("New public author");
+        // 热缓存失败仍回滚阅读，不发布事务中的候选片段。
+        long views = jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article);
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE UPDATE ON blog_article FOR EACH ROW BEGIN IF NEW.view_count > OLD.view_count THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='reading rollback'; END IF; END");
+        code(call("GET", "/blog/articles/Cache-renamed", null, null), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(views);
+        jdbc.execute("DROP TRIGGER part7_fail");
+        code(status(token, article, 2), 200, "OK");
+        code(call("GET", "/blog/articles/Cache-renamed", token, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/articles", token, null)).get("total").asString()).isEqualTo("0");
+        for (String path : List.of("/blog/rss.xml", "/blog/sitemap.xml?page=1")) {
+            assertThat(call("GET", path, null, null).getResponse().getContentAsString(StandardCharsets.UTF_8)).doesNotContain("Cache-renamed");
+        }
+        code(write("DELETE", "/admin/articles/" + article, token, revision(token, article), null), 200, "OK");
+        code(write("POST", "/admin/articles/" + article + "/restore", token, revision(token, article), null), 200, "OK");
+        code(call("GET", "/blog/articles/Cache-renamed", null, null), 404, "NOT_FOUND");
+        code(write("DELETE", "/admin/articles/" + article, token, revision(token, article), null), 200, "OK");
+        code(write("DELETE", "/admin/articles/" + article + "/permanent", token, revision(token, article), null), 200, "OK");
+        code(call("GET", "/blog/articles/" + article + "/comments", null, null), 404, "NOT_FOUND");
+    }
+
+    @Test
+    void cacheSocialCreateUpdateDeleteInvalidateEmptyAndWarmResponses() throws Exception {
+        String token = actor("cache_social", 1);
+        assertThat(data(call("GET", "/home/social-links", null, null)).size()).isZero();
+        MvcResult created = call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("old")));
+        code(created, 201, "OK");
+        String path = "/admin/home/social-links/" + data(created).get("socialId").asString();
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("old");
+        code(write("PUT", path, token, created.getResponse().getHeader("X-Revision"), cacheSocial("new")), 200, "OK");
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("new");
+        code(write("DELETE", path, token, call("GET", path, token, null).getResponse().getHeader("X-Revision"), null), 200, "OK");
+        assertThat(data(call("GET", "/home/social-links", null, null)).size()).isZero();
+        assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isZero();
+    }
+
+    @Test
+    void cacheOldDatabaseSnapshotCannotRefillAfterCommittedWrite() throws Exception {
+        String token = actor("cache_old_snapshot", 1);
+        MvcResult created = call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("old")));
+        String path = "/admin/home/social-links/" + data(created).get("socialId").asString();
+        cacheProbe.pause("com.xuan.mapper.SocialMapper.publicItems");
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<MvcResult> old = executor.submit(() -> call("GET", "/home/social-links", null, null));
+            try {
+                assertThat(cacheProbe.reached.await(5, TimeUnit.SECONDS)).isTrue();
+                code(write("PUT", path, token, created.getResponse().getHeader("X-Revision"), cacheSocial("new")), 200, "OK");
+            } finally { cacheProbe.release.countDown(); }
+            assertThat(data(old.get(5, TimeUnit.SECONDS)).get(0).get("name").asString()).isEqualTo("old");
+        }
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("new");
+        assertThat(redis.opsForValue().get(cacheDataKey("social"))).contains("new").doesNotContain("old");
+    }
+
+    @Test
+    void cacheWriteProtectionBypassesWarmValuesUntilCommitAndPreservesOtherWriters() throws Exception {
+        String token = actor("cache_write_guard", 1);
+        MvcResult created = call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("old")));
+        String path = "/admin/home/social-links/" + data(created).get("socialId").asString();
+        call("GET", "/home/social-links", null, null);
+        cacheProbe.pause("com.xuan.mapper.SocialMapper.replace");
+        String writers = publicCacheStore.prefix("social") + "writers";
+        redis.opsForSet().add(writers, "orphan-from-ended-process");
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<MvcResult> write = executor.submit(() -> write("PUT", path, token, created.getResponse().getHeader("X-Revision"), cacheSocial("new")));
+            try {
+                assertThat(cacheProbe.reached.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(redis.opsForSet().size(writers)).isEqualTo(2);
+                int queries = cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems");
+                assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("old");
+                assertThat(cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems")).isEqualTo(queries + 1);
+            } finally { cacheProbe.release.countDown(); }
+            code(write.get(5, TimeUnit.SECONDS), 200, "OK");
+        }
+        assertThat(redis.opsForSet().members(writers)).containsExactly("orphan-from-ended-process");
+        assertThat(redis.getExpire(writers)).isEqualTo(-1);
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("new");
+        // 隔离测试已经确认模拟的进程事务结束，先轮换再清遗留保护。
+        publicCaches.getCache("social").clear(); redis.opsForSet().remove(writers, "orphan-from-ended-process");
+    }
+
+    @Test
+    void cacheConcurrentWritersOnlyRemoveTheirOwnProtection() throws Exception {
+        String first = actor("cache_parallel_first", 1);
+        String second = actor("cache_parallel_second", 1);
+        MvcResult a = call("POST", "/admin/home/social-links", first, json.writeValueAsString(cacheSocial("first")));
+        MvcResult b = call("POST", "/admin/home/social-links", second, json.writeValueAsString(cacheSocial("second")));
+        var gates = cacheProbe.pauseTwo("com.xuan.mapper.SocialMapper.replace");
+        try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+            Future<MvcResult> one = executor.submit(() -> write("PUT", "/admin/home/social-links/" + data(a).get("socialId").asString(), first,
+                    a.getResponse().getHeader("X-Revision"), cacheSocial("first-updated")));
+            Future<MvcResult> two = null;
+            try {
+                assertThat(gates.get(0).reached.await(5, TimeUnit.SECONDS)).isTrue();
+                two = executor.submit(() -> write("PUT", "/admin/home/social-links/" + data(b).get("socialId").asString(), second,
+                        b.getResponse().getHeader("X-Revision"), cacheSocial("second-updated")));
+                assertThat(gates.get(1).reached.await(5, TimeUnit.SECONDS)).isTrue();
+                assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isEqualTo(2);
+                gates.get(0).release.countDown(); code(one.get(5, TimeUnit.SECONDS), 200, "OK");
+                assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isEqualTo(1);
+                assertThat(data(call("GET", "/home/social-links", null, null)).toString()).contains("first-updated").doesNotContain("second-updated");
+            } finally { gates.forEach(gate -> gate.release.countDown()); }
+            code(two.get(5, TimeUnit.SECONDS), 200, "OK");
+        }
+        assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isZero();
+        assertThat(data(call("GET", "/home/social-links", null, null)).toString()).contains("first-updated", "second-updated");
+    }
+
+    @Test
+    void cacheRegistrationFailureRollsBackAndPostCommitFailureKeepsProtection() throws Exception {
+        String token = actor("cache_failure", 1);
+        String writers = publicCacheStore.prefix("social") + "writers";
+        redis.opsForValue().set(writers, "broken-redis-type");
+        code(call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("rejected"))), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM home_social_link", Integer.class)).isZero();
+        redis.delete(writers);
+        MvcResult created = call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("old")));
+        String path = "/admin/home/social-links/" + data(created).get("socialId").asString();
+        call("GET", "/home/social-links", null, null);
+        cacheProbe.pause("com.xuan.mapper.SocialMapper.replace");
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            Future<MvcResult> update = executor.submit(() -> write("PUT", path, token, created.getResponse().getHeader("X-Revision"), cacheSocial("committed")));
+            try {
+                assertThat(cacheProbe.reached.await(5, TimeUnit.SECONDS)).isTrue();
+                redis.opsForValue().set(writers, "broken-after-registration");
+            } finally { cacheProbe.release.countDown(); }
+            code(update.get(5, TimeUnit.SECONDS), 503, "SERVICE_UNAVAILABLE");
+        }
+        assertThat(jdbc.queryForObject("SELECT name FROM home_social_link", String.class)).isEqualTo("committed");
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("committed");
+        // 恢复后的旧数据键存在也不会命中；只有确认事务结束后才手工轮换并移除错误保护。
+        redis.delete(writers); publicCaches.getCache("social").clear();
+        call("GET", "/home/social-links", null, null);
+        redis.opsForValue().set(cacheDataKey("social"), "incompatible-json");
+        assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("committed");
+    }
+
+    @Test
+    void cacheReadRollbackDoesNotPublishValuesAndWriteRollbackReleasesOwnProtection() throws Exception {
+        String token = actor("cache_rollback", 1);
+        call("GET", "/home/social-links", null, null);
+        String generation = redis.opsForValue().get(publicCacheStore.prefix("social") + "generation");
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE INSERT ON sys_operation_log FOR EACH ROW BEGIN IF NEW.result=1 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fail audit'; END IF; END");
+        code(call("POST", "/admin/home/social-links", token, json.writeValueAsString(cacheSocial("rolled-back"))), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM home_social_link", Integer.class)).isZero();
+        assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isZero();
+        assertThat(redis.opsForValue().get(publicCacheStore.prefix("social") + "generation")).isEqualTo(generation);
+        assertThat(data(call("GET", "/home/social-links", null, null)).size()).isZero();
+        publicCaches.getCache("social").clear();
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> { publicSocials.publicItems(); tx.setRollbackOnly(); });
+        assertThat(cacheDataKeyOrNull("social")).isNull();
+    }
+
+    @Test
+    void ratePublicGetAndDedicatedBudgetsApplyOnHotCacheAcrossParameters() throws Exception {
+        for (int n = 0; n < 120; n++) {
+            code(call("GET", n % 2 == 0 ? "/home/social-links" : "/cv/skills?page=" + (n + 1), null, null), 200, "OK");
+        }
+        MvcResult rejected = call("GET", "/blog/configs", null, null);
+        code(rejected, 429, "RATE_LIMITED"); assertThat(Integer.parseInt(rejected.getResponse().getHeader("Retry-After"))).isPositive();
+        redis.delete(redis.keys("dl:article-test:rate:interface:public-*"));
+        for (int n = 0; n < 10; n++) { code(call("GET", "/blog/articles?keyword=search" + n + "&page=" + (n + 1), null, null), 200, "OK"); }
+        code(call("GET", "/blog/articles?keyword=another", null, null), 429, "RATE_LIMITED");
+        assertThat(data(call("GET", "/blog/articles", null, null)).get("total").asString()).isEqualTo("0");
+        for (int n = 0; n < 30; n++) { assertThat(call("GET", n % 2 == 0 ? "/blog/rss.xml" : "/blog/sitemap.xml?page=1", null, null).getResponse().getStatus()).isEqualTo(200); }
+        code(call("GET", "/blog/sitemap.xml?page=2", null, null), 429, "RATE_LIMITED");
+    }
+
+    @Test
+    void rateInvalidPublicParametersAreRejectedBeforeConsumingBudget() throws Exception {
+        for (String path : List.of("/blog/articles?categoryId=01", "/blog/articles?tagId=0", "/blog/articles?authorId=9223372036854775808",
+                "/blog/articles/1/comments?parentId=01", "/blog/messages?parentId=0", "/blog/authors/01", "/blog/articles?page=0")) {
+            code(call("GET", path, null, null), 400, "VALIDATION_ERROR");
+        }
+        assertThat(redis.keys("dl:article-test:rate:interface:public-*")).isEmpty();
+    }
+
+    @Test
+    void rateLoginSuccessAndFailureConsumeTotalBudgetBeforePasswordWork() throws Exception {
+        String token = actor("rate_login_total", 1);
+        for (int n = 1; n < 30; n++) {
+            code(call("POST", "/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 200, "OK");
+        }
+        String last = jdbc.queryForObject("SELECT CAST(last_login_time AS CHAR) FROM sys_user WHERE username='rate_login_total'", String.class);
+        code(call("POST", "/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT CAST(last_login_time AS CHAR) FROM sys_user WHERE username='rate_login_total'", String.class)).isEqualTo(last);
+        assertThat(redis.keys("dl:article-test:rate:login:*")).isEmpty();
+        assertThat(token).isNotBlank();
+    }
+
+    @Test
+    void rateAnalyticsDimensionsCannotBeResetByFingerprintOrIpAndRejectBeforeWrites() throws Exception {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("fingerprint", "rate-fingerprint-00000001"); body.put("siteCode", "blog"); body.put("pagePath", "/");
+        body.put("pageTitle", null); body.put("referer", null); body.put("articleId", null);
+        for (int n = 0; n < 30; n++) { assertThat(track(body).getResponse().getStatus()).isEqualTo(200); }
+        code(track(body), 429, "RATE_LIMITED");
+        body.put("fingerprint", "rate-fingerprint-00000002");
+        for (int n = 0; n < 29; n++) { assertThat(track(body).getResponse().getStatus()).isEqualTo(200); }
+        body.put("fingerprint", "rate-fingerprint-00000003");
+        code(track(body), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isEqualTo(59);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_visitor", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void rateMessageEditsShareCreationBudgetAndAdminRepliesHaveIndependentBudget() throws Exception {
+        String admin = actor("rate_message_admin", 1);
+        String member = actor("rate_message_member", 3);
+        String id = createMessage(member, null, "message", 0);
+        reviewMessage(admin, id, 1);
+        for (int n = 0; n < 9; n++) {
+            String revision = call("GET", "/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
+            code(write("PUT", "/me/messages/" + id, member, revision, messageEdit("edit-" + n)), 200, "OK");
+        }
+        String revision = call("GET", "/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/me/messages/" + id, member, revision, messageEdit("rejected")), 429, "RATE_LIMITED");
+        code(call("POST", "/blog/messages", member, json.writeValueAsString(messageBody(null, "rejected", 0))), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isEqualTo(1);
+        reviewMessage(admin, id, 1);
+        for (int n = 0; n < 10; n++) { code(call("POST", "/admin/messages/" + id + "/replies", admin, json.writeValueAsString(messageEdit("reply-" + n))), 201, "OK"); }
+        code(call("POST", "/admin/messages/999999/replies", admin, json.writeValueAsString(messageEdit("rejected"))), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isEqualTo(11);
+    }
+
+    @Test
+    void rateSubscriptionConfirmAndLinkUnsubscribeRejectWithoutConsumingValidTicket() throws Exception {
+        String admin = actor("rate_subscription_admin", 1);
+        String member = actor("rate_subscription_member", 3);
+        String ticket = requestSubscription(member, "rate-subscribe@example.test");
+        for (int n = 0; n < 10; n++) { code(confirm(member, com.xuan.utils.TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID"); }
+        code(confirm(member, ticket), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT verified_at IS NULL FROM blog_rss_subscription", Boolean.class)).isTrue();
+        redis.delete(redis.keys("dl:article-test:rate:interface:subscription-confirm:*"));
+        code(confirm(member, ticket), 200, "OK");
+        published(admin, "Rate-subscription-article"); finishAudits();
+        ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
+        verify(mail).send(eq("rate-subscribe@example.test"), eq("新文章发布"), text.capture());
+        String unsubscribeTicket = fragmentTicket(text.getValue(), "unsubscribeTicket");
+        for (int n = 0; n < 30; n++) { code(unsubscribe(com.xuan.utils.TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID"); }
+        code(unsubscribe(unsubscribeTicket), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT unsubscribe_time IS NULL FROM blog_rss_subscription", Boolean.class)).isTrue();
+        redis.delete(redis.keys("dl:article-test:rate:interface:subscription-unsubscribe:*"));
+        code(unsubscribe(unsubscribeTicket), 200, "OK"); code(unsubscribe(unsubscribeTicket), 200, "OK");
+    }
+
+    @Test
+    void rateReportsShareAllFivePathsAndDetailsAndFilesUseIndependentBudgets() throws Exception {
+        String admin = actor("rate_report_admin", 1);
+        String article = published(admin, "Rate-detail-article");
+        List<String> reports = List.of("overview", "page-views", "visitors", "provinces", "articles");
+        for (int n = 0; n < 30; n++) { code(call("GET", "/admin/statistics/" + reports.get(n % 5) + "?begin=2026-01-01&end=2026-01-" + String.format("%02d", n % 28 + 1), admin, null), 200, "OK"); }
+        code(call("GET", "/admin/statistics/overview?begin=2025-01-01&end=2025-01-01", admin, null), 429, "RATE_LIMITED");
+        for (int n = 0; n < 60; n++) { code(call("GET", "/blog/articles/Rate-detail-article", null, null), 200, "OK"); }
+        code(call("GET", "/blog/articles/Another-slug", null, null), 429, "RATE_LIMITED");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(60);
+        for (int n = 0; n < 120; n++) { code(call("GET", "/blog/articles/" + article + "/files/" + (n + 1) + "/content", null, null), 404, "NOT_FOUND"); }
+        code(call("GET", "/blog/articles/" + article + "/files/999999/content", null, null), 429, "RATE_LIMITED");
+        // 文件预算独立于正文公共预算；安全 Redis 错误仍在进入阅读事务前明确拒绝。
+        String budget = redis.keys("dl:article-test:rate:interface:public-get:*").iterator().next();
+        redis.delete(budget); redis.opsForSet().add(budget, "wrong-type");
+        code(call("GET", "/blog/articles/Rate-detail-article", null, null), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(60);
+    }
+
+    @Test
+    void rateRedisAtomicWindowsAreSharedAcrossInstancesAndIndependentAcrossDimensions() throws Exception {
+        var one = new com.xuan.ratelimit.RedisRateLimiter(redis);
+        var two = new com.xuan.ratelimit.RedisRateLimiter(redis);
+        String ip = "dl:article-test:rate:atomic:ip";
+        String user = "dl:article-test:rate:atomic:user";
+        try (ExecutorService executor = Executors.newFixedThreadPool(8)) {
+            List<Callable<Boolean>> work = new ArrayList<>();
+            for (int n = 0; n < 80; n++) {
+                var limiter = n % 2 == 0 ? one : two;
+                work.add(() -> { try { limiter.hit(List.of(ip, user), 60, List.of(30, 10)); return true; }
+                    catch (com.xuan.exception.BusinessException rejected) { assertThat(rejected.getStatus()).isEqualTo(429); return false; } });
+            }
+            int accepted = 0;
+            for (Future<Boolean> result : executor.invokeAll(work)) { if (result.get()) { accepted++; } }
+            assertThat(accepted).isEqualTo(10);
+        }
+        long ttl = redis.getExpire(ip, TimeUnit.MILLISECONDS);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> one.hit(List.of(ip, user + "-new"), 60, List.of(30, 10))).isInstanceOf(com.xuan.exception.BusinessException.class);
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> two.hit(List.of(ip + "-new", user), 60, List.of(30, 10))).isInstanceOf(com.xuan.exception.BusinessException.class);
+        assertThat(redis.getExpire(ip, TimeUnit.MILLISECONDS)).isLessThanOrEqualTo(ttl);
+        assertThat(redis.opsForValue().get(ip)).isEqualTo("81");
+        redis.expire(ip, java.time.Duration.ofMillis(1)); redis.expire(user, java.time.Duration.ofMillis(1));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while ((Boolean.TRUE.equals(redis.hasKey(ip)) || Boolean.TRUE.equals(redis.hasKey(user))) && System.nanoTime() < deadline) { Thread.onSpinWait(); }
+        one.hit(List.of(ip, user), 60, List.of(30, 10));
+        assertThat(redis.opsForValue().get(ip)).isEqualTo("1");
+    }
+
+    private MvcResult track(Map<String, Object> body) throws Exception {
+        return mvc.perform(req("POST", "/analytics/page-views").header("Origin", ORIGIN).contentType("application/json")
+                .content(json.writeValueAsString(body))).andReturn();
+    }
+    private Map<String, Object> cacheSocial(String name) {
+        return Map.of("name", name, "icon", "github", "url", "https://example.test/social", "sortOrder", 0, "status", 1);
+    }
+    private String cacheDataKey(String domain) {
+        String key = cacheDataKeyOrNull(domain); assertThat(key).as(domain).isNotNull(); return key;
+    }
+    private String cacheDataKeyOrNull(String domain) {
+        String prefix = publicCacheStore.prefix(domain);
+        String generation = redis.opsForValue().get(prefix + "generation");
+        return redis.keys(prefix + generation + ":*").stream().findFirst().orElse(null);
+    }
+
     private Map<String, Object> body(String slug, String markdown) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("title", slug);
@@ -4576,6 +5489,7 @@ class ArticleIntegrationTest {
     }
 
     private MvcResult call(String method, String path, String token, String body) throws Exception {
+        Map<String, String> generations = cacheWriteSnapshot(method, path);
         var builder = req(method, path);
         if (token != null) {
             builder.header("Authorization", "Bearer " + token);
@@ -4583,10 +5497,16 @@ class ArticleIntegrationTest {
         if (body != null) {
             builder.contentType("application/json").content(body);
         }
-        return mvc.perform(builder).andReturn();
+        MvcResult result = mvc.perform(builder).andReturn();
+        if (result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300) {
+            generations.forEach((domain, before) -> assertThat(redis.opsForValue().get(publicCacheStore.prefix(domain) + "generation"))
+                    .as(method + " " + path + " 应在真实提交后失效 " + domain).isNotEqualTo(before));
+        }
+        return result;
     }
 
     private MvcResult write(String method, String path, String token, String revision, Object body) throws Exception {
+        Map<String, String> generations = cacheWriteSnapshot(method, path);
         var builder = req(method, path);
         if (token != null) {
             builder.header("Authorization", "Bearer " + token);
@@ -4597,7 +5517,36 @@ class ArticleIntegrationTest {
         if (body != null) {
             builder.contentType("application/json").content(json.writeValueAsString(body));
         }
-        return mvc.perform(builder).andReturn();
+        MvcResult result = mvc.perform(builder).andReturn();
+        if (result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300) {
+            generations.forEach((domain, before) -> assertThat(redis.opsForValue().get(publicCacheStore.prefix(domain) + "generation"))
+                    .as(method + " " + path + " 应在真实提交后失效 " + domain).isNotEqualTo(before));
+        }
+        return result;
+    }
+
+    private Map<String, String> cacheWriteSnapshot(String method, String path) {
+        List<String> domains = List.of();
+        if (method.equals("GET")) { return Map.of(); }
+        List<String> article = List.of("articles", "search", "articleDetail", "archives", "rankings", "categories", "tags", "authors", "statistics", "rss", "sitemap", "comments");
+        if (path.matches("/admin/articles(?:/.*)?")) { domains = article; }
+        else if (path.matches("/admin/(categories|tags)(?:/.*)?")) {
+            String other = path.startsWith("/admin/categories") ? "tags" : "categories";
+            domains = article.stream().filter(d -> !d.equals(other) && !d.equals("comments")).toList();
+        } else if (path.equals("/me/profile") || method.equals("PUT") && path.matches("/admin/users/[0-9]+")) {
+            domains = List.of("authors", "articles", "search", "articleDetail", "comments");
+        } else if (path.matches("/blog/articles/[0-9]+/comments") || path.matches("/(me|admin)/comments/[0-9]+(?:/review)?")) {
+            domains = List.of("comments");
+        } else if (path.equals("/admin/configs/site")) { domains = List.of("configs", "rss", "sitemap"); }
+        else if (method.equals("DELETE") && path.matches("/admin/(visitors|page-views)/[0-9]+")) { domains = List.of("statistics"); }
+        else {
+            for (var pair : Map.of("/admin/home/profile", "home", "/admin/home/social-links", "social", "/admin/cv/experiences", "experiences", "/admin/cv/skills", "skills", "/admin/links", "links", "/admin/music", "music").entrySet()) {
+                if (path.equals(pair.getKey()) || path.startsWith(pair.getKey() + "/")) { domains = List.of(pair.getValue()); break; }
+            }
+        }
+        Map<String, String> before = new LinkedHashMap<>();
+        domains.forEach(domain -> before.put(domain, redis.opsForValue().get(publicCacheStore.prefix(domain) + "generation")));
+        return before;
     }
 
     private MockHttpServletRequestBuilder req(String method, String path) {

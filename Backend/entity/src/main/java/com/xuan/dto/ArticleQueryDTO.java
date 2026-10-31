@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Pattern;
 public record ArticleQueryDTO(@Min(1) @Max(100000) Integer page,
                               @Min(1) @Max(100) Integer pageSize,
                               @TextLength(min = 1, max = 100) String keyword,
-                              String categoryId, String tagId,
+                              String categoryId, String tagId, String authorId,
                               @Pattern(regexp = "[1-9][0-9]{3}-(0[1-9]|1[0-2])") String month) {
 
     public ArticleQueryDTO {

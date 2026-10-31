@@ -21,6 +21,9 @@ import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.SkillPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -42,6 +45,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "skills", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<SkillPublicVO> publicItems(DisplayQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
                 .convert(row -> new SkillPublicVO(row.getSkillId(), row.getName(), row.getDescription(), row.getIcon(), row.getSortOrder())));
@@ -67,6 +71,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "cv:skill", permission = "cv:skill:create")
+    @CacheEvict(cacheNames = "skills", allEntries = true)
     public ResourceVersion<CvSkill> create(SkillWriteDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
@@ -81,6 +86,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "cv:skill", permission = "cv:skill:update", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "skills", allEntries = true)
     public ResourceVersion<CvSkill> update(long id, SkillWriteDTO request, String revision) {
         validate(request);
         CvSkill row = lock(id, "update");
@@ -94,6 +100,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "cv:skill", permission = "cv:skill:delete", targetIdArgument = 0)
+    @CacheEvict(cacheNames = "skills", allEntries = true)
     public void delete(long id, String revision) {
         CvSkill row = lock(id, "delete");
         RevisionUtils.check(profile(row).revision(), revision);

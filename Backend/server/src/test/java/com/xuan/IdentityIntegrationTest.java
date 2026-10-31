@@ -2981,6 +2981,25 @@ class IdentityIntegrationTest {
                 Integer.class)).isEqualTo(6);
     }
 
+    @Test
+    void oauthCallbacksShareBudgetAcrossProvidersAndRejectBeforeStateConsumption() throws Exception {
+        OAuthFlow flow = start("LOGIN", null, null);
+        String raw = store.read("state", flow.state());
+        for (int index = 0; index < 30; index++) {
+            String source = index % 2 == 0 ? "GITHUB" : "GITEE";
+            assertCode(mvc.perform(req("GET", "/auth/oauth/" + source + "/callback")
+                    .param("state", TokenUtils.random()).param("code", "verified")
+                    .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400, "OAUTH_STATE_INVALID");
+        }
+        MvcResult rejected = callback(flow, "verified");
+        assertCode(rejected, 429, "RATE_LIMITED");
+        assertThat(Integer.parseInt(rejected.getResponse().getHeader("Retry-After"))).isPositive();
+        assertThat(store.read("state", flow.state())).isEqualTo(raw);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user", Integer.class)).isZero();
+        redis.delete(redis.keys("dl:test:rate:interface:oauth-callback:*"));
+        assertThat(callback(flow, "verified").getResponse().getStatus()).isEqualTo(303);
+    }
+
     private OAuthFlow start(String operation, String token, String browser) throws Exception {
         var request = req("POST", "/auth/oauth/GITHUB/authorize").header("Origin", ORIGIN)
                 .contentType("application/json").content("{\"operation\":\"" + operation + "\"}");

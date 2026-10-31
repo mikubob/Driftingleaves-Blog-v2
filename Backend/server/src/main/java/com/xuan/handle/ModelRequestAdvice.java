@@ -15,7 +15,8 @@ import java.util.Set;
         com.xuan.controller.admin.MenuController.class, com.xuan.controller.admin.ArticleController.class,
         com.xuan.controller.admin.CategoryController.class, com.xuan.controller.admin.TagController.class,
         com.xuan.controller.blog.ArticleController.class, com.xuan.controller.blog.CategoryController.class,
-        com.xuan.controller.blog.TagController.class})
+        com.xuan.controller.blog.TagController.class, com.xuan.controller.blog.AuthorController.class,
+        com.xuan.controller.me.ArticleController.class})
 public class ModelRequestAdvice {
 
     /** 绑定前只查参数名、重复值和无请求体约定，字段内容仍交给 DTO 和业务层检查。 */
@@ -23,7 +24,8 @@ public class ModelRequestAdvice {
     public void parameters(HttpServletRequest request) {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         boolean noBody = "GET".equals(request.getMethod()) || "POST /auth/logout".equals(route)
-                || "DELETE /me/oauth-bindings/{source}".equals(route);
+                || "DELETE /me/oauth-bindings/{source}".equals(route)
+                || "DELETE /admin/articles/{articleId}/permanent".equals(route);
         if (noBody && (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
         }
@@ -33,9 +35,10 @@ public class ModelRequestAdvice {
             case "GET /admin/permissions" -> Set.of("page", "pageSize", "keyword", "module", "status");
             case "GET /admin/articles" -> Set.of("page", "pageSize", "keyword", "categoryId", "tagId", "authorId",
                     "status", "visibility", "trash");
-            case "GET /blog/articles" -> Set.of("page", "pageSize", "keyword", "categoryId", "tagId", "month");
+            case "GET /blog/articles" -> Set.of("page", "pageSize", "keyword", "categoryId", "tagId", "month", "authorId");
             case "GET /admin/tags" -> Set.of("page", "pageSize", "keyword");
-            case "GET /blog/archives", "GET /blog/categories", "GET /blog/tags" -> Set.of("page", "pageSize");
+            case "GET /blog/archives", "GET /blog/categories", "GET /blog/tags", "GET /blog/authors",
+                 "GET /me/liked-articles" -> Set.of("page", "pageSize");
             case "GET /blog/article-rankings" -> Set.of("period", "metric", "limit");
             // 平台错误说明可以带回，但不传给业务层，也不写日志或回跳地址。
             case "GET /auth/oauth/{source}/callback" -> Set.of("state", "code", "error", "error_description");

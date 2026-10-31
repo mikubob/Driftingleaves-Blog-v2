@@ -19,12 +19,18 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.CategoryProfileVO;
+import com.xuan.vo.CategoryPublicDetailVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.Arrays;
 
 /**
@@ -44,10 +50,23 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     /** 获取展示中的分类，排序相同时按 ID 排，不返回后台状态和时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "categories", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<Category> publicCategories(PageQueryDTO query) {
         return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), null, true)
                 .convert(row -> new Category(row.getCategoryId(), row.getCategoryName(), row.getSlug(),
                         row.getDescription(), row.getSortOrder())));
+    }
+
+    /** 公开入口不因后台 Token 放宽分类状态，也不返回业务版本。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Cacheable(cacheNames = "categories", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    public CategoryPublicDetailVO publicDetail(String slug) {
+        CategoryPublicDetailVO value = categories.publicBySlug(slug, LocalDateTime.now(ZoneOffset.UTC));
+        if (value == null) {
+            throw new BusinessException(404, "NOT_FOUND", "分类不存在");
+        }
+        return value;
     }
 
     /** 先检查后台和分类查询权限，再用同样条件查列表和总数。 */
@@ -70,6 +89,18 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:category", permission = "blog:category:create")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public BlogCategory create(CategoryCreateDTO request) {
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
@@ -87,6 +118,18 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:category", permission = "blog:category:update", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public CategoryProfileVO update(long id, CategoryUpdateDTO request, String revision) {
         BlogCategory row = lockCategory(id, "update");
         checkRevision(row, revision);
@@ -103,6 +146,18 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:category", permission = "blog:category:delete", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
     public void delete(long id, String revision) {
         BlogCategory row = lockCategory(id, "delete");
         checkRevision(row, revision);

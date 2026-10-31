@@ -36,6 +36,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -135,6 +138,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "sys:user", permission = "sys:user:update", targetIdArgument = 0)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision) {
         // 1. 先锁保护点，再按 ID 锁用户，然后重查身份、权限和版本，管理入口的检查才不会并发漏掉。
         SysUser user = lockAdminTarget(userId, "sys:user:update");
@@ -373,6 +383,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
     public UserProfileVO patch(ProfilePatchDTO request, String revision) {
         // 1. 先确认本人身份并锁住用户，再读取这次写入要检查的版本。
         SysUser user = lockCurrent();

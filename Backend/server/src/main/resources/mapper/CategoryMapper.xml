@@ -2,6 +2,14 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 分类不按作者划分，隐藏分类也能在后台查到。 -->
 <mapper namespace="com.xuan.mapper.CategoryMapper">
+    <!-- 详情和公开文章列表使用相同公开条件，隐藏分类不返回。 -->
+    <select id="publicBySlug" resultType="com.xuan.vo.CategoryPublicDetailVO">
+        SELECT c.category_id,c.category_name,c.slug,c.description,c.sort_order,
+        CAST((SELECT COUNT(*) FROM blog_article a WHERE a.category_id=c.category_id AND
+        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count
+        FROM blog_category c WHERE c.slug=#{slug} AND c.status=1
+    </select>
+
     <!-- 公开列表只查展示中的分类，不要求分类已经有文章。 -->
     <select id="categoryPage" resultType="com.xuan.entity.BlogCategory">
         SELECT * FROM blog_category

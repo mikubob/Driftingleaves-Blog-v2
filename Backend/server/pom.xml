@@ -13,6 +13,11 @@
     <artifactId>server</artifactId>
 
     <dependencies>
+        <!-- 公开查询通过 Spring Cache 注解接入 Redis。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
         <!-- 用 Boot 4 的 AspectJ 代理执行限流和事务里的操作日志。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

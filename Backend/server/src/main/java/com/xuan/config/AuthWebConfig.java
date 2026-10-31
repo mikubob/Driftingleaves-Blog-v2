@@ -49,7 +49,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "GET /blog/configs", "GET /home/profile", "GET /home/social-links",
             "GET /cv/experiences", "GET /cv/skills", "GET /blog/music", "POST /blog/rss-subscriptions/unsubscribe",
             "GET /blog/rss.xml", "GET /blog/sitemap.xml", "GET /blog/messages", "POST /analytics/page-views",
-            "GET /blog/statistics");
+            "GET /blog/statistics", "GET /blog/authors");
     private final IUserService users;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
@@ -99,7 +99,8 @@ public class AuthWebConfig implements WebMvcConfigurer {
         String route = request.getMethod() + " " + path;
         if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
-                || path.matches("/blog/articles/[^/]+/files/[^/]+/content")))) {
+                || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
+                || path.matches("/blog/(authors|categories|tags)/[^/]+")))) {
             if (("GET /blog/messages".equals(route) || "POST /analytics/page-views".equals(route)) && request.getHeader(
                     "Authorization") != null) {
                 users.requireCurrent();
