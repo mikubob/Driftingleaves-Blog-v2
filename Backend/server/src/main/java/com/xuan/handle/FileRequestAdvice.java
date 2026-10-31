@@ -1,5 +1,6 @@
 package com.xuan.handle;
 
+import com.xuan.controller.admin.FileController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,7 +13,7 @@ import java.io.IOException;
 import java.util.Set;
 
 /** 文件入口拒绝额外查询、重复文件和伪造上传者，不能让 MVC 静默忽略 multipart 字段。 */
-@ControllerAdvice(assignableTypes = {com.xuan.controller.admin.FileController.class,
+@ControllerAdvice(assignableTypes = {FileController.class,
         com.xuan.controller.blog.FileController.class})
 public class FileRequestAdvice {
 

@@ -1,5 +1,15 @@
 package com.xuan.handle;
 
+import com.xuan.controller.admin.ArticleController;
+import com.xuan.controller.admin.CategoryController;
+import com.xuan.controller.admin.MenuController;
+import com.xuan.controller.admin.PermissionController;
+import com.xuan.controller.admin.RoleController;
+import com.xuan.controller.admin.TagController;
+import com.xuan.controller.admin.UserController;
+import com.xuan.controller.auth.AuthController;
+import com.xuan.controller.blog.AuthorController;
+import com.xuan.controller.me.MeController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -9,13 +19,13 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.util.Set;
 
 /** 身份、系统管理和文章字典只收声明过的参数，不能把忽略身份字段当作校验通过。 */
-@ControllerAdvice(assignableTypes = {com.xuan.controller.auth.AuthController.class,
-        com.xuan.controller.me.MeController.class, com.xuan.controller.admin.UserController.class,
-        com.xuan.controller.admin.RoleController.class, com.xuan.controller.admin.PermissionController.class,
-        com.xuan.controller.admin.MenuController.class, com.xuan.controller.admin.ArticleController.class,
-        com.xuan.controller.admin.CategoryController.class, com.xuan.controller.admin.TagController.class,
+@ControllerAdvice(assignableTypes = {AuthController.class,
+        MeController.class, UserController.class,
+        RoleController.class, PermissionController.class,
+        MenuController.class, ArticleController.class,
+        CategoryController.class, TagController.class,
         com.xuan.controller.blog.ArticleController.class, com.xuan.controller.blog.CategoryController.class,
-        com.xuan.controller.blog.TagController.class, com.xuan.controller.blog.AuthorController.class,
+        com.xuan.controller.blog.TagController.class, AuthorController.class,
         com.xuan.controller.me.ArticleController.class})
 public class ModelRequestAdvice {
 

@@ -11,6 +11,7 @@ import com.xuan.mapper.UserMapper;
 import com.xuan.mapper.VisitorMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.properties.PublicSiteProperties;
+import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.service.IAnalyticsService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
@@ -43,7 +44,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
     private final SessionManager sessions;
     private final IpLocationResolver locations;
     private final Clock clock;
-    private final com.xuan.ratelimit.AuthRateLimiter limiter;
+    private final AuthRateLimiter limiter;
 
     /** {@inheritDoc} */
     @Override

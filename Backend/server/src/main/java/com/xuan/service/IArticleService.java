@@ -6,14 +6,15 @@ import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogArticle;
+import com.xuan.model.ArticleRow;
 import com.xuan.result.PageResult;
 import com.xuan.vo.ArchiveVO;
 import com.xuan.vo.ArticleAdminVO;
 import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.ArticlePublicDetailVO;
 import com.xuan.vo.ArticlePublicVO;
-import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.AuthorPublicVO;
+import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 
 import java.util.List;
@@ -30,7 +31,7 @@ public interface IArticleService extends IService<BlogArticle> {
     PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query);
 
     /** 仅在 publicDetail 已持文章锁、校验当前正文及附件后从容器代理调用。 */
-    ArticlePublicDetailVO cachedPublicDetail(com.xuan.model.ArticleRow row, String markdown, String html);
+    ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown, String html);
 
     /** 仅列出拥有 PUBLIC 文章的作者，按公开文章数倒序、作者 ID 升序分页。 */
     PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query);

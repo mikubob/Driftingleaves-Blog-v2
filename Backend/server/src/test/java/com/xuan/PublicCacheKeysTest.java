@@ -4,12 +4,18 @@ import com.xuan.cache.PublicCacheKeys;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.CommentPublicQueryDTO;
 import org.junit.jupiter.api.Test;
-import java.time.*;
-import java.util.*;
+
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class PublicCacheKeysTest {
-    @Test void normalizedQueriesKeepEveryFilterAndCaseInTheKey() {
+    @Test
+    void normalizedQueriesKeepEveryFilterAndCaseInTheKey() {
         var keys = new PublicCacheKeys(Clock.systemUTC());
         var defaultQuery = new ArticleQueryDTO(null, null, null, null, null, null, null);
         assertThat(keys.key("cachedPublicArticles", new Object[]{defaultQuery})).isEqualTo(keys.key("cachedPublicArticles",
@@ -29,7 +35,8 @@ class PublicCacheKeysTest {
                 .isNotEqualTo(keys.key("cachedPublicComments", new Object[]{1L, new CommentPublicQueryDTO(1, 10, "3")}));
         assertThat(keys.key("sitemap", new Object[]{null})).isNotEqualTo(keys.key("sitemap", new Object[]{1}));
     }
-    @Test void statisticsAndRankingsChangeKeysAtTheirUtcCalendarBoundaries() {
+    @Test
+    void statisticsAndRankingsChangeKeysAtTheirUtcCalendarBoundaries() {
         var before = new PublicCacheKeys(Clock.fixed(Instant.parse("2026-10-31T23:59:59Z"), ZoneOffset.UTC));
         var after = new PublicCacheKeys(Clock.fixed(Instant.parse("2026-11-01T00:00:00Z"), ZoneId.of("Asia/Shanghai")));
         assertThat(before.key("publicStatistics", new Object[]{})).isNotEqualTo(after.key("publicStatistics", new Object[]{}));

@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -49,7 +50,7 @@ public final class IpUtils {
         }
         try {
             byte[] bytes = InetAddress.getByName(ip).getAddress();
-            java.util.Arrays.fill(bytes, bytes.length == 4 ? 3 : 6, bytes.length, (byte) 0);
+            Arrays.fill(bytes, bytes.length == 4 ? 3 : 6, bytes.length, (byte) 0);
             return InetAddress.getByAddress(bytes).getHostAddress();
         } catch (UnknownHostException error) {
             return null;

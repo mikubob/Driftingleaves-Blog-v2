@@ -20,6 +20,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 
 /**
  * JSON 解析前先限制为 8MiB，认证响应和错误响应都不能缓存。
@@ -44,7 +45,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
 
         // 2. 这里只限制 JSON 请求，其他类型交给各自处理器。
         String contentType = request.getContentType();
-        if (contentType == null || !contentType.toLowerCase(java.util.Locale.ROOT).contains("json")) {
+        if (contentType == null || !contentType.toLowerCase(Locale.ROOT).contains("json")) {
             chain.doFilter(request, response);
             return;
         }

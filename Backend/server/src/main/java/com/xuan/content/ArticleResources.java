@@ -328,7 +328,10 @@ public class ArticleResources {
 
     /** 比较 origin 时，HTTP 和 HTTPS 的默认端口按同一个地址处理。 */
     private int port(URI uri) {
-        return uri.getPort() >= 0 ? uri.getPort() : "http".equalsIgnoreCase(uri.getScheme()) ? 80 : 443;
+        if (uri.getPort() >= 0) {
+            return uri.getPort();
+        }
+        return "http".equalsIgnoreCase(uri.getScheme()) ? 80 : 443;
     }
 
     /** 配置过的 OSS endpoint 和 bucket 域名也不能拿来做公开直链绕过文章附件地址。 */

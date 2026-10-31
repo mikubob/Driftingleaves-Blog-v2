@@ -1,13 +1,20 @@
 package com.xuan;
 
 import com.xuan.audit.FailureAuditWriter;
+import com.xuan.cache.PublicCacheStore;
 import com.xuan.client.MailClient;
 import com.xuan.entity.SysOperationLog;
+import com.xuan.exception.BusinessException;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.properties.FileProperties;
+import com.xuan.properties.PublicSiteProperties;
+import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.security.AuthorizationProvider;
+import com.xuan.service.ISocialService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.TokenUtils;
 import com.zaxxer.hikari.HikariDataSource;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,11 +24,15 @@ import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.cache.CacheManager;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.context.annotation.Import;
+import org.springframework.core.io.FileSystemResource;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -36,10 +47,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -56,6 +69,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import javax.imageio.ImageIO;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -76,7 +90,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 第7..11章走真实 MVC、Service、Mapper 和隔离 MySQL/Redis，不替换核心业务，也不连接现有服务。
  */
 @SpringBootTest
-@org.springframework.context.annotation.Import(CacheQueryProbe.Config.class)
+@Import(CacheQueryProbe.Config.class)
 @AutoConfigureMockMvc
 @EnabledIfSystemProperty(named = "test.mysql.bin", matches = ".+")
 class ArticleIntegrationTest {
@@ -91,10 +105,15 @@ class ArticleIntegrationTest {
     @Autowired
     JsonMapper json;
 
-    @Autowired CacheQueryProbe cacheProbe;
-    @Autowired org.springframework.cache.CacheManager publicCaches;
-    @Autowired com.xuan.cache.PublicCacheStore publicCacheStore;
-    @Autowired com.xuan.service.ISocialService publicSocials;
+    @Autowired
+
+    CacheQueryProbe cacheProbe;
+    @Autowired
+    CacheManager publicCaches;
+    @Autowired
+    PublicCacheStore publicCacheStore;
+    @Autowired
+    ISocialService publicSocials;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -115,7 +134,7 @@ class ArticleIntegrationTest {
     SessionManager sessions;
 
     @Autowired
-    com.xuan.properties.PublicSiteProperties sites;
+    PublicSiteProperties sites;
 
     @MockitoSpyBean
     FailureAuditWriter failures;
@@ -404,8 +423,14 @@ class ArticleIntegrationTest {
         for (String path : List.of("/admin/articles/" + id, "/admin/articles/" + id + "/status",
                 "/admin/articles/" + id + "/restore")) {
             String method = path.endsWith("restore") ? "POST" : "PUT";
-            Object body = path.endsWith("status") ? Map.of("status", 1) : path.endsWith("restore") ? null : body(
-                    "Revision", "body");
+            Object body;
+            if (path.endsWith("status")) {
+                body = Map.of("status", 1);
+            } else if (path.endsWith("restore")) {
+                body = null;
+            } else {
+                body = body("Revision", "body");
+            }
             code(write(method, path, token, null, body), 428, "PRECONDITION_REQUIRED");
             for (String invalid : List.of("*", "abc", "\"a\",\"b\"", "\"" + "A".repeat(64) + "\"")) {
                 code(write(method, path, token, invalid, body), 400, "VALIDATION_ERROR");
@@ -562,7 +587,8 @@ class ArticleIntegrationTest {
         code(status(token, publicId, 1), 200, "OK");
         code(status(token, hiddenCategory, 1), 200, "OK");
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
-        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        publicCaches.getCache("articleDetail").clear();
+        publicCaches.getCache("categories").clear();
         String draft = create(token, "Draft", "body");
         String privateId = create(token, "Private", "body");
         String down = create(token, "Down", "body");
@@ -729,7 +755,8 @@ class ArticleIntegrationTest {
         assertThat(data(call("GET", "/blog/articles/Nav-4", null, null)).get("prevArticle").get("articleId")
                 .asString()).isEqualTo(ids.get(2));
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
-        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        publicCaches.getCache("articleDetail").clear();
+        publicCaches.getCache("categories").clear();
         assertThat(data(call("GET", "/blog/articles/Nav-4", null, null)).get("relatedArticles").isEmpty()).isTrue();
     }
 
@@ -3367,9 +3394,13 @@ class ArticleIntegrationTest {
                                     userId("file_wait_admin"), id);
                         }
                     }, true);
-            code(result, change.equals("token") ? 401 : change.equals("permission") ? 403 : 404,
-                    change.equals("token") ? "UNAUTHENTICATED" : change.equals(
-                            "permission") ? "FORBIDDEN" : "NOT_FOUND");
+            if (change.equals("token")) {
+                code(result, 401, "UNAUTHENTICATED");
+            } else if (change.equals("permission")) {
+                code(result, 403, "FORBIDDEN");
+            } else {
+                code(result, 404, "NOT_FOUND");
+            }
             assertThat(objectPath(id)).exists();
             jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=62");
         }
@@ -3784,7 +3815,7 @@ class ArticleIntegrationTest {
         String admin = actor("rss_admin", 1);
         String member = actor("rss_member", 3);
         String other = actor("rss_second", 3);
-        doThrow(new com.xuan.exception.BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用")).when(mail)
+        doThrow(new BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用")).when(mail)
                 .send(anyString(), anyString(), anyString());
         code(call("PUT", "/me/rss-subscription", member, "{\"email\":\"pending@example.test\"}"), 503,
                 "SERVICE_UNAVAILABLE");
@@ -3887,8 +3918,8 @@ class ArticleIntegrationTest {
         assertThat(feed.getResponse().getContentType()).startsWith("application/rss+xml");
         assertThat(xml).contains("&lt;title&gt; &amp; safe", "&lt;summary&gt;&amp;摘要", "/articles/feed-visible")
                 .doesNotContain("feed-hidden", "markdownContent");
-        javax.xml.parsers.DocumentBuilderFactory.newInstance().newDocumentBuilder()
-                .parse(new java.io.ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
+        DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8)));
         MvcResult sitemap = call("GET", "/blog/sitemap.xml", null, null);
         assertThat(sitemap.getResponse().getStatus()).isEqualTo(200);
         String map = sitemap.getResponse().getContentAsString(StandardCharsets.UTF_8);
@@ -4457,7 +4488,7 @@ class ArticleIntegrationTest {
     void subscriptionConcurrentConfirmationAndExpiryRespectAtomicConsumption() throws Exception {
         String token = actor("rss_concurrent", 3);
         final String ticket = requestSubscription(token, "concurrent@example.test");
-        String key = "dl:article-test:subscription:confirm:" + com.xuan.utils.TokenUtils.digest(ticket);
+        String key = "dl:article-test:subscription:confirm:" + TokenUtils.digest(ticket);
         assertThat(redis.getExpire(key)).isBetween(86390L, 86400L);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             CountDownLatch start = new CountDownLatch(1);
@@ -4475,8 +4506,8 @@ class ArticleIntegrationTest {
         }
         code(call("DELETE", "/me/rss-subscription", token, null), 200, "OK");
         String expired = requestSubscription(token, "concurrent@example.test");
-        redis.expire("dl:article-test:subscription:confirm:" + com.xuan.utils.TokenUtils.digest(expired),
-                java.time.Duration.ZERO);
+        redis.expire("dl:article-test:subscription:confirm:" + TokenUtils.digest(expired),
+                Duration.ZERO);
         code(confirm(token, expired), 400, "SUBSCRIPTION_TICKET_INVALID");
     }
 
@@ -4520,8 +4551,18 @@ class ArticleIntegrationTest {
                 jdbc.update("INSERT INTO home_profile(profile_id,user_id,nickname) VALUES(1,?,'原资料')", owner);
             }
             String revision = call("GET", "/admin/home/profile", token, null).getResponse().getHeader("X-Revision");
-            String table = stage.equals("guard") ? "sys_role" : stage.equals("owner") ? "sys_user" : "home_profile";
-            String primary = stage.equals("guard") ? "role_id" : stage.equals("owner") ? "user_id" : "profile_id";
+            String table;
+            String primary;
+            if (stage.equals("guard")) {
+                table = "sys_role";
+                primary = "role_id";
+            } else if (stage.equals("owner")) {
+                table = "sys_user";
+                primary = "user_id";
+            } else {
+                table = "home_profile";
+                primary = "profile_id";
+            }
             Object target = stage.equals("owner") ? owner : 1;
             MvcResult result = waitingInteraction(table,
                     "SELECT " + primary + " FROM " + table + " WHERE " + primary + "=? FOR UPDATE", target,
@@ -4573,7 +4614,8 @@ class ArticleIntegrationTest {
         assertThat(data(call("GET", "/blog/articles?authorId=" + userId("discovery_other"), null, null))
                 .get("records").get(0).get("articleId").asString()).isEqualTo(foreign);
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
-        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        publicCaches.getCache("articleDetail").clear();
+        publicCaches.getCache("categories").clear();
         assertThat(data(call("GET", prefix + "&categoryId=700", owner, null)).get("total").asString()).isEqualTo("0");
         assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isZero();
     }
@@ -4645,7 +4687,8 @@ class ArticleIntegrationTest {
         assertThat(data(call("GET", "/blog/categories", null, null)).get("records").get(0).has("articleCount")).isFalse();
         assertThat(data(call("GET", "/blog/tags", null, null)).get("records").get(0).has("articleCount")).isFalse();
         jdbc.update("UPDATE blog_category SET status=0 WHERE category_id=700");
-        publicCaches.getCache("articleDetail").clear(); publicCaches.getCache("categories").clear();
+        publicCaches.getCache("articleDetail").clear();
+        publicCaches.getCache("categories").clear();
         code(call("GET", "/blog/categories/category", token, null), 404, "NOT_FOUND");
         jdbc.update("UPDATE blog_tag SET slug='Renamed' WHERE tag_id=701");
         publicCaches.getCache("tags").clear();
@@ -4997,8 +5040,8 @@ class ArticleIntegrationTest {
         try {
             for (int i = 0; i < 2; i++) {
                 try (var connection = jdbc.getDataSource().getConnection()) {
-                    org.springframework.jdbc.datasource.init.ScriptUtils.executeSqlScript(connection,
-                            new org.springframework.core.io.FileSystemResource(migration));
+                    ScriptUtils.executeSqlScript(connection,
+                            new FileSystemResource(migration));
                 }
             }
             assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission WHERE permission_code='blog:article:purge'",
@@ -5030,29 +5073,48 @@ class ArticleIntegrationTest {
         seedDictionary();
         String article = published(token, "Cache-domains");
         Map<String, Object> home = new LinkedHashMap<>();
-        home.put("userId", userId("cache_domains")); home.put("nickname", "公开主人"); home.put("tagline", "");
-        for (String field : List.of("description", "avatar", "website", "publicEmail", "githubUrl", "location")) { home.put(field, null); }
+        home.put("userId", userId("cache_domains"));
+        home.put("nickname", "公开主人");
+        home.put("tagline", "");
+        for (String field : List.of("description", "avatar", "website", "publicEmail", "githubUrl", "location")) {
+            home.put(field, null);
+        }
         code(write("PUT", "/admin/home/profile", token,
                 call("GET", "/admin/home/profile", token, null).getResponse().getHeader("X-Revision"), home), 200, "OK");
         Map<String, String> routes = new LinkedHashMap<>();
-        routes.put("home", "/home/profile"); routes.put("social", "/home/social-links");
-        routes.put("experiences", "/cv/experiences"); routes.put("skills", "/cv/skills");
-        routes.put("links", "/blog/links"); routes.put("music", "/blog/music"); routes.put("configs", "/blog/configs");
-        routes.put("categories", "/blog/categories"); routes.put("tags", "/blog/tags");
-        routes.put("authors", "/blog/authors"); routes.put("articles", "/blog/articles");
-        routes.put("search", "/blog/articles?keyword=Cache"); routes.put("articleDetail", "/blog/articles/Cache-domains");
-        routes.put("archives", "/blog/archives"); routes.put("rankings", "/blog/article-rankings");
-        routes.put("comments", "/blog/articles/" + article + "/comments"); routes.put("statistics", "/blog/statistics");
-        routes.put("rss", "/blog/rss.xml"); routes.put("sitemap", "/blog/sitemap.xml");
+        routes.put("home", "/home/profile");
+        routes.put("social", "/home/social-links");
+        routes.put("experiences", "/cv/experiences");
+        routes.put("skills", "/cv/skills");
+        routes.put("links", "/blog/links");
+        routes.put("music", "/blog/music");
+        routes.put("configs", "/blog/configs");
+        routes.put("categories", "/blog/categories");
+        routes.put("tags", "/blog/tags");
+        routes.put("authors", "/blog/authors");
+        routes.put("articles", "/blog/articles");
+        routes.put("search", "/blog/articles?keyword=Cache");
+        routes.put("articleDetail", "/blog/articles/Cache-domains");
+        routes.put("archives", "/blog/archives");
+        routes.put("rankings", "/blog/article-rankings");
+        routes.put("comments", "/blog/articles/" + article + "/comments");
+        routes.put("statistics", "/blog/statistics");
+        routes.put("rss", "/blog/rss.xml");
+        routes.put("sitemap", "/blog/sitemap.xml");
         for (var entry : routes.entrySet()) {
             MvcResult first = call("GET", entry.getValue(), null, null);
             assertThat(first.getResponse().getStatus()).as(entry.getKey()).isEqualTo(200);
             String key = cacheDataKey(entry.getKey());
             long ttl = redis.getExpire(key, TimeUnit.MILLISECONDS);
-            int expected = List.of("home", "social", "experiences", "skills", "links", "music", "configs").contains(entry.getKey()) ? 3600
-                    : entry.getKey().equals("articles") ? 600 : entry.getKey().equals("articleDetail") ? 900
-                    : List.of("search", "rankings").contains(entry.getKey()) ? 60 : entry.getKey().equals("comments") ? 30
-                    : entry.getKey().equals("statistics") ? 300 : 1800;
+            int expected = switch (entry.getKey()) {
+                case "home", "social", "experiences", "skills", "links", "music", "configs" -> 3600;
+                case "articles" -> 600;
+                case "articleDetail" -> 900;
+                case "search", "rankings" -> 60;
+                case "comments" -> 30;
+                case "statistics" -> 300;
+                default -> 1800;
+            };
             assertThat(ttl).as(entry.getKey()).isBetween(expected * 1000L - 5000, expected * 1000L);
             Map<String, Integer> before = new LinkedHashMap<>();
             cacheProbe.calls.forEach((name, count) -> before.put(name, count.get()));
@@ -5064,7 +5126,9 @@ class ArticleIntegrationTest {
                 case "comments" -> "com.xuan.mapper.CommentMapper.publicPage";
                 default -> null;
             };
-            if (cachedQuery != null) { assertThat(cacheProbe.count(cachedQuery)).as(entry.getKey()).isEqualTo(before.getOrDefault(cachedQuery, 0)); }
+            if (cachedQuery != null) {
+                assertThat(cacheProbe.count(cachedQuery)).as(entry.getKey()).isEqualTo(before.getOrDefault(cachedQuery, 0));
+            }
             if (!List.of("articles", "search", "articleDetail", "comments").contains(entry.getKey())) {
                 before.forEach((name, count) -> {
                     if (!name.startsWith("com.xuan.mapper.UserMapper") && !name.startsWith("com.xuan.mapper.AuthorizationMapper")) {
@@ -5078,14 +5142,17 @@ class ArticleIntegrationTest {
         assertThat(cacheDataKey("articles")).isEqualTo(articleKey);
         for (String query : List.of("page=11", "pageSize=21", "keyword=Cache&page=4")) {
             int before = cacheProbe.calls.entrySet().stream().filter(e -> e.getKey().startsWith("com.xuan.mapper.ArticleMapper.articlePage")).mapToInt(e -> e.getValue().get()).sum();
-            call("GET", "/blog/articles?" + query, null, null); call("GET", "/blog/articles?" + query, null, null);
+            call("GET", "/blog/articles?" + query, null, null);
+            call("GET", "/blog/articles?" + query, null, null);
             int after = cacheProbe.calls.entrySet().stream().filter(e -> e.getKey().startsWith("com.xuan.mapper.ArticleMapper.articlePage")).mapToInt(e -> e.getValue().get()).sum();
             assertThat(after).isGreaterThanOrEqualTo(before + 2);
         }
         String expired = cacheDataKey("social");
-        redis.expire(expired, java.time.Duration.ofMillis(1));
+        redis.expire(expired, Duration.ofMillis(1));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-        while (Boolean.TRUE.equals(redis.hasKey(expired)) && System.nanoTime() < deadline) { Thread.onSpinWait(); }
+        while (Boolean.TRUE.equals(redis.hasKey(expired)) && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
         int socialQueries = cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems");
         call("GET", "/home/social-links", null, null);
         assertThat(cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems")).isEqualTo(socialQueries + 1);
@@ -5096,9 +5163,12 @@ class ArticleIntegrationTest {
         String token = actor("cache_associations", 1);
         seedDictionary();
         Map<String, Object> request = body("Cache-associations", "正文");
-        request.put("categoryId", "700"); request.put("tagIds", List.of("701"));
-        MvcResult created = call("POST", "/admin/articles", token, json.writeValueAsString(request)); code(created, 201, "OK");
-        String article = data(created).get("articleId").asString(); code(status(token, article, 1), 200, "OK");
+        request.put("categoryId", "700");
+        request.put("tagIds", List.of("701"));
+        MvcResult created = call("POST", "/admin/articles", token, json.writeValueAsString(request));
+        code(created, 201, "OK");
+        String article = data(created).get("articleId").asString();
+        code(status(token, article, 1), 200, "OK");
         var beforePrivate = redis.keys("dl:article-test:cache:public:*");
         for (String path : List.of("/me", "/me/liked-articles", "/admin/articles/" + article, "/blog/messages")) {
             code(call("GET", path, token, null), 200, "OK");
@@ -5108,8 +5178,11 @@ class ArticleIntegrationTest {
                 "/blog/article-rankings", "/blog/categories", "/blog/categories/category", "/blog/tags", "/blog/tags/tag-one",
                 "/blog/authors", "/blog/authors/" + userId("cache_associations"), "/blog/statistics", "/blog/rss.xml", "/blog/sitemap.xml", "/blog/sitemap.xml?page=1",
                 "/blog/articles/" + article + "/comments");
-        for (String path : warm) { assertThat(call("GET", path, null, null).getResponse().getStatus()).as(path).isEqualTo(200); }
-        request.put("slug", "Cache-renamed"); request.put("title", "Renamed title");
+        for (String path : warm) {
+            assertThat(call("GET", path, null, null).getResponse().getStatus()).as(path).isEqualTo(200);
+        }
+        request.put("slug", "Cache-renamed");
+        request.put("title", "Renamed title");
         code(write("PUT", "/admin/articles/" + article, token, revision(token, article), request), 200, "OK");
         code(call("GET", "/blog/articles/Cache-associations", null, null), 404, "NOT_FOUND");
         assertThat(data(call("GET", "/blog/articles?keyword=Cache", null, null)).get("total").asString()).isEqualTo("0");
@@ -5174,7 +5247,9 @@ class ArticleIntegrationTest {
             try {
                 assertThat(cacheProbe.reached.await(5, TimeUnit.SECONDS)).isTrue();
                 code(write("PUT", path, token, created.getResponse().getHeader("X-Revision"), cacheSocial("new")), 200, "OK");
-            } finally { cacheProbe.release.countDown(); }
+            } finally {
+                cacheProbe.release.countDown();
+            }
             assertThat(data(old.get(5, TimeUnit.SECONDS)).get(0).get("name").asString()).isEqualTo("old");
         }
         assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("new");
@@ -5198,14 +5273,17 @@ class ArticleIntegrationTest {
                 int queries = cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems");
                 assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("old");
                 assertThat(cacheProbe.count("com.xuan.mapper.SocialMapper.publicItems")).isEqualTo(queries + 1);
-            } finally { cacheProbe.release.countDown(); }
+            } finally {
+                cacheProbe.release.countDown();
+            }
             code(write.get(5, TimeUnit.SECONDS), 200, "OK");
         }
         assertThat(redis.opsForSet().members(writers)).containsExactly("orphan-from-ended-process");
         assertThat(redis.getExpire(writers)).isEqualTo(-1);
         assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("new");
         // 隔离测试已经确认模拟的进程事务结束，先轮换再清遗留保护。
-        publicCaches.getCache("social").clear(); redis.opsForSet().remove(writers, "orphan-from-ended-process");
+        publicCaches.getCache("social").clear();
+        redis.opsForSet().remove(writers, "orphan-from-ended-process");
     }
 
     @Test
@@ -5225,10 +5303,13 @@ class ArticleIntegrationTest {
                         b.getResponse().getHeader("X-Revision"), cacheSocial("second-updated")));
                 assertThat(gates.get(1).reached.await(5, TimeUnit.SECONDS)).isTrue();
                 assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isEqualTo(2);
-                gates.get(0).release.countDown(); code(one.get(5, TimeUnit.SECONDS), 200, "OK");
+                gates.get(0).release.countDown();
+                code(one.get(5, TimeUnit.SECONDS), 200, "OK");
                 assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isEqualTo(1);
                 assertThat(data(call("GET", "/home/social-links", null, null)).toString()).contains("first-updated").doesNotContain("second-updated");
-            } finally { gates.forEach(gate -> gate.release.countDown()); }
+            } finally {
+                gates.forEach(gate -> gate.release.countDown());
+            }
             code(two.get(5, TimeUnit.SECONDS), 200, "OK");
         }
         assertThat(redis.opsForSet().size(publicCacheStore.prefix("social") + "writers")).isZero();
@@ -5252,13 +5333,16 @@ class ArticleIntegrationTest {
             try {
                 assertThat(cacheProbe.reached.await(5, TimeUnit.SECONDS)).isTrue();
                 redis.opsForValue().set(writers, "broken-after-registration");
-            } finally { cacheProbe.release.countDown(); }
+            } finally {
+                cacheProbe.release.countDown();
+            }
             code(update.get(5, TimeUnit.SECONDS), 503, "SERVICE_UNAVAILABLE");
         }
         assertThat(jdbc.queryForObject("SELECT name FROM home_social_link", String.class)).isEqualTo("committed");
         assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("committed");
         // 恢复后的旧数据键存在也不会命中；只有确认事务结束后才手工轮换并移除错误保护。
-        redis.delete(writers); publicCaches.getCache("social").clear();
+        redis.delete(writers);
+        publicCaches.getCache("social").clear();
         call("GET", "/home/social-links", null, null);
         redis.opsForValue().set(cacheDataKey("social"), "incompatible-json");
         assertThat(data(call("GET", "/home/social-links", null, null)).get(0).get("name").asString()).isEqualTo("committed");
@@ -5276,7 +5360,10 @@ class ArticleIntegrationTest {
         assertThat(redis.opsForValue().get(publicCacheStore.prefix("social") + "generation")).isEqualTo(generation);
         assertThat(data(call("GET", "/home/social-links", null, null)).size()).isZero();
         publicCaches.getCache("social").clear();
-        new TransactionTemplate(transactions).executeWithoutResult(tx -> { publicSocials.publicItems(); tx.setRollbackOnly(); });
+        new TransactionTemplate(transactions).executeWithoutResult(tx -> {
+            publicSocials.publicItems();
+            tx.setRollbackOnly();
+        });
         assertThat(cacheDataKeyOrNull("social")).isNull();
     }
 
@@ -5286,12 +5373,17 @@ class ArticleIntegrationTest {
             code(call("GET", n % 2 == 0 ? "/home/social-links" : "/cv/skills?page=" + (n + 1), null, null), 200, "OK");
         }
         MvcResult rejected = call("GET", "/blog/configs", null, null);
-        code(rejected, 429, "RATE_LIMITED"); assertThat(Integer.parseInt(rejected.getResponse().getHeader("Retry-After"))).isPositive();
+        code(rejected, 429, "RATE_LIMITED");
+        assertThat(Integer.parseInt(rejected.getResponse().getHeader("Retry-After"))).isPositive();
         redis.delete(redis.keys("dl:article-test:rate:interface:public-*"));
-        for (int n = 0; n < 10; n++) { code(call("GET", "/blog/articles?keyword=search" + n + "&page=" + (n + 1), null, null), 200, "OK"); }
+        for (int n = 0; n < 10; n++) {
+            code(call("GET", "/blog/articles?keyword=search" + n + "&page=" + (n + 1), null, null), 200, "OK");
+        }
         code(call("GET", "/blog/articles?keyword=another", null, null), 429, "RATE_LIMITED");
         assertThat(data(call("GET", "/blog/articles", null, null)).get("total").asString()).isEqualTo("0");
-        for (int n = 0; n < 30; n++) { assertThat(call("GET", n % 2 == 0 ? "/blog/rss.xml" : "/blog/sitemap.xml?page=1", null, null).getResponse().getStatus()).isEqualTo(200); }
+        for (int n = 0; n < 30; n++) {
+            assertThat(call("GET", n % 2 == 0 ? "/blog/rss.xml" : "/blog/sitemap.xml?page=1", null, null).getResponse().getStatus()).isEqualTo(200);
+        }
         code(call("GET", "/blog/sitemap.xml?page=2", null, null), 429, "RATE_LIMITED");
     }
 
@@ -5320,12 +5412,20 @@ class ArticleIntegrationTest {
     @Test
     void rateAnalyticsDimensionsCannotBeResetByFingerprintOrIpAndRejectBeforeWrites() throws Exception {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("fingerprint", "rate-fingerprint-00000001"); body.put("siteCode", "blog"); body.put("pagePath", "/");
-        body.put("pageTitle", null); body.put("referer", null); body.put("articleId", null);
-        for (int n = 0; n < 30; n++) { assertThat(track(body).getResponse().getStatus()).isEqualTo(200); }
+        body.put("fingerprint", "rate-fingerprint-00000001");
+        body.put("siteCode", "blog");
+        body.put("pagePath", "/");
+        body.put("pageTitle", null);
+        body.put("referer", null);
+        body.put("articleId", null);
+        for (int n = 0; n < 30; n++) {
+            assertThat(track(body).getResponse().getStatus()).isEqualTo(200);
+        }
         code(track(body), 429, "RATE_LIMITED");
         body.put("fingerprint", "rate-fingerprint-00000002");
-        for (int n = 0; n < 29; n++) { assertThat(track(body).getResponse().getStatus()).isEqualTo(200); }
+        for (int n = 0; n < 29; n++) {
+            assertThat(track(body).getResponse().getStatus()).isEqualTo(200);
+        }
         body.put("fingerprint", "rate-fingerprint-00000003");
         code(track(body), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isEqualTo(59);
@@ -5347,7 +5447,9 @@ class ArticleIntegrationTest {
         code(call("POST", "/blog/messages", member, json.writeValueAsString(messageBody(null, "rejected", 0))), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isEqualTo(1);
         reviewMessage(admin, id, 1);
-        for (int n = 0; n < 10; n++) { code(call("POST", "/admin/messages/" + id + "/replies", admin, json.writeValueAsString(messageEdit("reply-" + n))), 201, "OK"); }
+        for (int n = 0; n < 10; n++) {
+            code(call("POST", "/admin/messages/" + id + "/replies", admin, json.writeValueAsString(messageEdit("reply-" + n))), 201, "OK");
+        }
         code(call("POST", "/admin/messages/999999/replies", admin, json.writeValueAsString(messageEdit("rejected"))), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isEqualTo(11);
     }
@@ -5357,20 +5459,26 @@ class ArticleIntegrationTest {
         String admin = actor("rate_subscription_admin", 1);
         String member = actor("rate_subscription_member", 3);
         String ticket = requestSubscription(member, "rate-subscribe@example.test");
-        for (int n = 0; n < 10; n++) { code(confirm(member, com.xuan.utils.TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID"); }
+        for (int n = 0; n < 10; n++) {
+            code(confirm(member, TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID");
+        }
         code(confirm(member, ticket), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT verified_at IS NULL FROM blog_rss_subscription", Boolean.class)).isTrue();
         redis.delete(redis.keys("dl:article-test:rate:interface:subscription-confirm:*"));
         code(confirm(member, ticket), 200, "OK");
-        published(admin, "Rate-subscription-article"); finishAudits();
+        published(admin, "Rate-subscription-article");
+        finishAudits();
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(mail).send(eq("rate-subscribe@example.test"), eq("新文章发布"), text.capture());
         String unsubscribeTicket = fragmentTicket(text.getValue(), "unsubscribeTicket");
-        for (int n = 0; n < 30; n++) { code(unsubscribe(com.xuan.utils.TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID"); }
+        for (int n = 0; n < 30; n++) {
+            code(unsubscribe(TokenUtils.random()), 400, "SUBSCRIPTION_TICKET_INVALID");
+        }
         code(unsubscribe(unsubscribeTicket), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT unsubscribe_time IS NULL FROM blog_rss_subscription", Boolean.class)).isTrue();
         redis.delete(redis.keys("dl:article-test:rate:interface:subscription-unsubscribe:*"));
-        code(unsubscribe(unsubscribeTicket), 200, "OK"); code(unsubscribe(unsubscribeTicket), 200, "OK");
+        code(unsubscribe(unsubscribeTicket), 200, "OK");
+        code(unsubscribe(unsubscribeTicket), 200, "OK");
     }
 
     @Test
@@ -5378,45 +5486,66 @@ class ArticleIntegrationTest {
         String admin = actor("rate_report_admin", 1);
         String article = published(admin, "Rate-detail-article");
         List<String> reports = List.of("overview", "page-views", "visitors", "provinces", "articles");
-        for (int n = 0; n < 30; n++) { code(call("GET", "/admin/statistics/" + reports.get(n % 5) + "?begin=2026-01-01&end=2026-01-" + String.format("%02d", n % 28 + 1), admin, null), 200, "OK"); }
+        for (int n = 0; n < 30; n++) {
+            code(call("GET", "/admin/statistics/" + reports.get(n % 5) + "?begin=2026-01-01&end=2026-01-" + String.format("%02d", n % 28 + 1), admin, null), 200, "OK");
+        }
         code(call("GET", "/admin/statistics/overview?begin=2025-01-01&end=2025-01-01", admin, null), 429, "RATE_LIMITED");
-        for (int n = 0; n < 60; n++) { code(call("GET", "/blog/articles/Rate-detail-article", null, null), 200, "OK"); }
+        for (int n = 0; n < 60; n++) {
+            code(call("GET", "/blog/articles/Rate-detail-article", null, null), 200, "OK");
+        }
         code(call("GET", "/blog/articles/Another-slug", null, null), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(60);
-        for (int n = 0; n < 120; n++) { code(call("GET", "/blog/articles/" + article + "/files/" + (n + 1) + "/content", null, null), 404, "NOT_FOUND"); }
+        for (int n = 0; n < 120; n++) {
+            code(call("GET", "/blog/articles/" + article + "/files/" + (n + 1) + "/content", null, null), 404, "NOT_FOUND");
+        }
         code(call("GET", "/blog/articles/" + article + "/files/999999/content", null, null), 429, "RATE_LIMITED");
         // 文件预算独立于正文公共预算；安全 Redis 错误仍在进入阅读事务前明确拒绝。
         String budget = redis.keys("dl:article-test:rate:interface:public-get:*").iterator().next();
-        redis.delete(budget); redis.opsForSet().add(budget, "wrong-type");
+        redis.delete(budget);
+        redis.opsForSet().add(budget, "wrong-type");
         code(call("GET", "/blog/articles/Rate-detail-article", null, null), 503, "SERVICE_UNAVAILABLE");
         assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(60);
     }
 
     @Test
     void rateRedisAtomicWindowsAreSharedAcrossInstancesAndIndependentAcrossDimensions() throws Exception {
-        var one = new com.xuan.ratelimit.RedisRateLimiter(redis);
-        var two = new com.xuan.ratelimit.RedisRateLimiter(redis);
+        var one = new RedisRateLimiter(redis);
+        var two = new RedisRateLimiter(redis);
         String ip = "dl:article-test:rate:atomic:ip";
         String user = "dl:article-test:rate:atomic:user";
         try (ExecutorService executor = Executors.newFixedThreadPool(8)) {
             List<Callable<Boolean>> work = new ArrayList<>();
             for (int n = 0; n < 80; n++) {
                 var limiter = n % 2 == 0 ? one : two;
-                work.add(() -> { try { limiter.hit(List.of(ip, user), 60, List.of(30, 10)); return true; }
-                    catch (com.xuan.exception.BusinessException rejected) { assertThat(rejected.getStatus()).isEqualTo(429); return false; } });
+                work.add(() -> {
+                    try {
+                        limiter.hit(List.of(ip, user), 60, List.of(30, 10));
+                        return true;
+                    } catch (BusinessException rejected) {
+                        assertThat(rejected.getStatus()).isEqualTo(429);
+                        return false;
+                    }
+                });
             }
             int accepted = 0;
-            for (Future<Boolean> result : executor.invokeAll(work)) { if (result.get()) { accepted++; } }
+            for (Future<Boolean> result : executor.invokeAll(work)) {
+                if (result.get()) {
+                    accepted++;
+                }
+            }
             assertThat(accepted).isEqualTo(10);
         }
         long ttl = redis.getExpire(ip, TimeUnit.MILLISECONDS);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> one.hit(List.of(ip, user + "-new"), 60, List.of(30, 10))).isInstanceOf(com.xuan.exception.BusinessException.class);
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> two.hit(List.of(ip + "-new", user), 60, List.of(30, 10))).isInstanceOf(com.xuan.exception.BusinessException.class);
+        Assertions.assertThatThrownBy(() -> one.hit(List.of(ip, user + "-new"), 60, List.of(30, 10))).isInstanceOf(BusinessException.class);
+        Assertions.assertThatThrownBy(() -> two.hit(List.of(ip + "-new", user), 60, List.of(30, 10))).isInstanceOf(BusinessException.class);
         assertThat(redis.getExpire(ip, TimeUnit.MILLISECONDS)).isLessThanOrEqualTo(ttl);
         assertThat(redis.opsForValue().get(ip)).isEqualTo("81");
-        redis.expire(ip, java.time.Duration.ofMillis(1)); redis.expire(user, java.time.Duration.ofMillis(1));
+        redis.expire(ip, Duration.ofMillis(1));
+        redis.expire(user, Duration.ofMillis(1));
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
-        while ((Boolean.TRUE.equals(redis.hasKey(ip)) || Boolean.TRUE.equals(redis.hasKey(user))) && System.nanoTime() < deadline) { Thread.onSpinWait(); }
+        while ((Boolean.TRUE.equals(redis.hasKey(ip)) || Boolean.TRUE.equals(redis.hasKey(user))) && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
         one.hit(List.of(ip, user), 60, List.of(30, 10));
         assertThat(redis.opsForValue().get(ip)).isEqualTo("1");
     }
@@ -5429,7 +5558,9 @@ class ArticleIntegrationTest {
         return Map.of("name", name, "icon", "github", "url", "https://example.test/social", "sortOrder", 0, "status", 1);
     }
     private String cacheDataKey(String domain) {
-        String key = cacheDataKeyOrNull(domain); assertThat(key).as(domain).isNotNull(); return key;
+        String key = cacheDataKeyOrNull(domain);
+        assertThat(key).as(domain).isNotNull();
+        return key;
     }
     private String cacheDataKeyOrNull(String domain) {
         String prefix = publicCacheStore.prefix(domain);
@@ -5527,21 +5658,29 @@ class ArticleIntegrationTest {
 
     private Map<String, String> cacheWriteSnapshot(String method, String path) {
         List<String> domains = List.of();
-        if (method.equals("GET")) { return Map.of(); }
+        if (method.equals("GET")) {
+            return Map.of();
+        }
         List<String> article = List.of("articles", "search", "articleDetail", "archives", "rankings", "categories", "tags", "authors", "statistics", "rss", "sitemap", "comments");
-        if (path.matches("/admin/articles(?:/.*)?")) { domains = article; }
-        else if (path.matches("/admin/(categories|tags)(?:/.*)?")) {
+        if (path.matches("/admin/articles(?:/.*)?")) {
+            domains = article;
+        } else if (path.matches("/admin/(categories|tags)(?:/.*)?")) {
             String other = path.startsWith("/admin/categories") ? "tags" : "categories";
             domains = article.stream().filter(d -> !d.equals(other) && !d.equals("comments")).toList();
         } else if (path.equals("/me/profile") || method.equals("PUT") && path.matches("/admin/users/[0-9]+")) {
             domains = List.of("authors", "articles", "search", "articleDetail", "comments");
         } else if (path.matches("/blog/articles/[0-9]+/comments") || path.matches("/(me|admin)/comments/[0-9]+(?:/review)?")) {
             domains = List.of("comments");
-        } else if (path.equals("/admin/configs/site")) { domains = List.of("configs", "rss", "sitemap"); }
-        else if (method.equals("DELETE") && path.matches("/admin/(visitors|page-views)/[0-9]+")) { domains = List.of("statistics"); }
-        else {
+        } else if (path.equals("/admin/configs/site")) {
+            domains = List.of("configs", "rss", "sitemap");
+        } else if (method.equals("DELETE") && path.matches("/admin/(visitors|page-views)/[0-9]+")) {
+            domains = List.of("statistics");
+        } else {
             for (var pair : Map.of("/admin/home/profile", "home", "/admin/home/social-links", "social", "/admin/cv/experiences", "experiences", "/admin/cv/skills", "skills", "/admin/links", "links", "/admin/music", "music").entrySet()) {
-                if (path.equals(pair.getKey()) || path.startsWith(pair.getKey() + "/")) { domains = List.of(pair.getValue()); break; }
+                if (path.equals(pair.getKey()) || path.startsWith(pair.getKey() + "/")) {
+                    domains = List.of(pair.getValue());
+                    break;
+                }
             }
         }
         Map<String, String> before = new LinkedHashMap<>();

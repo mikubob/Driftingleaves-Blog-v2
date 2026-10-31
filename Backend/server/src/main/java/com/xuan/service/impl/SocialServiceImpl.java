@@ -20,10 +20,9 @@ import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.SocialPublicVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
@@ -110,8 +109,12 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
     private void validate(SocialWriteDTO request) {
 
-        if (!UrlPolicy.validIcon(request.getIcon())) { throw new BusinessException(400, "VALIDATION_ERROR", "图标须为外部URL或注册图标键"); }
-        if (!UrlPolicy.validSocial(request.getUrl())) { throw new BusinessException(400, "VALIDATION_ERROR", "社交地址格式错误"); }
+        if (!UrlPolicy.validIcon(request.getIcon())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "图标须为外部URL或注册图标键");
+        }
+        if (!UrlPolicy.validSocial(request.getUrl())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "社交地址格式错误");
+        }
     }
 
     /** 白名单逐项赋值，NULL也写入数据库。 */
@@ -144,7 +147,9 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
 
     /** 先检查权限，再报告不存在。 */
     private HomeSocialLink requireItem(HomeSocialLink row) {
-        if (row == null) { throw new BusinessException(404, "NOT_FOUND", "资料不存在"); }
+        if (row == null) {
+            throw new BusinessException(404, "NOT_FOUND", "资料不存在");
+        }
         return row;
     }
 

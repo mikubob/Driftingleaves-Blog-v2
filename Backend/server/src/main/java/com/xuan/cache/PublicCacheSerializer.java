@@ -10,12 +10,20 @@ import tools.jackson.databind.json.JsonMapper;
 public class PublicCacheSerializer implements RedisSerializer<Object> {
     // Web 的字符串 ID 规则不参与内部 VO 往返，时间仍使用 Jackson 3 的原生支持。
     private final JsonMapper json = JsonMapper.builder().build();
-    @Override public byte[] serialize(Object value) {
+
+    /** 空值不写缓存，其余值按内部模型序列化。 */
+    @Override
+    public byte[] serialize(Object value) {
         return value == null ? new byte[0] : json.writeValueAsBytes(value);
     }
-    @Override public Object deserialize(byte[] bytes) {
+
+    /** 按当前公开方法声明的返回类型读取，不启用任意类型反序列化。 */
+    @Override
+    public Object deserialize(byte[] bytes) {
         var frame = PublicCacheScope.current();
-        if (frame == null) { throw new SerializationException("缓存读取缺少公开查询类型"); }
+        if (frame == null) {
+            throw new SerializationException("缓存读取缺少公开查询类型");
+        }
         return bytes == null || bytes.length == 0 ? null : json.readValue(bytes, json.constructType(frame.type));
     }
 }

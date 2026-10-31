@@ -32,16 +32,21 @@ import java.net.URI;
 @RequiredArgsConstructor
 public class SkillController {
     private final ISkillService items;
+
     /** 分页不返回逐条版本，编辑前读取详情。 */
     @GetMapping
     @SaCheckPermission("cv:skill:query")
     public Result<PageResult<CvSkill>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
         return Result.ok(items.listItems(query));
     }
+
     /** 资料版本放响应头。 */
     @GetMapping("/{id}")
     @SaCheckPermission("cv:skill:query")
-    public ResponseEntity<Result<CvSkill>> detail(@PathVariable String id) { return profile(items.detail(IdUtils.parse(id))); }
+    public ResponseEntity<Result<CvSkill>> detail(@PathVariable String id) {
+        return profile(items.detail(IdUtils.parse(id)));
+    }
+
     /** 创建成功返回201和新资料版本。 */
     @PostMapping
     @SaCheckPermission("cv:skill:create")
@@ -50,6 +55,7 @@ public class SkillController {
         return ResponseEntity.created(URI.create("/api/v1/admin/cv/skills/" + result.value().getSkillId()))
                 .header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }
+
     /** PUT完整替换并在锁内核对版本。 */
     @PutMapping("/{id}")
     @SaCheckPermission("cv:skill:update")
@@ -57,6 +63,7 @@ public class SkillController {
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(items.update(IdUtils.parse(id), request, revision));
     }
+
     /** 仅删元数据，删除前仍需本次版本。 */
     @DeleteMapping("/{id}")
     @SaCheckPermission("cv:skill:delete")
@@ -64,6 +71,7 @@ public class SkillController {
         items.delete(IdUtils.parse(id), revision);
         return Result.ok(null);
     }
+
     /** 响应体只放资料。 */
     private ResponseEntity<Result<CvSkill>> profile(ResourceVersion<CvSkill> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));

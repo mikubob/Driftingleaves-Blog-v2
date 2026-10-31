@@ -12,6 +12,7 @@ import java.util.Set;
 
 /**
  * 采集只收统计字段，账号、IP、UA和时间由服务端确认。
+ * 通过 setter 记录字段是否出现，可空字段也必须显式提交，不能只看值是否为 null。
  */
 @Getter
 public class PageViewCreateDTO {
@@ -32,15 +33,43 @@ public class PageViewCreateDTO {
 
     private Long articleId;
 
+    /** 区分请求中未提供字段与显式传入 null。 */
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
-    public void setFingerprint(String value) { present.add("fingerprint"); fingerprint = value == null ? null : value.strip(); }
-    public void setSiteCode(String value) { present.add("siteCode"); siteCode = value == null ? null : value.strip(); }
-    public void setPagePath(String value) { present.add("pagePath"); pagePath = value == null ? null : value.strip(); }
-    public void setPageTitle(String value) { present.add("pageTitle"); pageTitle = value == null ? null : value.strip(); }
-    public void setReferer(String value) { present.add("referer"); referer = value == null ? null : value.strip(); }
-    public void setArticleId(Long value) { present.add("articleId"); articleId = value; }
+
+    public void setFingerprint(String value) {
+        present.add("fingerprint");
+        fingerprint = value == null ? null : value.strip();
+    }
+
+    public void setSiteCode(String value) {
+        present.add("siteCode");
+        siteCode = value == null ? null : value.strip();
+    }
+
+    public void setPagePath(String value) {
+        present.add("pagePath");
+        pagePath = value == null ? null : value.strip();
+    }
+
+    public void setPageTitle(String value) {
+        present.add("pageTitle");
+        pageTitle = value == null ? null : value.strip();
+    }
+
+    public void setReferer(String value) {
+        present.add("referer");
+        referer = value == null ? null : value.strip();
+    }
+
+    public void setArticleId(Long value) {
+        present.add("articleId");
+        articleId = value;
+    }
+
     /** 可空字段必须显式出现。 */
     @AssertTrue(message = "须提供全部声明字段")
-    public boolean isComplete() { return present.size() == 6; }
+    public boolean isComplete() {
+        return present.size() == 6;
+    }
 }

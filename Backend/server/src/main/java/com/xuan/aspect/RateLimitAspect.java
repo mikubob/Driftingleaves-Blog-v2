@@ -1,9 +1,13 @@
 package com.xuan.aspect;
 
 import com.xuan.annotation.RateLimit;
+import com.xuan.dto.ArticleQueryDTO;
+import com.xuan.dto.CommentPublicQueryDTO;
+import com.xuan.dto.MessagePublicQueryDTO;
 import com.xuan.properties.AuthProperties;
 import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.IpUtils;
 import com.xuan.utils.TokenUtils;
 import jakarta.servlet.http.HttpServletRequest;
@@ -41,19 +45,23 @@ public class RateLimitAspect {
             "execution(* com.xuan.service.impl.FileServiceImpl.attachment(..))")
     public Object publicReads(ProceedingJoinPoint point) throws Throwable {
         var attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes == null) { return point.proceed(); }
+        if (attributes == null) {
+            return point.proceed();
+        }
         HttpServletRequest request = attributes.getRequest();
-        if (!"GET".equals(request.getMethod())) { return point.proceed(); }
+        if (!"GET".equals(request.getMethod())) {
+            return point.proceed();
+        }
         // 查询 ID 保留字符串以严格拒绝前导零，在消耗预算前复用同一解析规则；Service 仍用它完成类型转换。
         for (Object argument : point.getArgs()) {
-            if (argument instanceof com.xuan.dto.ArticleQueryDTO query) {
-                com.xuan.utils.IdUtils.parse(query.categoryId());
-                com.xuan.utils.IdUtils.parse(query.tagId());
-                com.xuan.utils.IdUtils.parse(query.authorId());
-            } else if (argument instanceof com.xuan.dto.CommentPublicQueryDTO query) {
-                com.xuan.utils.IdUtils.parse(query.parentId());
-            } else if (argument instanceof com.xuan.dto.MessagePublicQueryDTO query) {
-                com.xuan.utils.IdUtils.parse(query.parentId());
+            if (argument instanceof ArticleQueryDTO query) {
+                IdUtils.parse(query.categoryId());
+                IdUtils.parse(query.tagId());
+                IdUtils.parse(query.authorId());
+            } else if (argument instanceof CommentPublicQueryDTO query) {
+                IdUtils.parse(query.parentId());
+            } else if (argument instanceof MessagePublicQueryDTO query) {
+                IdUtils.parse(query.parentId());
             }
         }
         String path = request.getServletPath();
@@ -61,9 +69,15 @@ public class RateLimitAspect {
             hitIp("public-file", 120, request);
         } else if (path.startsWith("/blog/") || path.startsWith("/home/") || path.startsWith("/cv/")) {
             hitIp("public-get", 120, request);
-            if ("/blog/articles".equals(path) && request.getParameter("keyword") != null) { hitIp("public-search", 10, request); }
-            if (path.matches("/blog/articles/[^/]+")) { hitIp("public-detail", 60, request); }
-            if (path.equals("/blog/rss.xml") || path.equals("/blog/sitemap.xml")) { hitIp("public-xml", 30, request); }
+            if ("/blog/articles".equals(path) && request.getParameter("keyword") != null) {
+                hitIp("public-search", 10, request);
+            }
+            if (path.matches("/blog/articles/[^/]+")) {
+                hitIp("public-detail", 60, request);
+            }
+            if (path.equals("/blog/rss.xml") || path.equals("/blog/sitemap.xml")) {
+                hitIp("public-xml", 30, request);
+            }
         }
         return point.proceed();
     }
@@ -81,7 +95,9 @@ public class RateLimitAspect {
         }
         ServletRequestAttributes attributes =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-        if (attributes == null) { return point.proceed(); }
+        if (attributes == null) {
+            return point.proceed();
+        }
         HttpServletRequest request = attributes.getRequest();
         String prefix = properties.getRedisPrefix() + "rate:interface:" + rule.value() + ":";
         List<String> keys = new ArrayList<>();

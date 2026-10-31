@@ -38,18 +38,19 @@ import com.xuan.vo.ArticleAdminVO;
 import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.ArticlePublicDetailVO;
 import com.xuan.vo.ArticlePublicVO;
-import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.AuthorPublicVO;
+import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
-import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
@@ -101,13 +102,15 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
         List<ArticlePublicVO> records = cached.records().stream().map(item -> {
             ArticlePublicVO copy = new ArticlePublicVO();
-            org.springframework.beans.BeanUtils.copyProperties(item, copy);
+            BeanUtils.copyProperties(item, copy);
             return copy;
         }).toList();
         PageResult<ArticlePublicVO> page = new PageResult<>(cached.page(), cached.pageSize(), cached.total(), cached.totalPages(), records);
         for (ArticlePublicVO value : page.records()) {
             ArticleRow current = articles.publicById(value.getArticleId(), now());
-            if (current == null) { return loadPublicArticles(query); }
+            if (current == null) {
+                return loadPublicArticles(query);
+            }
             value.setViewCount(current.getViewCount());
             value.setLikeCount(current.getLikeCount());
             value.setCommentCount(commentCount(current.getArticleId()));
@@ -124,7 +127,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     public PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> page = loadPublicArticles(query);
         for (ArticlePublicVO value : page.records()) {
-            value.setViewCount(null); value.setLikeCount(null); value.setCommentCount(null);
+            value.setViewCount(null);
+            value.setLikeCount(null);
+            value.setCommentCount(null);
         }
         return page;
     }
@@ -189,7 +194,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         References references = resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown, references.html());
         ArticlePublicDetailVO value = new ArticlePublicDetailVO();
-        org.springframework.beans.BeanUtils.copyProperties(cached, value);
+        BeanUtils.copyProperties(cached, value);
         value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
         value.setCommentCount(commentCount(row.getArticleId()));
@@ -211,7 +216,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setPrevArticle(articles.adjacent(row, true, at));
         value.setNextArticle(articles.adjacent(row, false, at));
         value.setRelatedArticles(value.getCategory() == null ? List.of() : articles.related(row, at));
-        value.setViewCount(null); value.setLikeCount(null); value.setCommentCount(null);
+        value.setViewCount(null);
+        value.setLikeCount(null);
+        value.setCommentCount(null);
         return value;
     }
 

@@ -4,10 +4,13 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -68,7 +71,7 @@ final class IsolatedServices implements AutoCloseable {
                     "")) {
                 ScriptUtils.executeSqlScript(connection, new FileSystemResource("../../sql/drifting_leaves_v2.sql"));
                 return;
-            } catch (java.sql.SQLException exception) {
+            } catch (SQLException exception) {
                 Thread.sleep(100);
             }
         }
@@ -78,7 +81,7 @@ final class IsolatedServices implements AutoCloseable {
     private void waitForPort(int port) throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
         while (System.nanoTime() < deadline) {
-            try (var socket = new java.net.Socket("127.0.0.1", port)) {
+            try (var socket = new Socket("127.0.0.1", port)) {
                 return;
             } catch (IOException exception) {
                 Thread.sleep(50);
@@ -88,7 +91,7 @@ final class IsolatedServices implements AutoCloseable {
     }
 
     private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+        try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
         }
     }

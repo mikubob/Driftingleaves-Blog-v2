@@ -6,6 +6,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -36,7 +38,7 @@ public class RedisRateLimiter {
 
     /** 一次脚本把各项计数都加上，任意一项超限就拒绝。 */
     public void hit(List<String> keys, int windowSeconds, int limit) {
-        hit(keys, windowSeconds, java.util.Collections.nCopies(keys.size(), limit));
+        hit(keys, windowSeconds, Collections.nCopies(keys.size(), limit));
     }
 
     /** 同一脚本允许 IP、统计标识和本站用户采用各自阈值。 */
@@ -44,7 +46,7 @@ public class RedisRateLimiter {
         if (keys.isEmpty() || keys.size() != limits.size() || windowSeconds < 1 || limits.stream().anyMatch(n -> n < 1)) {
             throw new IllegalArgumentException("限流窗口和维度无效");
         }
-        java.util.List<String> args = new java.util.ArrayList<>();
+        List<String> args = new ArrayList<>();
         args.add(Integer.toString(windowSeconds));
         limits.forEach(n -> args.add(n.toString()));
         reject(redis.execute(HIT, keys, args.toArray()));

@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
@@ -52,11 +53,16 @@ public class AuthRateLimiter {
     /** 采集在任何行锁、地域解析和写入前原子累计全部独立维度。 */
     public void analytics(String ip, String fingerprint, Long actor) {
         String prefix = properties.getRedisPrefix() + "rate:analytics:";
-        java.util.List<String> keys = new java.util.ArrayList<>();
-        java.util.List<Integer> limits = new java.util.ArrayList<>();
-        keys.add(prefix + "ip:" + TokenUtils.digest(String.valueOf(ip))); limits.add(60);
-        keys.add(prefix + "fingerprint:" + TokenUtils.digest(fingerprint)); limits.add(30);
-        if (actor != null) { keys.add(prefix + "user:" + TokenUtils.digest(actor.toString())); limits.add(60); }
+        List<String> keys = new ArrayList<>();
+        List<Integer> limits = new ArrayList<>();
+        keys.add(prefix + "ip:" + TokenUtils.digest(String.valueOf(ip)));
+        limits.add(60);
+        keys.add(prefix + "fingerprint:" + TokenUtils.digest(fingerprint));
+        limits.add(30);
+        if (actor != null) {
+            keys.add(prefix + "user:" + TokenUtils.digest(actor.toString()));
+            limits.add(60);
+        }
         limiter.hit(keys, 60, limits);
     }
 

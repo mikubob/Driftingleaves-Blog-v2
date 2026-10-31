@@ -2409,8 +2409,13 @@ class IdentityIntegrationTest {
             if ("B".equals(type)) {
                 for (String field : List.of("routeName", "path", "component", "isVisible", "keepAlive")) {
                     Map<String, Object> wrong = new LinkedHashMap<>(shape);
-                    wrong.put(field, field.equals("isVisible") || field.equals("keepAlive") ? 1 : field.equals(
-                            "routeName") ? "TestShapeB" : field.equals("path") ? "/test/shape" : "Layout");
+                    Object wrongValue = switch (field) {
+                        case "isVisible", "keepAlive" -> 1;
+                        case "routeName" -> "TestShapeB";
+                        case "path" -> "/test/shape";
+                        default -> "Layout";
+                    };
+                    wrong.put(field, wrongValue);
                     assertCode(call("POST", "/admin/menus", admin, json.writeValueAsString(wrong)), 400,
                             "VALIDATION_ERROR");
                 }
@@ -2701,7 +2706,15 @@ class IdentityIntegrationTest {
         fields.put("menuType", type);
         fields.put("routeName", "B".equals(type) ? null : "Test" + key);
         fields.put("path", "B".equals(type) ? null : "/test/" + key);
-        fields.put("component", "B".equals(type) ? null : "D".equals(type) ? "Layout" : "content/article/index");
+        String component;
+        if ("B".equals(type)) {
+            component = null;
+        } else if ("D".equals(type)) {
+            component = "Layout";
+        } else {
+            component = "content/article/index";
+        }
+        fields.put("component", component);
         fields.put("icon", null);
         fields.put("permissionId", permission);
         fields.put("sortOrder", 0);
@@ -2931,10 +2944,14 @@ class IdentityIntegrationTest {
                     "grantPermission") : List.of("update", "delete")) {
                 String active = login("model_target_lock");
                 boolean grant = operation.startsWith("grant");
-                String body = grant ? grantBody(operation.equals("grantPermission") ? List.of(1L) : List.of(),
-                        List.of())
-                        : kind.equals("roles") ? roleBody("不能保存", "SELF", 1) : permissionBody("不能保存", "test",
-                        1);
+                String body;
+                if (grant) {
+                    body = grantBody(operation.equals("grantPermission") ? List.of(1L) : List.of(), List.of());
+                } else if (kind.equals("roles")) {
+                    body = roleBody("不能保存", "SELF", 1);
+                } else {
+                    body = permissionBody("不能保存", "test", 1);
+                }
                 String lockedTable = operation.equals("grantPermission") ? "sys_permission" : table;
                 String lockedKey = operation.equals("grantPermission") ? "permission_id" : key;
                 String lockedId = operation.equals("grantPermission") ? "1" : id;

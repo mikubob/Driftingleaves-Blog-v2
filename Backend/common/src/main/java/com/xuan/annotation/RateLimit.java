@@ -27,5 +27,7 @@ public @interface RateLimit {
     /**
      * 身份从服务端会话里取，不读客户端传来的 userId。
      */
-    enum Dimension {IP, USER, TOKEN}
+    enum Dimension {
+        IP, USER, TOKEN
+    }
 }

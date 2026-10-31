@@ -7,5 +7,7 @@ import jakarta.validation.constraints.NotNull;
  */
 public record OAuthAuthorizeDTO(@NotNull Operation operation) {
 
-    public enum Operation {LOGIN, BIND}
+    public enum Operation {
+        LOGIN, BIND
+    }
 }

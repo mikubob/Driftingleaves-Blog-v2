@@ -110,7 +110,8 @@ public class MenuCreateDTO {
     }
 
     public Integer getIsVisible() {
-        return visiblePresent ? isVisible : "B".equals(menuType) ? 0 : 1;
+        int defaultVisibility = "B".equals(menuType) ? 0 : 1;
+        return visiblePresent ? isVisible : defaultVisibility;
     }
 
     @AssertTrue(message = "parentId必须显式提供，isVisible不可为null")

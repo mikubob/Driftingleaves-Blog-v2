@@ -29,10 +29,10 @@ import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.cache.annotation.Cacheable;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Caching;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.JacksonException;
@@ -53,7 +53,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
 
     private static final String DELETED = "该评论已删除";
     private final CommentMapper comments;
-    private final org.springframework.beans.factory.ObjectProvider<ICommentService> self;
+    private final ObjectProvider<ICommentService> self;
     private final ArticleMapper articles;
     private final UserMapper users;
     private final IUserService identities;

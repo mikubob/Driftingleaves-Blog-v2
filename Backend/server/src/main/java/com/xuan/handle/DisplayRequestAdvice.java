@@ -1,5 +1,18 @@
 package com.xuan.handle;
 
+import com.xuan.controller.admin.ExperienceController;
+import com.xuan.controller.admin.HomeProfileController;
+import com.xuan.controller.admin.MusicController;
+import com.xuan.controller.admin.OperationLogController;
+import com.xuan.controller.admin.PageViewController;
+import com.xuan.controller.admin.SkillController;
+import com.xuan.controller.admin.SocialController;
+import com.xuan.controller.admin.StatisticsController;
+import com.xuan.controller.admin.SubscriptionController;
+import com.xuan.controller.admin.VisitorController;
+import com.xuan.controller.blog.AnalyticsController;
+import com.xuan.controller.blog.FeedController;
+import com.xuan.controller.blog.MessageController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -9,23 +22,23 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.util.Set;
 
 /** 展示业务不接受额外查询字段，GET和DELETE没有请求体。 */
-@ControllerAdvice(assignableTypes = {com.xuan.controller.admin.HomeProfileController.class,
-        com.xuan.controller.admin.SocialController.class,
-        com.xuan.controller.admin.ExperienceController.class,
-        com.xuan.controller.admin.SkillController.class,
-        com.xuan.controller.admin.MusicController.class,
+@ControllerAdvice(assignableTypes = {HomeProfileController.class,
+        SocialController.class,
+        ExperienceController.class,
+        SkillController.class,
+        MusicController.class,
         com.xuan.controller.blog.HomeProfileController.class,
         com.xuan.controller.blog.SocialController.class,
         com.xuan.controller.blog.ExperienceController.class,
         com.xuan.controller.blog.SkillController.class,
-        com.xuan.controller.blog.MusicController.class, com.xuan.controller.admin.OperationLogController.class,
-        com.xuan.controller.admin.SubscriptionController.class,
+        com.xuan.controller.blog.MusicController.class, OperationLogController.class,
+        SubscriptionController.class,
         com.xuan.controller.me.SubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
-        com.xuan.controller.blog.FeedController.class, com.xuan.controller.blog.MessageController.class,
+        FeedController.class, MessageController.class,
         com.xuan.controller.me.MessageController.class, com.xuan.controller.admin.MessageController.class,
-        com.xuan.controller.blog.AnalyticsController.class,
-        com.xuan.controller.admin.VisitorController.class, com.xuan.controller.admin.PageViewController.class,
-        com.xuan.controller.admin.StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
+        AnalyticsController.class,
+        VisitorController.class, PageViewController.class,
+        StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
 public class DisplayRequestAdvice {
 
     /** JSON字段由DTO处理，这里先拒绝重复参数、未知参数及无请求体违规。 */

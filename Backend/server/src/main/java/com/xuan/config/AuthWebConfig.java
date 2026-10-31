@@ -10,6 +10,7 @@ import com.xuan.result.Result;
 import com.xuan.service.IUserService;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
@@ -73,7 +74,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
              * {@inheritDoc}
              */
             @Override
-            public boolean preHandle(HttpServletRequest request, jakarta.servlet.http.HttpServletResponse response,
+            public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
                     Object handler) {
                 if (request.getServletPath().startsWith("/admin/") && handler instanceof HandlerMethod method
                         && !AnnotatedElementUtils.hasAnnotation(method.getMethod(), SaCheckPermission.class)
