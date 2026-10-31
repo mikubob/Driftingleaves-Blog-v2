@@ -62,6 +62,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
@@ -116,6 +117,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 身份接口走真实 MySQL、Redis、Service、Mapper 和 MVC，只有平台网络和指定失败使用替身。
  */
 @SpringBootTest
+@ActiveProfiles("test")
 @AutoConfigureMockMvc
 @Import(IdentityIntegrationTest.Boundaries.class)
 @EnabledIfSystemProperty(named = "test.mysql.bin", matches = ".+")

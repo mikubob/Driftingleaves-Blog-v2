@@ -1,0 +1,13 @@
+[   28567ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5176/account:0
+[   31557ms] [ERROR] Failed to load resource: the server responded with a status of 412 (Precondition Failed) @ http://127.0.0.1:5176/api/v1/admin/categories/1:0
+[  161456ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5176/account:0
+[  164118ms] [ERROR] Failed to load resource: the server responded with a status of 412 (Precondition Failed) @ http://127.0.0.1:5176/api/v1/admin/categories/1:0
+[  316636ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5176/account:0
+[  318941ms] [ERROR] Failed to load resource: the server responded with a status of 412 (Precondition Failed) @ http://127.0.0.1:5176/api/v1/admin/categories/1:0
+[  320951ms] [ERROR] Failed to load resource: the server responded with a status of 429 (Too Many Requests) @ http://127.0.0.1:5176/api/v1/auth/oauth/providers:0
+[  321073ms] [ERROR] Failed to load resource: the server responded with a status of 429 (Too Many Requests) @ http://127.0.0.1:5176/api/v1/auth/oauth/providers:0
+[  371388ms] [VERBOSE] [DOM] Password forms should have (optionally hidden) username fields for accessibility: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:5176/account:0
+[  374189ms] [ERROR] Failed to load resource: the server responded with a status of 412 (Precondition Failed) @ http://127.0.0.1:5176/api/v1/admin/categories/1:0
+[  376310ms] [ERROR] Failed to load resource: the server responded with a status of 429 (Too Many Requests) @ http://127.0.0.1:5176/api/v1/auth/oauth/providers:0
+[  376451ms] [ERROR] Failed to load resource: the server responded with a status of 503 (Service Unavailable) @ http://127.0.0.1:5176/api/v1/auth/oauth/providers:0
+[  376598ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://127.0.0.1:5176/api/v1/auth/oauth/providers:0

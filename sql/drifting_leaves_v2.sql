@@ -1,9 +1,9 @@
 -- DriftingLeavesV2 全新数据库设计，MySQL >= 8.0.16（CHECK 约束必须生效）。
 -- 2026-10-30；参考来源、权限规则及导入方法见同目录 README.md。
--- 在空库中执行；不迁移旧数据，不包含 DROP DATABASE/TABLE，不创建默认密码账号。
-CREATE DATABASE IF NOT EXISTS drifting_leaves_v2
+-- 在空库中执行；不迁移旧数据，不包含 DROP DATABASE/TABLE，包含指定的初始管理员账号。
+CREATE DATABASE IF NOT EXISTS driftingleaves
   CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
-USE drifting_leaves_v2;
+USE driftingleaves;
 SET NAMES utf8mb4;
 
 -- 一、身份与 RBAC：菜单控制展示，权限控制后端操作，两者独立授权。
@@ -505,12 +505,18 @@ CREATE TABLE sys_operation_log (
   CONSTRAINT ck_log_result CHECK (result IN (0, 1))
 ) ENGINE=InnoDB COMMENT='管理操作审计，使用现有本站账号与权限码；不复制旧admin表';
 
--- 六、基础角色、权限与菜单。无用户、文章、外部SQL业务数据。
+-- 六、基础角色、初始管理员、权限与菜单。不包含文章或外部SQL业务数据。
 START TRANSACTION;
 INSERT INTO sys_role (role_id, role_code, role_name, description, data_scope) VALUES
   (1, 'admin', '管理员', '全部内容及系统授权管理；新增权限需要显式授权', 'ALL'),
   (2, 'author', '作者', '后台写作、管理本人文章与上传文件', 'SELF'),
   (3, 'member', '注册用户', '前台评论、点赞、本人留言及邮件订阅，无后台菜单', 'SELF');
+
+-- 初始管理员的密码使用项目 BCrypt 编码器按成本 12 生成。
+INSERT INTO sys_user (username, password_hash, nickname) VALUES
+  ('yyzytx5201314', '$2a$12$9FfGVxieqB9LJNDF1bOIWOopsNDJsoCHsXwvVBjIW.dgGtfKy3ZF6', 'yyzytx5201314');
+INSERT INTO sys_user_role (user_id, role_id)
+  SELECT user_id, 1 FROM sys_user WHERE username = 'yyzytx5201314';
 
 INSERT INTO sys_permission (permission_id, permission_code, permission_name, module) VALUES
   (1, 'admin:access', '进入管理后台', 'admin'),
@@ -679,7 +685,7 @@ WHERE m.menu_id = 100 OR EXISTS (
 );
 
 INSERT INTO blog_site_config (config_key, config_value, description, is_public) VALUES
-  ('site', JSON_OBJECT('title', 'DriftingLeaves', 'description', '记录与分享', 'icp', '', 'publicSecurityRecord', '', 'startDate', NULL), '公开站点信息；备案及建站日期由站点管理者填写', 1),
+  ('site', JSON_OBJECT('title', 'DriftingLeaves', 'description', '记录与分享', 'icp', '湘ICP备2026010056号', 'publicSecurityRecord', 'xxx', 'startDate', '2026-03-31'), '公开站点信息；备案及建站日期按提供的截图初始化', 1),
   ('comment', JSON_OBJECT('enabled', TRUE, 'reviewRequired', TRUE), '评论默认开启并审核；前端不得用本配置绕过服务端校验', 0),
   ('message', JSON_OBJECT('enabled', TRUE, 'reviewRequired', TRUE), '留言默认开启并审核；私密范围由服务端校验', 0);
 COMMIT;

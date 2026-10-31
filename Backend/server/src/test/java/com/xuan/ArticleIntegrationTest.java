@@ -34,6 +34,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -90,6 +91,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 第7..11章走真实 MVC、Service、Mapper 和隔离 MySQL/Redis，不替换核心业务，也不连接现有服务。
  */
 @SpringBootTest
+@ActiveProfiles("test")
 @Import(CacheQueryProbe.Config.class)
 @AutoConfigureMockMvc
 @EnabledIfSystemProperty(named = "test.mysql.bin", matches = ".+")
@@ -3634,6 +3636,46 @@ class ArticleIntegrationTest {
     }
 
     @Test
+    void cvDemoScriptIsRepeatablePreservesExistingDataAndFeedsPublicQueries() throws Exception {
+        var script = new FileSystemResource("../../sql/cv_demo_data.sql");
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            ScriptUtils.executeSqlScript(connection, script);
+            ScriptUtils.executeSqlScript(connection, script);
+        }
+
+        MvcResult profile = call("GET", "/home/profile", null, null);
+        code(profile, 200, "OK");
+        assertThat(data(profile).path("nickname").asText()).isEqualTo("落叶 · 演示简历");
+        assertThat(data(profile).path("publicEmail").asText()).isEqualTo("demo@example.com");
+        MvcResult socials = call("GET", "/home/social-links", null, null);
+        code(socials, 200, "OK");
+        assertThat(data(socials).size()).isEqualTo(2);
+        MvcResult experiences = call("GET", "/cv/experiences?pageSize=100", null, null);
+        code(experiences, 200, "OK");
+        assertThat(data(experiences).path("records").size()).isEqualTo(4);
+        assertThat(data(experiences).path("records").get(2).path("htmlContent").asText())
+                .contains("<h3 id=", "Vue 3");
+        MvcResult skills = call("GET", "/cv/skills?pageSize=100", null, null);
+        code(skills, 200, "OK");
+        assertThat(data(skills).path("records").size()).isEqualTo(6);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='cv_demo_owner' " +
+                "AND password_hash IS NULL", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_role r JOIN sys_user u " +
+                "ON r.user_id=u.user_id WHERE u.username='cv_demo_owner'", Integer.class)).isZero();
+
+        jdbc.update("UPDATE home_profile SET nickname='已有个人资料' WHERE profile_id=1");
+        jdbc.update("UPDATE cv_skill SET description='已有技能说明' WHERE name='Java'");
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            ScriptUtils.executeSqlScript(connection, script);
+        }
+        assertThat(jdbc.queryForObject("SELECT nickname FROM home_profile WHERE profile_id=1", String.class))
+                .isEqualTo("已有个人资料");
+        assertThat(jdbc.queryForObject("SELECT description FROM cv_skill WHERE name='Java'", String.class))
+                .isEqualTo("已有技能说明");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM cv_experience", Integer.class)).isEqualTo(4);
+    }
+
+    @Test
     void displayProfileSeparatesPublicDataAndRequiresCompleteReplacement() throws Exception {
         String token = actor("display_profile", 1);
         MvcResult empty = call("GET", "/admin/home/profile", token, null);
@@ -5031,40 +5073,19 @@ class ArticleIntegrationTest {
     }
 
     @Test
-    void discoveryPurgePermissionMigrationIsRepeatableAndDoesNotGrantAuthorsOrMembers() throws Exception {
-        Path migration = Path.of("../../sql/migrations/20261031_article_purge_permission.sql");
-        jdbc.update("DELETE FROM sys_menu WHERE menu_code='blog:article:purge'");
-        jdbc.update("DELETE FROM sys_permission WHERE permission_code='blog:article:purge'");
-        jdbc.update("INSERT INTO sys_permission(permission_id,permission_code,permission_name,module) "
-                + "VALUES(16,'custom:existing:action','已有权限','custom')");
-        try {
-            for (int i = 0; i < 2; i++) {
-                try (var connection = jdbc.getDataSource().getConnection()) {
-                    ScriptUtils.executeSqlScript(connection,
-                            new FileSystemResource(migration));
-                }
-            }
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_permission WHERE permission_code='blog:article:purge'",
-                    Integer.class)).isEqualTo(1);
-            assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code='blog:article:purge'",
-                    Long.class)).isNotEqualTo(16L);
-            assertThat(jdbc.queryForObject("SELECT permission_code FROM sys_permission WHERE permission_id=16", String.class))
-                    .isEqualTo("custom:existing:action");
-            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_menu WHERE menu_code='blog:article:purge'", Integer.class))
-                    .isEqualTo(1);
-            assertThat(jdbc.queryForList("SELECT r.role_id FROM sys_role_permission r JOIN sys_permission p ON "
-                    + "p.permission_id=r.permission_id WHERE p.permission_code='blog:article:purge'", Integer.class))
-                    .containsExactly(1);
-        } finally {
-            jdbc.update("DELETE FROM sys_menu WHERE menu_code='blog:article:purge'");
-            jdbc.update("DELETE FROM sys_permission WHERE permission_code IN('blog:article:purge','custom:existing:action')");
-            jdbc.update("INSERT INTO sys_permission(permission_id,permission_code,permission_name,module) "
-                    + "VALUES(16,'blog:article:purge','永久删除回收站文章（无法恢复）','blog')");
-            jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,16)");
-            jdbc.update("INSERT INTO sys_menu(menu_id,parent_id,menu_code,menu_name,menu_type,permission_id,sort_order,is_visible) "
-                    + "VALUES(1016,110,'blog:article:purge','永久删除回收站文章（无法恢复）','B',16,16,0)");
-            jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES(1,1016)");
-        }
+    void discoveryPurgePermissionBaselineGrantsOnlyAdminPermissionAndMenu() {
+        assertThat(jdbc.queryForObject("SELECT permission_id FROM sys_permission WHERE permission_code='blog:article:purge'",
+                Long.class)).isEqualTo(16L);
+        assertThat(jdbc.queryForObject("SELECT m.menu_id FROM sys_menu m JOIN sys_permission p ON "
+                + "p.permission_id=m.permission_id WHERE m.menu_code='blog:article:purge' "
+                + "AND p.permission_code=m.menu_code AND m.parent_id=110 AND m.menu_type='B' AND m.is_visible=0",
+                Long.class)).isEqualTo(1016L);
+        assertThat(jdbc.queryForList("SELECT r.role_id FROM sys_role_permission r JOIN sys_permission p ON "
+                + "p.permission_id=r.permission_id WHERE p.permission_code='blog:article:purge'", Integer.class))
+                .containsExactly(1);
+        assertThat(jdbc.queryForList("SELECT r.role_id FROM sys_role_menu r JOIN sys_menu m ON "
+                + "m.menu_id=r.menu_id WHERE m.menu_code='blog:article:purge'", Integer.class))
+                .containsExactly(1);
     }
 
     @Test

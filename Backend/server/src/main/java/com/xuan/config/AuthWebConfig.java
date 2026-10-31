@@ -50,7 +50,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "GET /blog/configs", "GET /home/profile", "GET /home/social-links",
             "GET /cv/experiences", "GET /cv/skills", "GET /blog/music", "POST /blog/rss-subscriptions/unsubscribe",
             "GET /blog/rss.xml", "GET /blog/sitemap.xml", "GET /blog/messages", "POST /analytics/page-views",
-            "GET /blog/statistics", "GET /blog/authors");
+            "GET /blog/statistics", "GET /blog/authors", "POST /analytics/online/tickets");
     private final IUserService users;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
@@ -98,11 +98,15 @@ public class AuthWebConfig implements WebMvcConfigurer {
         // 2. 按请求方法和完整路径逐条放行，不能把整个 auth 或 blog 都公开。
         String path = request.getServletPath();
         String route = request.getMethod() + " " + path;
+        if ("GET /ws/online".equals(route)) {
+            return;
+        }
         if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
                 || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
                 || path.matches("/blog/(authors|categories|tags)/[^/]+")))) {
-            if (("GET /blog/messages".equals(route) || "POST /analytics/page-views".equals(route)) && request.getHeader(
+            if (("GET /blog/messages".equals(route) || "POST /analytics/page-views".equals(route)
+                    || "POST /analytics/online/tickets".equals(route)) && request.getHeader(
                     "Authorization") != null) {
                 users.requireCurrent();
             }

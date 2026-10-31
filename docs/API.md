@@ -1,16 +1,17 @@
 # DriftingLeavesV2 接口文档
 
-> **文档说明**：按业务模块介绍接口调用方式，更新日期：2026-10-31。当前 159 个路由已实现，包含第 22 章的 6 个新路由及前台 authorId 参数扩展。
+> **文档说明**：按业务模块介绍接口调用方式，更新日期：2026-11-01。当前 160 个 HTTP 路由及 1 个 WebSocket 入口已实现，包含第 22 章的 6 个新路由及前台 authorId 参数扩展。
 >
 > **维护提示**：接口统一列出基本信息、请求参数、请求示例、响应参数与响应示例，特殊规则放在接口末尾。示例使用虚构数据；普通成功状态、鉴权、分页和版本要求统一见第 0 章。
 >
-> **缓存与限流实施状态（2026-10-31）**：[0.6](#request-protection) 的完整 Redis 限流与 [0.7](#public-cache) 的 Spring Cache 公开业务缓存已接入；关联失效、并发保护和真实隔离验证见[运行说明](后端运行说明.md#spring-cache-redis)。路由保持159个。
+> **缓存与限流实施状态（2026-10-31）**：[0.6](#request-protection) 的完整 Redis 限流与 [0.7](#public-cache) 的 Spring Cache 公开业务缓存已接入；关联失效、并发保护和真实隔离验证见[运行说明](后端运行说明.md#spring-cache-redis)。该轮不新增路由；在线能力新增入口见[第 23 章](#group-23)。
 
 ---
 
 ## 目录
 
 - [按业务名称或完整路径查找全部接口](API_INDEX.md)
+- [实时在线人数接口与实现说明（2026-11-01，已实现）](实时在线人数接口规划.md)
 - [0. 通用说明](#common)
 - [0.6 接口限流覆盖与阈值](#request-protection)
 - [0.7 Redis 业务缓存范围](#public-cache)
@@ -37,6 +38,7 @@
 - [20. 操作日志](#group-20)
 - [21. 旧项目来源与迁移对照](#legacy-sources)
 - [22. 文章发现与内容管理补充](#group-22)
+- [23. 实时在线人数](#group-23)
 
 ---
 
@@ -106,7 +108,7 @@
 
 - [完整接口索引](API_INDEX.md)：按模块、业务名称或完整路径查找。
 - [文章场景速查](#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
-- 当前 **159 个路由已实现**；[第 22 章](#group-22)的 **6 个新路由和前台 authorId 参数扩展**均已接入业务实现。
+- 当前 **160 个 HTTP 路由及 1 个 WebSocket 入口已实现**；[第 22 章](#group-22)的 **6 个新路由和前台 authorId 参数扩展**均已接入业务实现。
 - 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，部署与历史验收见 [后端运行说明](后端运行说明.md)。
 
 <a id="request-protection"></a>
@@ -132,6 +134,8 @@
 | `PUT /me/rss-subscription` 申请/重发 | 共用60秒5次；IP、用户 | 已实现 |
 | `POST /me/rss-subscription/confirm` | 60秒10次；IP、用户，限流在消费票据之前 | 已实现 |
 | `POST /blog/rss-subscriptions/unsubscribe` | 60秒30次/IP，跨票据累计；保持有效票据退订幂等 | 已实现 |
+| `POST /analytics/online/tickets` | 60秒120次/可信IP、30次/已验证浏览器统计键 | 已实现，两个维度各累计一次 |
+| WebSocket `GET /ws/online` Upgrade | 60秒120次/可信IP；每连接业务消息60秒30条 | 已实现；超限握手429与Retry-After，消息超限1008关闭 |
 | `POST /analytics/page-views` | 60秒60次/IP、30次/fingerprint；携带有效会话时另限60次/用户；home/blog/cv共用窗口 | 已实现，在行锁、地域解析和写入前按独立 IP、fingerprint、可选用户原子累计 |
 | 公开内容GET公共窗口 | 60秒120次/IP；覆盖 `/blog/articles`、文章详情、归档、热门榜、分类/标签列表与详情、作者列表与详情、评论列表、留言列表、友链、配置、音乐、统计、RSS、站点地图及 `/home/profile`、`/home/social-links`、`/cv/experiences`、`/cv/skills` | 已实现，所有这些入口共享，冷/热缓存同样计数 |
 | `GET /blog/articles` 且带 `keyword` | 另限60秒10次/IP，跨关键词、页码及作者/分类/标签筛选累计 | 已实现，跨关键词和筛选累计 |
@@ -6099,6 +6103,7 @@ Cache-Control: no-store
 | 400 | OAUTH_STATE_INVALID | state/浏览器/操作不匹配、过期或已消费；不泄露哪一项失败 |
 | 400 | OAUTH_DENIED | 用户在平台取消授权 |
 | 400 | SUBSCRIPTION_TICKET_INVALID | 订阅确认或邮件退订票据无效、过期、复用或与当前用户/邮箱/轮次不符；统一错误，不泄露匹配项 |
+| WebSocket | ONLINE_TICKET_INVALID | 在线票据格式错、过期、复用或来源/用途不匹配；1008 关闭，重新申请票据 |
 | 401 | UNAUTHENTICATED | Token 缺失、失效、过期或被注销 |
 | 401 | AUTH_FAILED | 密码登录名不存在、密码错误或无本站密码，统一文案“账号或密码错误” |
 | 403 | ACCOUNT_DISABLED | 已确认凭据身份后发现本站账号禁用 |
@@ -10063,7 +10068,7 @@ If-Revision: "<revision-from-trash-detail>"
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-仅允许永久删除回收站文章；正常文章返回 409，已不存在的目标返回 404。delete 与 purge 分别检查权限范围，详情查询仍需 query 权限。新库基线已显式授予内置管理员角色 purge；已有 V2 库使用[权限增量脚本](../sql/migrations/20261031_article_purge_permission.sql)，不重新导入建库基线，不自动授予 author/member。
+仅允许永久删除回收站文章；正常文章返回 409，已不存在的目标返回 404。delete 与 purge 分别检查权限范围，详情查询仍需 query 权限。[初始化脚本](../sql/drifting_leaves_v2.sql)已包含 purge 权限及菜单，显式授予内置管理员角色，不授予 author/member。项目尚未上线，不再维护单独的权限增量脚本。
 
 | 数据 | 删除影响 |
 | --- | --- |
@@ -10080,3 +10085,63 @@ If-Revision: "<revision-from-trash-detail>"
 ### 22.8 实施说明
 
 本章 6 个新路由已计入 159 个已实现接口，authorId 为既有路由扩展。开发范围与验收条件见 [补充业务验收](API_CONTRACT.md#planned-acceptance)，实际验证记录见[后端运行说明](后端运行说明.md)。
+
+
+<a id="group-23"></a>
+
+## 23. 实时在线人数
+
+Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点统计”卡片展示三项人数。Admin 不参与。首期仅单后端实例，在线成员不写 MySQL，不改变 PV/UV 或文章阅读数。完整去重、消息和生命周期约定见[在线说明](实时在线人数接口规划.md)。
+
+<a id="api-160"></a>
+
+### 23.1 申请一次性在线票据
+
+| 项目 | 约定 |
+| --- | --- |
+| 接口 | `POST /api/v1/analytics/online/tickets` |
+| 身份 | 公开、可选 Bearer；携带时必须属于启用账号的有效本站会话 |
+| 成功 | HTTP 201，`Cache-Control: no-store`，无版本头 |
+| 请求体 | `fingerprint`：ASCII `[A-Za-z0-9-]{16,150}`；`siteCode`：`home/blog/cv`；`pagePath`：S(2048)站内路径，不能包含查询/fragment |
+| 来源 | 必须提供 Origin，在 `app.auth.allowed-origins` 内且匹配 `app.sites` 的站点与最长路径前缀 |
+| 参数 | 三个 Body 字段均必填；拒绝查询参数、未知/重复字段和类型错误 |
+| 限流 | 60秒每可信IP120次、每站点/Origin/fingerprint统计键30次；429带Retry-After |
+
+```http
+POST /api/v1/analytics/online/tickets
+Origin: https://blog.example.test
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"fingerprint":"d681988a-cbd0-4ef6-bdec-f84bfa234e16","siteCode":"blog","pagePath":"/"}
+```
+
+匿名请求省略 Authorization；Token 只存内存并仅经 HTTP Header 发送。示例 Origin 必须在部署中明确允许。
+
+```json
+{"code":"OK","msg":"成功","data":{"ticket":"<43-character-single-use-ticket>","expiresIn":30},"errors":[]}
+```
+
+票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。无效会话401、禁用账号403/ACCOUNT_DISABLED、来源/站点不匹配403/FORBIDDEN；Redis或身份查询不可用503，不降级匿名签发。
+
+### 23.2 加入原生 WebSocket 并接收快照
+
+`ws(s)://<API主机>/api/v1/ws/online`；从既有 API 地址推导，只映射协议并追加 `/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。Cookie 不证明身份。建连后五秒内发送：
+
+```json
+{"type":"join","ticket":"<43-character-single-use-ticket>"}
+```
+
+票据绑定 Origin，原会话与启用账号在 join 时重查，完整载荷比较后原子消费；同一连接只能加入一次。成功立即收到快照，后续人数变化广播：
+
+```json
+{"type":"online.count","code":"OK","msg":"成功","data":{"onlineCount":"8","userCount":"3","guestCount":"5","serverTime":"2026-11-01T02:00:00.000Z"},"errors":[]}
+```
+
+三项人数均为非负、无前导零的十进制字符串。登录账号按本站 userId 去重；匿名按已经核验的站点、Origin、fingerprint 去重，同键存在有效登录连接时不重复计访客。`onlineCount=userCount+guestCount`。不返回用户、IP、连接清单或凭据。
+
+客户端每25秒发送 `{"type":"ping"}`，服务端单发 `{"type":"pong","code":"OK","msg":"成功","data":null,"errors":[]}`。10秒等不到pong则关闭旧连接并重签票据；服务端75秒未收到合法心跳即过期，每5秒回收。每25秒重查原登录会话与账号，正常依赖条件下撤销最晚约30秒移除；不会因认证超过300秒误踢，也不续期Token。
+
+单消息最多1KiB，只接受声明的JSON文本字段；二进制/未知/重复字段、重复join、加入前ping等拒绝。错误消息 `type=error`、`data=null`；其余包络保持 `code/msg/errors`。票据无效用 `ONLINE_TICKET_INVALID`，身份失效用 `UNAUTHENTICATED/ACCOUNT_DISABLED`，协议错误用 `VALIDATION_ERROR`，频率超限用 `RATE_LIMITED`，依赖失败用 `SERVICE_UNAVAILABLE`。关闭码分别为1008（策略）、1009（超大帧）、4000（心跳）、1011（服务失败）、1000（主动离开）。协议错停止自动重试，频率超限至少等待60秒；其他断线使用1/2/5/10/30秒退避及少量随机延迟，HTTP429尊重Retry-After。
+
+Blog连接由实际 `view/Layout/index.vue` 管理，站点统计卡片只读取快照；密码/OAuth的 `acceptSession` 和 `clearSession` 统一重连。初始显示连接中，失败显示中断，不把错误或旧快照当作实时0人数。Home/Cv仅匿名登记、没有人数展示；三个页脚和后台均不展示。

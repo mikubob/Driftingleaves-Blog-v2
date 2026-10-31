@@ -4,6 +4,8 @@
 
 本文件保留 2026-10-29 的依赖规划及核查记录。2026-10-30 已落地身份与系统管理、19表实体（原18表加操作日志）、配置与测试，版本以四份POM为准。共享配置、平台客户端、Redis授权存储、会话和限流已下沉common；本次进一步按明确需求加入OSS客户端、注解/切面、IP/Markdown工具和虚拟线程，第4节及依赖落点随之更新。当前运行与验证以 [后端运行说明](后端运行说明.md) 为准，下面第9节早期无源码结果是历史记录。
 
+2026-11-01 补充：[实时在线人数接口规划](实时在线人数接口规划.md)已在 server 加入由当前 Boot BOM 管理的 `spring-boot-starter-websocket`，仅使用原生文本消息与Spring会话发送保护；不升级框架、不引入STOMP/SockJS或消息代理。下文“省略 WebSocket/在线人数”保留为历史取舍，新需求以当前在线实现说明为准；不涉及 OSHI 或服务器监控。
+
 ## 1. 建议基线与结论
 
 沿用老项目的三个模块职责，新模块目录及 artifactId 按用户指定为 **common、entity、server**（entity 对应老项目 DL-pojo）。继续采用 Spring MVC + MyBatis-Plus + MySQL；鉴权固定为 **Sa-Token + JustAuth**，会话及 OAuth state 使用 Redis。只部署一个后端应用，不拆微服务，不增加 auth/system/blog 等 Maven 模块。

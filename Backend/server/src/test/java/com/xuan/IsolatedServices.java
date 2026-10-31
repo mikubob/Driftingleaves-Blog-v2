@@ -31,7 +31,7 @@ final class IsolatedServices implements AutoCloseable {
         directory = Files.createTempDirectory(Path.of("target"), "identity-it-").toAbsolutePath();
         mysqlPort = freePort();
         redisPort = freePort();
-        jdbcUrl = "jdbc:mysql://127.0.0.1:" + mysqlPort + "/drifting_leaves_v2?connectionTimeZone=UTC" +
+        jdbcUrl = "jdbc:mysql://127.0.0.1:" + mysqlPort + "/driftingleaves?connectionTimeZone=UTC" +
                 "&forceConnectionTimeZoneToSession=true&allowPublicKeyRetrieval=true&sslMode=DISABLED";
         Path mysql = Path.of(System.getProperty("test.mysql.bin")).toAbsolutePath();
         String base = mysql.getParent().getParent().toString().replace('\\', '/');
@@ -67,7 +67,7 @@ final class IsolatedServices implements AutoCloseable {
     private void waitForMysql() throws Exception {
         long deadline = System.nanoTime() + Duration.ofSeconds(45).toNanos();
         while (System.nanoTime() < deadline) {
-            try (var connection = DriverManager.getConnection(jdbcUrl.replace("/drifting_leaves_v2?", "/?"), "root",
+            try (var connection = DriverManager.getConnection(jdbcUrl.replace("/driftingleaves?", "/?"), "root",
                     "")) {
                 ScriptUtils.executeSqlScript(connection, new FileSystemResource("../../sql/drifting_leaves_v2.sql"));
                 return;

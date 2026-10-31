@@ -36,7 +36,7 @@ import java.util.Set;
         com.xuan.controller.me.SubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
         FeedController.class, MessageController.class,
         com.xuan.controller.me.MessageController.class, com.xuan.controller.admin.MessageController.class,
-        AnalyticsController.class,
+        AnalyticsController.class, com.xuan.controller.blog.OnlineController.class,
         VisitorController.class, PageViewController.class,
         StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
 public class DisplayRequestAdvice {

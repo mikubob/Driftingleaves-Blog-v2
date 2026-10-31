@@ -106,6 +106,25 @@ public class SessionManager {
         throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
     }
 
+    /** 长连接按原会话引用核验，不刷新有效期，也不要求五分钟内重新认证。 */
+    public void requireOriginalActive(long userId, String tokenHash, long expiresAt) {
+        if (clock.millis() >= expiresAt) {
+            throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
+        }
+        for (String token : StpUtil.getTokenValueListByLoginId(userId)) {
+            if (TokenUtils.digest(token).equals(tokenHash)) {
+                requireActive(token, userId);
+                return;
+            }
+        }
+        throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
+    }
+
+    /** 只读取剩余秒数，在线心跳不能延长本站会话。 */
+    public long remainingSeconds(String token) {
+        return StpUtil.getStpLogic().getTokenTimeout(token);
+    }
+
     /**
      * 撤销该用户的所有本站会话，安全变更后要求重新登录。
      */

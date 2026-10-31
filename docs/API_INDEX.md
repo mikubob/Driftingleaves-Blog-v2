@@ -1,12 +1,21 @@
 # 接口索引
 
-按业务名称或完整路径查找；调用参数与示例见 [接口文档](API.md)。共 159 个已实现路由，前台 authorId 参数扩展也已实现。
+按业务名称或完整路径查找；调用参数与示例见 [接口文档](API.md)。共 160 个已实现 HTTP 路由，另有 1 个 WebSocket 入口，前台 authorId 参数扩展也已实现。
 
-2026-10-31补充了[限流覆盖、阈值与实施状态](API.md#request-protection)、[Redis业务缓存范围与TTL](API.md#public-cache)，以及[缓存失效、鉴权边界与后续验收](API_CONTRACT.md#cache-contract)。业务查询缓存与补充限流现已接入；实际隔离验收及故障恢复步骤见[运行说明](后端运行说明.md#spring-cache-redis)。下表仍为原有159个业务路由，不新增清缓存接口。
+2026-10-31补充了[限流覆盖、阈值与实施状态](API.md#request-protection)、[Redis业务缓存范围与TTL](API.md#public-cache)，以及[缓存失效、鉴权边界与后续验收](API_CONTRACT.md#cache-contract)。业务查询缓存与补充限流现已接入；实际隔离验收及故障恢复步骤见[运行说明](后端运行说明.md#spring-cache-redis)。该轮缓存实现没有新增清缓存接口；当前在线能力另增 1 个 HTTP 与 1 个 WebSocket 入口。
 
 新增、更新、删除、下架和回收后具体清哪些缓存，见[写接口缓存删除清单](API.md#cache-lifecycle)；对应参考项目的方法与CacheEvict缓存名见[源码经验对照](API_CONTRACT.md#reference-cache-eviction)，包含内部写库同样清理的规则。
 
 简单缓存指定采用[Spring Cache注解方案](API_CONTRACT.md#spring-cache-annotations)：Cacheable读取、CacheEvict增删改清理、Caching联合清理，RedisCacheManager统一管理TTL；已启用；关联失效、事务与并发保护统一由缓存基础设施执行。
+
+## 实时在线人数
+
+以下入口已实现；Home/Blog/Cv 参与三站合计，只有 Blog 的站点统计卡片展示三项人数。完整口径、消息、心跳和限制见[在线说明](实时在线人数接口规划.md)。
+
+| 业务 | 方法与完整路径 | 状态 |
+| --- | --- | --- |
+| [申请一次性在线连接票据](实时在线人数接口规划.md#online-ticket) | `POST /api/v1/analytics/online/tickets` | 已实现 |
+| [加入在线统计并接收实时人数](实时在线人数接口规划.md#online-websocket) | WebSocket `/api/v1/ws/online` | 已实现 |
 
 ## 1. 认证与第三方授权
 

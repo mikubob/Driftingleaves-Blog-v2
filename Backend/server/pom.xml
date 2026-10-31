@@ -43,6 +43,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc</artifactId>
         </dependency>
+        <!-- 在线统计使用原生 WebSocket，版本跟随现有 Boot BOM。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-websocket</artifactId>
+        </dependency>
         <!-- 用 Jakarta Validation 实际执行 DTO 上声明的校验。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

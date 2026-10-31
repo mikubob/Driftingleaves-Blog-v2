@@ -13,8 +13,9 @@ AGENT.md
 .env.*
 !.env.example
 !.env.*.example
-/Backend/server/src/main/resources/application-local.yml
-/Backend/server/src/main/resources/application-local.yaml
+# application主配置和各环境配置仅保留本地，不上传GitHub。
+/Backend/server/src/main/resources/application*.yml
+/Backend/server/src/main/resources/application*.yaml
 
 # 个人编辑器和操作系统文件。
 .idea/

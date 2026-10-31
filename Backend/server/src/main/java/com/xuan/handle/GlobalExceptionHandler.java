@@ -6,6 +6,8 @@ import cn.dev33.satoken.exception.NotRoleException;
 import com.xuan.exception.BusinessException;
 import com.xuan.result.Result;
 import jakarta.validation.ConstraintViolationException;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.MediaType;
@@ -26,11 +28,13 @@ import org.springframework.web.servlet.NoHandlerFoundException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.List;
+import java.sql.SQLException;
 
 /**
  * 把错误转成 HTTP 响应，只给用户能看的文案，不带输入、SQL、平台响应或堆栈。
  */
 @RestControllerAdvice
+@Slf4j
 public class GlobalExceptionHandler {
 
     /** 容器 multipart 上限也转换为统一 413，不回显内部临时目录。 */
@@ -111,7 +115,16 @@ public class GlobalExceptionHandler {
      * 数据库或事务不可用时返回 503，不伪装成成功结果。
      */
     @ExceptionHandler({DataAccessException.class, TransactionException.class})
-    public ResponseEntity<Result<Void>> unavailable() {
+    public ResponseEntity<Result<Void>> unavailable(Exception exception) {
+        // 只记录诊断码和类型，异常消息可能包含 SQL、参数或连接凭据。
+        Throwable cause = NestedExceptionUtils.getMostSpecificCause(exception);
+        if (cause instanceof SQLException sql) {
+            log.error("基础服务异常：类型={}，根因类型={}，SQLState={}，数据库错误码={}",
+                    exception.getClass().getName(), cause.getClass().getName(), sql.getSQLState(), sql.getErrorCode());
+        } else {
+            log.error("基础服务异常：类型={}，根因类型={}",
+                    exception.getClass().getName(), cause.getClass().getName());
+        }
         return error(503, "SERVICE_UNAVAILABLE", "基础服务暂不可用");
     }
 
