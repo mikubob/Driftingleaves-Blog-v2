@@ -131,7 +131,7 @@ export async function request(path, { body, revision, captcha, blob = false, ...
       message = '缺少编辑版本，请重新加载详情后操作。'
     }
     const error = new ApiError(message, response.status, result?.code, errors)
-    throw response.status >= 500 ? reportRequestFailure(error, path) : error
+    throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED' ? reportRequestFailure(error, path) : error
   }
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
     throw new Error('接口响应格式不正确。')

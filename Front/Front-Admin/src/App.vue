@@ -13,19 +13,19 @@ watch(
     }
   },
 )
-const requestFailure = ref('')
-setRequestFailureHandler((error) => {
+const requestFailure = ref(false)
+setRequestFailureHandler(() => {
   if (requestFailure.value) {
     return
   }
-  requestFailure.value = error.message
+  requestFailure.value = true
   document.title = '404 - 页面不存在'
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" :message="requestFailure" />
+  <RequestFailure v-if="requestFailure" />
   <div v-else>
     <router-view />
   </div>

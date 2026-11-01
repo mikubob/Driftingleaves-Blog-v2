@@ -87,19 +87,19 @@ onBeforeUnmount(() => {
   controller.abort()
   colorScheme.removeEventListener('change', followSystemTheme)
 })
-const requestFailure = ref('')
-setRequestFailureHandler((error) => {
+const requestFailure = ref(false)
+setRequestFailureHandler(() => {
   if (requestFailure.value) {
     return
   }
-  requestFailure.value = error.message
+  requestFailure.value = true
   document.title = '404 - 页面不存在'
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" :message="requestFailure" />
+  <RequestFailure v-if="requestFailure" />
   <div v-else>
     <a class="skip-link no-print" href="#resume">跳至简历内容</a>
     <div class="toolbar no-print" aria-label="简历工具">

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { apiRoot } from './api.js'
+import { reportNotFound } from '../../shared/notFound.mjs'
 import { allowedPages, pageRegistry } from './navigation.js'
 import { session } from './session.js'
 import RequestFailure from './components/RequestFailure.vue'
@@ -102,6 +104,12 @@ router.beforeEach((to) => {
   }
   document.title = `${to.meta.title || '管理控制台'} · Drifting Leaves`
   return true
+})
+
+router.afterEach((to, from, failure) => {
+  if (!failure && to.name === 'not-found') {
+    void reportNotFound(apiRoot, 'admin')
+  }
 })
 
 export default router

@@ -1,4 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { apiRoot } from './api.js'
+import { reportNotFound } from '../../shared/notFound.mjs'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -30,7 +32,7 @@ export const router = createRouter({
     { path: '/search', redirect: (to) => ({ path: '/', query: { search: to.query.keyword || '' } }) },
     { path: '/article/:slug', redirect: (to) => `/articles/${encodeURIComponent(to.params.slug)}` },
     { path: '/403', component: () => import('./view/Forbidden/index.vue') },
-    { path: '/:pathMatch(.*)*', component: () => import('./view/NotFound/index.vue') },
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./view/NotFound/index.vue') },
   ],
   scrollBehavior(to, from, saved) {
     if (saved) {
@@ -41,4 +43,10 @@ export const router = createRouter({
     }
     return { top: 0 }
   },
+})
+
+router.afterEach((to, from, failure) => {
+  if (!failure && to.name === 'not-found') {
+    void reportNotFound(apiRoot, 'blog')
+  }
 })

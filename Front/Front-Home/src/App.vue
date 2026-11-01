@@ -8,7 +8,7 @@ import { getProfile, getSocialLinks, getSiteConfig, recordPageView } from './api
 import { createPageView, getFingerprint } from './tracking.js'
 import HomeIcon from './components/HomeIcon.vue'
 
-const requestFailure = ref('')
+const requestFailure = ref(false)
 const connection = createOnlineConnection({
   apiRoot, requestTicket: getOnlineTicket,
   payload: () => ({ fingerprint: getFingerprint(window), siteCode: 'home', pagePath: window.location.pathname }),
@@ -87,18 +87,18 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => controller.abort())
-setRequestFailureHandler((error) => {
+setRequestFailureHandler(() => {
   if (requestFailure.value) {
     return
   }
-  requestFailure.value = error.message
+  requestFailure.value = true
   document.title = '404 - 页面不存在'
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" :message="requestFailure" />
+  <RequestFailure v-if="requestFailure" />
   <div v-else>
     <a class="skip-link" href="#home">跳至主页内容</a>
     <div class="home-container">

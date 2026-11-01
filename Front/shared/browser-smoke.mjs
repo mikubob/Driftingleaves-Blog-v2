@@ -6,7 +6,11 @@ async (page) => {
   page.on('pageerror', (error) => errors.push(error.message))
   const results = []
   let failure = null
+  let notFoundReports = 0
   await page.route('**/api/v1/**', async (route) => {
+    if (route.request().url().endsWith('/security/not-found')) {
+      notFoundReports += 1
+    }
     if (failure === 'network') {
       return route.abort('failed')
     }
@@ -14,8 +18,10 @@ async (page) => {
       return route.fulfill({
         status: failure,
         headers: { 'Retry-After': '17' },
-        contentType: 'text/html',
-        body: '<html>模拟网关错误</html>',
+        contentType: failure === 403 ? 'application/json' : 'text/html',
+        body: failure === 403
+          ? JSON.stringify({ code: 'ACCESS_BLOCKED', msg: '访问暂时受限', data: null, errors: [] })
+          : '<html>模拟网关错误</html>',
       })
     }
     const url = new URL(route.request().url())
@@ -26,6 +32,11 @@ async (page) => {
       total: '0', totalPages: '0', records: [],
     }
     let data = []
+    if (path === '/admin/me') {
+      data = { userId: '1', username: 'test_admin', nickname: '测试管理员', status: 1 }
+    } else if (path === '/admin/me/capabilities') {
+      data = { roleCodes: ['admin'], permissionCodes: ['admin:access'], dataScopes: { 'admin:access': 'ALL' } }
+    }
     if (path.endsWith('/auth/captcha')) {
       data = { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 }
     }
@@ -55,13 +66,14 @@ async (page) => {
     ['Admin', 5176, '.login-page'],
   ]) {
     await page.setViewportSize({ width: 390, height: 844 })
-    for (const status of [500, 502, 503, 429, 'network']) {
+    for (const status of [500, 502, 503, 429, 403, 'network']) {
       failure = status
       await page.goto(`http://127.0.0.1:${port}/`)
       await page.getByRole('heading', { name: '404', exact: true }).waitFor()
       await page.waitForFunction(() => document.title === '404 - 页面不存在')
-      if (status === 429) {
-        await page.getByRole('alert').filter({ hasText: '17 秒' }).waitFor()
+      const message = await page.locator('.error-desc').innerText()
+      if (message !== '你访问的页面已经走丢了') {
+        throw new Error(`${name} 错误页泄露接口错误：${message}`)
       }
       const dimensions = await page.locator('.error-page').evaluate((element) => ({
         height: element.getBoundingClientRect().height,
@@ -80,8 +92,35 @@ async (page) => {
       results.push({ name, status, recovered: true })
     }
   }
+  if (notFoundReports !== 0) {
+    throw new Error('接口故障错误页重复上报了前端404')
+  }
+  for (const path of ['/unknown-one', '/unknown-two']) {
+    await page.goto(`http://127.0.0.1:5174${path}`)
+    await page.getByRole('heading', { name: '404', exact: true }).waitFor()
+    await page.waitForLoadState('networkidle')
+  }
+  await page.goto('http://127.0.0.1:5176/unknown-anonymous')
+  await page.locator('.login-page').waitFor()
+  if (notFoundReports !== 2) {
+    throw new Error('管理端未登录的导航应保留登录跳转，不当作404上报')
+  }
+  // 恢复虚构会话，身份和权限仍通过上面的 HTTP 夹具读取。
+  await page.evaluate(() => localStorage.setItem('dl-admin-session', JSON.stringify({
+    accessToken: 'test-not-found-browser-token', expiresAt: Date.now() + 60000,
+  })))
+  for (const path of ['/unknown-one', '/unknown-two']) {
+    await page.goto(`http://127.0.0.1:5176${path}`)
+    await page.getByRole('heading', { name: '404', exact: true }).waitFor()
+    await page.waitForLoadState('networkidle')
+  }
+  if (notFoundReports !== 4) {
+    throw new Error(`两个路由端的未知地址应各上报一次，实际${notFoundReports}次`)
+  }
+  await page.screenshot({ path: 'output/playwright/not-found-fixed.png', fullPage: true })
+  await page.evaluate(() => localStorage.removeItem('dl-admin-session'))
   if (errors.length) {
     throw new Error(JSON.stringify(errors))
   }
-  return { passed: true, results, runtimeErrors: errors }
+  return { passed: true, results, notFoundReports, runtimeErrors: errors }
 }

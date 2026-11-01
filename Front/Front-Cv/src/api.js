@@ -128,7 +128,7 @@ async function request(path, signal, options = {}) {
   if (!response.ok || result?.code !== 'OK') {
     const error = Object.assign(new Error(isText(result?.msg) ? result.msg : `请求失败（HTTP ${response.status}）。`),
       { status: response.status, code: result?.code })
-    throw response.status >= 500 ? reportRequestFailure(error, path) : error
+    throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED' ? reportRequestFailure(error, path) : error
   }
   assertResponse(Object.hasOwn(result, 'data'))
   return result.data

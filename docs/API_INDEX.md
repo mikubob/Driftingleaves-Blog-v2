@@ -2,9 +2,14 @@
 
 先选择端，再按业务或完整路径查找。参数、响应、示例和特殊规则见 [接口文档](API.md)。
 
-当前共 190 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
+当前共 192 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
 
-**29 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项，当前共 190 个路由（Admin 122 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
+**29 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项；另增未知路由上报2项，当前共 192 个路由（Admin 123 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
+
+| 接口 | 方法与完整路径 |
+| --- | --- |
+| [Blog 未知路由上报](API.md#not-found-protection) | `POST /api/v1/blog/security/not-found` |
+| [Admin 未知路由上报](API.md#not-found-protection) | `POST /api/v1/admin/security/not-found` |
 
 ## 1. [Admin 管理端](API.md#client-admin)
 

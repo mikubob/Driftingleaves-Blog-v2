@@ -27,6 +27,7 @@ for (const [name, read] of [
       () => new Response(JSON.stringify({ code: 'SERVICE_UNAVAILABLE', msg: '服务暂不可用' }), { status: 503 }),
       () => new Response('Too Many Requests', { status: 429, headers: { 'Retry-After': '17' } }),
       () => new Response('invalid JSON', { status: 200 }),
+      () => new Response(JSON.stringify({ code: 'ACCESS_BLOCKED', msg: '访问暂时受限' }), { status: 403 }),
     ]) {
       let calls = 0
       globalThis.fetch = async () => {

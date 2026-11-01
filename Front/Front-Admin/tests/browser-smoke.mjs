@@ -667,8 +667,8 @@ async function smoke(page) {
     await page.reload()
     await page.getByRole('heading', { name: '404', exact: true }).waitFor()
     const message = await page.locator('.error-desc').innerText()
-    if (requests !== 1 || (failure === 429 && !message.includes('17 秒'))) {
-      throw new Error(`异常请求被重试或限流等待时间丢失：${JSON.stringify({ failure, requests, message })}`)
+    if (requests !== 1 || message !== '你访问的页面已经走丢了') {
+      throw new Error(`异常请求被重试或错误页泄露接口错误：${JSON.stringify({ failure, requests, message })}`)
     }
     if (await page.title() !== '404 - 页面不存在') {
       throw new Error('异常页标题不正确')

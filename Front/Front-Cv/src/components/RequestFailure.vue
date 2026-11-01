@@ -1,9 +1,6 @@
 <script setup>
 import { onMounted } from 'vue'
 
-/** 复用参考项目的全屏 404 样式，异常原因只按文本展示。 */
-defineProps({ message: { type: String, default: '' } })
-
 onMounted(() => {
   document.title = '404 - 页面不存在'
 })
@@ -14,7 +11,7 @@ onMounted(() => {
     <div class="error-content">
       <h1 class="error-code">404</h1>
       <p class="error-title">页面不存在</p>
-      <p class="error-desc">{{ message || '你访问的页面已经走丢了' }}</p>
+      <p class="error-desc">你访问的页面已经走丢了</p>
       <a href="/" class="error-btn">返回首页</a>
     </div>
   </main>

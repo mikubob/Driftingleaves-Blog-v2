@@ -1661,6 +1661,8 @@ class ArticleIntegrationTest {
         code(call("PUT", likePath(article), token, null), 200, "OK");
         for (String state : List.of("status=0", "status=2", "visibility=2", "deleted_at=UTC_TIMESTAMP(3)",
                 "status=0,publish_time=NULL", "publish_time=DATE_ADD(UTC_TIMESTAMP(3),INTERVAL 1 DAY)")) {
+            // 各状态作为独立访问场景；反复404的封禁另由专项测试验证。
+            redis.delete(redis.keys("dl:article-test:abuse:ip:*"));
             jdbc.update(
                     "UPDATE blog_article SET status=1,visibility=1,deleted_at=NULL,publish_time=DATE_SUB" +
                      "(UTC_TIMESTAMP(3),INTERVAL 1 DAY) WHERE article_id=?",
@@ -5670,6 +5672,10 @@ class ArticleIntegrationTest {
         code(call("GET", "/blog/articles/Another-slug", null, null), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class, article)).isEqualTo(60);
         for (int n = 0; n < 120; n++) {
+            // 这里单独核对文件的120次窗口，避免缺失文件先耗尽独立的404预算。
+            if (n % 20 == 0) {
+                redis.delete(redis.keys("dl:article-test:abuse:ip:*"));
+            }
             code(call("GET", "/blog/articles/" + article + "/files/" + (n + 1) + "/content", null, null), 404, "NOT_FOUND");
         }
         code(call("GET", "/blog/articles/" + article + "/files/999999/content", null, null), 429, "RATE_LIMITED");

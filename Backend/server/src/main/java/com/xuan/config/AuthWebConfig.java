@@ -46,6 +46,7 @@ import java.util.Set;
 public class AuthWebConfig implements WebMvcConfigurer {
 
     private static final Set<String> PUBLIC = Set.of(
+            "POST /admin/security/not-found", "POST /blog/security/not-found",
             "GET /admin/auth/captcha", "GET /blog/auth/captcha",
             "POST /admin/auth/register", "POST /admin/auth/login", "POST /admin/auth/logout",
             "GET /admin/auth/oauth/providers", "POST /admin/auth/oauth/exchange",
@@ -140,6 +141,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     /** 登录与本人设置沿用身份规则，后台业务才要求入口和业务权限。 */
     private boolean isAdminBusinessPath(String path) {
         return path.startsWith("/admin/") && !path.startsWith("/admin/auth/")
+                && !path.equals("/admin/security/not-found")
                 && !path.equals("/admin/me") && !path.startsWith("/admin/me/");
     }
 
