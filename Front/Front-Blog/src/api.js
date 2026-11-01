@@ -190,7 +190,7 @@ function validateData(path, data, method) {
   }
 }
 
-export class ApiError extends Error {
+class ApiError extends Error {
   constructor(message, status, code) {
     super(message)
     this.status = status

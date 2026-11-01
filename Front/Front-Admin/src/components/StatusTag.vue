@@ -1,5 +1,5 @@
 <script setup>
-const props = defineProps({ value: Number, kind: { type: String, default: 'display' } })
+defineProps({ value: Number, kind: { type: String, default: 'display' } })
 const labels = {
   display: { 0: '已隐藏', 1: '展示中' },
   enabled: { 0: '已禁用', 1: '已启用' },

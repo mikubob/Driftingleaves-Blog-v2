@@ -1,3 +1,0 @@
-[    4147ms] [ERROR] Failed to load resource: the server responded with a status of 400 (Bad Request) @ http://127.0.0.1:5176/api/v1/admin/articles/9007199254741002/status:0
-[    5692ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5176/api/v1/admin/articles/9007199254741000:0
-[  101779ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:5176/api/v1/admin/articles/9007199254741000:0

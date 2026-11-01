@@ -255,14 +255,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     /** {@inheritDoc} */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:message", permission = "blog:message:moderate", targetIdArgument = 0)
-    public void deleteAdmin(long id) {
-        deleteBatch(List.of(Long.toString(id)));
-    }
-
-    /** {@inheritDoc} */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
     @RateLimit(value = "message-reply", limit = 10, dimension = RateLimit.Dimension.USER)
     public MessagePrivateVO replyAdmin(long id, MessageEditDTO request) {

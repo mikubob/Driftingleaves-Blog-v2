@@ -1,7 +1,7 @@
 <script setup>
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getPage, isId, pageNumber, request } from '@/api.js'
+import { getPage, pageNumber, request } from '@/api.js'
 import { articleView } from '@/api/presentation.js'
 import { useResource } from '@/composables/useResource.js'
 import ArticleCard from '@/components/ArticleCard.vue'
@@ -30,13 +30,11 @@ const listing = useResource(() => route.fullPath.split('#')[0], async (signal) =
   return getPage('/blog/articles', params, signal)
 })
 const articles = computed(() => listing.data?.records.map(articleView) || [])
-const total = computed(() => listing.data?.total || '0')
 const loading = computed(() => listing.loading)
 function handlePageChange(page) {
   router.push({ query: { ...route.query, page: String(page) } })
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-const handlePage = handlePageChange
 </script>
 
 <template>

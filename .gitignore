@@ -17,6 +17,12 @@ AGENT.md
 /Backend/server/src/main/resources/application*.yml
 /Backend/server/src/main/resources/application*.yaml
 
+# 浏览器检查、临时输出与 JVM 崩溃记录。
+/.playwright-cli/
+/output/
+/Backend/**/hs_err_pid*.log
+/Backend/**/replay_pid*.log
+
 # 个人编辑器和操作系统文件。
 .idea/
 .vscode/

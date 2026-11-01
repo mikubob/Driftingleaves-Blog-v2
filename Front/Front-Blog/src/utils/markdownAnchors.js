@@ -1,4 +1,4 @@
-export * from '../shared/markdownAnchors.mjs'
+export { findFragmentTarget } from '../shared/markdownAnchors.mjs'
 import { uniqueHeadingId } from '../shared/markdownAnchors.mjs'
 
 /** 为 HTML 回退内容补齐缺失标题 ID，保留服务端已有 ID 并避开重复。 */

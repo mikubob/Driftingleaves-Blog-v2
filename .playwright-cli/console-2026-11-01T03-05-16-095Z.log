@@ -1,1 +1,0 @@
-[   15533ms] [ERROR] Failed to load resource: the server responded with a status of 412 (Precondition Failed) @ http://127.0.0.1:5176/api/v1/admin/articles/batch-status:0

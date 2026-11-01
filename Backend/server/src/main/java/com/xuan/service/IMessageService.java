@@ -48,9 +48,6 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 实际转为通过后提交，再使用已确认订阅发送提醒。 */
     ResourceVersion<MessagePrivateVO> review(long id, int status, String revision);
 
-    /** ALL后台管理删除目标留言及其全部子回复。 */
-    void deleteAdmin(long id);
-
     /** 用实际后台操作者身份回复，继承完整私密范围。 */
     MessagePrivateVO replyAdmin(long id, MessageEditDTO request);
     /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */

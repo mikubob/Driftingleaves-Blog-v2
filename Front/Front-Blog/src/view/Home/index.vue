@@ -60,7 +60,6 @@ function handlePageChange(page) {
   router.push({ query: { ...route.query, page: String(page) } })
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
-const handlePage = handlePageChange
 </script>
 
 <template>
