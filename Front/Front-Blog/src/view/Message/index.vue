@@ -58,7 +58,9 @@ async function handleSubmit() {
     const body = { content: form.value.content.trim(), contentFormat: form.value.isMarkdown ? 1 : 0, notifyReply: form.value.isNotice ? 1 : 0 }
     let result
     if (editTarget.value) {
-      result = await request('/blog/me/messages/' + editTarget.value.id, { method: 'PUT', revision: editTarget.value.revision, body })
+      result = await request('/blog/me/messages/' + editTarget.value.id, {
+        method: 'PUT', revision: editTarget.value.revision, body, captcha: captcha.value.getValue(),
+      })
     } else {
       body.parentId = replyTarget.value?.id || null
       body.isSecret = form.value.isSecret || replyTarget.value?.isSecret === 1 ? 1 : 0
@@ -118,7 +120,7 @@ async function handleSubmit() {
               /2000
             </div>
           </div>
-          <CaptchaField v-if="!editTarget" ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
+          <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
           <div class="form-options">
             <label class="option-check">
               <input
@@ -138,7 +140,7 @@ async function handleSubmit() {
             </label>
             <div class="form-actions">
               <EmojiPicker @select="insertMsgEmoji" />
-              <button class="btn-submit" :disabled="submitting || (!editTarget && !captcha?.ready)" @click="handleSubmit">
+              <button class="btn-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmit">
                 {{ editTarget ? '修改' : '留言' }}
               </button>
             </div>

@@ -8,6 +8,42 @@ afterEach(() => {
   globalThis.fetch = originalFetch
 })
 
+test('切换每页条数回到第一页，后续翻页和筛选继续使用所选条数', async () => {
+  const scope = effectScope()
+  const list = scope.run(() => useList('/admin/tags', { keyword: '' }))
+  const calls = []
+  globalThis.fetch = async (url) => {
+    const query = new URL(url, 'https://example.test').searchParams
+    calls.push(Object.fromEntries(query))
+    const pageSize = Number(query.get('pageSize'))
+    return new Response(JSON.stringify({
+      code: 'OK',
+      data: {
+        page: Number(query.get('page')), pageSize, total: '100',
+        totalPages: String(Math.ceil(100 / pageSize)), records: [],
+      },
+      errors: [],
+    }))
+  }
+
+  try {
+    await list.changePage(5)
+    list.filters.keyword = '分页测试'
+    await list.changePageSize(20)
+    assert.equal(list.page.value, 1)
+    assert.equal(list.pageSize.value, 20)
+    assert.equal(list.totalPages.value, '5')
+    assert.deepEqual(calls.at(-1), { keyword: '分页测试', page: '1', pageSize: '20' })
+
+    await list.changePage(3)
+    assert.deepEqual(calls.at(-1), { keyword: '分页测试', page: '3', pageSize: '20' })
+    await list.reset()
+    assert.deepEqual(calls.at(-1), { page: '1', pageSize: '20' })
+  } finally {
+    scope.stop()
+  }
+})
+
 test('列表新筛选取消旧请求，错误状态不伪装成空列表成功', async () => {
   const scope = effectScope()
   const list = scope.run(() => useList('/admin/tags', { keyword: '', status: 0 }))

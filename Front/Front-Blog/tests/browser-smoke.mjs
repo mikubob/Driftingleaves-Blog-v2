@@ -88,12 +88,13 @@ async function smoke(page, reducedMotion = 'no-preference') {
         code: 'OK', msg: '成功', errors: [], data: { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 },
       }) })
     }
-    if (method === 'POST' && req.headers()['x-captcha-code'] === '000000') {
+    if (['POST', 'PUT'].includes(method) && req.headers()['x-captcha-code'] === '000000') {
       return route.fulfill({ status: 400, contentType: 'application/json',
         body: JSON.stringify({ code: 'CAPTCHA_INVALID', msg: '测试验证码错误', data: null, errors: [] }) })
     }
     if (method === 'POST' && (['/blog/auth/login', '/blog/auth/register', '/blog/messages'].includes(path)
-      || /\/comments$/.test(path) || (/\/authorize$/.test(path) && body.operation === 'LOGIN'))) {
+      || /\/comments$/.test(path) || (/\/authorize$/.test(path) && body.operation === 'LOGIN'))
+      || method === 'PUT' && /^\/blog\/me\/messages\/[^/]+$/.test(path)) {
       if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
         throw new Error('缺少正确的验证码请求头')
       }
@@ -275,7 +276,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByLabel('密码', { exact: true }).fill('Fictional-password-2026')
   await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '登录 →', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).waitFor()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
   if (await page.getByLabel('用户名', { exact: true }).inputValue() !== 'test_leaf'
     || await page.getByLabel('六位数字验证码', { exact: true }).inputValue() !== '') {
     throw new Error('验证码失败后没有保留用户名或清空验证码')
@@ -288,7 +289,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByLabel('评论正文', { exact: true }).fill('一条待审核的测试评论。')
   await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '发表评论', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).waitFor()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
   if (await page.getByLabel('评论正文', { exact: true }).inputValue() !== '一条待审核的测试评论。') {
     throw new Error('验证码失败后丢失评论正文')
   }
@@ -311,6 +312,14 @@ async function smoke(page, reducedMotion = 'no-preference') {
   }
   await page.locator('.msg-actions').getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('留言正文', { exact: true }).fill('编辑后的测试留言。')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
+  await page.getByRole('button', { name: '修改', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
+  if (await page.getByLabel('留言正文', { exact: true }).inputValue() !== '编辑后的测试留言。'
+    || await page.getByLabel('六位数字验证码', { exact: true }).inputValue() !== '') {
+    throw new Error('编辑验证码失败后丢失正文或未清空验证码')
+  }
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '修改', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '留言已提交，正在等待审核' }).last().waitFor()
   if (!calls.some((call) => call.path === '/blog/me/messages/301' && call.method === 'PUT' && call.revision === revision)) {
@@ -325,6 +334,19 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByText('等待邮箱验证，请查收邮件；可重新提交以重发确认邮件。', { exact: true }).waitFor()
   await page.getByRole('dialog').locator('.el-dialog__headerbtn').click()
   await page.locator('.nav-desktop a[href="/account"]').click()
+  await page.getByRole('button', { name: '我的留言', exact: true }).click()
+  await page.getByRole('button', { name: '编辑留言', exact: true }).click()
+  await page.getByLabel('编辑留言', { exact: true }).fill('账号页编辑后的留言。')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
+  await page.getByRole('button', { name: '保存修改', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
+  if (await page.getByLabel('编辑留言', { exact: true }).inputValue() !== '账号页编辑后的留言。'
+    || await page.getByLabel('六位数字验证码', { exact: true }).inputValue() !== '') {
+    throw new Error('账号页编辑验证码失败后丢失正文或未清空验证码')
+  }
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '保存修改', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '留言已更新' }).waitFor()
   await page.getByLabel('昵称', { exact: true }).fill('冲突时保留此输入')
   profileConflict = true
   await page.getByRole('button', { name: '保存资料', exact: true }).click()

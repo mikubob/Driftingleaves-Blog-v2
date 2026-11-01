@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.entity.SysMenu;
@@ -29,4 +30,6 @@ public interface IMenuService extends IService<SysMenu> {
 
     /** 锁内先查版本，有子节点就报 RESOURCE_IN_USE；删叶子只级联 role_menu，不撤销会话。 */
     void delete(long menuId, String revision);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

@@ -37,7 +37,7 @@ function validateNumbers(value, key = '') {
   if (value === null) {
     return
   }
-  if (/(?:Id|Ids)$/.test(key)) {
+  if (key === 'id' || /(?:Id|Ids)$/.test(key)) {
     const values = Array.isArray(value) ? value : [value]
     if (!values.every(isId)) {
       throw new Error('接口返回的 ID 格式不正确。')

@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getImage, request } from '../api.js'
 import { can } from '../session.js'
@@ -7,9 +7,12 @@ import { formatCount, formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/files',
   { keyword: '', uploaderId: '', mimeType: '' },
 )
@@ -79,7 +82,10 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    await request(`/admin/files/${row.fileId}`, { method: 'DELETE' })
+    const { data } = await request('/admin/files/batch-delete', { method: 'POST', body: { ids: [row.fileId] } })
+    if (data.results[0].code !== 'OK') {
+      throw new Error(data.results[0].msg)
+    }
     ElMessage.success('文件已删除')
     load()
   } catch (failure) {
@@ -90,6 +96,23 @@ async function remove(row) {
 }
 onMounted(load)
 onBeforeUnmount(releaseImage)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:file:delete')) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      revision: false,
+      fileResults: true,
+      danger: true,
+      warning: '文件将逐项清理，仍被文章引用的文件不会删除；每个文件的结果会单独显示。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -148,13 +171,21 @@ onBeforeUnmount(releaseImage)
         <h2>文件列表</h2>
         <span class="muted-text">PNG / JPEG · 单张不超过 10 MiB</span>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/files" id-key="fileId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="fileId"
         empty-text="暂无文件"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="originalName" label="文件名" min-width="220" show-overflow-tooltip />
         <el-table-column prop="fileId" label="文件 ID" min-width="175" />
         <el-table-column prop="mimeType" label="类型" width="120" />
@@ -174,10 +205,12 @@ onBeforeUnmount(releaseImage)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="previewVisible" :title="imageName" width="760px" @closed="releaseImage">

@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -19,9 +20,17 @@ import com.xuan.service.IFileService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchFileResultVO;
+import com.xuan.vo.BatchFileResultsVO;
 import com.xuan.vo.FileVO;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.TransactionException;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -35,12 +44,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageReader;
-import javax.imageio.stream.ImageInputStream;
 
 /**
  * 文件和文章共用附件解析与存储，所有写入先锁操作者，文件锁始终早于文章锁。
@@ -50,6 +57,8 @@ import javax.imageio.stream.ImageInputStream;
 public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implements IFileService {
 
     private static final int MAX_BYTES = 10 * 1024 * 1024;
+    private final ObjectProvider<IFileService> fileService;
+
     private final FileMapper files;
     private final ArticleMapper articles;
     private final UserMapper users;
@@ -289,4 +298,36 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "文件存储暂不可用");
     }
+
+    /** 对象存储不能跨文件回滚，每项通过原服务代理独立提交并返回实际结果。 */
+    @Override
+    public BatchFileResultsVO deleteBatch(List<String> ids) {
+        requireAdmin("delete");
+        var results = new ArrayList<BatchFileResultVO>();
+        BusinessException stopped = null;
+        for (String value : ids) {
+            long id = IdUtils.parse(value);
+            try {
+                if (stopped != null) {
+                    throw stopped;
+                }
+                fileService.getObject().delete(id);
+                results.add(new BatchFileResultVO(id, 200, "OK", "成功"));
+            } catch (BusinessException error) {
+                results.add(new BatchFileResultVO(id, error.getStatus(), error.getCode(), error.getMessage()));
+                if (error.getStatus() == 401 || error.getStatus() == 403) {
+                    stopped = error;
+                }
+            } catch (NotLoginException error) {
+                stopped = new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
+                results.add(new BatchFileResultVO(id, 401, stopped.getCode(), stopped.getMessage()));
+            } catch (DataAccessException | TransactionException error) {
+                results.add(new BatchFileResultVO(id, 503, "SERVICE_UNAVAILABLE", "文件服务暂不可用"));
+            } catch (RuntimeException error) {
+                results.add(new BatchFileResultVO(id, 500, "INTERNAL_ERROR", "文件清理失败"));
+            }
+        }
+        return new BatchFileResultsVO(results);
+    }
+
 }

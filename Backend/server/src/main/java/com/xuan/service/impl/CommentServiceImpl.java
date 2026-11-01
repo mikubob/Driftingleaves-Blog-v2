@@ -3,7 +3,9 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.content.CommentVisibility;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
@@ -24,6 +26,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Author;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CommentAdminVO;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentProfileVO;
@@ -42,7 +45,13 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 写评论先锁操作者、配置、文章、评论；锁后重新查身份和范围，原文与审核结果一起提交。
@@ -100,7 +109,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             }
             comments.scoped(parentId, null, null, true);
         }
-        // 等完所有锁再查原 Token 和当前状态；文章锁同时挡住审核、占位和下架。
+        // 等完所有锁再查原 Token 和当前状态；文章锁同时挡住审核、删除和下架。
         requireMember("blog:comment:create");
         ArticleRow current = requirePublic(article);
         JsonNode policy = policy(config);
@@ -138,13 +147,13 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 .convert(row -> ownView(row, new CommentOwnVO())));
     }
 
-    /** 本人占位删除不要求版本，ALL 也不能把别人评论变成本人。 */
+    /** 本人删除整条分支不要求版本，ALL 也不能把别人评论变成本人。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public void deleteOwn(long id) {
         CommentRow row = lockComment(id, "deleteOwn", true);
-        placeholder(row, null, sessions.currentUserId());
+        deleteTree(row, true);
     }
 
     /** 每次 query 单独计算文章作者范围，评论者筛选只会缩小结果。 */
@@ -182,14 +191,13 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return profile(comments.scoped(id, requireAdmin("review"), null, false));
     }
 
-    /** 管理占位删除只查 moderate 的范围，不借 query 或 review 的 ALL 扩大权限。 */
+    /** 管理删除整条分支只查 moderate 的范围，不借 query 或 review 的 ALL 扩大权限。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:comment", permission = "blog:comment:moderate", targetIdArgument = 0)
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public void moderate(long id) {
-        CommentRow row = lockComment(id, "moderate", false);
-        placeholder(row, requireAdmin("moderate"), null);
+        moderateBatch(List.of(Long.toString(id)));
     }
 
     /** 锁前仅定位文章，锁后重新执行本次操作的身份和 SQL 范围检查。 */
@@ -273,12 +281,24 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return row;
     }
 
-    /** 不物理删除也不改父链，已经占位时不重复更新时间。 */
-    private void placeholder(CommentRow row, Long author, Long user) {
-        if (row.getStatus() != 3) {
-            row.setContent(DELETED);
-            row.setStatus(3);
-            comments.change(row, author, user);
+    /** 配置和文章锁阻止分支继续写入，先锁评论并复核权限，再按子到父删除。 */
+    private void deleteTree(CommentRow row, boolean own) {
+        var nodes = articles.lockComments(row.getArticleId());
+        Long author = own ? null : requireAdmin("moderate");
+        Long user = own ? requireMember("blog:comment:deleteOwn") : null;
+        requireComment(comments.scoped(row.getCommentId(), author, user, false));
+
+        Map<Long, List<Long>> children = new HashMap<>();
+        for (var node : nodes) {
+            children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getCommentId());
+        }
+        List<Long> ids = new ArrayList<>();
+        ids.add(row.getCommentId());
+        for (int index = 0; index < ids.size(); index++) {
+            ids.addAll(children.getOrDefault(ids.get(index), List.of()));
+        }
+        for (long id : ids.reversed()) {
+            articles.deleteComment(row.getArticleId(), id);
         }
     }
 
@@ -373,4 +393,65 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private BusinessException conflict(String message) {
         return new BusinessException(409, "STATE_CONFLICT", message);
     }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-review", target = "blog:comment", permission = "blog:comment:review")
+    @CacheEvict(cacheNames = "comments", allEntries = true)
+    public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
+        var sorted = BatchInputs.sorted(items);
+        lockBatchArticles(items.stream().map(item -> IdUtils.parse(item.id())).toList(), "review");
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String expected = item.revision();
+            CommentRow row = lockComment(id, "review", false);
+            checkRevision(row, expected);
+            if (row.getStatus() == 3) {
+                throw conflict("已删除评论不能重新审核");
+            }
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, review(id, status, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+
+    /** 父子混选先全部核验，再清理分支并集；子回复数量不受选择上限截断。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:comment", permission = "blog:comment:moderate")
+    @CacheEvict(cacheNames = "comments", allEntries = true)
+    public void moderateBatch(List<String> ids) {
+        var sorted = BatchInputs.ids(ids);
+        lockBatchArticles(sorted, "moderate");
+        Map<Long, CommentRow> selected = new HashMap<>();
+        for (long id : sorted) {
+            selected.put(id, lockComment(id, "moderate", false));
+        }
+        for (long id : sorted) {
+            if (comments.selectById(id) != null) {
+                deleteTree(selected.get(id), false);
+            }
+        }
+    }
+
+    /** 评论先锁配置和全部文章，再按同层ID锁定评论，不能按评论ID打乱文章锁顺序。 */
+    private void lockBatchArticles(List<Long> ids, String operation) {
+        users.lockById(sessions.currentUserId());
+        Long author = requireAdmin(operation);
+        lockConfig();
+        Set<Long> articleIds = new TreeSet<>();
+        for (long id : ids) {
+            articleIds.add(requireComment(comments.scoped(id, author, null, false)).getArticleId());
+        }
+        for (long id : articleIds) {
+            articles.scoped(id, null, true);
+            requireAdmin(operation);
+        }
+    }
+
 }

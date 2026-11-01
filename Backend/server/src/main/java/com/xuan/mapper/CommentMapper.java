@@ -30,6 +30,6 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
     CommentRow scoped(@Param("id") long id, @Param("author") Long author,
             @Param("user") Long user, @Param("lock") boolean lock);
 
-    /** 锁内写审核或占位结果，SQL 再限制当前操作范围，不改文章、作者和父节点。 */
+    /** 锁内写审核结果，SQL 再限制当前操作范围，不改文章、作者和父节点。 */
     int change(@Param("comment") BlogComment comment, @Param("author") Long author, @Param("user") Long user);
 }

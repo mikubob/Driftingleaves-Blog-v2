@@ -36,6 +36,15 @@
         intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
     </update>
 
+    <!-- 用户删除只清理既有级联关联，内容仍引用时必须整批拒绝。 -->
+    <select id="hasContentReferences" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM blog_article WHERE author_id = #{userId})
+            OR EXISTS(SELECT 1 FROM blog_comment WHERE user_id = #{userId})
+            OR EXISTS(SELECT 1 FROM blog_file WHERE uploader_id = #{userId})
+            OR EXISTS(SELECT 1 FROM home_profile WHERE user_id = #{userId})
+            OR EXISTS(SELECT 1 FROM blog_message WHERE user_id = #{userId})
+    </select>
+
     <!-- 完整替换前清掉旧关联，后续插入失败时一起回滚。 -->
     <delete id="deleteRoles">
         DELETE FROM sys_user_role WHERE user_id = #{userId}

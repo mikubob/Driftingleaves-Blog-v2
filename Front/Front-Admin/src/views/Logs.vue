@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,8 +7,11 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/operation-logs',
   {
     userId: '',
@@ -45,7 +48,7 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    await request(`/admin/operation-logs/${row.logId}`, { method: 'DELETE' })
+    await request('/admin/operation-logs/batch-delete', { method: 'POST', body: { ids: [row.logId] } })
     ElMessage.success('记录已删除')
     load()
   } catch (failure) {
@@ -55,6 +58,22 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('sys:log:delete', true)) {
+    actions.push({
+      label: '批量清理',
+      path: 'batch-delete',
+      revision: false,
+      danger: true,
+      warning: '所选日志将永久清理，本次清理会保留新的审计记录。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -63,7 +82,7 @@ onMounted(load)
       <div>
         <p class="eyebrow">SYSTEM / AUDIT LOGS</p>
         <h1>操作日志</h1>
-        <p class="muted-text">SUB操作日志</p>
+        <p class="muted-text">查看后台操作记录、执行结果与操作数据。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
@@ -123,13 +142,21 @@ onMounted(load)
     <RequestError :message="error" @retry="load()" />
     <el-card shadow="never">
       <div class="card-heading"><h2>操作日志列表</h2></div>
+            <BatchActions
+        ref="batch" resource="/admin/operation-logs" id-key="logId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="logId"
         empty-text="暂无记录"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column
           prop="operationType"
           label="操作类型"
@@ -164,15 +191,34 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="visible" title="操作日志详情" width="760px">
       <el-descriptions v-if="detail" :column="1" border>
-        detail.value = (await request(`/admin/operation-logs/${row.logId}`)).dataS
+        <el-descriptions-item label="日志 ID">{{ detail.logId }}</el-descriptions-item>
+        <el-descriptions-item label="操作人 ID">{{ detail.userId ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="操作类型">{{ detail.operationType }}</el-descriptions-item>
+        <el-descriptions-item label="操作目标">{{ detail.operationTarget }}</el-descriptions-item>
+        <el-descriptions-item label="目标 ID">{{ detail.targetId ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="权限码">{{ detail.permissionCode ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="结果">
+          {{ detail.result === 1 ? '成功' : '失败' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="错误摘要">{{ detail.errorMessage ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="操作 IP">{{ detail.ipAddress ?? '—' }}</el-descriptions-item>
+        <el-descriptions-item label="操作时间">
+          {{ formatTime(detail.operationTime) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="操作数据">
+          <pre v-if="detail.operationData" class="json-content">{{ JSON.stringify(detail.operationData, null, 2) }}</pre>
+          <span v-else>—</span>
+        </el-descriptions-item>
       </el-descriptions>
     </el-dialog>
   </section>

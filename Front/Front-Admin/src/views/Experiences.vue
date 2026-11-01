@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,10 +7,13 @@ import { formatTime, nullable } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/cv/experiences',
   { keyword: '', status: '', experienceType: '' },
 )
@@ -117,10 +120,7 @@ async function remove(row) {
   }
   try {
     const detail = await request(`/admin/cv/experiences/${row.experienceId}`)
-    await request(`/admin/cv/experiences/${row.experienceId}`, {
-      method: 'DELETE',
-      revision: detail.revision,
-    })
+    await request('/admin/cv/experiences/batch-delete', { method: 'POST', body: { items: [{ id: row.experienceId, revision: detail.revision }] } })
     ElMessage.success('简历经历已删除')
     load()
   } catch (failure) {
@@ -129,6 +129,20 @@ async function remove(row) {
 }
 
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('cv:experience:delete', true)) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      danger: true,
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -179,13 +193,21 @@ onMounted(load)
           <AdminIcon name="refresh" />
         </el-button>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/cv/experiences" id-key="experienceId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading"
+        v-loading="loading || batch?.busy"
         :data="rows"
         row-key="experienceId"
         empty-text="暂无简历经历"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column
           prop="title"
           label="学校 / 公司 / 项目"
@@ -219,10 +241,12 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog

@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SocialWriteDTO;
 import com.xuan.entity.HomeSocialLink;
@@ -32,4 +33,6 @@ public interface ISocialService extends IService<HomeSocialLink> {
 
     /** 资源锁后核对版本，再物理删除元数据。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

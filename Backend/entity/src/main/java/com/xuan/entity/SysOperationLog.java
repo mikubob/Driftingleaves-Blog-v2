@@ -9,7 +9,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 操作日志只由服务端写，不提供编辑；只记固定资料和已去掉敏感信息的摘要。
+ * 操作日志只由服务端写，不提供编辑；业务参数仅供具有日志查询权限的 ALL 管理员读取。
  */
 @Data
 @TableName("sys_operation_log")
@@ -33,7 +33,7 @@ public class SysOperationLog {
     /** 这里只记录业务检查过的权限，不会因此给用户授权。 */
     @TableField("permission_code")
     private String permissionCode;
-    /** 摘要字段先保留，目前只记操作基本资料，这里固定为 null。 */
+    /** 完整业务字段的 JSON 快照，不含登录凭据或文件二进制；历史日志可为空。 */
     @TableField("operation_data")
     private String operationData;
     /** 0 失败、1 成功。 */

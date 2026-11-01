@@ -1,7 +1,8 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
-import com.xuan.dto.CommentReviewDTO;
+import com.xuan.dto.BatchIdsDTO;
+import com.xuan.dto.BatchStatusDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageEditDTO;
 import com.xuan.model.ResourceVersion;
@@ -10,19 +11,18 @@ import com.xuan.result.Result;
 import com.xuan.service.IMessageService;
 import com.xuan.store.CaptchaStore;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MessagePrivateVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,20 +51,18 @@ public class MessageController {
         return response(messages.adminDetail(IdUtils.parse(id)));
     }
 
-    /** 通过也不改变原私密性；同目标仍检查版本。 */
-    @PutMapping("/{id}/review")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PutMapping("/batch-review")
     @SaCheckPermission("blog:message:review")
-    public ResponseEntity<Result<MessagePrivateVO>> review(@PathVariable String id,
-            @Valid @RequestBody CommentReviewDTO request,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return response(messages.review(IdUtils.parse(id), request.status(), revision));
+    public Result<BatchVersionsVO> review(@Valid @RequestBody BatchStatusDTO body) {
+        return Result.ok(messages.reviewBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 删除只清原文并占位，不物理级联子树。 */
-    @DeleteMapping("/{id}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:message:moderate")
-    public Result<Void> delete(@PathVariable String id) {
-        messages.deleteAdmin(IdUtils.parse(id));
+    public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
+        messages.deleteBatch(body.ids());
         return Result.ok(null);
     }
 

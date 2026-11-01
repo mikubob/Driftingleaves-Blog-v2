@@ -321,10 +321,10 @@ h2 {
   font-size: 12px;
 }
 
-.pager-buttons {
-  display: flex;
-  align-items: center;
-  gap: 15px;
+.list-pager .el-pagination {
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 100%;
 }
 
 .page-tabs {
@@ -428,10 +428,6 @@ h2 {
 .settings-stack {
   display: grid;
   gap: 22px;
-}
-
-.profile-card {
-  max-width: 930px;
 }
 
 .form-section-heading {

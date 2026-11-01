@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
@@ -13,6 +14,7 @@ import com.xuan.dto.UserRolesDTO;
 import com.xuan.entity.SysUser;
 import com.xuan.result.PageResult;
 import com.xuan.vo.AdminUserProfileVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.SessionVO;
@@ -40,6 +42,12 @@ public interface IUserService extends IService<SysUser> {
 
     /** 同一保护锁事务里完整替换启用角色，保留最后管理员，提交前撤销目标用户全部会话。 */
     AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision);
+
+    /** 整批核对用户版本后仅修改启用状态，保留最后管理员；实际禁用时撤销会话，失败整批回滚。 */
+    BatchVersionsVO adminSetStatusBatch(List<BatchItemDTO> items, int status);
+
+    /** 整批校验版本和内容引用后物理删除，级联关联并撤销全部会话，保留最后管理员及历史记录。 */
+    void adminDeleteBatch(List<BatchItemDTO> items);
 
     /** 用户和 member 关联一起创建，注册成功不自动登录。 */
     MeVO register(RegisterDTO request);

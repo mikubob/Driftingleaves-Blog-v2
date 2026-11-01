@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,8 +7,11 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/visitors',
   { country: '', province: '', city: '', isBlocked: '' },
 )
@@ -51,10 +54,10 @@ async function block() {
   }
   busy.value = true
   try {
-    await request(`/admin/visitors/${detail.value.visitorId}/block`, {
+    await request('/admin/visitors/batch-block', {
       method: 'PUT',
-      revision: revision.value,
       body: {
+        items: [{ id: detail.value.visitorId, revision: revision.value }],
         blockedUntil: blockedUntil.value ? new Date(blockedUntil.value).toISOString() : null,
       },
     })
@@ -84,9 +87,9 @@ async function action(row, operation) {
   try {
     const path = `/admin/visitors/${row.visitorId}`
     const result = await request(path)
-    await request(operation === 'delete' ? path : `${path}/unblock`, {
-      method: operation === 'delete' ? 'DELETE' : 'PUT',
-      revision: result.revision,
+    await request(`/admin/visitors/${operation === 'delete' ? 'batch-delete' : 'batch-unblock'}`, {
+      method: operation === 'delete' ? 'POST' : 'PUT',
+      body: { items: [{ id: row.visitorId, revision: result.revision }] },
     })
     ElMessage.success('操作已完成')
     load()
@@ -97,6 +100,36 @@ async function action(row, operation) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:visitor:block', true)) {
+    actions.push({
+      label: '批量封禁',
+      path: 'batch-block',
+      method: 'PUT',
+      block: true,
+    })
+  }
+  if (can('blog:visitor:unblock', true)) {
+    actions.push({
+      label: '批量解封',
+      path: 'batch-unblock',
+      method: 'PUT',
+    })
+  }
+  if (can('blog:visitor:delete', true)) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      danger: true,
+      warning: '浏览明细保留，访客关联置空，UV可能减少，PV不变。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -150,13 +183,21 @@ onMounted(load)
         <h2>访客列表</h2>
         <span class="muted-text">统计标识不代表登录身份</span>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/visitors" id-key="visitorId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="visitorId"
         empty-text="暂无访客"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="visitorId" label="访客 ID" min-width="180" />
         <el-table-column label="地域" min-width="180">
           <template #default="{ row }">
@@ -196,10 +237,12 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="detailVisible" title="访客详情" width="680px">

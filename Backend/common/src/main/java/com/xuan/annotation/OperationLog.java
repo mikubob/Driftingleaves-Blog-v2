@@ -6,7 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 给写事务声明操作日志，只取明确的数字 ID，不把参数和返回对象整个记下来。
+ * 给写事务声明操作日志，目标 ID 来自明确参数或创建结果，业务字段由切面保存。
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)

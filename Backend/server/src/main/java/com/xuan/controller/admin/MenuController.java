@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.exception.BusinessException;
@@ -12,7 +13,6 @@ import com.xuan.vo.MenuVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -87,18 +87,11 @@ public class MenuController {
         return profile(menus.update(id(menuId), body, revision));
     }
 
-    /**
-     * 检查后台入口和删除权限后删除叶子菜单，引用和版本要在锁事务里检查。
-     *
-     * @param menuId 目标菜单 ID
-     * @param revision 当前详情版本
-     * @return 200 空结果，无 X-Revision；有子节点返回 RESOURCE_IN_USE
-     */
-    @DeleteMapping("/{menuId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("sys:menu:delete")
-    public Result<Void> delete(@PathVariable String menuId,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        menus.delete(id(menuId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        menus.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

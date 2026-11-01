@@ -49,8 +49,9 @@ public class AuthorizationProvider implements StpInterface {
             "blog:link:update", "blog:link:delete", "blog:config:query", "blog:config:update");
     /** 上传和删除已有实际文件入口，禁止删除，但不增加最后管理员必须拥有的能力。 */
     public static final Set<String> FILE_PERMISSIONS = Set.of("blog:file:upload", "blog:file:delete");
-    /** 第15..20章固定权限已有实际消费者，不扩展最后管理员保护名单。 */
+    /** 这些固定权限已有实际消费者，不扩展最后管理员保护名单。 */
     public static final Set<String> EXTENDED_PERMISSIONS = Set.of(
+            "sys:user:delete",
             "home:profile:query",
             "home:profile:update",
             "home:social:query",

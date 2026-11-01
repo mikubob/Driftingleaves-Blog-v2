@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IFriendLinkService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.LinkProfileVO;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * 友链维护结果直接用于公开展示，写入和成功审计一起提交。
@@ -114,9 +118,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @OperationLog(type = "delete", target = "blog:link", permission = "blog:link:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "links", allEntries = true)
     public void delete(long id, String revision) {
-        BlogFriendLink row = lockLink(id, "delete");
-        checkRevision(row, revision);
-        links.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。 */
@@ -170,4 +172,24 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
                 row.getAvatar(), row.getDescription(), row.getSortOrder(), row.getStatus()));
         return new LinkProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:link", permission = "blog:link:delete")
+    @CacheEvict(cacheNames = "links", allEntries = true)
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogFriendLink row = lockLink(id, "delete");
+            checkRevision(row, revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            links.deleteById(id);
+        }
+    }
+
 }

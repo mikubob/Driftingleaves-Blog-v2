@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,10 +7,13 @@ import { formatTime, nullable } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/links',
   { keyword: '', status: '' },
 )
@@ -98,7 +101,7 @@ async function remove(row) {
   }
   try {
     const detail = await request(`/admin/links/${row.linkId}`)
-    await request(`/admin/links/${row.linkId}`, { method: 'DELETE', revision: detail.revision })
+    await request('/admin/links/batch-delete', { method: 'POST', body: { items: [{ id: row.linkId, revision: detail.revision }] } })
     ElMessage.success('友链已删除')
     load()
   } catch (failure) {
@@ -107,6 +110,20 @@ async function remove(row) {
 }
 
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:link:delete', true)) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      danger: true,
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -148,13 +165,21 @@ onMounted(load)
           <AdminIcon name="refresh" />
         </el-button>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/links" id-key="linkId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading"
+        v-loading="loading || batch?.busy"
         :data="rows"
         row-key="linkId"
         empty-text="暂无友链"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="linkName" label="站点名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="url" label="站点地址" min-width="240" show-overflow-tooltip />
         <el-table-column prop="description" label="介绍" min-width="200" show-overflow-tooltip />
@@ -173,10 +198,12 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog

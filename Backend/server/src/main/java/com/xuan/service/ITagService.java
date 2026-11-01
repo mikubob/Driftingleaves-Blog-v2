@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.dto.TagQueryDTO;
 import com.xuan.dto.TagWriteDTO;
@@ -9,6 +10,8 @@ import com.xuan.result.PageResult;
 import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagProfileVO;
 import com.xuan.vo.TagPublicDetailVO;
+
+import java.util.List;
 
 /**
  * 标签是全站字典，文章关联的保存仍走文章接口。
@@ -35,4 +38,6 @@ public interface ITagService extends IService<BlogTag> {
 
     /** 核对版本后删除标签和文章标签关联，保留文章；失败一起回滚。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

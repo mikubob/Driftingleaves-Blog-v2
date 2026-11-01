@@ -59,7 +59,7 @@
         <if test="lock">FOR UPDATE</if>
     </select>
 
-    <!-- 占位覆盖原文，回复链和用户归属保留；重复删除由业务直接返回成功。 -->
+    <!-- 审核只更新正文和状态，保留当前操作范围。 -->
     <update id="change">
         UPDATE blog_comment c SET c.content = #{comment.content}, c.status = #{comment.status}
         WHERE c.comment_id = #{comment.commentId}

@@ -6,6 +6,7 @@ import { can } from '../session.js'
 import { flattenMenus, pageRegistry } from '../navigation.js'
 import { nullable } from '../format.js'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
@@ -197,7 +198,7 @@ async function remove(row) {
   try {
     const path = `/admin/menus/${row.menuId}`
     const current = await request(path)
-    await request(path, { method: 'DELETE', revision: current.revision })
+    await request('/admin/menus/batch-delete', { method: 'POST', body: { items: [{ id: row.menuId, revision: current.revision }] } })
     ElMessage.success('菜单已删除')
     load()
   } catch (failure) {
@@ -205,6 +206,21 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('sys:menu:delete')) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      danger: true,
+      warning: '仅可删除叶子节点，同时清理角色菜单关联，不删除接口权限。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -226,14 +242,23 @@ onMounted(load)
         <h2>完整菜单树</h2>
         <el-button text aria-label="刷新菜单" @click="load"><AdminIcon name="refresh" /></el-button>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/menus" id-key="menuId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || !!error" @completed="load()"
+        :selectable="row => !row.children?.length"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading"
+        v-loading="loading || batch?.busy"
         :data="rows"
         row-key="menuId"
         :tree-props="{ children: 'children' }"
         empty-text="暂无菜单"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="menuName" label="菜单名称" min-width="230" />
         <el-table-column label="类型" width="80">
           <template #default="{ row }">

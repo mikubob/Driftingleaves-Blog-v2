@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.dto.PermissionUpdateDTO;
@@ -13,7 +14,6 @@ import com.xuan.vo.PermissionVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -90,18 +90,11 @@ public class PermissionController {
         return profile(permissions.update(id(permissionId), body, revision));
     }
 
-    /**
-     * 检查后台入口和删除权限后再进入锁事务；固定权限或仍被菜单引用的权限不能删。
-     *
-     * @param permissionId 目标权限 ID
-     * @param revision 当前详情版本
-     * @return 200 空结果，无 X-Revision；角色关联及全部会话撤销共同受失败回滚约束
-     */
-    @DeleteMapping("/{permissionId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("sys:permission:delete")
-    public Result<Void> delete(@PathVariable String permissionId,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        permissions.delete(id(permissionId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        permissions.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

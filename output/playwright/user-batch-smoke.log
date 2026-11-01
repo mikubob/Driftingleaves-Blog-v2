@@ -1,0 +1,214 @@
+### Result
+{"pages":19,"checks":59,"writes":8,"result":"PASS"}
+### Ran Playwright code
+```js
+await (// HTTP夹具仅使用虚构数据，验证真实Vue页面、Element Plus复选框和批量请求。
+async function batchSelectionSmoke(page) {
+  const checks = []
+  const errors = []
+  const writes = []
+  const revision = '"' + 'a'.repeat(64) + '"'
+  const pages = [
+    ['articles', 'articleId', 'content/article/index', 'blog:article', '文章管理'],
+    ['categories', 'categoryId', 'content/category/index', 'blog:category', '分类管理'],
+    ['tags', 'tagId', 'content/tag/index', 'blog:tag', '标签管理'],
+    ['comments', 'commentId', 'content/comment/index', 'blog:comment', '评论管理'],
+    ['messages', 'messageId', 'content/message/index', 'blog:message', '留言管理'],
+    ['links', 'linkId', 'content/link/index', 'blog:link', '友链管理'],
+    ['files', 'fileId', 'content/file/index', 'blog:file', '文件管理'],
+    ['music', 'musicId', 'content/music/index', 'blog:music', '音乐管理'],
+    ['rss-subscriptions', 'subscriptionId', 'content/rss/index', 'blog:rss', '邮件订阅'],
+    ['roles', 'roleId', 'system/role/index', 'sys:role', '角色管理'],
+    ['permissions', 'permissionId', 'system/permission/index', 'sys:permission', '权限管理'],
+    ['menus', 'menuId', 'system/menu/index', 'sys:menu', '菜单管理'],
+    ['operation-logs', 'logId', 'system/log/index', 'sys:log', '操作日志'],
+    ['home/social-links', 'socialId', 'home/social/index', 'home:social', '社交链接'],
+    ['cv/experiences', 'experienceId', 'cv/experience/index', 'cv:experience', '简历经历'],
+    ['cv/skills', 'skillId', 'cv/skill/index', 'cv:skill', '简历技能'],
+    ['visitors', 'visitorId', 'statistics/visitor/index', 'blog:visitor', '访客管理'],
+    ['page-views', 'viewId', 'statistics/view/index', 'blog:view', '浏览记录'],
+    ['users', 'userId', 'system/user/index', 'sys:user', '用户管理'],
+  ]
+  const permissions = ['admin:access', ...pages.flatMap((entry) =>
+    ['query', 'delete', 'moderate', 'review', 'publish', 'restore', 'purge', 'update', 'block', 'unblock']
+      .map((action) => `${entry[3]}:${action}`))]
+  let failWrite = false
+  let hiddenPermission = ''
+  function check(value, message) {
+    if (!value) throw new Error(message)
+    checks.push(message)
+  }
+  function row(entry, index) {
+    const id = String(9007199254741000n + BigInt(index))
+    return { [entry[1]]: id, title: `测试记录${index}`, categoryName: `分类${index}`, tagName: `标签${index}`,
+      linkName: `友链${index}`, name: `名称${index}`, originalName: `图片${index}.png`,
+      email: `reader${index}@example.test`, userId: entry[0] === 'users' ? id : '1',
+      username: `user_${index}`, nickname: `用户${index}`, authorId: '1', uploaderId: '1',
+      slug: `entry-${index}`, roleCode: 'custom', roleName: `角色${index}`, permissionName: `权限${index}`,
+      menuName: `菜单${index}`, menuType: 'M', parentId: null, children: [], status: 1,
+      content: `测试内容${index}`, contentFormat: 0, sizeBytes: '100', visibility: 1,
+      viewCount: '0', likeCount: '0', commentCount: '0', durationSeconds: 1, isBlocked: 0,
+      createTime: null, updateTime: null, author: { userId: '1', nickname: '测试作者' } }
+  }
+  await page.unroute('**/api/v1/**')
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => localStorage.setItem('dl-admin-session', JSON.stringify({
+    accessToken: 'batch-ui-fixture', expiresAt: Date.now() + 3600000,
+  })))
+  await page.route('**/api/v1/**', async route => {
+    const req = route.request()
+    const url = new URL(req.url())
+    const path = url.pathname.replace('/api/v1', '')
+    const respond = (data, status = 200, code = 'OK') => route.fulfill({ status,
+      contentType: 'application/json', headers: { 'X-Revision': revision },
+      body: JSON.stringify({ code, msg: status === 200 ? '成功' : '版本已变化', data, errors: [] }) })
+    if (path === '/admin/me') return respond({ userId: '1', username: 'batch_test', nickname: '多选测试' })
+    if (path === '/admin/me/capabilities') {
+      const effective = permissions.filter(value => value !== hiddenPermission)
+      return respond({ roleCodes: ['admin'], permissionCodes: effective,
+        dataScopes: Object.fromEntries(effective.map(permission => [permission, 'ALL'])) })
+    }
+    if (path === '/admin/me/menus') return respond(pages.map((entry, index) => ({
+      menuId: String(index + 1), parentId: null, menuName: entry[4], menuType: 'M',
+      path: `/batch-test/${index}`, component: entry[2], status: 1, isVisible: 1,
+      keepAlive: 0, permissionCode: `${entry[3]}:query`, children: [],
+    })))
+    const entry = pages.find(value => path === `/admin/${value[0]}` || path.startsWith(`/admin/${value[0]}/`))
+    if (!entry) throw new Error(`未预期请求 ${path}`)
+    if (req.method() !== 'GET') {
+      writes.push({ method: req.method(), path, body: req.postDataJSON(), headers: req.headers() })
+      if (failWrite) { failWrite = false; return respond(null, 412, 'REVISION_CONFLICT') }
+      if (entry[0] === 'files') return respond({ results: writes.at(-1).body.ids.map((id, i) => ({
+        id, httpStatus: i ? 409 : 200, code: i ? 'RESOURCE_IN_USE' : 'OK', msg: i ? '文件仍被文章引用' : '成功',
+      })) })
+      return respond(null)
+    }
+    if (path !== `/admin/${entry[0]}`) return respond(row(entry, 1))
+    const records = [row(entry, 1), row(entry, 2)]
+    if (entry[0] === 'menus') return respond(records)
+    return respond({ page: Number(url.searchParams.get('page') || 1),
+      pageSize: Number(url.searchParams.get('pageSize') || 10), total: '20', totalPages: '2', records })
+  })
+  await page.setViewportSize({ width: 1440, height: 900 })
+  // 每个页面实际加载并检查Element Plus表头选择框、权限动作和初始禁用状态。
+  for (let index = 0; index < pages.length; index++) {
+    await page.goto(`http://127.0.0.1:5176/batch-test/${index}`)
+    const toolbar = page.getByRole('group', { name: '批量操作', exact: true })
+    await toolbar.waitFor()
+    await page.locator('.el-table__body-wrapper tbody tr').first().waitFor()
+    check(await toolbar.getByRole('button').first().isDisabled(), `${pages[index][0]}未选择时禁用`)
+    await page.locator('.el-table__header-wrapper .el-checkbox').first().click()
+    await page.getByText('已选 2 条', { exact: true }).waitFor()
+    check(await toolbar.getByRole('button').first().isEnabled(), `${pages[index][0]}当前页全选生效`)
+    await toolbar.getByRole('button', { name: '取消选择', exact: true }).click()
+    await page.getByText('已选 0 条', { exact: true }).waitFor()
+  }
+  await page.goto('http://127.0.0.1:5176/batch-test/0')
+  const selectAll = () => page.locator('.el-table__header-wrapper .el-checkbox').first().click()
+  await selectAll()
+  await page.getByRole('button', { name: '批量回收', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click()
+  check(writes.length === 0, '取消确认不执行任何写入')
+  await page.getByRole('button', { name: '批量回收', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('已选 0 条', { exact: true }).waitFor()
+  check(writes.length === 1 && writes[0].body.items.length === 2, '两个目标只提交一次批量写请求')
+  check(writes[0].body.items.every(item => typeof item.id === 'string' && item.revision === revision), '提交每个目标自己的字符串ID及版本')
+  check(!writes[0].headers['if-revision'], '批次不发送单一版本头')
+  await selectAll()
+  await page.locator('.btn-next').click()
+  await page.getByText('已选 0 条', { exact: true }).waitFor()
+  check(await page.locator('.el-table__body-wrapper input[type=checkbox]:checked').count() === 0, '翻页同时清空实际复选框和计数')
+  await selectAll()
+  failWrite = true
+  await page.getByRole('button', { name: '批量发布', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('内容已被其他人修改。请保留当前输入，重新获取详情后合并修改。', { exact: true }).waitFor()
+  check(writes.length === 2, '版本冲突不自动重试或退回逐条写入')
+  await page.getByText('已选 2 条', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '刷新文章', exact: true }).click()
+  await page.getByText('已选 0 条', { exact: true }).waitFor()
+  await selectAll()
+  await page.locator('.el-message').last().waitFor({ state: 'hidden' })
+  await page.screenshot({ path: 'output/playwright/batch-selection.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0)
+  await page.screenshot({ path: 'output/playwright/batch-selection-mobile.png', fullPage: true })
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '移动端批量操作栏不撑宽页面')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('http://127.0.0.1:5176/batch-test/6')
+  await selectAll()
+  await page.getByRole('button', { name: '批量删除', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('部分文件未删除', { exact: true }).waitFor()
+  check(await page.locator('.batch-failures').innerText().then(text => text.includes('RESOURCE_IN_USE')), '文件逐项失败展示具体ID及原因')
+  await page.goto('http://127.0.0.1:5176/batch-test/16')
+  await selectAll()
+  await page.getByRole('button', { name: '批量封禁', exact: true }).click()
+  await page.getByRole('dialog', { name: '批量限制访客采集' }).getByRole('button', { name: '继续' }).click()
+  await page.getByRole('alert').filter({ hasText: '请选择晚于当前时间' }).waitFor()
+  await page.getByText('永久限制', { exact: true }).click()
+  await page.getByRole('dialog', { name: '批量限制访客采集' }).getByRole('button', { name: '继续' }).click()
+  await page.getByRole('dialog', { name: '批量封禁', exact: true }).getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('已选 0 条', { exact: true }).waitFor()
+  check(writes.at(-1).body.blockedUntil === null && writes.at(-1).body.items.length === 2, '批量封禁仅在明确永久选择后传null')
+  // 用户的启用、禁用、整批删除和行内删除都走统一接口，不能退回逐条写入。
+  await page.goto('http://127.0.0.1:5176/batch-test/18')
+  for (const [label, action, method] of [
+    ['批量启用', 'batch-enable', 'PUT'],
+    ['批量禁用', 'batch-disable', 'PUT'],
+    ['批量删除', 'batch-delete', 'POST'],
+  ]) {
+    await page.locator('.el-table__body-wrapper tbody tr').first().waitFor()
+    await selectAll()
+    await page.getByRole('button', { name: label, exact: true }).click()
+    await page.getByRole('dialog').getByRole('button', { name: '确认', exact: true }).click()
+    await page.getByText('已选 0 条', { exact: true }).waitFor()
+    const write = writes.at(-1)
+    check(write.path === `/admin/users/${action}` && write.method === method && write.body.items.length === 2,
+      `用户${label}只提交一次正确的批量请求`)
+    check(write.body.items.every(item => item.id.startsWith('900719925474') && item.revision === revision),
+      `用户${label}保留大整数ID与逐项版本`)
+  }
+  const singleDelete = () => page.locator('.el-table__body-wrapper tbody tr').first()
+    .getByRole('button', { name: '删除', exact: true }).click()
+  await singleDelete()
+  await page.getByRole('dialog', { name: '删除用户', exact: true })
+    .getByRole('button', { name: '取消', exact: true }).click()
+  const beforeSingle = writes.length
+  await singleDelete()
+  await page.getByRole('dialog', { name: '删除用户', exact: true })
+    .getByRole('button', { name: '删除', exact: true }).click()
+  await page.getByText('用户已删除', { exact: true }).waitFor()
+  check(writes.length === beforeSingle + 1 && writes.at(-1).path === '/admin/users/batch-delete'
+    && writes.at(-1).body.items.length === 1, '行内删除确认后通过相同接口提交一项数组')
+  await page.getByRole('dialog', { name: '删除用户', exact: true }).waitFor({ state: 'hidden' })
+  await page.locator('.el-message').last().waitFor({ state: 'hidden' })
+  await page.screenshot({ path: 'output/playwright/user-batch-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.waitForFunction(() => document.querySelector('.sidebar').getBoundingClientRect().right <= 0)
+  check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), '用户批量栏在移动端不撑宽页面')
+  await page.screenshot({ path: 'output/playwright/user-batch-mobile.png', fullPage: true })
+  hiddenPermission = 'sys:user:delete'
+  await page.goto('http://127.0.0.1:5176/batch-test/18')
+  await page.getByRole('heading', { name: '用户管理', exact: true }).waitFor()
+  check(await page.getByRole('button', { name: '批量删除', exact: true }).count() === 0
+    && await page.getByRole('button', { name: '删除', exact: true }).count() === 0,
+    '无用户删除权限时同时隐藏批量删除和行内删除')
+  check(await page.getByRole('button', { name: '批量启用', exact: true }).count() === 1,
+    '用户编辑权限独立保留启停动作')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  hiddenPermission = 'blog:category:delete'
+  await page.goto('http://127.0.0.1:5176/batch-test/1')
+  await page.getByRole('heading', { name: '分类管理', exact: true }).waitFor()
+  check(await page.getByRole('group', { name: '批量操作', exact: true }).count() === 0, '无动作权限时隐藏选择和批量操作栏')
+  check(errors.length === 0, `页面运行无错误: ${errors.join('; ')}`)
+  return { pages: pages.length, checks: checks.length, writes: writes.length, result: 'PASS' }
+}
+)(page);
+```
+### Page
+- Page URL: http://127.0.0.1:5176/batch-test/1
+- Page Title: 分类管理 · Drifting Leaves
+### Events
+- New console entries: .playwright-cli\console-2026-11-01T03-05-16-095Z.log#L1

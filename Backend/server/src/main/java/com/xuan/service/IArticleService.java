@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogArticle;
 import com.xuan.model.ArticleRow;
@@ -14,6 +15,7 @@ import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.ArticlePublicDetailVO;
 import com.xuan.vo.ArticlePublicVO;
 import com.xuan.vo.AuthorPublicVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 
@@ -74,4 +76,12 @@ public interface IArticleService extends IService<BlogArticle> {
 
     /** 按累计阅读或点赞排全站、本月榜，本月用 UTC 首次发布时间筛选，不增加阅读量。 */
     List<HotArticleVO> rankings(String period, String metric, int limit);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void recycleBatch(List<BatchItemDTO> items);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO restoreBatch(List<BatchItemDTO> items);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void purgeBatch(List<BatchItemDTO> items);
 }

@@ -1,12 +1,15 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SkillWriteDTO;
 import com.xuan.entity.CvSkill;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.vo.SkillPublicVO;
+
+import java.util.List;
 
 /**
  * 全站展示与后台维护共用同一份资料。
@@ -30,4 +33,6 @@ public interface ISkillService extends IService<CvSkill> {
 
     /** 资源锁后核对版本，再物理删除元数据。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

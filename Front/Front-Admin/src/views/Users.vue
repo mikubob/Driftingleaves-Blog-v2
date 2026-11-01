@@ -1,19 +1,45 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { computed, onMounted, reactive, ref } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, request } from '../api.js'
 import { can } from '../session.js'
+import { prepareBatch } from '../batch.js'
 import { formatTime, nullable, validatePassword } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
+import BatchActions from '../components/BatchActions.vue'
 import RequestError from '../components/RequestError.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/users',
   { keyword: '', status: '', roleId: '' },
 )
+const batch = ref(null)
+const batchTable = ref(null)
+const deleting = ref(false)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('sys:user:update')) {
+    actions.push(
+      { label: '批量启用', path: 'batch-enable', method: 'PUT' },
+      {
+        label: '批量禁用', path: 'batch-disable', method: 'PUT', danger: true,
+        warning: '将撤销所选账号的全部会话，必须保留至少一个有效管理员。',
+      },
+    )
+  }
+  if (can('sys:user:delete')) {
+    actions.push({
+      label: '批量删除', path: 'batch-delete', danger: true,
+      warning: '用户及角色、绑定、点赞和订阅将永久删除。存在内容引用或会失去最后管理员时整批拒绝。',
+    })
+  }
+  return actions
+})
 const dialog = ref(false)
 const roleDialog = ref(false)
 const saving = ref(false)
@@ -137,6 +163,33 @@ async function saveRoles() {
   }
 }
 
+/** 单个删除也使用批量接口，先取得版本再确认，失败时保留当前列表。 */
+async function remove(row) {
+  if (deleting.value || batch.value?.busy) {
+    return
+  }
+  deleting.value = true
+  try {
+    const body = await prepareBatch('/admin/users', 'userId', [row])
+    try {
+      await ElMessageBox.confirm(
+        `永久删除用户「${row.nickname}」（${row.username}）？角色、绑定、点赞和订阅将一并删除；存在内容引用时无法删除。`,
+        '删除用户',
+        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' },
+      )
+    } catch {
+      return
+    }
+    await request('/admin/users/batch-delete', { method: 'POST', body })
+    ElMessage.success('用户已删除')
+    await load()
+  } catch (failure) {
+    ElMessage.error(failure.message)
+  } finally {
+    deleting.value = false
+  }
+}
+
 onMounted(async () => {
   load()
   if (can('sys:role:query')) {
@@ -200,13 +253,32 @@ onMounted(async () => {
         <h2>用户列表</h2>
         <span class="muted-text">停用账号将撤销该账号的全部会话</span>
       </div>
+      <BatchActions
+        ref="batch"
+        resource="/admin/users"
+        id-key="userId"
+        :rows="rows"
+        :table="batchTable"
+        :actions="batchActions"
+        :disabled="loading || !!error || deleting"
+        @completed="load()"
+      />
       <el-table
+        ref="batchTable"
         v-if="!error"
-        v-loading="loading"
+        v-loading="loading || deleting || batch?.busy"
+        @selection-change="batch?.select"
         :data="rows"
         row-key="userId"
         empty-text="暂无用户"
       >
+        <el-table-column
+          v-if="batchActions.length"
+          type="selection"
+          width="48"
+          fixed="left"
+          :selectable="batch?.selectable"
+        />
         <el-table-column label="用户" min-width="180">
           <template #default="{ row }">
             <strong>{{ row.nickname }}</strong>
@@ -221,25 +293,40 @@ onMounted(async () => {
         <el-table-column label="最近登录" width="180">
           <template #default="{ row }">{{ formatTime(row.lastLoginTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="170">
+        <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <el-button v-if="can('sys:user:update')" link @click="edit(row)">编辑</el-button>
+            <el-button
+              v-if="can('sys:user:update')"
+              link
+              :disabled="deleting || batch?.busy"
+              @click="edit(row)"
+            >编辑</el-button>
             <el-button
               v-if="can('sys:user:assignRole') && can('sys:role:query')"
               link
+              :disabled="deleting || batch?.busy"
               @click="assignRoles(row)"
             >
               分配角色
             </el-button>
+            <el-button
+              v-if="can('sys:user:delete')"
+              link
+              type="danger"
+              :disabled="deleting || batch?.busy"
+              @click="remove(row)"
+            >删除</el-button>
           </template>
         </el-table-column>
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog

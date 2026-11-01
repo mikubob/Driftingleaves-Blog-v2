@@ -2,11 +2,13 @@
 
 接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-01。
 
-统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **187 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **190 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。原有 26 项替换保持路由数不变；本次另增用户批量启用、禁用、删除 3 项，当前 190 个 HTTP 路由（Admin 122 个），详情、创建、编辑及本人接口保留。旧客户端须与后端同步更新。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
-| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 119 |
+| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 122 |
 | [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 56 |
 | [Home 主页端](#client-home) | `/api/v1/home` | 主人资料、社交、配置与统计 | 5 |
 | [Cv 简历端](#client-cv) | `/api/v1/cv` | 主人资料、社交、简历、配置与统计 | 7 |
@@ -82,13 +84,16 @@
 
 需要版本的写入成功返回新 X-Revision，删除无需返回；无实际变化可以保持原版本。先检查权限和范围，再校验版本与状态；状态不变也不能跳过版本。版本涵盖业务字段及关联集合，不以阅读数或审计时间变化判定编辑冲突。
 
-没有通用幂等键。创建超时先查询确认；点赞/取消点赞、注销、占位删除可幂等，OAuth state/ticket 一次性。429 读取 Retry-After；服务不可用返回 503，不当作成功重试。跨域需允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code 并暴露 X-Revision/Location/Retry-After。
+统一的[批量接口](#admin-batch)是多资源例外：逐条使用 Body 中的 `items[].revision`，不使用整个请求的 If-Revision；状态写入在响应 `data.items[].revision` 返回各资源的新版本，不返回单一 X-Revision。版本来源和校验语义仍与单条接口一致。
+
+没有通用幂等键。创建超时先查询确认；点赞/取消点赞、注销可幂等，OAuth state/ticket 一次性。429 读取 Retry-After；服务不可用返回 503，不当作成功重试。跨域需允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code 并暴露 X-Revision/Location/Retry-After。
 
 ### 0.5 查找接口
 
 - [完整接口索引](API_INDEX.md)：先按端，再按业务名称或完整路径查找。
 - [文章场景速查](#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
-- 当前 **187 个 HTTP 路由及 3 个 WebSocket 入口**，按下方四端分区查找。
+- 当前 **190 个 HTTP 路由及 3 个 WebSocket 入口**，按下方四端分区查找。
+- [后台统一操作（29 个入口）](#admin-batch)：参数、响应、权限和整批失败规则集中在 1.22，单个目标也走同一协议。
 - 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，部署与历史验收见 [后端运行说明](后端运行说明.md)。
 
 <a id="request-protection"></a>
@@ -98,6 +103,8 @@
 ### 图形验证码
 
 获取接口为 `GET /api/v1/admin/auth/captcha` 和 `GET /api/v1/blog/auth/captcha`，均公开、无查询参数、无请求体，返回 `Cache-Control: no-store`。两端共享每可信 IP 每 60 秒 30 次的生成窗口，超限返回 429 和 Retry-After。
+
+首次加载、点击图片刷新和提交后刷新均调用上述接口、共用同一预算；刷新不会绕过限流，也不会重置窗口。超限在生成图片和写入验证码缓存之前拒绝。
 
 使用 Hutool `CaptchaUtil.createCircleCaptcha` 生成 200×80 PNG、6 位纯数字和 20 个干扰圆圈，数字保留前导零。验证码不是本站会话或 OAuth state，不设置 Cookie，不要求 Bearer。
 
@@ -124,6 +131,7 @@ GET /api/v1/blog/auth/captcha
 | `POST /api/v1/{admin,blog}/auth/oauth/{source}/authorize` | 仅 `operation=LOGIN`；BIND 沿用原会话、最近认证、Origin 与浏览器校验 |
 | `POST /api/v1/blog/articles/{articleId}/comments` | 发表评论或回复 |
 | `POST /api/v1/blog/messages` | 发表留言或回复 |
+| `PUT /api/v1/blog/me/messages/{messageId}` | 编辑本人留言；仍须携带 If-Revision，修改后重新审核 |
 | `POST /api/v1/admin/messages/{messageId}/replies` | 后台回复留言 |
 
 验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片，不自动重放写入，正文保留供用户重试。
@@ -187,7 +195,7 @@ GET /api/v1/blog/auth/captcha
 | `/blog/articles/{slug}` | 15分钟 | 只缓存公开正文、安全HTML、派生阅读信息与公开关联；缓存命中仍校验PUBLIC，并按7.2锁内成功加一次阅读；不缓存整条含副作用的Service调用 |
 | `/blog/archives` | 30分钟 | 按页码/页大小缓存月份与PUBLIC数量；发布、下架、回收、恢复、永久删除或可见性变化失效 |
 | `/blog/article-rankings` | 60秒 | period、metric、limit及UTC月份分别入键；排行次序与分数使用同一缓存快照，阅读/点赞变化最多延迟60秒；文章下架、删除、标题/slug等资料变化主动失效 |
-| `/blog/articles/{articleId}/comments` | 30秒 | 仅公开评论及完整可见父链，不含待审/驳回原文；新增、审核、本人/后台占位删除、祖先状态及文章可见性变化失效 |
+| `/blog/articles/{articleId}/comments` | 30秒 | 仅公开评论及完整可见父链，不含待审/驳回原文；新增、审核、本人/后台分支删除、祖先状态及文章可见性变化失效 |
 | `/blog/statistics` | 5分钟 | 公开汇总；访问PV/UV允许最多5分钟延迟，UTC日期入键；文章/分类/标签变化及后台统计清理主动失效 |
 | `/blog/rss.xml`、`/blog/sitemap.xml` | 30分钟 | 缓存XML；RSS和地图分区，地图索引与各page分别入键；依赖内容、字典、公开配置、站点基址变化主动失效；子图仍遵守50000条/50MiB及不存在页404 |
 
@@ -229,9 +237,11 @@ GET /api/v1/blog/auth/captcha
 | `DELETE /admin/articles/{articleId}/permanent` | 同回收规则；成功后文章详情、评论、列表、导航、推荐和XML不得残留可访问条目；文件仍按原业务保留，不因清缓存删除存储对象 |
 | `POST /admin/categories`；`PUT/DELETE /admin/categories/{categoryId}` | 分类列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；覆盖改名、隐藏、排序、旧/新slug及删除后category_id置null |
 | `POST /admin/tags`；`PUT/DELETE /admin/tags/{tagId}` | 标签列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；删除还覆盖文章标签关联级联变化，不能只删标签详情 |
+| `PUT /admin/users/batch-enable`；`PUT /admin/users/batch-disable` | 作者、文章、搜索、文章详情和评论缓存整批成功后统一清理；只修改账号状态 |
+| `POST /admin/users/batch-delete` | 清理统计缓存；点赞按明细实时聚合，历史浏览及日志保留 |
 | `PATCH /blog/me/profile`；`PUT /admin/users/{userId}` 中公开字段变化 | 作者列表/详情、含作者资料的文章列表/搜索/详情、公开评论域；昵称/头像/简介变化不能继续使用缓存中的旧资料；邮箱等未公开字段不进入公共缓存 |
 | `POST /blog/articles/{articleId}/comments` | 该articleId下所有parentId、分页的公开评论缓存；待审新增也统一清理；文章列表/详情的评论数仍实时查库，不清空所有正文 |
-| `DELETE /blog/me/comments/{commentId}`；`PUT /admin/comments/{commentId}/review`；`DELETE /admin/comments/{commentId}` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或占位影响后代，不能只删commentId对应的一条结果 |
+| `DELETE /blog/me/comments/{commentId}`；`PUT /admin/comments/{commentId}/review`；`DELETE /admin/comments/{commentId}` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或删除影响后代，不能只删commentId对应的一条结果 |
 | `PUT/DELETE /blog/articles/{articleId}/like`；成功文章详情GET | 不删正文缓存，不建立Redis计数副本；本次互动数按数据库读取，排行榜最多延迟60秒；这是0.7明确允许的计数例外 |
 | `POST /admin/links`；`PUT/DELETE /admin/links/{linkId}` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
 | `PUT /admin/configs/site` | 公开site配置、RSS及地图；从公开改为不公开也必须删旧缓存，RSS继续按原规则检查必需公开配置 |
@@ -1270,54 +1280,14 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-36"></a>
-
-#### 1.3.5 删除菜单节点
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/menus/{menuId}` |
-| 接口描述 | 删除菜单节点 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`sys:menu:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `menuId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/menus/110
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-沿用修改的结构锁、升序用户锁和目标节点锁，锁内复核原 Token、身份、双权限及版本。有任意状态子节点返回 409/RESOURCE_IN_USE；叶子删除级联 role_menu，使关联角色聚合版本变化，独立 role_permission、用户及会话均保留。菜单和权限实时读库；Redis 身份校验不可用返回 503，不能跳过身份校验提交写入。
-
----
 
 <a id="group-3"></a>
 
 <a id="admin-group-4"></a>
 
 ### 1.4 用户管理
+
+用户批量操作见[批量启用](#batch-user-enable)、[批量禁用](#batch-user-disable)、[批量删除（含单个用户删除）](#batch-user-delete)，均支持 1..100 个显式目标。
 
 <a id="api-16"></a>
 
@@ -1855,48 +1825,6 @@ roleCode 不可改；dataScope 或 status 实际变化时撤销全部关联用�
 
 ---
 
-<a id="api-25"></a>
-
-#### 1.5.5 删除角色
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/roles/{roleId}` |
-| 接口描述 | 删除角色 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`sys:role:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `roleId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/roles/4
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-内置 admin/author/member 禁止删除，返回 409/STATE_CONFLICT；自定义角色即使已分配给用户仍允许删除，级联清理 sys_user_role、sys_role_permission、sys_role_menu 三类关联，保留用户及权限/菜单字典，撤销全部关联用户的所有会话。关联删除使受影响用户的聚合版本变化。Redis 失败则整笔回滚并返回 503。
-
----
 
 <a id="api-26"></a>
 
@@ -2200,50 +2128,6 @@ permissionCode 创建后不可改，PUT 不接受该字段。仅名称、模块�
 
 ---
 
-<a id="api-31"></a>
-
-#### 1.6.5 删除权限字典项
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/permissions/{permissionId}` |
-| 接口描述 | 删除权限字典项 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`sys:permission:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `permissionId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/permissions/114
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-固定后端权限（当前 AuthorizationProvider.ADMIN_PERMISSIONS 明确列出的后台入口、用户、角色、菜单及权限管理权限）禁止删除，返回 409/STATE_CONFLICT。此白名单不随 SQL 新增字典项自动扩大。任何菜单引用（含禁用或隐藏节点）均返回 409/RESOURCE_IN_USE，不能静默移除门禁。
-
-其他字典项可物理删除，已授权给角色不是额外删除限制；角色权限关联由现有外键 CASCADE 清理，菜单外键保持 RESTRICT。采用与修改相同的保护锁、升序用户锁和目标权限锁，先锁内复核身份、双权限及版本，再检查删除限制。删除前枚举并锁定全部关联用户，撤销所有会话后提交；Redis 失败回滚字典及角色关联，返回 503。数据库最终提交失败时会话可能已撤销，MySQL 与 Redis 无共同事务。
-
----
 
 <a id="admin-group-7"></a>
 
@@ -2525,176 +2409,8 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-44"></a>
 
-#### 1.7.5 发布或下架文章
 
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/articles/{articleId}/status` |
-| 接口描述 | 发布或下架文章 |
-| Content-Type | application/json |
-| 访问要求 | 后台：`blog:article:publish` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `articleId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `status` | integer | 是 | 1 发布、2 下架；禁止传 publishTime，回收站不可变更 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/articles/101/status
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-Content-Type: application/json
-
-{"status":1}
-```
-
-##### 响应参数
-
-`data`：[ArticleAdminDetail](#response-articleadmindetail-2)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| `X-Revision`（Header） | string | 当前聚合版本；编辑时原样用于 If-Revision |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "articleId": "101", "authorId": "12",
-    "author": {
-      "userId": "12", "nickname": "落叶"
-    },
-    "category": null, "title": "第一片落叶", "slug": "first-leaf", "status": 1
-  },
-  "errors": []
-}
-```
-
-草稿→发布、发布→下架、下架→发布；首次发布写服务端当前 UTC，之后保留，不支持定时发布。
-
----
-
-<a id="api-45"></a>
-
-#### 1.7.6 将文章移入回收站
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/articles/{articleId}` |
-| 接口描述 | 将文章移入回收站 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:article:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `articleId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/articles/101
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-仅写 deletedAt，不物理清理；保留正文、slug、标签与互动。同版本且已回收可幂等成功。
-
-这是普通“删除文章”的业务入口，删除后不再满足 PUBLIC。需要找回时按 [7.10](#api-46) 恢复；需要不可恢复清理时，在回收站按 [22.7](#api-159) 永久删除。
-
-本接口及恢复接口均无请求体；实际发送 JSON 或其他载荷返回 400，不静默忽略身份、状态等未声明字段。
-
----
-
-<a id="api-46"></a>
-
-#### 1.7.7 恢复回收站文章
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `POST /api/v1/admin/articles/{articleId}/restore` |
-| 接口描述 | 恢复回收站文章 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:article:restore` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `articleId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-POST /api/v1/admin/articles/101/restore
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data`：[ArticleAdminDetail](#response-articleadmindetail)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| `X-Revision`（Header） | string | 当前聚合版本；编辑时原样用于 If-Revision |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "articleId": "101", "authorId": "12",
-    "author": {
-      "userId": "12", "nickname": "落叶"
-    },
-    "category": null, "title": "第一片落叶", "slug": "first-leaf", "status": 2
-  },
-  "errors": []
-}
-```
-
-恢复固定下架 status=2，保留首次发布时间，须显式发布才公开。非回收站 409。
-
----
 
 <a id="api-86"></a>
 
@@ -2751,59 +2467,6 @@ Cache-Control: no-store
 
 ---
 
-<a id="api-159"></a>
-
-#### 1.7.9 永久删除回收站文章
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/articles/{articleId}/permanent` |
-| 接口描述 | 从回收站不可恢复地删除文章聚合及其互动；正常删除仍走 7.9 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台 `blog:article:delete` + 新增 `blog:article:purge`；分别满足各自数据范围 |
-| 并发校验 | 必填 If-Revision |
-| 实施状态 | 已实现；purge 权限加入初始化及固定码保护，默认只显式授予内置管理员角色 |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `articleId` | ID | 是 | Path；要彻底清理的文章 ID |
-| `If-Revision` | string | 是 | Header；原样携带最新后台详情 X-Revision，含引号；不得从列表推测版本 |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/articles/101/permanent
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-trash-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-仅允许永久删除回收站文章；正常文章返回 409，已不存在的目标返回 404。delete 与 purge 分别检查权限范围，详情查询仍需 query 权限。[初始化脚本](../sql/drifting_leaves_v2.sql)已包含 purge 权限及菜单，显式授予内置管理员角色，不授予 author/member。项目尚未上线，不再维护单独的权限增量脚本。
-
-| 数据 | 删除影响 |
-| --- | --- |
-| 文章、正文、标签关联、全部评论/回复和点赞 | 永久删除，无法恢复；清理失败整笔回滚 |
-| 分类、标签字典、文件元数据与存储对象 | 保留；文件由原文件接口检查引用后单独删除 |
-| 浏览明细 | 保留历史路径和标题，articleId 置 null；原站点 PV 保留，不再关联文章 ID 排行 |
-| 审计 | 保留历史日志，并记录本次永久删除 |
-| slug 与公开入口 | 释放 slug；详情、该文章附件上下文和恢复入口返回 404，不再出现在 Feed、地图及推荐 |
-
-回收站操作需明确提示“永久删除文章及全部评论、点赞，无法恢复”。评论外键清理、锁与事务等实现要求见 [永久删除开发约定](API_CONTRACT.md#permanent-delete-rules)。
-
----
 
 #### 22.8 实施说明
 
@@ -3044,48 +2707,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-52"></a>
-
-#### 1.8.5 删除分类
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/categories/{categoryId}` |
-| 接口描述 | 删除分类 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:category:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `categoryId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/categories/1
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-文章 categoryId 置 null；关联变化须令文章聚合 X-Revision 失效。
-
----
 
 <a id="api-54"></a>
 
@@ -3312,48 +2933,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-58"></a>
-
-#### 1.8.10 删除标签
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/tags/{tagId}` |
-| 接口描述 | 删除标签 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:tag:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `tagId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/tags/1
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-级联清理文章标签关联，保留文章；关联变化须令文章聚合 X-Revision 失效。
-
----
 
 <a id="admin-group-9"></a>
 
@@ -3468,105 +3047,7 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-65"></a>
 
-#### 1.9.3 审核评论
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/comments/{commentId}/review` |
-| 接口描述 | 审核评论 |
-| Content-Type | application/json |
-| 访问要求 | 后台：`blog:comment:review` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `commentId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `status` | integer | 是 | 1 通过、2 驳回；3 占位为终态，不能复活 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/comments/201/review
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-Content-Type: application/json
-
-{"status":1}
-```
-
-##### 响应参数
-
-`data`：[CommentAdmin](#response-commentadmin)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| `X-Revision`（Header） | string | 当前聚合版本；编辑时原样用于 If-Revision |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "commentId": "201", "articleId": "101", "userId": "12", "parentId": null, "content": "感谢分享。", "status": 1
-  },
-  "errors": []
-}
-```
-
-支持 0/1/2→1或2；3 为终态。父节点驳回会隐藏整支，恢复后重新计算。
-
----
-
-<a id="api-66"></a>
-
-#### 1.9.4 后台管理删除评论
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/comments/{commentId}` |
-| 接口描述 | 后台管理删除评论 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:comment:moderate` |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `commentId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/comments/201
-Authorization: Bearer <site-token>
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-占位删除幂等，不需 If-Revision；SELF 按文章作者校验；可处理非公开文章评论。
-
----
 
 <a id="admin-group-10"></a>
 
@@ -3689,109 +3170,7 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-117"></a>
 
-#### 1.10.3 审核留言
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/messages/{messageId}/review` |
-| 接口描述 | 审核留言 |
-| Content-Type | application/json |
-| 访问要求 | 后台：`blog:message:review`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `messageId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `status` | integer | 是 | 1通过 2驳回 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/messages/301/review
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-Content-Type: application/json
-
-{"status":1}
-```
-
-##### 响应参数
-
-`data`：[MessagePrivate](#response-messageprivate)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| X-Revision（Header） | string | 当前业务版本；写接口原样携带 |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "messageId": "301", "parentId": null,
-    "author": {
-      "userId": "12", "nickname": "落叶", "avatar": null
-    },
-    "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
-  },
-  "errors": []
-}
-```
-
-先检查ALL与版本，删除占位不可审核。父链待审或驳回时不允许通过子节点；重复目标幂等。通过审核不会公开悄悄话。通知仅在实际转为通过且事务提交后触发。
-
----
-
-<a id="api-118"></a>
-
-#### 1.10.4 后台删除留言
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/messages/{messageId}` |
-| 接口描述 | 后台删除留言 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:message:moderate`（ALL） |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `messageId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/messages/301
-Authorization: Bearer <site-token>
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-与本人删除同样占位并清除原文；不物理删除整棵线程、不改挂回复。重复删除幂等；需要ALL。
-
----
 
 <a id="api-119"></a>
 
@@ -4092,48 +3471,6 @@ status 同模型更新；仅保存 URL，不由服务器抓取。
 
 ---
 
-<a id="api-75"></a>
-
-#### 1.11.5 删除友链
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/links/{linkId}` |
-| 接口描述 | 删除友链 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:link:delete` |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `linkId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/links/1
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-物理删除。
-
----
 
 <a id="admin-group-12"></a>
 
@@ -4541,45 +3878,6 @@ Cache-Control: no-store
 
 ---
 
-<a id="api-84"></a>
-
-#### 1.13.5 删除文件
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/files/{fileId}` |
-| 接口描述 | 删除文件 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:file:delete` |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `fileId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/files/42
-Authorization: Bearer <site-token>
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-持文件锁检查所有文章引用，含草稿/私密/回收站；仍引用 409。存储删除失败保留元数据返回 503。
-
----
 
 <a id="admin-group-14"></a>
 
@@ -4946,48 +4244,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-96"></a>
-
-#### 1.14.7 删除社交链接
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/home/social-links/{socialId}` |
-| 接口描述 | 删除社交链接 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`home:social:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `socialId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/home/social-links/21
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-物理删除。
-
----
 
 <a id="admin-group-15"></a>
 
@@ -5245,48 +4501,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-102"></a>
-
-#### 1.15.5 删除简历经历
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/cv/experiences/{experienceId}` |
-| 接口描述 | 删除简历经历 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`cv:experience:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `experienceId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/cv/experiences/31
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-物理删除，不新增简历回收站。
-
----
 
 <a id="api-104"></a>
 
@@ -5521,48 +4735,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-108"></a>
-
-#### 1.15.10 删除简历技能
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/cv/skills/{skillId}` |
-| 接口描述 | 删除简历技能 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`cv:skill:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `skillId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/cv/skills/41
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-物理删除。
-
----
 
 <a id="admin-group-16"></a>
 
@@ -5821,48 +4993,6 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-125"></a>
-
-#### 1.16.5 删除音乐
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/music/{musicId}` |
-| 接口描述 | 删除音乐 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:music:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `musicId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/music/51
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-仅删除数据库曲目元数据，不删除外部音频、封面或歌词。
-
----
 
 <a id="admin-group-17"></a>
 
@@ -5977,109 +5107,7 @@ X-Revision: "<current-revision>"
 
 ---
 
-<a id="api-133"></a>
 
-#### 1.17.3 管理邮件订阅状态
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/rss-subscriptions/{subscriptionId}/status` |
-| 接口描述 | 管理邮件订阅状态 |
-| Content-Type | application/json |
-| 访问要求 | 后台：`blog:rss:update`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `subscriptionId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `status` | integer | 是 | 1激活 2退订 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/rss-subscriptions/401/status
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-Content-Type: application/json
-
-{"status":2}
-```
-
-##### 响应参数
-
-`data`：[SubscriptionAdmin](#response-subscriptionadmin)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| X-Revision（Header） | string | 当前业务版本；写接口原样携带 |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "userId": "12", "subscriptionId": "401", "email": "leaf@example.test", "status": 2, "verifiedAt": null,
-    "subscribeTime": null
-  },
-  "errors": []
-}
-```
-
-只更新状态，不允许写userId/email/verifiedAt。激活仅允许当前邮箱已经验证且所属用户启用；待验证状态不能被管理员绕过，409/STATE_CONFLICT。激活写subscribeTime并清空unsubscribeTime；退订写unsubscribeTime。重新激活会更新订阅轮次并使旧退订票据失效；退订保留当前轮次，支持相同票据幂等退订。
-
----
-
-<a id="api-134"></a>
-
-#### 1.17.4 删除邮件订阅
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/rss-subscriptions/{subscriptionId}` |
-| 接口描述 | 删除邮件订阅 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:rss:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `subscriptionId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/rss-subscriptions/401
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-需ALL；物理删除，旧确认/退订票据因目标不存在失效，不自动转移邮箱归属。
-
----
 
 <a id="admin-group-18"></a>
 
@@ -6197,166 +5225,8 @@ X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的最近访问
 
 ---
 
-<a id="api-140"></a>
 
-#### 1.18.3 封禁访客统计标识
 
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/visitors/{visitorId}/block` |
-| 接口描述 | 封禁访客统计标识 |
-| Content-Type | application/json |
-| 访问要求 | 后台：`blog:visitor:block`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `visitorId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `blockedUntil` | Time&#124;null | 是，可null | 必须显式出现；null永久，否则晚于当前UTC时间 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/visitors/501/block
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-Content-Type: application/json
-
-{"blockedUntil":"2026-10-31T02:00:00.000Z"}
-```
-
-##### 响应参数
-
-`data`：[Visitor](#response-visitor)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| X-Revision（Header） | string | 当前业务版本；写接口原样携带 |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
-    "userAgent": null, "country": null, "province": null
-  },
-  "errors": []
-}
-```
-
-需ALL，置isBlocked=1；到期后采集入口按时间自动视为未封禁，不要求定时任务先更新数据库。本人账号状态不受影响。
-
----
-
-<a id="api-141"></a>
-
-#### 1.18.4 解除访客统计限制
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/admin/visitors/{visitorId}/unblock` |
-| 接口描述 | 解除访客统计限制 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:visitor:unblock`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `visitorId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-PUT /api/v1/admin/visitors/501/unblock
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data`：[Visitor](#response-visitor)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| X-Revision（Header） | string | 当前业务版本；写接口原样携带 |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
-    "userAgent": null, "country": null, "province": null
-  },
-  "errors": []
-}
-```
-
-置isBlocked=0、blockedUntil=null；重复目标幂等。仅影响此标识的采集限制。
-
----
-
-<a id="api-142"></a>
-
-#### 1.18.5 删除访客统计记录
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/visitors/{visitorId}` |
-| 接口描述 | 删除访客统计记录 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:visitor:delete`（ALL） |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `visitorId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/visitors/501
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-物理删除；对应page_view.visitor_id由外键置NULL，保留PV明细，UV可能下降。不能使用此接口删除用户、留言、评论或订阅。
-
----
 
 <a id="admin-group-19"></a>
 
@@ -6423,45 +5293,6 @@ Authorization: Bearer <site-token>
 
 ---
 
-<a id="api-144"></a>
-
-#### 1.19.2 删除浏览记录
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/page-views/{viewId}` |
-| 接口描述 | 删除浏览记录 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:view:delete`（ALL） |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `viewId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-
-##### 请求示例
-
-```http
-DELETE /api/v1/admin/page-views/601
-Authorization: Bearer <site-token>
-```
-
-##### 响应参数
-
-`data` 固定为 null。
-
-##### 响应示例
-
-```json
-{"code":"OK","msg":"成功","data":null,"errors":[]}
-```
-
-明细不可编辑，不要求If-Revision；需ALL，物理删除，不存在404。会改变基于保留明细的报表，不扣减文章累计view_count。
-
----
 
 <a id="admin-group-20"></a>
 
@@ -6760,7 +5591,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-筛选AND组合；begin<end；operationTime DESC,logId DESC。列表不展开operationData，详情才展示脱敏摘要。
+筛选AND组合；begin<end；operationTime DESC,logId DESC。列表不展开operationData，详情向具有sys:log:query及ALL范围的管理员展示已记录的完整业务字段。
 
 ---
 
@@ -6811,43 +5642,529 @@ Authorization: Bearer <site-token>
 
 ---
 
-<a id="api-153"></a>
 
-#### 1.21.3 清理单条操作日志
+<a id="admin-batch"></a>
 
-##### 基本信息
+### 1.22 后台统一操作（单条与批量）
 
-| 项目 | 说明 |
+本节共 29 个统一入口：原有 26 项替换对应旧单条管理写路由，另新增用户批量启用、禁用和删除 3 项。一次提交 1 项即为单条操作，多项即为批量操作，使用相同的权限、版本、事务与结果协议；不保留旧路径别名。详情查询、创建、完整编辑、用户角色/角色 grants、本人设置及本人互动接口不在合并范围。源码依据与验收要求见[统一操作开发约定](API_CONTRACT.md#batch-contract)。
+
+#### 公共请求与结果
+
+全部入口要求有效 Bearer、启用账号、`admin:access` 和各接口列出的业务权限，使用 `Content-Type: application/json`、`Cache-Control: no-store`。不接受 Query、通用 action、筛选条件或“全选所有查询结果”；仅操作 Body 中明确选中的同类 ID。删除使用 POST 动作路径，避免在 DELETE 中携带批量 JSON；对应的旧单条管理写入口已移除，单个目标也使用此协议。
+
+以下请求模型的字段均在 Body，除明确可 null 的字段外均必填。只允许对应模型声明的字段，嵌套对象同样拒绝未知字段。
+
+| 请求模型 | 完整结构与约束 |
 | --- | --- |
-| 接口路径 | `DELETE /api/v1/admin/operation-logs/{logId}` |
-| 接口描述 | 清理单条操作日志 |
-| Content-Type | 无请求体 |
-| 访问要求 | 后台：`sys:log:delete`（ALL） |
+| `BatchRevisionRequest` | `{items:[{id:ID,revision:string}]}`；用于原操作要求版本的批量入口 |
+| `BatchIdsRequest` | `{ids:ID[]}`；用于评论/留言分支删除、文件、浏览记录和日志清理，不引入版本要求 |
+| `BatchStatusRequest` | `{items:[{id:ID,revision:string}],status:integer}`；所有目标采用同一 status，合法值见各接口 |
+| `BatchBlockRequest` | `{items:[{id:ID,revision:string}],blockedUntil:Time或null}`；blockedUntil 必须显式出现，null 表示永久，否则须晚于锁内检查时的当前 UTC |
 
-##### 请求参数
+数组长度为 1..100，ID 必须为合法十进制字符串，不能为 null 或重复；非法 ID、空数组、超过 100 项或重复 ID 返回 `400/VALIDATION_ERROR`，不自动去重或截断。该上限只限制显式选中的目标数，不截断分支删除的后代。
 
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `logId` | ID | 是 | Path；十进制正整数 ID 字符串 |
+`items[].revision` 原样使用各自单条详情 GET 的 X-Revision，包含引号；格式为双引号包裹的 64 位小写十六进制摘要，不接受 `*`。列表没有逐条版本，提交前须读取详情并保留用户确认时的版本。请求不发送 If-Revision；发送该头返回 400，不能以单一版本替代逐条版本。未要求版本的模型不接受 revision 字段。权限和范围通过后，缺失或 null 的逐条版本返回 428，格式错误返回 400，过期返回 412。
 
-##### 请求示例
+除文件批量删除外，全部采用**一个数据库事务整批提交**。先确认全部目标的权限、范围、存在性、版本和业务状态，再写入；任一失败，数据库变更和成功审计整批回滚，返回普通错误 Result，不返回部分成功。一个目标越出 SELF 范围或不存在均为 404，不披露具体越权目标。字段错误路径可使用 `items[0].id`、`ids[1]`；权限、版本和状态错误不返回目标详情。审计、会话撤销、Redis、缓存及邮件边界见[开发约定](API_CONTRACT.md#batch-contract)。
+
+| 结果模型 | HTTP 与完整 data 结构 |
+| --- | --- |
+| `BatchDeleted` | HTTP 200，`data:null`；全部所选目标及应级联的数据已清理，或文章已移入回收站 |
+| `BatchVersions` | HTTP 200，`data:{items:[{id:ID,revision:string}]}`；顺序与请求相同，恰好每个目标一项；revision 为写入后的业务版本，同目标无变化可保持原版本 |
+| `BatchFileResults` | HTTP 200，`data:{results:[{id:ID,httpStatus:integer,code:string,msg:string}]}`；顺序与请求相同，每个目标恰好一项，成功为 httpStatus=200/code=OK/msg=成功；失败沿用既有错误码和脱敏提示 |
+
+`BatchVersions` 不返回正文、邮箱、私密留言或用户资料；按需另查原详情。删除没有新版本。客户端不能把 HTTP 200 的文件批次直接显示为全部成功，必须检查 results 中每项的 code。
+
+请求示例中的摘要仅演示 JSON 转义格式，实际调用必须取目标自己的详情版本。批量审核示例同样适用于留言，status=2 表示驳回：
 
 ```http
-DELETE /api/v1/admin/operation-logs/701
+PUT /api/v1/admin/comments/batch-review
 Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"301","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""},{"id":"302","revision":"\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\""}],"status":1}
 ```
 
-##### 响应参数
+```json
+{"code":"OK","msg":"成功","data":{"items":[{"id":"301","revision":"\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\""},{"id":"302","revision":"\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\""}]},"errors":[]}
+```
 
-`data` 固定为 null。
+原删除业务要求版本的资源使用如下请求，不附加 status：
 
-##### 响应示例
+```http
+POST /api/v1/admin/categories/batch-delete
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"101","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}]}
+```
 
 ```json
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-不可编辑记录，无If-Revision；物理删除，目标不存在404。清理行为本身写一条新的审计记录，不形成递归记录。不存在公开创建/修改日志接口。
+不要求版本的分支清理使用 ID 数组；同时选中父子节点时按分支并集清理，具体规则见对应接口：
+
+```http
+POST /api/v1/admin/messages/batch-delete
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"ids":["401","402"]}
+```
+
+批量封禁沿用 V2 的明确到期时间，不沿用老项目固定封禁一天的默认值：
+
+```http
+PUT /api/v1/admin/visitors/batch-block
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"501","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}],"blockedUntil":null}
+```
+
+普通整批错误示例：HTTP 412，全部数据库写入回滚，不自动获取新版本重试：
+
+```json
+{"code":"REVISION_CONFLICT","msg":"资料已修改，请重新获取","data":null,"errors":[]}
+```
+
+所有入口均沿用[错误码](#errors)：未认证 401，无权限或缺少规定的 ALL 为 403，不存在/范围外 404，状态或引用冲突 409，旧版本 412，缺版本 428，请求超限 413，限流 429，数据库/Redis/存储不可用 503；未预期异常 500。权限检查不因目标已处于同状态而省略。超时或响应丢失先重新查询确认；删除后重放返回 404，旧版本重放返回 412，不承诺通用幂等键。
+
+<a id="api-44"></a>
+
+<a id="batch-article-status"></a>
+
+#### 1.22.1 批量发布或下架文章
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/articles/batch-status` |
+| 业务权限 | `blog:article:publish`，逐篇检查 ALL/SELF |
+| 请求 → 响应 | `BatchStatusRequest`（status=1 发布、2 下架）→ `BatchVersions` |
+
+逐篇继承[既有业务规则](API_CONTRACT.md#model-12-4)的正文、来源、关联和文件可用性校验。回收站文章不得操作；草稿不能直接下架。首次发布各自写服务端发布时间，重发保留原首次时间；首次公开发布通知仅在整批提交后触发，不因同状态重放重复发送。
+
+<a id="api-45"></a>
+
+<a id="batch-article-recycle"></a>
+
+#### 1.22.2 批量将文章移入回收站
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/articles/batch-recycle` |
+| 业务权限 | `blog:article:delete`，逐篇检查 ALL/SELF |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-4)，仅设置 deletedAt，保留原状态、正文、标签、slug、评论和点赞，不删除文件。同目标已回收的处理沿用单条接口，仍先校验版本，不扩大为永久删除。
+
+<a id="api-46"></a>
+
+<a id="batch-article-restore"></a>
+
+#### 1.22.3 批量恢复回收站文章
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/articles/batch-restore` |
+| 业务权限 | `blog:article:restore`，逐篇检查 ALL/SELF |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchVersions` |
+
+全部目标必须在回收站，否则整批 409。继承[既有业务规则](API_CONTRACT.md#model-12-4)，统一恢复为下架 status=2、deletedAt=null，保留首次发布时间，不自动公开或发送发布通知。
+
+<a id="api-159"></a>
+
+<a id="batch-article-permanent"></a>
+
+#### 1.22.4 批量永久删除回收站文章
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/articles/batch-permanent-delete` |
+| 业务权限 | 同时具备 `blog:article:delete`、`blog:article:purge`；两项范围分别逐篇检查 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+全部目标须先回收，不能混入正常文章。按[既有业务规则](API_CONTRACT.md#model-12-4)清理正文、标签关联、点赞及完整评论树；保留分类/标签字典、文件对象、历史审计和浏览明细，浏览关联 articleId 置 null。整批不可恢复，不能改成循环提交多个永久删除请求。
+
+<a id="api-52"></a>
+
+<a id="batch-category-delete"></a>
+
+#### 1.22.5 批量删除分类
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/categories/batch-delete` |
+| 业务权限 | `blog:category:delete`；全局字典，沿用原权限规则 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+按[既有业务规则](API_CONTRACT.md#model-12-5)将所选分类下文章的 categoryId 置 null，不删除文章；关联变化使文章业务版本失效，并在整批提交后清理依赖分类的公开缓存。
+
+<a id="api-58"></a>
+
+<a id="batch-tag-delete"></a>
+
+#### 1.22.6 批量删除标签
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/tags/batch-delete` |
+| 业务权限 | `blog:tag:delete`；全局字典，沿用原权限规则 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+按[既有业务规则](API_CONTRACT.md#model-12-5)清理相应文章标签关联，不删除文章或其他标签；关联集合变化使文章业务版本失效，缓存清理覆盖文章列表/详情等原有依赖。
+
+<a id="api-65"></a>
+
+<a id="batch-comment-review"></a>
+
+#### 1.22.7 批量审核评论
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/comments/batch-review` |
+| 业务权限 | `blog:comment:review`；SELF 按每条评论所属文章的 authorId 检查 |
+| 请求 → 响应 | `BatchStatusRequest`（status=1 通过、2 驳回）→ `BatchVersions` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-6)，只改显式选中的节点，不递归审核后代。历史占位 status=3 不能审核。审核通过子节点不自动通过祖先，也不绕过公开父链条件；驳回父节点会隐藏整条分支，后代自身状态保持。
+
+<a id="api-66"></a>
+
+<a id="batch-comment-delete"></a>
+
+#### 1.22.8 批量删除评论分支
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/comments/batch-delete` |
+| 业务权限 | `blog:comment:moderate`；SELF 按每个目标所属文章的 authorId 检查 |
+| 请求 → 响应 | `BatchIdsRequest` → `BatchDeleted` |
+
+不要求版本，按[既有业务规则](API_CONTRACT.md#model-12-6)物理清理目标及任意作者、任意审核状态的全部层级回复，不生成占位。先核验所有显式 ID 存在且可访问，再求分支并集；父子同时选中不因先删父节点导致后续误报 404，重叠节点只清理一次。未选中的祖先和兄弟保留。
+
+<a id="api-117"></a>
+
+<a id="batch-message-review"></a>
+
+#### 1.22.9 批量审核留言
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/messages/batch-review` |
+| 业务权限 | `blog:message:review`（ALL） |
+| 请求 → 响应 | `BatchStatusRequest`（status=1 通过、2 驳回）→ `BatchVersions` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-10)的完整父链与私密性规则，占位不可复活；只变更所选节点。通过校验基于整批拟提交的最终状态：被选中且本次通过的祖先可满足子节点条件，未选中的隐藏祖先仍导致整批 409，不由请求数组顺序决定结果。实际从非通过变为通过的节点在整批提交后通知，不泄露悄悄话原文。
+
+<a id="api-118"></a>
+
+<a id="batch-message-delete"></a>
+
+#### 1.22.10 批量删除留言分支
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/messages/batch-delete` |
+| 业务权限 | `blog:message:moderate`（ALL） |
+| 请求 → 响应 | `BatchIdsRequest` → `BatchDeleted` |
+
+不要求版本，继承[既有业务规则](API_CONTRACT.md#model-12-10)，物理清理目标与全部后代，含悄悄话、其他作者回复和旧占位。全部显式 ID 先校验，再对重叠分支求并集并按子到父清理；任一原始目标不存在整批 404。关闭留言开关不阻止历史清理。
+
+<a id="api-75"></a>
+
+<a id="batch-link-delete"></a>
+
+#### 1.22.11 批量删除友链
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/links/batch-delete` |
+| 业务权限 | `blog:link:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-7)，允许清理待审、展示和下架的记录，不抓取或删除外部图标、站点资源。
+
+<a id="api-84"></a>
+
+<a id="batch-file-delete"></a>
+
+#### 1.22.12 批量删除文件（逐项提交）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/files/batch-delete` |
+| 业务权限 | `blog:file:delete`，逐项检查上传者 ALL/SELF |
+| 请求 → 响应 | `BatchIdsRequest` → `BatchFileResults` |
+
+本接口是唯一的**逐项数据库事务**批量操作，不承诺所有文件共同回滚。请求结构和入口鉴权失败时使用普通错误 Result，尚未执行任何文件删除；开始处理后，按请求顺序逐项返回结果，不以首项错误掩盖后续状态。已完成的成功项不回滚，单项业务/存储失败后继续检查其余项；身份或权限失效后不再写入，剩余项分别记相应 401/403，仍保留每个请求 ID 的结果。
+
+逐项继承[既有业务规则](API_CONTRACT.md#model-12-8)的锁、引用检查和失败恢复：任何文章（含草稿、私密、回收站）仍引用时为 409/RESOURCE_IN_USE；不存在/SELF 范围外为 404；存储失败为 503 并保留元数据。对象已删除但数据库提交失败时仍可能暂留元数据，沿用单条重试清理规则，不声称恢复了文件对象。不要求版本，不输出物理路径、对象键或引用文章的敏感信息。
+
+```http
+POST /api/v1/admin/files/batch-delete
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"ids":["601","602"]}
+```
+
+```json
+{"code":"OK","msg":"成功","data":{"results":[{"id":"601","httpStatus":200,"code":"OK","msg":"成功"},{"id":"602","httpStatus":409,"code":"RESOURCE_IN_USE","msg":"文件仍被文章引用"}]},"errors":[]}
+```
+
+请求超时或连接中断可能拿不到已完成项结果，先按原文件详情确认，不盲目重发全部 ID，也不能把重试时的 404 当成证明上次全部成功。
+
+<a id="api-96"></a>
+
+<a id="batch-social-delete"></a>
+
+#### 1.22.13 批量删除社交链接
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/home/social-links/batch-delete` |
+| 业务权限 | `home:social:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-9)，提交后清理各公开端共享的社交链接缓存；不修改主人账号或主人资料，不删除外部图标。
+
+<a id="api-102"></a>
+
+<a id="batch-experience-delete"></a>
+
+#### 1.22.14 批量删除简历经历
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/cv/experiences/batch-delete` |
+| 业务权限 | `cv:experience:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-9)，允许混选教育、工作和项目类型，提交后清理经历缓存，不修改其他经历或主人资料。
+
+<a id="api-108"></a>
+
+<a id="batch-skill-delete"></a>
+
+#### 1.22.15 批量删除简历技能
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/cv/skills/batch-delete` |
+| 业务权限 | `cv:skill:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-9)，提交后清理公开技能缓存，不删除外部图标或改写其他技能排序。
+
+<a id="api-125"></a>
+
+<a id="batch-music-delete"></a>
+
+#### 1.22.16 批量删除音乐
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/music/batch-delete` |
+| 业务权限 | `blog:music:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-11)，只删除曲目和歌词元数据，清理播放列表缓存，不下载或删除外部音频、歌词与封面。
+
+<a id="api-133"></a>
+
+<a id="batch-subscription-status"></a>
+
+#### 1.22.17 批量管理邮件订阅状态
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/rss-subscriptions/batch-status` |
+| 业务权限 | `blog:rss:update`（ALL） |
+| 请求 → 响应 | `BatchStatusRequest`（status=1 激活、2 退订）→ `BatchVersions` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-12)。激活须逐条确认当前邮箱已验证、所属账号启用，不补写 verifiedAt、不替换邮箱或触发确认邮件；任一不满足则整批 409。实际再次激活才开始新投递轮次，同状态不重写时间；退订及旧票据失效沿用原规则。数据库整批回滚不代表撤销 Redis 已完成的轮次变更，失败后重新查询确认。
+
+<a id="api-134"></a>
+
+<a id="batch-subscription-delete"></a>
+
+#### 1.22.18 批量删除邮件订阅
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/rss-subscriptions/batch-delete` |
+| 业务权限 | `blog:rss:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-12)，清理记录后旧确认/退订链接不能恢复该记录，不删除本站用户，也不把账号联系邮箱作为已验证订阅邮箱。
+
+<a id="api-140"></a>
+
+<a id="batch-visitor-block"></a>
+
+#### 1.22.19 批量封禁访客统计标识
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/visitors/batch-block` |
+| 业务权限 | `blog:visitor:block`（ALL） |
+| 请求 → 响应 | `BatchBlockRequest` → `BatchVersions` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-13)，所选标识采用同一 blockedUntil；不接受省略时间而默认封禁一天。仅限制这些统计标识的采集，不禁用本站账号，不阻止公开阅读。
+
+<a id="api-141"></a>
+
+<a id="batch-visitor-unblock"></a>
+
+#### 1.22.20 批量解除访客统计限制
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/visitors/batch-unblock` |
+| 业务权限 | `blog:visitor:unblock`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchVersions` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-13)，将 isBlocked=0、blockedUntil=null；已解封同样先校验版本，不修改最近访问、地域或账号状态。
+
+<a id="api-142"></a>
+
+<a id="batch-visitor-delete"></a>
+
+#### 1.22.21 批量删除访客统计记录
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/visitors/batch-delete` |
+| 业务权限 | `blog:visitor:delete`（ALL） |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-13)，浏览明细保留且 visitorId 置 null，因此 PV 不变、基于非 null 访客的 UV 可能减少；不删除浏览记录、不减少文章累计阅读、不删除本站用户。同一 fingerprint 后续采集可重新生成访客记录。
+
+<a id="api-144"></a>
+
+<a id="batch-page-view-delete"></a>
+
+#### 1.22.22 批量清理浏览记录
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/page-views/batch-delete` |
+| 业务权限 | `blog:view:delete`（ALL） |
+| 请求 → 响应 | `BatchIdsRequest` → `BatchDeleted` |
+
+不要求版本，按[既有业务规则](API_CONTRACT.md#model-12-13)删除所选明细并清理统计缓存；基于保留明细的 PV/UV 及报表随之重算，不反向扣减文章累计 viewCount，不删除访客。
+
+<a id="api-153"></a>
+
+<a id="batch-log-delete"></a>
+
+#### 1.22.23 批量清理操作日志
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/operation-logs/batch-delete` |
+| 业务权限 | `sys:log:delete`（ALL） |
+| 请求 → 响应 | `BatchIdsRequest` → `BatchDeleted` |
+
+不要求版本，沿用[既有业务规则](API_CONTRACT.md#model-12-14)的显式 ID 清理与审计要求；整批清理本身新增一条审计，随事务提交，不被本次目标集合删除，也不递归产生清理日志。不存在按条件清空所有日志或公开创建/编辑日志入口。
+
+<a id="api-25"></a>
+
+<a id="batch-role-delete"></a>
+
+#### 1.22.24 批量删除角色
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/roles/batch-delete` |
+| 业务权限 | `sys:role:delete`；全局资源，沿用原权限规则 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-2)，任何内置 admin/author/member 角色均令整批 409。清理用户角色、角色权限和角色菜单关联，撤销受影响用户会话并清理授权缓存，不删除用户、权限字典或菜单；整批最终结果必须保留有效管理员。撤销失败则数据库整批回滚，但已撤销的会话不恢复。
+
+<a id="api-31"></a>
+
+<a id="batch-permission-delete"></a>
+
+#### 1.22.25 批量删除权限字典项
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/permissions/batch-delete` |
+| 业务权限 | `sys:permission:delete`；全局资源，沿用原权限规则 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-2)，固定后端权限禁止删除（409/STATE_CONFLICT），被任意菜单引用时整批 409/RESOURCE_IN_USE；只级联角色权限关联，不自动删菜单或角色。统一检查整批最终管理员能力，撤销所有受影响用户会话、清理授权缓存；失败不留下部分字典删除。
+
+<a id="api-36"></a>
+
+<a id="batch-menu-delete"></a>
+
+#### 1.22.26 批量删除菜单叶子节点
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/menus/batch-delete` |
+| 业务权限 | `sys:menu:delete`；全局资源，沿用原权限规则 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
+
+继承[既有业务规则](API_CONTRACT.md#model-12-3)的叶子限制：以写入前锁定的整棵树判断，任一目标有子节点即整批 409/RESOURCE_IN_USE；即使子节点也在本次集合中，仍须先另批删除子节点，不隐式递归删除目录。只级联角色菜单关联，清理受影响菜单缓存，不删除权限或撤销接口权限。
+
+<a id="batch-user-enable"></a>
+
+#### 1.22.27 批量启用用户
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/users/batch-enable` |
+| 业务权限 | `sys:user:update`；全局资源 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchVersions`；HTTP 200 |
+
+只将所选用户 status 改为 1，不修改资料或角色，不恢复已撤销的会话。已启用用户仍须校验版本，状态无变化时保留版本。不接受 status 或其他附加字段。
+
+<a id="batch-user-disable"></a>
+
+#### 1.22.28 批量禁用用户
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/users/batch-disable` |
+| 业务权限 | `sys:user:update`；全局资源 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchVersions`；HTTP 200 |
+
+只将所选用户 status 改为 0，不修改资料或角色；实际从启用转为禁用时撤销该账号全部本站会话。同状态也须校验版本。按整批最终状态保护最后有效管理员，违反返回 `409/LAST_ADMIN`，整批回滚。允许选择操作者本人，须在主动撤销会话前完成全部校验及结果版本计算。
+
+<a id="batch-user-delete"></a>
+
+#### 1.22.29 批量删除用户（支持单个用户）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/users/batch-delete` |
+| 业务权限 | `sys:user:delete`；全局资源 |
+| 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted`；HTTP 200，data=null |
+
+物理删除用户；一个用户也提交只有一项的 items，不另设单条删除入口。先锁固定管理员保护行，再按数值升序锁操作者及全部目标，复核权限、存在性及每项版本后才能写入。任一目标仍被文章（含回收站）、评论（含占位）、上传文件、主页资料或留言（含占位）引用，返回 `409/RESOURCE_IN_USE`，整批保留；须先按各模块规则处理引用，不能以删除用户为由自动删除内容。删除后的整批结果必须保留最后有效管理员，否则 `409/LAST_ADMIN`。
+
+数据库按既有外键级联清理角色关联、OAuth 绑定、点赞及邮件订阅；浏览记录和操作日志保留，userId 置 null。删除前持有用户锁，提交前撤销所有目标会话；撤销或成功审计失败则数据库整批回滚，已撤销会话不恢复。审计记录所选 ID 和数量，不记录密码、Token、OAuth 身份。删除成功清理统计缓存；文章点赞计数沿用明细实时统计规则。
+
+请求继承本节公共约束：items 为 1..100 项，不重复，ID 为十进制字符串，revision 为各自用户详情的 X-Revision，不发送 If-Revision。无权限为 403；目标不存在为 404；版本缺失/错误/过期分别为 428/400/412；数据库或 Redis 不可用为 503。任一失败不返回部分成功。
+
+单个用户删除示例（批量时向 items 添加其余用户及各自版本）：
+
+```http
+POST /api/v1/admin/users/batch-delete
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"12","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}]}
+```
+
+```json
+{"code":"OK","msg":"成功","data":null,"errors":[]}
+```
 
 ---
 
@@ -7856,14 +7173,14 @@ GET /api/v1/blog/article-rankings?period=month&metric=view&limit=5
 | 后台按作者查询文章 | `GET /api/v1/admin/articles?authorId=12&page=1&pageSize=10` | 已实现；需要 `blog:article:query`，SELF 查其他作者返回空页，不能扩大范围 |
 | 管理本人草稿 | `GET /api/v1/admin/articles?status=0&trash=0&page=1&pageSize=10` | 已实现；SELF 自动限定本人，ALL 角色可追加 `authorId` 定位作者 |
 | 查看下架文章 | `GET /api/v1/admin/articles?status=2&trash=0&page=1&pageSize=10` | 已实现；受 query 范围限制，前台不展示 |
-| 删除文章 | `DELETE /api/v1/admin/articles/101` | 已实现；[7.9](#api-45)，带 Token 与详情取得的 If-Revision，移入回收站 |
+| 删除文章 | `POST /api/v1/admin/articles/batch-recycle` | 已实现；[统一回收](#api-45)，Body 提交 items（含 id=101 和详情 revision），移入回收站 |
 | 查询回收站 | `GET /api/v1/admin/articles?trash=1&page=1&pageSize=10` | 已实现；仍按 query 范围过滤，不与正常文章混查 |
-| 恢复文章 | `POST /api/v1/admin/articles/101/restore` | 已实现；[7.10](#api-46)，先读取回收站详情取得版本，恢复为下架，不自动公开 |
+| 恢复文章 | `POST /api/v1/admin/articles/batch-restore` | 已实现；[统一恢复](#api-46)，Body 提交 items（含 id=101 和回收站详情 revision），恢复为下架，不自动公开 |
 | 后台预览草稿或下架内容 | `GET /api/v1/admin/articles/101` | 已实现；[7.5](#api-41) 返回 Markdown 与安全 HTML，公开详情不会因 Token 放宽可见性 |
 | 阅读上下篇和同分类推荐 | `GET /api/v1/blog/articles/first-leaf` | 已实现；[7.2](#api-38) 返回 prevArticle、nextArticle、relatedArticles，同分类推荐最多 6 条；详情成功会增加阅读量 |
 | 前台按作者查询公开文章 | `GET /api/v1/blog/articles?authorId=12&page=1&pageSize=10` | 已实现；[22.1](#article-author-query)，与其他筛选按 AND 组合 |
 
-删除流程：在对应权限范围内获取后台详情及 X-Revision → 携带 If-Revision 删除 → 从正常列表移除；回收站若要恢复，重新取详情取得最新版本。缺少版本返回 428，版本过期返回 412。回收站文章仍占用 slug，恢复时沿用原 slug；永久删除的单独设计见 [22.7](#api-159)。
+删除流程：在对应权限范围内获取后台详情及 X-Revision → 将 ID 与版本放入 items 数组提交统一回收接口 → 从正常列表移除；回收站若要恢复，重新取详情取得最新版本。缺少版本返回 428，版本过期返回 412。回收站文章仍占用 slug，恢复时沿用原 slug；永久删除的单独设计见 [22.7](#api-159)。
 
 分类/标签页目前可从分页字典列表取得 ID，再调用上述文章列表。直接打开 `/categories/{slug}` 或 `/tags/{slug}` 时定位单个字典的补充设计见 [22.4](#api-156)、[22.5](#api-157)，无需让客户端遍历所有字典分页。
 
@@ -8725,7 +8042,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-必须为本人，deleteOwn 不受 ALL 扩大；覆盖为占位并置 3，保留回复链，重复删除成功。
+目标评论必须为本人，deleteOwn不受ALL扩大；核对归属后在同一事务中物理删除目标和全部层级子回复，子回复不按作者或审核状态过滤。祖先和兄弟分支保留，不生成删除占位；重复删除或目标不存在返回404。旧status=3占位可再次删除。
 
 ---
 
@@ -8868,6 +8185,8 @@ X-Revision: "<current-revision>"
 | --- | --- | --- | --- |
 | `messageId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
+| `X-Captcha-Id` | string | 是 | Header；见[验证码契约](#captcha) |
+| `X-Captcha-Code` | string | 是 | Header；6 位数字，提交后需重新获取 |
 | `content` | S(2000) | 是 | 去首尾空白后非空；Markdown保留原文内部空白 |
 | `contentFormat` | integer | 是 | 0纯文本 1Markdown |
 | `notifyReply` | integer | 是 | 0/1；见留言通知边界 |
@@ -8878,6 +8197,8 @@ X-Revision: "<current-revision>"
 PUT /api/v1/blog/me/messages/301
 Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
+X-Captcha-Id: <captchaId>
+X-Captcha-Code: 012345
 Content-Type: application/json
 
 {"content":"你好，欢迎交流。","contentFormat":0,"notifyReply":0}
@@ -8950,7 +8271,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-无If-Revision，与本人评论删除一致；核对归属后清空原文为该留言已删除、contentFormat=0、notifyReply=0、status=3，保留回复链和私密范围。重复删除幂等，他人404。
+无If-Revision，与本人评论删除一致；核对目标归属后在同一事务中物理删除目标及全部层级子回复，包括其他作者、私密和各审核状态的后代，不保留占位。祖先和兄弟分支保留；他人、目标不存在或重复删除返回404。旧status=3占位可再次删除。
 
 ---
 
@@ -10471,7 +9792,7 @@ Blog连接由实际 `view/Layout/index.vue` 管理，站点统计卡片只读取
 
 ### 9. 评论审核与点赞
 
-评论为纯文本，审核后展示；删除保留占位。评论创建按用户+IP共用 60 秒 10 次窗口，点赞/取消按用户+IP共用 60 秒 60 次窗口。点赞计数取当前明细，公开评论数只含可见且通过的评论。
+评论为纯文本，审核后展示；删除同时物理移除目标和全部子回复，不生成占位。评论创建按用户+IP共用 60 秒 10 次窗口，点赞/取消按用户+IP共用 60 秒 60 次窗口。点赞计数取当前明细，公开评论数只含可见且通过的评论。
 
 <a id="group-10"></a>
 
@@ -10495,7 +9816,7 @@ Blog连接由实际 `view/Layout/index.vue` 管理，站点统计卡片只读取
 
 ### 16. 留言板、本人留言与审核
 
-留言与文章评论独立；按 parentId 逐层分页，不一次展开整棵线程。本人接口只取会话身份；私密父链、审核与占位规则见 [13.3](#business)。
+留言与文章评论独立；按 parentId 逐层分页，不一次展开整棵线程。本人接口只取会话身份；私密父链、审核与分支删除规则见 [13.3](#business)。
 
 <a id="group-17"></a>
 
@@ -11524,7 +10845,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `errorMessage` | string&#124;null | ≤500，脱敏错误摘要 |
 | `ipAddress` | string&#124;null | 操作IP |
 | `operationTime` | Time | 操作时间 |
-| `operationData` | object&#124;null | 白名单脱敏摘要；UTF-8≤16KiB，不是完整请求体 |
+| `operationData` | object&#124;null | 按业务方法参数名组织的操作数据，业务字段保留完整原值，不掩码或截断；历史未记录时为null。密码和登录票据不记录，文件上传仅记录文件名、类型和字节数，不含文件二进制 |
 
 <a id="response-authorpublic"></a>
 
@@ -11575,7 +10896,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 ### 13.3 互动、订阅与统计
 
-评论为纯文本，删除保留占位与回复链；有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取；编辑重新待审，删除保留占位。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
+评论为纯文本，有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取，编辑重新待审。评论与留言删除均在事务中物理移除目标及全部子回复，不生成占位；已有旧占位兼容读取，可通过本人或后台删除入口清除。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
 
 订阅邮箱独立确认，不把账号联系邮箱当作已验证邮箱。首次公开发布及留言实际审核通过后再通知；发送失败不回滚已提交业务，进程内通知不保证跨宕机投递。RSS/站点地图公开读取，不依赖邮件订阅。
 
@@ -11667,7 +10988,7 @@ Cache-Control: no-store
 
 ## 21. 旧项目来源与迁移对照
 
-V2 沿用旧站的主页、简历、文章、留言、音乐、订阅与访问统计业务，并采用当前 Sa-Token、RBAC 和 28 表设计。旧站 JWT、游客 Token、批量操作、私密评论与前端完成页均不自动成为 V2 能力。
+V2 沿用旧站的主页、简历、文章、留言、音乐、订阅与访问统计业务，并采用当前 Sa-Token、RBAC 和 28 表设计。旧站 JWT、游客 Token、私密评论与前端完成页均不自动成为 V2 能力。单条与批量操作已按 V2 规则合并为[统一操作入口](#admin-batch)，没有复制旧接口、鉴权或默认封禁时间。
 
 具体来源和迁移取舍见 [迁移对照](API_CONTRACT.md#legacy-sources)；运行配置与历史验证见 [后端运行说明](后端运行说明.md)。
 

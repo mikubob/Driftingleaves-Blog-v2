@@ -3,7 +3,9 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.client.MailClient;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.SubscriptionQueryDTO;
 import com.xuan.dto.SubscriptionWriteDTO;
 import com.xuan.entity.BlogRssSubscription;
@@ -23,6 +25,7 @@ import com.xuan.store.SubscriptionTicketStore;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.SubscriptionVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -39,7 +42,9 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
@@ -229,9 +234,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:rss", permission = "blog:rss:delete", targetIdArgument = 0)
     public void delete(long id, String revision) {
-        BlogRssSubscription row = lockAdmin(id, "delete");
-        RevisionUtils.check(profile(row).revision(), revision);
-        subscriptions.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 后台先查权限，再按ID锁操作者和所属用户，每个等待阶段都重查身份和ALL。 */
@@ -329,4 +332,64 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     private record Application(BlogRssSubscription row, String ticket) {
 
     }
+
+    /** 先锁定整批所属用户并完成校验，之后才修改订阅和投递轮次。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:rss", permission = "blog:rss:delete")
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        requireAdmin("delete");
+        Set<Long> userIds = new TreeSet<>();
+        userIds.add(sessions.currentUserId());
+        for (var item : sorted) {
+            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
+        }
+        for (long id : userIds) {
+            users.lockById(id);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogRssSubscription row = lockAdmin(id, "delete");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            subscriptions.deleteById(id);
+        }
+    }
+
+    /** 先锁定整批所属用户并完成校验，之后才修改订阅和投递轮次。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "blog:rss", permission = "blog:rss:update")
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        var sorted = BatchInputs.sorted(items);
+        requireAdmin("update");
+        Set<Long> userIds = new TreeSet<>();
+        userIds.add(sessions.currentUserId());
+        for (var item : sorted) {
+            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
+        }
+        for (long id : userIds) {
+            users.lockById(id);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogRssSubscription row = lockAdmin(id, "update");
+            RevisionUtils.check(profile(row).revision(), revision);
+            if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
+                throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
+            }
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, changeStatus(id, status, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
 }

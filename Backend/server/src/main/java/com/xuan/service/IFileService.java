@@ -5,8 +5,11 @@ import com.xuan.dto.FileQueryDTO;
 import com.xuan.entity.BlogFile;
 import com.xuan.model.FileContent;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchFileResultsVO;
 import com.xuan.vo.FileVO;
 import org.springframework.web.multipart.MultipartFile;
+
+import java.util.List;
 
 /**
  * 文件业务统一处理上传者范围、文章真实引用和存储补偿，不返回公开存储直链。
@@ -30,4 +33,6 @@ public interface IFileService extends IService<BlogFile> {
 
     /** 文件锁后再锁文章，公开入口固定 PUBLIC，后台分别检查文章和文件 query 范围。 */
     FileContent attachment(long articleId, long fileId, boolean admin);
+    /** 每个文件独立提交，顺序与输入一致，不把部分失败伪装成整批成功。 */
+    BatchFileResultsVO deleteBatch(List<String> ids);
 }

@@ -48,8 +48,10 @@ pnpm preview
 - API 前缀集中为 `/api/v1`。密码与 OAuth 登录均固定有效 7 天（604800 秒）；localStorage 的 `dl-admin-session` 仅保存 Token 和固定到期时间，通过 Bearer 发送，不写 Cookie、URL 或日志。刷新或重新打开页面后重读本人资料、权限和菜单，确认 `admin:access` 后先注册动态路由再导航，不续期。浏览器禁用存储时仅本页有效。
 - ID、ID 数组、统计与字节数保持十进制字符串。分页页码使用数字，时间筛选转为 UTC 毫秒，报表使用 UTC 自然日。
 - PUT 只提交完整的允许字段，PATCH 明确区分缺失和 null；不会把响应整行、作者、审计时间或 HTML 提交给后端。
+- 管理端删除、审核、发布/下架、恢复、封禁/解封等 26 个动作使用统一的单条/批量入口，18个支持批量动作的管理列表均提供首列复选框、表头全选当前页、已选数量、取消选择和权限控制的批量操作栏；单条按钮继续提交一项数组。翻页、修改筛选、刷新或更换每页条数时清空选择，不跨页累计ID。原单条管理写路径已移除，前后端需同步部署；需要版本的动作把详情版本放入 `items[].revision`，不发送 `If-Revision`；完整编辑仍沿用原版本头。文件清理检查每项结果，外层 HTTP 200 不代表文件全部删除成功。
 - 编辑先取详情，再原样携带带引号的 `X-Revision`。412 保留表单输入并提示重新获取后合并，428 提示补充版本；失败写入不自动重试。400 展示字段错误，429 使用 `Retry-After`。
-- 文章编辑含未保存离开提醒。预览显示上次保存时由后端清理的 HTML，不在本地渲染未保存 Markdown。附件需先创建草稿；后台图片携带 Bearer 读取为临时对象 URL，关闭预览或离开时释放。
+- 文章编辑复用旧后台的 Markdown 编辑器、实时预览、表情、封面上传及发布设置布局。实时预览经 HTML 清理且仅用于编辑，已保存内容预览仍使用后端清理的 HTML。附件需先创建草稿；后台图片携带 Bearer 读取为临时对象 URL，关闭预览或离开时释放。
+- 保存只记录本次提交快照，请求期间的新输入保持未保存；草稿创建后的 URL 同步不会重建编辑器。发布按保存、携最新版本发布、返回动态菜单文章列表的顺序执行；发布失败保留草稿和 ID，重试使用更新接口。发布期间继续输入时留在编辑页，避免丢失修改；列表启用 keepAlive 时返回也会刷新。离页可选择保存并离开、不保存或关闭弹窗继续编辑。
 - 修改/清除密码、解绑成功或会话失效会清除内存身份与本端持久凭据；密码错误不会无条件注销已有会话。角色/菜单/账号变更造成的会话撤销遵从后端返回。
 
 ## OAuth 部署
@@ -68,7 +70,16 @@ pnpm preview
 npx --yes --package @playwright/cli playwright-cli -s=drifting-admin open http://127.0.0.1:5176/login
 npx --yes --package @playwright/cli playwright-cli -s=drifting-admin run-code --filename tests/browser-smoke.mjs
 npx --yes --package @playwright/cli playwright-cli -s=drifting-admin close
+
+# 文章编辑回归使用独立会话，避免前一轮测试的会话初始化脚本干扰。
+npx --yes --package @playwright/cli playwright-cli -s=article-editor open http://127.0.0.1:5176/login
+npx --yes --package @playwright/cli playwright-cli -s=article-editor run-code --filename tests/article-editor-smoke.mjs
+npx --yes --package @playwright/cli playwright-cli -s=article-editor close
 ```
+
+`tests/article-editor-smoke.mjs` 检查连续新建独立文章、发布后返回列表、草稿续存、发布失败重试、请求期间输入与重复快捷键、最新版本头、缓存列表刷新、安全实时预览、移动端及详情失败禁用保存。
+
+列表分页沿用老项目：每页可选 10/15/20/50 条，支持数字页码与跳页；切换条数回到第一页并保留筛选。两端动态分页回归在仓库根目录执行 `npx --package @playwright/cli playwright-cli -s=pagination run-code --filename Front/shared/pagination-browser-smoke.mjs`，运行前启动后台 5176 和博客 5174 的 Vite 服务，并用同一会话执行 `open about:blank`。该脚本挂载真实分页组件，在 HTTP 请求处使用虚构数据。
 
 浏览器截图保存在忽略的 `output/playwright/` 下。测试替身与生产构建不代表真实后端、数据库、OSS、SMTP 或第三方平台联调已完成。本次不启动后端、不操作业务数据库。
 
@@ -87,3 +98,14 @@ UI 资源位于 `src/assets/`；管理区保留持久登录与动态权限菜单
 浏览器检查还覆盖登录页设计保留、侧栏图标唯一性、折叠与展开、keepAlive 状态，以及未知路由、429、503、网络异常的全屏 404 与返回入口。
 
 图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
+
+
+## 批量选择交互
+
+复用 `D:/CodingFiles/Blog/fet/FeiTwnd-Website/Frontend-Admin` 的 Element Plus 48px 选择列、当前页全选、空选择禁用与按数量确认方式，保留本站布局、权限与接口协议。文章的发布/下架、回收/恢复/永久删除，评论/留言的审核/分支删除，访客的封禁/解封和其他现有批量清理动作均已接入。用户、单例资料和配置没有对应批量接口，不新增无效多选入口。
+
+需要版本的批次先顺序读取所选详情，再确认并提交一个写请求，最多100项；取消或读取失败不执行写入，版本冲突保留选择并提示重新读取，不自动降级逐条提交。评论/留言删除确认说明全部后代影响；菜单只选择叶子，内置角色不可选；访客封禁需填写结束时间或明确勾选永久。文件清理显示成功/失败数量，并逐项列出失败ID、原因及错误码。
+
+共用实现为 `src/components/BatchActions.vue` 和 `src/batch.js`。单元测试使用 `pnpm test`；浏览器夹具 `tests/batch-selection-smoke.mjs` 使用虚构HTTP数据驱动18个真实Vue页面，不连接业务服务，可经Playwright CLI的 `run-code --filename` 执行。
+
+2026-11-01 批量选择验收：`pnpm test` 24项通过，`pnpm build`成功；Playwright虚构HTTP夹具验证18个真实页面、47项检查通过，覆盖当前页全选/取消、翻页清空、取消确认不写入、多项单次请求、版本冲突不重试、文件失败明细、永久限制明确选择和权限隐藏。桌面/手机截图位于仓库`output/playwright/batch-selection.png`及`batch-selection-mobile.png`；静态核对18页覆盖全部26个统一入口。本次未修改后端或连接业务库。

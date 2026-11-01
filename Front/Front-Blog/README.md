@@ -80,6 +80,8 @@ npx --package @playwright/cli playwright-cli -s=legacy-blog close
 
 截图在忽略目录 `output/playwright/legacy-*.png`。这些检查不代表真实 MySQL、Redis、OSS、SMTP 或 OAuth 平台联调。
 
+公共分页沿用老项目的数字页码与省略号，只有一页时隐藏；首页每页 6 条，其他列表保留各自条数。两端分页交互回归见 `../shared/pagination-browser-smoke.mjs`，运行方式见[管理端说明](../Front-Admin/README.md)。
+
 ## 服务器异常与限流
 
 网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 显示参考 FeiTwnd-Website 对应端的全屏 404 样式；429 保留 Retry-After 秒数提示。请求仍失败且不自动重放，普通校验、鉴权与版本冲突沿用原逻辑。点击“返回首页”重新进入站点；如有未提交编辑，应重新加载后再操作。统计采集失败保持静默，不切换异常页。
@@ -88,4 +90,4 @@ npx --package @playwright/cli playwright-cli -s=legacy-blog close
 
 旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。浏览器 smoke 可分别传入 `no-preference`、`reduce`，通过真实 transitionrun / animationstart 验证两种系统偏好下的主要动效。
 
-图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
+图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言及本人留言编辑和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。

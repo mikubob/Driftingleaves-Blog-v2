@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,9 +7,12 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/rss-subscriptions',
   { email: '', userId: '', status: '' },
 )
@@ -40,7 +43,10 @@ async function change(row, status) {
   try {
     const path = `/admin/rss-subscriptions/${row.subscriptionId}`
     const current = await request(path)
-    await request(`${path}/status`, { method: 'PUT', revision: current.revision, body: { status } })
+    await request('/admin/rss-subscriptions/batch-status', {
+      method: 'PUT',
+      body: { items: [{ id: row.subscriptionId, revision: current.revision }], status },
+    })
     ElMessage.success('订阅状态已更新')
     load()
   } catch (failure) {
@@ -63,7 +69,7 @@ async function remove(row) {
   try {
     const path = `/admin/rss-subscriptions/${row.subscriptionId}`
     const current = await request(path)
-    await request(path, { method: 'DELETE', revision: current.revision })
+    await request('/admin/rss-subscriptions/batch-delete', { method: 'POST', body: { items: [{ id: row.subscriptionId, revision: current.revision }] } })
     ElMessage.success('订阅已删除')
     load()
   } catch (failure) {
@@ -73,6 +79,38 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:rss:update', true)) {
+    actions.push({
+      label: '批量激活',
+      path: 'batch-status',
+      method: 'PUT',
+      body: { status: 1 },
+      warning: '仅激活邮箱已验证且所属账号启用的订阅，不会跳过邮箱验证。',
+    })
+  }
+  if (can('blog:rss:update', true)) {
+    actions.push({
+      label: '批量退订',
+      path: 'batch-status',
+      method: 'PUT',
+      body: { status: 2 },
+    })
+  }
+  if (can('blog:rss:delete', true)) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      danger: true,
+      warning: '删除订阅后旧确认和退订链接失效，不删除本站账号。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -115,13 +153,21 @@ onMounted(load)
         <h2>订阅列表</h2>
         <span class="muted-text">待验证邮箱需要用户自行确认</span>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/rss-subscriptions" id-key="subscriptionId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="subscriptionId"
         empty-text="暂无订阅"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="email" label="订阅邮箱" min-width="230" />
         <el-table-column prop="userId" label="所属用户 ID" min-width="180" />
         <el-table-column label="状态" width="110">
@@ -157,10 +203,12 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="visible" title="订阅详情" width="650px">

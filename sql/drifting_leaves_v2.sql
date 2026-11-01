@@ -491,7 +491,7 @@ CREATE TABLE sys_operation_log (
   operation_target VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '目标模块或资源',
   target_id BIGINT DEFAULT NULL COMMENT '目标资源ID；批量或无数字ID的操作可为空',
   permission_code VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '本次检查的权限码快照，不授予权限',
-  operation_data JSON DEFAULT NULL COMMENT '应用按白名单记录的脱敏操作摘要；禁止密码、Token及第三方密钥',
+  operation_data JSON DEFAULT NULL COMMENT '完整业务字段的操作快照，仅日志管理员可读；不记录密码、Token及第三方密钥',
   result TINYINT NOT NULL COMMENT '0失败 1成功',
   error_message VARCHAR(500) DEFAULT NULL COMMENT '脱敏错误摘要；不保存原始异常堆栈或SQL',
   ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '操作IP；仅从可信代理链提取',
@@ -554,6 +554,7 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (81, 'sys:user:create', '创建用户', 'sys'),
   (82, 'sys:user:update', '编辑及启停用户', 'sys'),
   (83, 'sys:user:assignRole', '分配用户角色', 'sys'),
+  (84, 'sys:user:delete', '删除用户', 'sys'),
   (90, 'sys:role:query', '查询角色', 'sys'),
   (91, 'sys:role:create', '创建角色', 'sys'),
   (92, 'sys:role:update', '编辑及启停角色', 'sys'),
@@ -657,7 +658,7 @@ SELECT 1000 + p.permission_id,
     WHEN p.permission_id BETWEEN 51 AND 53 THEN 150
     WHEN p.permission_id BETWEEN 61 AND 62 THEN 160
     WHEN p.permission_id = 71 THEN 250
-    WHEN p.permission_id BETWEEN 81 AND 83 THEN 210
+    WHEN p.permission_id BETWEEN 81 AND 84 THEN 210
     WHEN p.permission_id BETWEEN 91 AND 94 THEN 220
     WHEN p.permission_id BETWEEN 101 AND 103 THEN 230
     WHEN p.permission_id BETWEEN 111 AND 113 THEN 240
@@ -674,7 +675,7 @@ SELECT 1000 + p.permission_id,
   END,
   p.permission_code, p.permission_name, 'B', p.permission_id, p.permission_id, 0
 FROM sys_permission p
-WHERE p.permission_id IN (11,12,13,14,15,16,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,91,92,93,94,101,102,103,111,112,113,
+WHERE p.permission_id IN (11,12,13,14,15,16,21,22,23,31,32,33,41,42,51,52,53,61,62,71,81,82,83,84,91,92,93,94,101,102,103,111,112,113,
   121,131,132,133,141,142,143,151,152,153,161,162,171,172,173,181,182,191,192,193,201,221);
 
 INSERT INTO sys_role_menu (role_id, menu_id) SELECT 1, menu_id FROM sys_menu;

@@ -1,25 +1,25 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchIdsDTO;
+import com.xuan.dto.BatchStatusDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
-import com.xuan.dto.CommentReviewDTO;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICommentService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CommentAdminVO;
 import com.xuan.vo.CommentProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -47,23 +47,18 @@ public class CommentController {
         return profile(comments.detail(IdUtils.parse(commentId)));
     }
 
-    /** 版本留到锁内检查，同目标也不能跳过版本校验。 */
-    @PutMapping("/{commentId}/review")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PutMapping("/batch-review")
     @SaCheckPermission("blog:comment:review")
-    public ResponseEntity<Result<CommentAdminVO>> review(@PathVariable String commentId,
-            @Valid @RequestBody CommentReviewDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(comments.review(IdUtils.parse(commentId), body.status(), revision));
+    public Result<BatchVersionsVO> review(@Valid @RequestBody BatchStatusDTO body) {
+        return Result.ok(comments.reviewBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 管理占位删除不要求版本，重复删除仍成功。 */
-    @DeleteMapping("/{commentId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:comment:moderate")
-    public Result<Void> delete(@PathVariable String commentId, @RequestBody(required = false) String body) {
-        if (body != null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
-        }
-        comments.moderate(IdUtils.parse(commentId));
+    public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
+        comments.moderateBatch(body.ids());
         return Result.ok(null);
     }
 

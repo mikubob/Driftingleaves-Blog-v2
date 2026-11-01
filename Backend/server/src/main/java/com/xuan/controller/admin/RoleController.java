@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleQueryDTO;
@@ -14,7 +15,6 @@ import com.xuan.vo.RoleVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -85,17 +85,11 @@ public class RoleController {
         return profile(roles.update(id(roleId), body, revision));
     }
 
-    /**
-     * 检查后台入口和删除权限后删自定义角色，清关联、撤销全部会话有任何失败都要回滚。
-     * @param roleId 目标角色
-     * @param revision 当前详情版本，内置角色禁止删除
-     * @return 200 空结果，无 X-Revision
-     */
-    @DeleteMapping("/{roleId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("sys:role:delete")
-    public Result<Void> delete(@PathVariable String roleId,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        roles.delete(id(roleId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        roles.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

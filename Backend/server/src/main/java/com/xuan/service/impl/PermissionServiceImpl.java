@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.dto.PermissionUpdateDTO;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IPermissionService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
@@ -24,6 +27,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -141,26 +145,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument
             = 0)
     public void delete(long permissionId, String revision) {
-        List<Long> affected = lockUsers(permissionId, "sys:permission:delete");
-        SysPermission permission = permissions.lockById(permissionId);
-        requireAdmin("sys:permission:delete");
-        permission = requirePermission(permission);
-        checkRevision(permission, revision);
-        if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.ARTICLE_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.TAXONOMY_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.INTERACTION_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.SITE_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.FILE_PERMISSIONS.contains(permission.getPermissionCode())
-                || AuthorizationProvider.EXTENDED_PERMISSIONS.contains(permission.getPermissionCode())) {
-            throw new BusinessException(409, "STATE_CONFLICT", "固定后端权限禁止删除");
-        }
-        if (permissions.menuReferences(permissionId) != 0) {
-            throw new BusinessException(409, "RESOURCE_IN_USE", "权限仍被菜单引用");
-        }
-        // 菜单外键仍是 RESTRICT，只有角色关联允许 CASCADE；撤销会话失败时字典和关联一起回滚。
-        permissions.deleteById(permissionId);
-        revoke(affected);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(permissionId), revision)));
     }
 
     /**
@@ -263,4 +248,54 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
                 permission.getModule(), permission.getDescription(), permission.getStatus(),
                 permission.getCreateTime(), permission.getUpdateTime());
     }
+
+    /** 先验证整批授权对象，删除完成后统一撤销所有受影响用户会话。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "sys:permission", permission = "sys:permission:delete")
+    public void deleteBatch(List<BatchItemDTO> items) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        requireAdmin("sys:permission:delete");
+        var sorted = BatchInputs.sorted(items);
+        Set<Long> affected = new TreeSet<>();
+        for (var item : sorted) {
+            affected.addAll(permissions.userIds(IdUtils.parse(item.id())));
+        }
+        Set<Long> lockedUsers = new TreeSet<>(affected);
+        lockedUsers.add(sessions.currentUserId());
+        for (long id : lockedUsers) {
+            users.lockById(id);
+        }
+        for (var item : sorted) {
+            long permissionId = IdUtils.parse(item.id());
+            String revision = item.revision();
+            SysPermission permission = permissions.lockById(permissionId);
+            requireAdmin("sys:permission:delete");
+            permission = requirePermission(permission);
+            checkRevision(permission, revision);
+            if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.ARTICLE_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.TAXONOMY_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.INTERACTION_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.SITE_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.FILE_PERMISSIONS.contains(permission.getPermissionCode())
+                    || AuthorizationProvider.EXTENDED_PERMISSIONS.contains(permission.getPermissionCode())) {
+                throw new BusinessException(409, "STATE_CONFLICT", "固定后端权限禁止删除");
+            }
+            if (permissions.menuReferences(permissionId) != 0) {
+                throw new BusinessException(409, "RESOURCE_IN_USE", "权限仍被菜单引用");
+            }
+            // 菜单外键仍是 RESTRICT，只有角色关联允许 CASCADE；撤销会话失败时字典和关联一起回滚。
+        }
+        for (var item : sorted) {
+            permissions.deleteById(IdUtils.parse(item.id()));
+        }
+        if (users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
+            throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
+        }
+        revoke(new ArrayList<>(affected));
+    }
+
 }

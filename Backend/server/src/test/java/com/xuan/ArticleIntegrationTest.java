@@ -13,6 +13,7 @@ import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISocialService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.zaxxer.hikari.HikariDataSource;
 import org.assertj.core.api.Assertions;
@@ -475,7 +476,7 @@ class ArticleIntegrationTest {
                 "STATE_CONFLICT");
         MvcResult published = status(token, id, 1);
         code(published, 200, "OK");
-        String first = data(published).get("publishTime").asString();
+        String first = data(call("GET", "/admin/articles/" + id, token, null)).get("publishTime").asString();
         code(status(token, id, 2), 200, "OK");
         code(status(token, id, 1), 200, "OK");
         assertThat(data(call("GET", "/admin/articles/" + id, token, null)).get("publishTime").asString()).isEqualTo(
@@ -493,6 +494,7 @@ class ArticleIntegrationTest {
                 "UNIQUE_CONFLICT");
         MvcResult restored = write("POST", "/admin/articles/" + id + "/restore", token, trash, null);
         code(restored, 200, "OK");
+        restored = call("GET", "/admin/articles/" + id, token, null);
         assertThat(data(restored).get("status").asInt()).isEqualTo(2);
         assertThat(data(restored).get("publishTime").asString()).isEqualTo(first);
         assertThat(data(restored).get("markdownContent").asString()).isEqualTo("body");
@@ -1676,8 +1678,7 @@ class ArticleIntegrationTest {
         code(review(token, id, 1), 200, "OK");
         code(call("DELETE", "/blog/me/comments/" + id, token, null), 200, "OK");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article_like", Integer.class)).isEqualTo(1);
-        assertThat(
-                data(call("GET", "/blog/me/comments", token, null)).get("records").get(0).has("markdownContent")).isFalse();
+        assertThat(data(call("GET", "/blog/me/comments", token, null)).get("records").isEmpty()).isTrue();
     }
 
     @Test
@@ -1790,7 +1791,8 @@ class ArticleIntegrationTest {
         code(write("PUT", "/admin/comments/" + other + "/review", author, null, Map.of("status", 1)), 404, "NOT_FOUND");
         code(review(author, own, 1), 200, "OK");
         code(call("DELETE", "/admin/comments/" + other, author, null), 200, "OK");
-        // 反过来给 query/review ALL、moderate SELF，确认查询能力不会扩大删除范围。
+        // 重新创建目标，再给 query/review ALL、moderate SELF，确认查询能力不会扩大删除范围。
+        other = commentId(postComment(author, otherArticle, "新的他篇评论", null));
         jdbc.update("DELETE FROM sys_role_permission WHERE role_id=900");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(900,40),(900,41),(2,42)");
         code(call("GET", "/admin/comments/" + other, author, null), 200, "OK");
@@ -1809,16 +1811,15 @@ class ArticleIntegrationTest {
         code(call("DELETE", "/blog/me/comments/" + theirs, admin, null), 404, "NOT_FOUND");
         assertThat(data(call("GET", "/blog/me/comments?articleId=" + article + "&status=0", admin, null)).get("total")
                 .asString()).isEqualTo("1");
-        for (int i = 0; i < 2; i++) {
-            MvcResult deleted = call("DELETE", "/blog/me/comments/" + own, admin, null);
-            code(deleted, 200, "OK");
-            assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
-        }
-        assertThat(jdbc.queryForObject("SELECT content FROM blog_comment WHERE comment_id=?", String.class,
-                own)).isEqualTo("该评论已删除");
+        MvcResult deleted = call("DELETE", "/blog/me/comments/" + own, admin, null);
+        code(deleted, 200, "OK");
+        assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
+        code(call("DELETE", "/blog/me/comments/" + own, admin, null), 404, "NOT_FOUND");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE comment_id=?", Integer.class,
+                own)).isZero();
         assertThat(jdbc.queryForObject("SELECT content FROM blog_comment WHERE comment_id=?", String.class,
                 theirs)).isEqualTo("别人的原文");
-        assertThat(data(call("GET", "/blog/me/comments?status=3", admin, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/me/comments?status=3", admin, null)).get("total").asString()).isEqualTo("0");
     }
 
     @Test
@@ -1904,12 +1905,14 @@ class ArticleIntegrationTest {
         JsonNode leaf = data(call("GET", commentsPath(article) + "?parentId=2004", null, null)).get("records").get(0);
         assertThat(leaf.get("commentId").asString()).isEqualTo("2005");
         code(call("DELETE", "/admin/comments/1000", token, null), 200, "OK");
-        assertThat(articleComments(token, article)).isEqualTo("1005");
-        code(call("GET", commentsPath(article) + "?parentId=2004", null, null), 200, "OK");
+        assertThat(articleComments(token, article)).isEqualTo("0");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE article_id=?", Integer.class,
+                article)).isZero();
+        code(call("GET", commentsPath(article) + "?parentId=2004", null, null), 404, "NOT_FOUND");
     }
 
     @Test
-    void reviewAndPlaceholderChangesImmediatelyUpdatePublicChainAndArticleCounts() throws Exception {
+    void reviewAndDeletionImmediatelyUpdatePublicChainAndArticleCounts() throws Exception {
         String token = actor("comment_counts", 1);
         String article = published(token, "Comment-counts");
         commentPolicy(true, false);
@@ -1924,13 +1927,16 @@ class ArticleIntegrationTest {
         code(review(token, root, 1), 200, "OK");
         assertThat(articleComments(token, article)).isEqualTo("3");
         code(call("DELETE", "/blog/me/comments/" + child, token, null), 200, "OK");
-        assertThat(articleComments(token, article)).isEqualTo("2");
-        JsonNode visible = data(call("GET", commentsPath(article) + "?parentId=" + child, null, null));
-        assertThat(visible.get("records").get(0).get("commentId").asString()).isEqualTo(leaf);
+        assertThat(articleComments(token, article)).isEqualTo("1");
+        code(call("GET", commentsPath(article) + "?parentId=" + child, null, null), 404, "NOT_FOUND");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE comment_id IN (?,?)",
+                Integer.class, child, leaf)).isZero();
+        JsonNode visible = data(call("GET", commentsPath(article), null, null)).get("records").get(0);
+        assertThat(visible.get("replyCount").asString()).isEqualTo("0");
         assertThat(data(call("GET", "/blog/articles/Comment-counts", null, null)).get("commentCount")
-                .asString()).isEqualTo("2");
+                .asString()).isEqualTo("1");
         assertThat(data(call("GET", "/blog/articles", null, null)).get("records").get(0).get("commentCount")
-                .asString()).isEqualTo("2");
+                .asString()).isEqualTo("1");
         assertThat(revision(token, article)).isEqualTo(articleVersion);
     }
 
@@ -1960,16 +1966,12 @@ class ArticleIntegrationTest {
         code(review(token, id, 2), 200, "OK");
         code(review(token, id, 1), 200, "OK");
         code(call("DELETE", "/admin/comments/" + id, token, null), 200, "OK");
-        code(call("DELETE", "/admin/comments/" + id, token, null), 200, "OK");
-        String deleted = commentRevision(token, id);
-        code(write("PUT", path, token, approved, Map.of("status", 1)), 412, "REVISION_CONFLICT");
-        code(write("PUT", path, token, deleted, Map.of("status", 1)), 409, "STATE_CONFLICT");
-        JsonNode detail = data(call("GET", "/admin/comments/" + id, token, null));
-        assertThat(detail.get("content").asString()).isEqualTo("该评论已删除");
-        assertThat(detail.get("author").isNull()).isTrue();
+        code(call("DELETE", "/admin/comments/" + id, token, null), 404, "NOT_FOUND");
+        code(write("PUT", path, token, approved, Map.of("status", 1)), 404, "NOT_FOUND");
+        code(call("GET", "/admin/comments/" + id, token, null), 404, "NOT_FOUND");
         assertThat(jdbc.queryForObject(
                 "SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='blog:comment' AND result=1",
-                Integer.class)).isEqualTo(6);
+                Integer.class)).isEqualTo(5);
     }
 
     @Test
@@ -2066,7 +2068,7 @@ class ArticleIntegrationTest {
     }
 
     @Test
-    void commentAuditFailureRollsBackReviewAndPlaceholderAndFailureIsRecordedAfterRollback() throws Exception {
+    void commentAuditFailureRollsBackReviewAndDeletionAndFailureIsRecordedAfterRollback() throws Exception {
         String token = actor("comment_audit", 1);
         String article = published(token, "Comment-audit");
         String id = commentId(postComment(token, article, "不能丢失的原文", null));
@@ -2312,34 +2314,94 @@ class ArticleIntegrationTest {
             work.clear();
             work.add(pool.submit(() -> call("DELETE", "/admin/comments/" + id, admin, null)));
             work.add(pool.submit(() -> call("DELETE", "/blog/me/comments/" + id, member, null)));
+            statuses.clear();
             for (Future<MvcResult> result : work) {
-                code(result.get(10, TimeUnit.SECONDS), 200, "OK");
+                statuses.add(result.get(10, TimeUnit.SECONDS).getResponse().getStatus());
             }
-            assertThat(jdbc.queryForObject("SELECT status FROM blog_comment WHERE comment_id=?", Integer.class,
-                    id)).isEqualTo(3);
+            assertThat(statuses).containsExactlyInAnyOrder(200, 404);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE comment_id=?", Integer.class,
+                    id)).isZero();
         }
     }
 
     @Test
-    void ownAndAdminPlaceholderDeleteAllLiveStatesAndAdminCanModerateUnpublishedArticle() throws Exception {
+    void ownAndAdminDeleteAllStatesIncludingLegacyPlaceholdersAndUnpublishedArticles() throws Exception {
         String token = actor("comment_delete_states", 1);
         String article = published(token, "Delete-states");
         long user = Long.parseLong(userId("comment_delete_states"));
-        for (int status : List.of(0, 1, 2)) {
+        for (int status : List.of(0, 1, 2, 3)) {
             long id = 3000 + status;
             comment(id, article, user, null, status);
             code(call("DELETE", "/blog/me/comments/" + id, token, null), 200, "OK");
-            assertThat(jdbc.queryForObject("SELECT status FROM blog_comment WHERE comment_id=?", Integer.class,
-                    id)).isEqualTo(3);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE comment_id=?", Integer.class,
+                    id)).isZero();
         }
         String id = commentId(postComment(token, article, "待审直接驳回", null));
         code(review(token, id, 2), 200, "OK");
         code(status(token, article, 2), 200, "OK");
         code(call("DELETE", "/admin/comments/" + id, token, null), 200, "OK");
-        assertThat(
-                jdbc.queryForObject("SELECT content FROM blog_comment WHERE comment_id=?", String.class, id)).isEqualTo(
-                "该评论已删除");
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment", Integer.class)).isEqualTo(4);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment", Integer.class)).isZero();
+    }
+
+    @Test
+    void commentAndMessageDeletionRemovesOnlySelectedBranchAndRollsBackPartialDeletes() throws Exception {
+        String admin = actor("branch_admin", 1);
+        String owner = actor("branch_owner", 3);
+        String other = actor("branch_other", 3);
+        String article = published(admin, "Branch-delete");
+        long adminId = Long.parseLong(userId("branch_admin"));
+        long ownerId = Long.parseLong(userId("branch_owner"));
+        long otherId = Long.parseLong(userId("branch_other"));
+        long base = 6000;
+        for (String kind : List.of("comment", "message")) {
+            for (boolean own : List.of(true, false)) {
+                base += 10;
+                String table = "blog_" + kind;
+                String primary = kind + "_id";
+                long root = base + 9;
+                long target = base + 8;
+                long sibling = base + 7;
+                // 父子 ID 故意不按大小排列，分支覆盖其他作者、私密内容和全部审核状态。
+                long[][] rows = {{root, adminId, 0, 1}, {target, ownerId, root, 3},
+                        {sibling, otherId, root, 1}, {base + 1, otherId, target, 0},
+                        {base + 2, adminId, base + 1, 2}, {base + 3, ownerId, target, 1}};
+                for (long[] row : rows) {
+                    Long parent = row[2] == 0 ? null : row[2];
+                    if (kind.equals("comment")) {
+                        comment(row[0], article, row[1], parent, (int) row[3]);
+                    } else {
+                        jdbc.update("INSERT INTO blog_message(message_id,user_id,parent_id,content,status,is_secret) " +
+                                "VALUES(?,?,?,'分支原文',?,?)", row[0], row[1], parent, row[3],
+                                row[0] == base + 1 ? 1 : 0);
+                    }
+                }
+                String ownPath = "/blog/me/" + kind + "s/";
+                code(call("DELETE", ownPath + root, owner, null), 404, "NOT_FOUND");
+                String path = (own ? ownPath : "/admin/" + kind + "s/") + target;
+                String token = own ? owner : admin;
+
+                // 在子回复已删除后让父节点删除失败，整条分支必须原样回滚。
+                jdbc.execute("CREATE TRIGGER part7_fail BEFORE DELETE ON " + table + " FOR EACH ROW BEGIN IF OLD." +
+                        primary + "=" + target + " THEN SIGNAL SQLSTATE '45000' " +
+                        "SET MESSAGE_TEXT='isolated branch failure'; END IF; END");
+                code(call("DELETE", path, token, null), 503, "SERVICE_UNAVAILABLE");
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE " + primary +
+                        " BETWEEN ? AND ?", Integer.class, base, base + 9)).isEqualTo(6);
+                jdbc.execute("DROP TRIGGER part7_fail");
+
+                code(call("DELETE", path, token, null), 200, "OK");
+                assertThat(jdbc.queryForList("SELECT " + primary + " FROM " + table + " WHERE " + primary +
+                        " BETWEEN ? AND ? ORDER BY " + primary, Long.class, base, base + 9))
+                        .containsExactly(sibling, root);
+                code(call("DELETE", path, token, null), 404, "NOT_FOUND");
+                String publicPath = kind.equals("comment") ? commentsPath(article) : "/blog/messages";
+                JsonNode replies = data(call("GET", publicPath + "?parentId=" + root, null, null));
+                assertThat(replies.get("total").asString()).isEqualTo("1");
+                assertThat(replies.get("records").get(0).get(kind + "Id").asString())
+                        .isEqualTo(Long.toString(sibling));
+                code(call("GET", publicPath + "?parentId=" + target, null, null), 404, "NOT_FOUND");
+            }
+        }
     }
 
     @Test
@@ -3527,7 +3589,7 @@ class ArticleIntegrationTest {
             start.countDown();
             MvcResult removed = deleting.get(15, TimeUnit.SECONDS);
             MvcResult saved = referencing.get(15, TimeUnit.SECONDS);
-            if (removed.getResponse().getStatus() == 200) {
+            if (data(removed).get("results").get(0).get("httpStatus").asInt() == 200) {
                 code(saved, 400, "VALIDATION_ERROR");
                 assertThat(object).doesNotExist();
             } else {
@@ -3819,16 +3881,61 @@ class ArticleIntegrationTest {
         String id = row.get("logId").asString();
         MvcResult detail = call("GET", "/admin/operation-logs/" + id, token, null);
         code(detail, 200, "OK");
-        assertThat(data(detail).get("operationData").isNull()).isTrue();
+        assertThat(data(detail).get("operationData").get("request").get("categoryName").asString())
+                .isEqualTo("审计来源");
+        code(call("GET", "/admin/operation-logs/" + id, actor("log_member", 3), null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_role SET data_scope='SELF' WHERE role_id=1");
+        code(call("GET", "/admin/operation-logs/" + id, token, null), 403, "FORBIDDEN");
+        jdbc.update("UPDATE sys_role SET data_scope='ALL' WHERE role_id=1");
+        jdbc.update("UPDATE sys_operation_log SET operation_data=NULL WHERE log_id=?", id);
+        assertThat(data(call("GET", "/admin/operation-logs/" + id, token, null)).get("operationData").isNull()).isTrue();
         code(call("DELETE", "/admin/operation-logs/" + id, token, null), 200, "OK");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE log_id=?", Integer.class,
                 id)).isZero();
         assertThat(jdbc.queryForObject(
-                "SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='sys:log' AND target_id=? AND result=1",
-                Integer.class, id)).isEqualTo(1);
+                "SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='sys:log' AND operation_type='batch-delete' AND target_id IS NULL AND result=1",
+                Integer.class)).isEqualTo(1);
         code(call("DELETE", "/admin/operation-logs/" + id, token, null), 404, "NOT_FOUND");
         code(call("GET", "/admin/operation-logs?begin=2026-10-30T01:00:00.000Z&end=2026-10-29T01:00:00.000Z", token,
                 null), 400, "VALIDATION_ERROR");
+    }
+
+    @Test
+    void logOperationDataKeepsFullArticleContentAndStringIds() throws Exception {
+        String token = actor("log_content", 1);
+        String content = "完整正文与联系方式 reader@example.test\n".repeat(1000);
+        MvcResult created = call("POST", "/admin/articles", token, json.writeValueAsString(
+                Map.of("title", "完整操作数据", "slug", "log-full-content", "markdownContent", content)));
+        code(created, 201, "OK");
+        String articleId = data(created).get("articleId").asString();
+        String logId = jdbc.queryForObject(
+                "SELECT log_id FROM sys_operation_log WHERE operation_target='blog:article' AND target_id=?",
+                String.class, articleId);
+        JsonNode operationData = data(call("GET", "/admin/operation-logs/" + logId, token, null)).get("operationData");
+        assertThat(operationData.get("request").get("markdownContent").asString()).isEqualTo(content);
+        code(write("DELETE", "/admin/articles/" + articleId, token, revision(token, articleId), null), 200, "OK");
+        JsonNode deleted = json.readTree(jdbc.queryForObject(
+                "SELECT operation_data FROM sys_operation_log WHERE operation_target='blog:article' AND operation_type='batch-delete'",
+                String.class));
+        assertThat(deleted.get("ids").get(0).isString()).isTrue();
+        assertThat(deleted.get("ids").get(0).asString()).isEqualTo(articleId);
+    }
+
+    @Test
+    void logOperationDataExcludesUndeclaredConfigEntriesOnFailure() throws Exception {
+        String token = actor("log_config", 1);
+        String revision = call("GET", "/admin/configs/comment", token, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/admin/configs/comment", token, revision, Map.of(
+                "configValue", Map.of("enabled", true, "reviewRequired", true, "password", "test-secret",
+                        "title", Map.of("token", "nested-token")),
+                "description", "测试配置", "isPublic", 0)), 400, "VALIDATION_ERROR");
+        finishAudits();
+        JsonNode operationData = json.readTree(jdbc.queryForObject(
+                "SELECT operation_data FROM sys_operation_log WHERE operation_target='blog:config' AND result=0",
+                String.class));
+        assertThat(operationData.get("request").get("description").asString()).isEqualTo("测试配置");
+        assertThat(operationData.get("request").get("configValue").get("enabled").asBoolean()).isTrue();
+        assertThat(operationData.toString()).doesNotContain("password", "test-secret", "token", "nested-token");
     }
 
     @Test
@@ -4029,7 +4136,48 @@ class ArticleIntegrationTest {
     }
 
     @Test
-    void messageEditsReenterReviewAndDeletionClearsOriginalWhileKeepingReplies() throws Exception {
+    void messageEditRequiresSingleUseCaptchaAndKeepsContentOnFailure() throws Exception {
+        String owner = actor("message_captcha_owner", 3);
+        String id = createMessage(owner, null, "保留原文", 0);
+        String path = "/blog/me/messages/" + id;
+        String revision = call("GET", path, owner, null).getResponse().getHeader("X-Revision");
+        String body = json.writeValueAsString(messageEdit("验证后编辑"));
+        var captchas = new CaptchaStore(redis, properties);
+        String captchaId = captchas.issue("012345");
+
+        // 原始请求不使用自动补验证码的 helper，缺失、错误及重放都不能改写正文。
+        for (String answer : List.of("", "000000", "012345")) {
+            var builder = request(HttpMethod.PUT, "/api/v1" + path).contextPath("/api/v1").servletPath(path)
+                    .header("Authorization", "Bearer " + owner).header("If-Revision", revision)
+                    .contentType("application/json").content(body);
+            if (!answer.isEmpty()) {
+                builder.header("X-Captcha-Id", captchaId).header("X-Captcha-Code", answer);
+            }
+            code(mvc.perform(builder).andReturn(), 400, "CAPTCHA_INVALID");
+            MvcResult unchanged = call("GET", path, owner, null);
+            assertThat(data(unchanged).get("content").asString()).isEqualTo("保留原文");
+            assertThat(unchanged.getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        }
+
+        captchaId = captchas.issue("012345");
+        MvcResult edited = mvc.perform(request(HttpMethod.PUT, "/api/v1" + path)
+                .contextPath("/api/v1").servletPath(path)
+                .header("Authorization", "Bearer " + owner).header("If-Revision", revision)
+                .header("X-Captcha-Id", captchaId).header("X-Captcha-Code", "012345")
+                .contentType("application/json").content(body)).andReturn();
+        code(edited, 200, "OK");
+        assertThat(data(edited).get("content").asString()).isEqualTo("验证后编辑");
+        assertThat(data(edited).get("status").asInt()).isZero();
+        code(mvc.perform(request(HttpMethod.PUT, "/api/v1" + path)
+                .contextPath("/api/v1").servletPath(path)
+                .header("Authorization", "Bearer " + owner)
+                .header("If-Revision", edited.getResponse().getHeader("X-Revision"))
+                .header("X-Captcha-Id", captchaId).header("X-Captcha-Code", "012345")
+                .contentType("application/json").content(body)).andReturn(), 400, "CAPTCHA_INVALID");
+    }
+
+    @Test
+    void messageEditsReenterReviewAndDeletionRemovesEntireBranch() throws Exception {
         String admin = actor("message_edit_admin", 1);
         String owner = actor("message_edit_owner", 3);
         String root = createMessage(owner, null, "<script>纯文本</script>\n下一行", 0);
@@ -4051,17 +4199,15 @@ class ArticleIntegrationTest {
         code(write("PUT", "/blog/me/messages/" + root, owner, revision, messageEdit("旧版本")), 412, "REVISION_CONFLICT");
         reviewMessage(admin, root, 1);
         code(call("DELETE", "/blog/me/messages/" + root, owner, null), 200, "OK");
-        code(call("DELETE", "/blog/me/messages/" + root, owner, null), 200, "OK");
-        JsonNode placeholder = data(call("GET", "/blog/messages", null, null)).get("records").get(0);
-        assertThat(placeholder.get("author").isNull()).isTrue();
-        assertThat(placeholder.get("content").asString()).isEqualTo("该留言已删除");
-        assertThat(data(call("GET", "/blog/messages?parentId=" + root, null, null)).get("total").asString()).isEqualTo(
-                "1");
+        code(call("DELETE", "/blog/me/messages/" + root, owner, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/messages", null, null)).get("total").asString()).isEqualTo("0");
+        code(call("GET", "/blog/messages?parentId=" + root, null, null), 404, "NOT_FOUND");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message WHERE message_id IN (?,?)", Integer.class,
+                root, child)).isZero();
         code(write("PUT", "/blog/me/messages/" + root, owner, edited.getResponse().getHeader("X-Revision"),
-                messageEdit("复活")), 412, "REVISION_CONFLICT");
-        String current = call("GET", "/admin/messages/" + root, admin, null).getResponse().getHeader("X-Revision");
-        code(write("PUT", "/admin/messages/" + root + "/review", admin, current, Map.of("status", 1)), 409,
-                "STATE_CONFLICT");
+                messageEdit("复活")), 404, "NOT_FOUND");
+        code(write("PUT", "/admin/messages/" + root + "/review", admin, revision, Map.of("status", 1)), 404,
+                "NOT_FOUND");
     }
 
     @Test
@@ -4265,7 +4411,7 @@ class ArticleIntegrationTest {
         code(write("PUT", "/admin/visitors/" + id + "/unblock", admin, revision, Map.of()), 400, "VALIDATION_ERROR");
         MvcResult unblocked = write("PUT", "/admin/visitors/" + id + "/unblock", admin, revision, null);
         code(unblocked, 200, "OK");
-        code(write("DELETE", "/admin/visitors/" + id, admin, unblocked.getResponse().getHeader("X-Revision"), null),
+        code(write("DELETE", "/admin/visitors/" + id, admin, data(unblocked).get("items").get(0).get("revision").asString(), null),
                 200, "OK");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE visitor_id IS NULL",
                 Integer.class)).isEqualTo(3);
@@ -4932,9 +5078,10 @@ class ArticleIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE article_id IS NULL AND "
                 + "page_path='/articles/Purge-tree' AND page_title='保留标题'", Integer.class)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE target_id=? AND result=1",
-                Integer.class, article)).isEqualTo(logs + 1);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='purge' AND "
-                + "permission_code='blog:article:purge' AND result=1 AND target_id=?", Integer.class, article)).isEqualTo(1);
+                Integer.class, article)).isEqualTo(logs);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='batch-purge' AND "
+                + "permission_code='blog:article:purge' AND result=1 AND target_id IS NULL AND "
+                + "JSON_CONTAINS(JSON_EXTRACT(operation_data,'$.ids'), JSON_QUOTE(?))", Integer.class, article)).isEqualTo(1);
         code(call("GET", "/blog/articles/Purge-tree", null, null), 404, "NOT_FOUND");
         code(call("GET", context(article, file).substring("/api/v1".length()), null, null), 404, "NOT_FOUND");
         code(write("POST", "/admin/articles/" + article + "/restore", token, "\"" + "0".repeat(64) + "\"", null),
@@ -5646,7 +5793,208 @@ class ArticleIntegrationTest {
         return write("PUT", "/admin/articles/" + id + "/status", token, revision(token, id), Map.of("status", state));
     }
 
+    /** 真正调用统一入口，验证后半批失败不会提交前半批。 */
+    @Test
+    void batchArticlesValidateAllTargetsAndReturnStringIdsInInputOrder() throws Exception {
+        String admin = actor("batch_article_admin", 1);
+        String first = create(admin, "Batch-first", "可发布正文");
+        String second = create(admin, "Batch-empty", "");
+        List<Map<String, Object>> items = List.of(
+                Map.of("id", second, "revision", revision(admin, second)),
+                Map.of("id", first, "revision", revision(admin, first)));
+        code(write("PUT", "/admin/articles/batch-status", admin, null, Map.of("items", items, "status", 1)),
+                400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT status FROM blog_article WHERE article_id=?", Integer.class, first)).isZero();
+        code(write("POST", "/admin/articles/batch-recycle", admin, null, Map.of("items", items)), 200, "OK");
+        items = List.of(Map.of("id", second, "revision", revision(admin, second)),
+                Map.of("id", first, "revision", revision(admin, first)));
+        MvcResult restored = write("POST", "/admin/articles/batch-restore", admin, null, Map.of("items", items));
+        code(restored, 200, "OK");
+        assertThat(restored.getResponse().getHeader("X-Revision")).isNull();
+        assertThat(data(restored).get("items").get(0).get("id").isString()).isTrue();
+        assertThat(data(restored).get("items").get(0).get("id").asString()).isEqualTo(second);
+        assertThat(data(restored).get("items").get(1).get("id").asString()).isEqualTo(first);
+        assertThat(jdbc.queryForObject("SELECT status FROM blog_article WHERE article_id=?", Integer.class, first)).isEqualTo(2);
+        code(write("POST", "/admin/articles/batch-recycle", admin, null, Map.of("items", items)), 412, "REVISION_CONFLICT");
+    }
+
+    /** 重复、越界、错误JSON类型和单一版本头都在写入前拒绝。 */
+    @Test
+    void batchSelectionRejectsMalformedAndStaleInputsWithoutPartialDeletes() throws Exception {
+        String admin = actor("batch_input_admin", 1);
+        MvcResult created = call("POST", "/admin/categories", admin,
+                json.writeValueAsString(categoryBody("批量分类", "batch-category", null, 0, 1)));
+        code(created, 201, "OK");
+        String id = data(created).get("categoryId").asString();
+        String version = dictionaryRevision(admin, "/admin/categories/" + id);
+        Map<String, Object> item = Map.of("id", id, "revision", version);
+        for (Object body : List.of(Map.of("items", List.of()), Map.of("items", List.of(item, item)),
+                Map.of("items", java.util.Collections.nCopies(101, item)),
+                Map.of("items", List.of(Map.of("id", 1, "revision", version))),
+                Map.of("items", List.of(item), "status", 1))) {
+            code(write("POST", "/admin/categories/batch-delete", admin, null, body), 400, "VALIDATION_ERROR");
+        }
+        code(write("POST", "/admin/categories/batch-delete", admin, null,
+                Map.of("items", List.of(Map.of("id", id)))), 428, "PRECONDITION_REQUIRED");
+        code(write("POST", "/admin/categories/batch-delete", admin, null,
+                Map.of("items", List.of(item, Map.of("id", "9223372036854775807", "revision", version)))), 404, "NOT_FOUND");
+        code(write("POST", "/admin/categories/batch-delete", admin, version, Map.of("items", List.of(item))),
+                400, "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_category WHERE category_id=?", Integer.class, id)).isEqualTo(1);
+        code(write("POST", "/admin/categories/batch-delete", admin, null, Map.of("items", List.of(item))), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='batch-delete' AND operation_target='blog:category' AND result=1", Integer.class)).isEqualTo(1);
+        String log = jdbc.queryForObject("SELECT log_id FROM sys_operation_log WHERE operation_type='batch-delete' AND operation_target='blog:category' AND result=1", String.class);
+        JsonNode audit = data(call("GET", "/admin/operation-logs/" + log, admin, null)).get("operationData");
+        assertThat(audit.get("ids").get(0).asString()).isEqualTo(id);
+        assertThat(audit.get("selectedCount").isString()).isTrue();
+        assertThat(audit.get("selectedCount").asString()).isEqualTo("1");
+    }
+
+    /** SELF必须覆盖每一个目标，不能用第一条自己的文章扩大后续范围。 */
+    @Test
+    void batchArticleScopesRemainIndependentForEveryTarget() throws Exception {
+        String admin = actor("batch_scope_admin", 1);
+        String author = actor("batch_scope_author", 2);
+        String own = create(author, "Batch-owned", "自己的正文");
+        String other = create(admin, "Batch-other", "别人的正文");
+        code(write("PUT", "/admin/articles/batch-status", author, null, Map.of("items", List.of(
+                Map.of("id", own, "revision", revision(author, own)),
+                Map.of("id", other, "revision", revision(admin, other))), "status", 1)), 404, "NOT_FOUND");
+        assertThat(jdbc.queryForObject("SELECT status FROM blog_article WHERE article_id=?", Integer.class, own)).isZero();
+    }
+
+    /** 父子同时选中时先验证原始集合，再按并集清理，不因内部删除顺序误报不存在。 */
+    @Test
+    void batchCommentAndMessageDeletionHandlesOverlappingBranches() throws Exception {
+        String admin = actor("batch_tree_admin", 1);
+        String article = create(admin, "Batch-tree", "正文");
+        code(status(admin, article, 1), 200, "OK");
+        commentPolicy(true, false);
+        String parent = commentId(postComment(admin, article, "父评论", null));
+        String child = commentId(postComment(admin, article, "子评论", parent));
+        code(call("POST", "/admin/comments/batch-delete", admin, json.writeValueAsString(Map.of("ids", List.of(child, parent)))), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_comment WHERE comment_id IN (?,?)", Integer.class, parent, child)).isZero();
+        String root = createMessage(admin, null, "父留言", 0);
+        reviewMessage(admin, root, 1);
+        String reply = createMessage(admin, root, "子留言", 0);
+        jdbc.update("UPDATE blog_message SET status=0 WHERE message_id=?", root);
+        MvcResult reviewed = write("PUT", "/admin/messages/batch-review", admin, null, Map.of("items", List.of(
+                Map.of("id", reply, "revision", dictionaryRevision(admin, "/admin/messages/" + reply)),
+                Map.of("id", root, "revision", dictionaryRevision(admin, "/admin/messages/" + root))), "status", 1));
+        code(reviewed, 200, "OK");
+        code(call("POST", "/admin/messages/batch-delete", admin, json.writeValueAsString(Map.of("ids", List.of(reply, root)))), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message WHERE message_id IN (?,?)", Integer.class, root, reply)).isZero();
+    }
+
+    /** 文件批次一项失败仍保留其他项的实际成功，外层200不能当作全部成功。 */
+    @Test
+    void batchFilesReturnEveryRealResultAndKeepReferencedObjects() throws Exception {
+        String admin = actor("batch_file_admin", 1);
+        String free = uploaded(admin, "free.png");
+        String referenced = uploaded(admin, "referenced.png");
+        String article = create(admin, "Batch-file", "正文");
+        var content = body("Batch-file", "![图片](" + context(article, referenced) + ")");
+        code(write("PUT", "/admin/articles/" + article, admin, revision(admin, article), content), 200, "OK");
+        MvcResult result = call("POST", "/admin/files/batch-delete", admin,
+                json.writeValueAsString(Map.of("ids", List.of(referenced, free, "9223372036854775807"))));
+        code(result, 200, "OK");
+        JsonNode rows = data(result).get("results");
+        assertThat(rows.size()).isEqualTo(3);
+        assertThat(rows.get(0).get("id").asString()).isEqualTo(referenced);
+        assertThat(rows.get(0).get("httpStatus").asInt()).isEqualTo(409);
+        assertThat(rows.get(1).get("code").asString()).isEqualTo("OK");
+        assertThat(rows.get(2).get("httpStatus").asInt()).isEqualTo(404);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_file WHERE file_id=?", Integer.class, free)).isZero();
+        assertThat(Files.exists(objectPath(referenced))).isTrue();
+    }
+
+    /** 撤销操作者自身会话放在整批删除之后，不能让后半批因为本次撤销而必然失败。 */
+    @Test
+    void batchRolesDeleteAllSelectedBeforeRevokingAffectedSessions() throws Exception {
+        String admin = actor("batch_role_admin", 1);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String name : List.of("batch-role-a", "batch-role-b")) {
+            jdbc.update("INSERT INTO sys_role(role_code,role_name,data_scope,status) VALUES(?,?, 'SELF',1)", name, name);
+            String id = jdbc.queryForObject("SELECT role_id FROM sys_role WHERE role_code=?", String.class, name);
+            jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)", userId("batch_role_admin"), id);
+            items.add(Map.of("id", id, "revision", dictionaryRevision(admin, "/admin/roles/" + id)));
+        }
+        code(write("POST", "/admin/roles/batch-delete", admin, null, Map.of("items", items)), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code IN ('batch-role-a','batch-role-b')", Integer.class)).isZero();
+        code(call("GET", "/admin/roles", admin, null), 401, "UNAUTHENTICATED");
+    }
+
+    /** 全部统一入口都真实经过认证与模型校验，旧单条动作不再提供HTTP入口。 */
+    @Test
+    void allBatchRoutesRejectAnonymousAndInvalidSelectionsAndRemoveOldWrites() throws Exception {
+        String admin = actor("batch_routes_admin", 1);
+        List<String> routes = List.of(
+                "PUT articles/batch-status", "POST articles/batch-recycle", "POST articles/batch-restore",
+                "POST articles/batch-permanent-delete", "POST categories/batch-delete", "POST tags/batch-delete",
+                "PUT comments/batch-review", "POST comments/batch-delete", "PUT messages/batch-review",
+                "POST messages/batch-delete", "POST links/batch-delete", "POST files/batch-delete",
+                "POST home/social-links/batch-delete", "POST cv/experiences/batch-delete", "POST cv/skills/batch-delete",
+                "POST music/batch-delete", "PUT rss-subscriptions/batch-status", "POST rss-subscriptions/batch-delete",
+                "PUT visitors/batch-block", "PUT visitors/batch-unblock", "POST visitors/batch-delete",
+                "POST page-views/batch-delete", "POST operation-logs/batch-delete", "POST roles/batch-delete",
+                "POST permissions/batch-delete", "POST menus/batch-delete");
+        for (String route : routes) {
+            String[] parts = route.split(" ");
+            String path = "/admin/" + parts[1];
+            code(call(parts[0], path, null, "{}"), 401, "UNAUTHENTICATED");
+            code(call(parts[0], path, admin, "{}"), 400, "VALIDATION_ERROR");
+            code(call(parts[0], path + "?ids=1", admin, "{}"), 400, "VALIDATION_ERROR");
+        }
+        for (String path : List.of("articles", "categories", "tags", "comments", "messages", "links", "files",
+                "home/social-links", "cv/experiences", "cv/skills", "music", "rss-subscriptions", "visitors",
+                "page-views", "operation-logs", "roles", "permissions", "menus")) {
+            MvcResult old = mvc.perform(req("DELETE", "/admin/" + path + "/1")
+                    .header("Authorization", "Bearer " + admin)).andReturn();
+            assertThat(old.getResponse().getStatus()).isIn(404, 405);
+        }
+        code(call("PUT", "/admin/visitors/batch-block", admin,
+                "{\"items\":[{\"id\":\"1\"}],\"supplied\":true}"), 400, "VALIDATION_ERROR");
+    }
+
+    /** 在后半批实际写入时注入数据库故障，前半批删除和成功审计必须一同回滚。 */
+    @Test
+    void batchDeleteRollsBackEarlierWritesWhenLaterSqlFails() throws Exception {
+        String admin = actor("batch_rollback_admin", 1);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (String slug : List.of("batch-rollback-a", "batch-rollback-b")) {
+            MvcResult created = call("POST", "/admin/categories", admin,
+                    json.writeValueAsString(categoryBody(slug, slug, null, 0, 1)));
+            code(created, 201, "OK");
+            String id = data(created).get("categoryId").asString();
+            items.add(Map.of("id", id, "revision", dictionaryRevision(admin, "/admin/categories/" + id)));
+        }
+        jdbc.execute("CREATE TRIGGER part7_fail BEFORE DELETE ON blog_category FOR EACH ROW BEGIN IF OLD.category_id="
+                + items.get(1).get("id") + " THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated later batch failure'; END IF; END");
+        try {
+            code(write("POST", "/admin/categories/batch-delete", admin, null, Map.of("items", items)), 503, "SERVICE_UNAVAILABLE");
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_category WHERE slug IN ('batch-rollback-a','batch-rollback-b')", Integer.class)).isEqualTo(2);
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='blog:category' AND operation_type='batch-delete' AND result=1", Integer.class)).isZero();
+        } finally {
+            jdbc.execute("DROP TRIGGER part7_fail");
+        }
+    }
+
     private MvcResult call(String method, String path, String token, String body) throws Exception {
+        Object value = null;
+        if (body != null) {
+            try {
+                value = json.readValue(body, Map.class);
+            } catch (RuntimeException ignored) {
+                value = body;
+            }
+        }
+        var prepared = BatchTestRequests.prepare(method, path, null, value, json);
+        method = prepared.method();
+        path = prepared.path();
+        if (prepared.body() != value) {
+            body = json.writeValueAsString(prepared.body());
+        }
+
         Map<String, String> generations = cacheWriteSnapshot(method, path);
         var builder = req(method, path);
         if (token != null) {
@@ -5658,12 +6006,18 @@ class ArticleIntegrationTest {
         MvcResult result = mvc.perform(builder).andReturn();
         if (result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300) {
             generations.forEach((domain, before) -> assertThat(redis.opsForValue().get(publicCacheStore.prefix(domain) + "generation"))
-                    .as(method + " " + path + " 应在真实提交后失效 " + domain).isNotEqualTo(before));
+                    .as("写入应在真实提交后失效 " + domain).isNotEqualTo(before));
         }
         return result;
     }
 
     private MvcResult write(String method, String path, String token, String revision, Object body) throws Exception {
+        var prepared = BatchTestRequests.prepare(method, path, revision, body, json);
+        method = prepared.method();
+        path = prepared.path();
+        revision = prepared.revision();
+        body = prepared.body();
+
         Map<String, String> generations = cacheWriteSnapshot(method, path);
         var builder = req(method, path);
         if (token != null) {
@@ -5678,7 +6032,7 @@ class ArticleIntegrationTest {
         MvcResult result = mvc.perform(builder).andReturn();
         if (result.getResponse().getStatus() >= 200 && result.getResponse().getStatus() < 300) {
             generations.forEach((domain, before) -> assertThat(redis.opsForValue().get(publicCacheStore.prefix(domain) + "generation"))
-                    .as(method + " " + path + " 应在真实提交后失效 " + domain).isNotEqualTo(before));
+                    .as("写入应在真实提交后失效 " + domain).isNotEqualTo(before));
         }
         return result;
     }
@@ -5726,6 +6080,18 @@ class ArticleIntegrationTest {
     }
 
     private void code(MvcResult result, int status, String code) throws Exception {
+        // 单文件清理的业务状态位于逐项结果；同时确认外层请求成功返回了结果。
+        JsonNode payload = json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        JsonNode resultData = payload.get("data");
+        if (result.getRequest().getServletPath().equals("/admin/files/batch-delete")
+                && resultData != null && resultData.has("results") && resultData.get("results").size() == 1) {
+            assertThat(result.getResponse().getStatus()).isEqualTo(200);
+            assertThat(payload.get("code").asString()).isEqualTo("OK");
+            JsonNode item = resultData.get("results").get(0);
+            assertThat(item.get("httpStatus").asInt()).isEqualTo(status);
+            assertThat(item.get("code").asString()).isEqualTo(code);
+            return;
+        }
         assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
                 .isEqualTo(status);
         assertThat(json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).get("code")

@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.entity.SysMenu;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMenuService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.MenuProfileVO;
@@ -176,15 +179,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "sys:menu", permission = "sys:menu:delete", targetIdArgument = 0)
     public void delete(long menuId, String revision) {
-        Map<Long, SysMenu> nodes = lockStructure(menuId);
-        SysMenu menu = menus.lockById(menuId);
-        requireAdmin("sys:menu:delete");
-        menu = requireMenu(menu);
-        checkRevision(menu, revision);
-        if (nodes.values().stream().anyMatch(node -> Long.valueOf(menuId).equals(node.getParentId()))) {
-            throw new BusinessException(409, "RESOURCE_IN_USE", "菜单仍有子节点");
-        }
-        menus.deleteById(menuId);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(menuId), revision)));
     }
 
     /**
@@ -401,4 +396,38 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
                 menu.getSortOrder(), menu.getIsVisible(), menu.getKeepAlive(), menu.getStatus(),
                 menu.getCreateTime(), menu.getUpdateTime());
     }
+
+    /** 在结构保护锁下验证整批叶子，关联清理与数据库审计共同提交。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "sys:menu", permission = "sys:menu:delete")
+    public void deleteBatch(List<BatchItemDTO> items) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "菜单结构检查点未初始化");
+        }
+        requireAdmin("sys:menu:delete");
+        var sorted = BatchInputs.sorted(items);
+        List<Long> ids = sorted.stream().map(item -> IdUtils.parse(item.id())).toList();
+        Set<Long> affected = new TreeSet<>(menus.userIds(ids));
+        affected.add(sessions.currentUserId());
+        for (long id : affected) {
+            users.lockById(id);
+        }
+        Map<Long, SysMenu> nodes = new LinkedHashMap<>();
+        menus.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));
+        for (var item : sorted) {
+            long menuId = IdUtils.parse(item.id());
+            SysMenu menu = menus.lockById(menuId);
+            requireAdmin("sys:menu:delete");
+            menu = requireMenu(menu);
+            checkRevision(menu, item.revision());
+            if (nodes.values().stream().anyMatch(node -> Long.valueOf(menuId).equals(node.getParentId()))) {
+                throw new BusinessException(409, "RESOURCE_IN_USE", "菜单仍有子节点");
+            }
+        }
+        for (long id : ids) {
+            menus.deleteById(id);
+        }
+    }
+
 }

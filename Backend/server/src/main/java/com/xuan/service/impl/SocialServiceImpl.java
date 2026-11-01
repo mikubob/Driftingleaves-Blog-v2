@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SocialWriteDTO;
 import com.xuan.entity.HomeSocialLink;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISocialService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
@@ -29,6 +32,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
 import java.util.List;
+
 /**
  * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
  */
@@ -101,9 +105,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @OperationLog(type = "delete", target = "home:social", permission = "home:social:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "social", allEntries = true)
     public void delete(long id, String revision) {
-        HomeSocialLink row = lock(id, "delete");
-        RevisionUtils.check(profile(row).revision(), revision);
-        items.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
@@ -157,4 +159,24 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     private ResourceVersion<HomeSocialLink> profile(HomeSocialLink row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder(), row.getStatus()))) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "home:social", permission = "home:social:delete")
+    @CacheEvict(cacheNames = "social", allEntries = true)
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            HomeSocialLink row = lock(id, "delete");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            this.items.deleteById(id);
+        }
+    }
+
 }

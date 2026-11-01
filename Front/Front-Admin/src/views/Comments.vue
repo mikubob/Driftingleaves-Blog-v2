@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,9 +7,12 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/comments',
   { articleId: '', userId: '', status: '' },
   20,
@@ -32,7 +35,10 @@ async function review(row, status) {
   try {
     const path = `/admin/comments/${row.commentId}`
     const current = await request(path)
-    await request(`${path}/review`, { method: 'PUT', revision: current.revision, body: { status } })
+    await request('/admin/comments/batch-review', {
+      method: 'PUT',
+      body: { items: [{ id: row.commentId, revision: current.revision }], status },
+    })
     ElMessage.success(status === 1 ? '评论已通过' : '评论已驳回')
     load()
   } catch (failure) {
@@ -44,7 +50,7 @@ async function review(row, status) {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm('删除这条评论？回复链将保留删除占位。', '删除评论', {
+    await ElMessageBox.confirm('删除这条评论及其全部子回复？删除后无法恢复。', '删除评论', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
@@ -53,7 +59,7 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    await request(`/admin/comments/${row.commentId}`, { method: 'DELETE' })
+    await request('/admin/comments/batch-delete', { method: 'POST', body: { ids: [row.commentId] } })
     ElMessage.success('评论已删除')
     load()
   } catch (failure) {
@@ -63,6 +69,42 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:comment:review')) {
+    actions.push({
+      label: '批量通过',
+      path: 'batch-review',
+      method: 'PUT',
+      body: { status: 1 },
+      accept: (row) => row.status !== 3,
+      invalidMessage: '历史删除占位不能重新审核。',
+    })
+  }
+  if (can('blog:comment:review')) {
+    actions.push({
+      label: '批量驳回',
+      path: 'batch-review',
+      method: 'PUT',
+      body: { status: 2 },
+      accept: (row) => row.status !== 3,
+      invalidMessage: '历史删除占位不能重新审核。',
+    })
+  }
+  if (can('blog:comment:moderate')) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      revision: false,
+      danger: true,
+      warning: '所选评论及其全部层级回复都会删除，包括其他用户的回复，无法恢复。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -104,15 +146,23 @@ onMounted(load)
     <el-card shadow="never">
       <div class="card-heading">
         <h2>评论列表</h2>
-        <span class="muted-text">删除保留回复关系</span>
+        <span class="muted-text">删除将同时移除全部子回复</span>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/comments" id-key="commentId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="commentId"
         empty-text="暂无评论"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column label="评论内容" min-width="280">
           <template #default="{ row }">
             <button class="table-title" @click="view(row)">{{ row.content }}</button>
@@ -145,19 +195,21 @@ onMounted(load)
               >
                 驳回
               </el-button>
-              <el-button v-if="can('blog:comment:moderate')" link @click="remove(row)">
-                删除
-              </el-button>
             </template>
+            <el-button v-if="can('blog:comment:moderate')" link @click="remove(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="detailVisible" title="评论详情" width="650px">

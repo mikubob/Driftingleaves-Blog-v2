@@ -37,8 +37,7 @@ public class ModelRequestAdvice {
         boolean noBody = "GET".equals(request.getMethod())
                 || "POST /blog/auth/logout".equals(route) || "POST /admin/auth/logout".equals(route)
                 || "DELETE /blog/me/oauth-bindings/{source}".equals(route)
-                || "DELETE /admin/me/oauth-bindings/{source}".equals(route)
-                || "DELETE /admin/articles/{articleId}/permanent".equals(route);
+                || "DELETE /admin/me/oauth-bindings/{source}".equals(route);
         if (noBody && (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
         }

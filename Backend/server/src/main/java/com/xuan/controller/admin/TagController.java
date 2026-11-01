@@ -1,10 +1,10 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.TagQueryDTO;
 import com.xuan.dto.TagWriteDTO;
 import com.xuan.entity.BlogTag;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ITagService;
@@ -13,7 +13,6 @@ import com.xuan.vo.TagProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -68,16 +67,11 @@ public class TagController {
         return profile(tags.update(IdUtils.parse(tagId), body, revision));
     }
 
-    /** 删除标签前先检查版本，关联处理和成功日志都要一起提交。 */
-    @DeleteMapping("/{tagId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:tag:delete")
-    public Result<Void> delete(@PathVariable String tagId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        if (body != null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
-        }
-        tags.delete(IdUtils.parse(tagId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        tags.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

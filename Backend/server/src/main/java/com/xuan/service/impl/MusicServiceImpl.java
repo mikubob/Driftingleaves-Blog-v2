@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.entity.BlogMusic;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMusicService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
@@ -28,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
@@ -105,9 +109,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @OperationLog(type = "delete", target = "blog:music", permission = "blog:music:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "music", allEntries = true)
     public void delete(long id, String revision) {
-        BlogMusic row = lock(id, "delete");
-        RevisionUtils.check(profile(row).revision(), revision);
-        items.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
@@ -170,4 +172,24 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
                         row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType(), row.getSortOrder(),
                         row.getStatus()))) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:music", permission = "blog:music:delete")
+    @CacheEvict(cacheNames = "music", allEntries = true)
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogMusic row = lock(id, "delete");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            this.items.deleteById(id);
+        }
+    }
+
 }

@@ -34,7 +34,7 @@ public class MyCommentController {
         return Result.ok(comments.ownComments(query));
     }
 
-    /** 删除保留占位和回复，不要机械要求 If-Revision。 */
+    /** 删除本人评论及其全部子回复，不要求 If-Revision。 */
     @DeleteMapping("/{commentId}")
     @SaCheckPermission("blog:comment:deleteOwn")
     public Result<Void> delete(@PathVariable String commentId, @RequestBody(required = false) String body) {

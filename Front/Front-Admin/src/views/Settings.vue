@@ -106,7 +106,7 @@ onMounted(load)
       </button>
     </div>
     <RequestError :message="error" @retry="load" />
-    <el-card v-if="!error" shadow="never" class="profile-card">
+    <el-card v-if="!error" shadow="never">
       <form class="edit-form" @submit.prevent="save">
         <template v-if="key === 'site'">
           <label>

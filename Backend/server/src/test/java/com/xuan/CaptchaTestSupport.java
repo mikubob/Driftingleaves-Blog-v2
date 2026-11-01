@@ -17,7 +17,8 @@ final class CaptchaTestSupport {
             String path = request.getServletPath();
             if ("POST".equals(request.getMethod()) && path.matches(
                     "/(admin|blog)/auth/(register|login|oauth/[^/]+/authorize)"
-                    + "|/blog/articles/[^/]+/comments|/blog/messages|/admin/messages/[^/]+/replies")) {
+                    + "|/blog/articles/[^/]+/comments|/blog/messages|/admin/messages/[^/]+/replies")
+                    || "PUT".equals(request.getMethod()) && path.matches("/blog/me/messages/[^/]+")) {
                 String captchaId = new CaptchaStore(redis, auth).issue("012345");
                 request.addHeader("X-Captcha-Id", captchaId);
                 request.addHeader("X-Captcha-Code", "012345");

@@ -2,9 +2,9 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.AdminArticleQueryDTO;
-import com.xuan.dto.ArticleStateDTO;
 import com.xuan.dto.ArticleWriteDTO;
-import com.xuan.exception.BusinessException;
+import com.xuan.dto.BatchRevisionDTO;
+import com.xuan.dto.BatchStatusDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IArticleService;
@@ -12,11 +12,11 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.ArticleAdminDetailVO;
 import com.xuan.vo.ArticleAdminVO;
 import com.xuan.vo.ArticleProfileVO;
+import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -93,74 +93,37 @@ public class ArticleController {
         return profile(articles.update(IdUtils.parse(articleId), body, revision));
     }
 
-    /**
-     * 按 publish 范围发布或下架；目标状态相同也要查版本，回收站文章不能改。
-     *
-     * @param articleId 正十进制目标ID
-     * @param body 只允许status=1或2
-     * @param revision 当前整体版本
-     * @return 200详情及新版本，首次发布时间只由服务端写入
-     */
-    @PutMapping("/{articleId}/status")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PutMapping("/batch-status")
     @SaCheckPermission("blog:article:publish")
-    public ResponseEntity<Result<ArticleAdminDetailVO>> status(@PathVariable String articleId,
-            @Valid @RequestBody ArticleStateDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(articles.changeStatus(IdUtils.parse(articleId), body.status(), revision));
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchStatusDTO body) {
+        return Result.ok(articles.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
-    /**
-     * 检查 delete 范围和版本后只移入回收站，正文和关联都保留。
-     *
-     * @param articleId 正十进制目标ID
-     * @param revision 当前整体版本，已回收仍先检查
-     * @param body 本接口不接受请求体，防止静默忽略未声明字段
-     * @return 200空结果，无X-Revision
-     */
-    @DeleteMapping("/{articleId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-recycle")
     @SaCheckPermission("blog:article:delete")
-    public Result<Void> recycle(@PathVariable String articleId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        requireNoBody(body);
-        articles.recycle(IdUtils.parse(articleId), revision);
+    public Result<Void> recycle(@Valid @RequestBody BatchRevisionDTO body) {
+        articles.recycleBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /**
-     * 检查 restore 范围后恢复回收站文章，固定为下架状态，不自动发布。
-     *
-     * @param articleId 正十进制目标ID
-     * @param revision 当前回收站整体版本
-     * @param body 本接口不接受请求体
-     * @return 200详情及版本，非回收站409
-     */
-    @PostMapping("/{articleId}/restore")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-restore")
     @SaCheckPermission("blog:article:restore")
-    public ResponseEntity<Result<ArticleAdminDetailVO>> restore(@PathVariable String articleId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        requireNoBody(body);
-        return profile(articles.restore(IdUtils.parse(articleId), revision));
+    public Result<BatchVersionsVO> restore(@Valid @RequestBody BatchRevisionDTO body) {
+        return Result.ok(articles.restoreBatch(body.getItems()));
     }
 
-    /** 永久删除只用于回收站，delete 与 purge 权限及各自范围由锁事务分别检查。 */
-    @DeleteMapping("/{articleId}/permanent")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-permanent-delete")
     @SaCheckPermission({"blog:article:delete", "blog:article:purge"})
-    public Result<Void> purge(@PathVariable String articleId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        requireNoBody(body);
-        articles.purge(IdUtils.parse(articleId), revision);
+    public Result<Void> purge(@Valid @RequestBody BatchRevisionDTO body) {
+        articles.purgeBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 这些接口没有请求体，传了实际内容就拒绝，不能悄悄接受身份、状态或时间字段。 */
-    private void requireNoBody(String body) {
-        if (body != null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
-        }
-    }
+
 
     /**
      * 把文章整体版本写进响应头，响应体只返回约定的后台详情字段。

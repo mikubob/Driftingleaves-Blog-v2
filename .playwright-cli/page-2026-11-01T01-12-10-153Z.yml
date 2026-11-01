@@ -1,0 +1,29 @@
+- main [ref=e4]:
+  - generic [aria-hidden] [ref=e5]:
+    - generic [ref=e6]: D
+    - generic [ref=e8]: A SPACE FOR YOUR IDEAS.
+  - generic [ref=e9]:
+    - generic [ref=e10]:
+      - generic [ref=e11]:
+        - text: D
+        - generic [ref=e12]: ↗
+      - paragraph [ref=e13]: DRIFTING LEAVES / ADMIN
+      - heading "管理控制台" [level=1] [ref=e14]
+      - paragraph [ref=e15]: 欢迎回来，开始管理你的站点。
+      - generic [ref=e16]:
+        - generic [ref=e17]: 用户名
+        - textbox "用户名" [ref=e24]:
+          - /placeholder: 请输入用户名
+        - generic [ref=e25]: 登录密码
+        - textbox "登录密码" [ref=e33]:
+          - /placeholder: 请输入登录密码
+        - generic [ref=e34]:
+          - generic [ref=e35]: 图形验证码
+          - generic [ref=e36]:
+            - textbox "六位数字验证码" [disabled] [ref=e37]:
+              - /placeholder: 六位数字
+            - button "刷新验证码" [disabled] [ref=e38] [cursor=pointer]: 加载中…
+          - generic [ref=e39]: 两分钟内有效，点击图片可换一张。
+        - button "登 录" [disabled] [ref=e40]
+      - paragraph [ref=e45]: 安全会话仅在当前页面有效
+    - generic [ref=e50]: © 2026 Drifting Leaves

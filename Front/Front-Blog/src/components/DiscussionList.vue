@@ -44,7 +44,7 @@ async function doDelete(item) {
     return
   }
   try {
-    await ElMessageBox.confirm('确定删除这条内容？', '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
+    await ElMessageBox.confirm('确定删除这条内容及其全部子回复？删除后无法恢复。', '确认删除', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
   } catch {
     return
   }

@@ -1,6 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onActivated, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, request } from '../api.js'
 import { can } from '../session.js'
@@ -8,12 +8,16 @@ import { formatCount, formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 import SafeHtml from '../components/SafeHtml.vue'
 
+const route = useRoute()
 const router = useRouter()
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/articles',
   {
     keyword: '',
@@ -71,19 +75,15 @@ async function action(row, operation) {
   try {
     const path = `/admin/articles/${row.articleId}`
     const current = await request(path)
+    const items = [{ id: row.articleId, revision: current.revision }]
     if (operation === 'publish' || operation === 'unpublish') {
-      await request(`${path}/status`, {
+      await request('/admin/articles/batch-status', {
         method: 'PUT',
-        revision: current.revision,
-        body: { status: operation === 'publish' ? 1 : 2 },
+        body: { items, status: operation === 'publish' ? 1 : 2 },
       })
-    } else if (operation === 'restore') {
-      await request(`${path}/restore`, { method: 'POST', revision: current.revision })
     } else {
-      await request(operation === 'purge' ? `${path}/permanent` : path, {
-        method: 'DELETE',
-        revision: current.revision,
-      })
+      const actions = { recycle: 'batch-recycle', restore: 'batch-restore', purge: 'batch-permanent-delete' }
+      await request(`/admin/articles/${actions[operation]}`, { method: 'POST', body: { items } })
     }
     ElMessage.success(`${titles[operation]}成功`)
     load()
@@ -94,8 +94,11 @@ async function action(row, operation) {
   }
 }
 
+onActivated(() => load())
 onMounted(async () => {
-  load()
+  if (!route.meta.keepAlive) {
+    load()
+  }
   try {
     if (can('blog:category:query')) {
       categories.value = await getOptions('/admin/categories')
@@ -106,6 +109,52 @@ onMounted(async () => {
   } catch (failure) {
     ElMessage.error(`筛选选项加载失败：${failure.message}`)
   }
+})
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (!trash.value && can('blog:article:publish')) {
+    actions.push({
+      label: '批量发布',
+      path: 'batch-status',
+      method: 'PUT',
+      body: { status: 1 },
+    })
+  }
+  if (!trash.value && can('blog:article:publish')) {
+    actions.push({
+      label: '批量下架',
+      path: 'batch-status',
+      method: 'PUT',
+      body: { status: 2 },
+      accept: (row) => row.status !== 0,
+      invalidMessage: '草稿不能直接下架，请只选择已发布或已下架的文章。',
+    })
+  }
+  if (!trash.value && can('blog:article:delete')) {
+    actions.push({
+      label: '批量回收',
+      path: 'batch-recycle',
+      danger: true,
+    })
+  }
+  if (trash.value && can('blog:article:restore')) {
+    actions.push({
+      label: '批量恢复',
+      path: 'batch-restore',
+    })
+  }
+  if (trash.value && can('blog:article:delete') && can('blog:article:purge')) {
+    actions.push({
+      label: '批量永久删除',
+      path: 'batch-permanent-delete',
+      danger: true,
+      warning: '正文、全部评论和点赞将被彻底删除，无法恢复。',
+    })
+  }
+  return actions
 })
 </script>
 
@@ -210,13 +259,21 @@ onMounted(async () => {
           <AdminIcon name="refresh" />
         </el-button>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/articles" id-key="articleId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="articleId"
         empty-text="这里还没有文章"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column label="文章" min-width="290">
           <template #default="{ row }">
             <button class="table-title" @click="view(row)">{{ row.title }}</button>
@@ -284,10 +341,12 @@ onMounted(async () => {
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="detailVisible" title="文章预览" width="850px" destroy-on-close>

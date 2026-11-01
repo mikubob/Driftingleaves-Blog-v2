@@ -220,3 +220,21 @@ test('验证码保留前导零，经请求头提交并校验图片响应', async
   captcha.imageBase64 = 'https://example.test/image.png'
   await assert.rejects(request('/admin/auth/captcha'), /验证码响应/)
 })
+
+
+test('统一操作提交逐条版本并保留批量响应中的大整数ID', async () => {
+  const id = '9223372036854775807'
+  const revision = '"revision-for-selected-article"'
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/v1/admin/articles/batch-status')
+    assert.equal(options.headers.has('If-Revision'), false)
+    assert.deepEqual(JSON.parse(options.body), { items: [{ id, revision }], status: 1 })
+    return result({ items: [{ id, revision }] })
+  }
+  const response = await request('/admin/articles/batch-status', {
+    method: 'PUT', body: { items: [{ id, revision }], status: 1 },
+  })
+  assert.equal(response.data.items[0].id, id)
+  globalThis.fetch = async () => result({ items: [{ id: 9007199254740992, revision }] })
+  await assert.rejects(request('/admin/articles/batch-status'), /格式不正确/)
+})

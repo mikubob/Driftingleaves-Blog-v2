@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.dto.TagQueryDTO;
 import com.xuan.dto.TagWriteDTO;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ITagService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagProfileVO;
@@ -152,9 +155,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
             @CacheEvict(cacheNames = "sitemap", allEntries = true)
     })
     public void delete(long id, String revision) {
-        BlogTag row = lockTag(id, "delete");
-        checkRevision(row, revision);
-        tags.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 先锁操作者、检查权限，再锁标签；等待结束后还要重新检查权限。 */
@@ -200,4 +201,35 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         String value = json.writeValueAsString(List.of(row.getTagId(), row.getTagName(), row.getSlug()));
         return new TagProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:tag", permission = "blog:tag:delete")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogTag row = lockTag(id, "delete");
+            checkRevision(row, revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            tags.deleteById(id);
+        }
+    }
+
 }

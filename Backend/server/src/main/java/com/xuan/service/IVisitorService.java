@@ -1,10 +1,14 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
+
+import java.util.List;
 
 /**
  * 访客管理仅限制统计标识，不修改本站用户状态。
@@ -25,4 +29,10 @@ public interface IVisitorService extends IService<BlogVisitor> {
 
     /** 外键将历史PV的visitor_id置NULL，PV仍然保留。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO unblockBatch(List<BatchItemDTO> items);
 }

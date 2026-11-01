@@ -7,8 +7,10 @@ import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IMessageService;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.IdUtils;
 import com.xuan.vo.MessagePrivateVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -31,6 +33,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MyMessageController {
 
     private final IMessageService messages;
+    private final CaptchaStore captchas;
 
     /** 本人保留待审、驳回、私密与占位记录。 */
     @GetMapping
@@ -44,16 +47,18 @@ public class MyMessageController {
         return response(messages.ownDetail(IdUtils.parse(id)));
     }
 
-    /** 编辑只能替换正文、格式和通知意愿，并重新审核。 */
+    /** 编辑先消费验证码，只能替换正文、格式和通知意愿，并重新审核。 */
     @PutMapping("/{id}")
     @SaCheckPermission("blog:message:updateOwn")
     public ResponseEntity<Result<MessagePrivateVO>> edit(@PathVariable String id,
             @Valid @RequestBody MessageEditDTO request,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
+            @RequestHeader(value = "If-Revision", required = false) String revision,
+            HttpServletRequest httpRequest) {
+        captchas.verify(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
         return response(messages.edit(IdUtils.parse(id), request, revision));
     }
 
-    /** 删除不需要版本，重复删除保持占位。 */
+    /** 删除本人留言及其全部子回复，不需要版本。 */
     @DeleteMapping("/{id}")
     @SaCheckPermission("blog:message:deleteOwn")
     public Result<Void> delete(@PathVariable String id) {

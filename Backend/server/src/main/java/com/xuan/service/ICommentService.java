@@ -1,19 +1,23 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
 import com.xuan.dto.CommentPublicQueryDTO;
 import com.xuan.entity.BlogComment;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CommentAdminVO;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
 
+import java.util.List;
+
 /**
- * 评论逐层展示，写入与文章状态互斥，删除统一保留占位和回复链。
+ * 评论逐层展示，写入与文章状态互斥，删除同时移除目标和全部子回复。
  */
 public interface ICommentService extends IService<BlogComment> {
 
@@ -29,7 +33,7 @@ public interface ICommentService extends IService<BlogComment> {
     /** 本人只看自己的记录，下架文章也可以管理。 */
     PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query);
 
-    /** 即使有 ALL 也只删本人，不要求版本，重复删除成功。 */
+    /** 即使有 ALL 也只能选择本人评论，连同全部子回复删除，不要求版本。 */
     void deleteOwn(long id);
 
     /** SELF 是本人文章下的评论，不能按评论者冒充文章归属。 */
@@ -41,6 +45,10 @@ public interface ICommentService extends IService<BlogComment> {
     /** 先检查 review 范围和版本，再审核 0/1/2；占位为终态。 */
     CommentProfileVO review(long id, int status, String revision);
 
-    /** moderate 独立范围，可以处理非公开文章；占位删除不要求版本。 */
+    /** moderate 独立范围，可以处理非公开文章；连同全部子回复删除，不要求版本。 */
     void moderate(long id);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void moderateBatch(List<String> ids);
 }

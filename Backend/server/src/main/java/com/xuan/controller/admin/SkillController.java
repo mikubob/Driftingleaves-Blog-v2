@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SkillWriteDTO;
 import com.xuan.entity.CvSkill;
@@ -12,7 +13,6 @@ import com.xuan.utils.IdUtils;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.net.URI;
+
 /**
  * 后台全站资料维护，权限、版本和写入由同一业务事务落实。
  */
@@ -64,11 +65,11 @@ public class SkillController {
         return profile(items.update(IdUtils.parse(id), request, revision));
     }
 
-    /** 仅删元数据，删除前仍需本次版本。 */
-    @DeleteMapping("/{id}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("cv:skill:delete")
-    public Result<Void> delete(@PathVariable String id, @RequestHeader(value = "If-Revision", required = false) String revision) {
-        items.delete(IdUtils.parse(id), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        items.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

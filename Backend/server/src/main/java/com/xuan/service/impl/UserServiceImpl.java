@@ -5,10 +5,12 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
@@ -26,9 +28,11 @@ import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.AdminUserProfileVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.SessionVO;
@@ -47,8 +51,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.LongStream;
 
 /**
@@ -211,6 +221,100 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             sessions.revokeAll(userId);
         }
         return adminProfile(users.selectById(userId));
+    }
+
+    /**
+     * {@inheritDoc}
+     * 全部版本校验完成后再写状态，结果版本在撤销操作者会话前计算。
+     */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "sys:user", permission = "sys:user:update")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public BatchVersionsVO adminSetStatusBatch(List<BatchItemDTO> items, int status) {
+        Map<Long, SysUser> targets = lockAdminTargets(items, "sys:user:update");
+        List<Long> revoked = new ArrayList<>();
+        Map<Long, String> versions = new HashMap<>();
+        for (SysUser user : targets.values()) {
+            if (user.getStatus() != status) {
+                user.setStatus(status);
+                users.updateAdmin(user);
+                if (status == 0) {
+                    revoked.add(user.getUserId());
+                }
+            }
+            versions.put(user.getUserId(), profile(user).revision());
+        }
+        if (status == 0) {
+            requireRemainingAdmin();
+        }
+        // 主动撤销本人的会话后不再复核当前 Token，否则合法的自我禁用会必然回滚。
+        for (long userId : revoked) {
+            sessions.revokeAll(userId);
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+    /** {@inheritDoc} 用户锁阻止新增外键引用，所有引用检查完成后才开始删除。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "sys:user", permission = "sys:user:delete")
+    @CacheEvict(cacheNames = "statistics", allEntries = true)
+    public void adminDeleteBatch(List<BatchItemDTO> items) {
+        Map<Long, SysUser> targets = lockAdminTargets(items, "sys:user:delete");
+        for (long userId : targets.keySet()) {
+            if (users.hasContentReferences(userId)) {
+                throw new BusinessException(409, "RESOURCE_IN_USE", "用户仍被文章、评论、文件、主页资料或留言引用");
+            }
+        }
+        for (long userId : targets.keySet()) {
+            users.deleteById(userId);
+        }
+        requireRemainingAdmin();
+        for (long userId : targets.keySet()) {
+            sessions.revokeAll(userId);
+        }
+    }
+
+    /**
+     * 固定保护锁后升序锁操作者及全部目标，等待结束后复核权限、存在性和逐项版本。
+     *
+     * @param items 入口已校验的显式目标及各自版本
+     * @param permission 本次操作的业务权限
+     * @return 按数值升序排列的已锁定用户，任一校验失败均不写入
+     */
+    private Map<Long, SysUser> lockAdminTargets(List<BatchItemDTO> items, String permission) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        Set<Long> ids = new TreeSet<>();
+        for (BatchItemDTO item : items) {
+            ids.add(IdUtils.parse(item.id()));
+        }
+        ids.add(sessions.currentUserId());
+        Map<Long, SysUser> locked = new HashMap<>();
+        for (long userId : ids) {
+            locked.put(userId, users.lockById(userId));
+        }
+        requireAdmin(permission);
+
+        Map<Long, SysUser> targets = new LinkedHashMap<>();
+        for (BatchItemDTO item : BatchInputs.sorted(items)) {
+            long userId = IdUtils.parse(item.id());
+            SysUser user = locked.get(userId);
+            if (user == null) {
+                throw new BusinessException(404, "NOT_FOUND", "用户不存在");
+            }
+            checkRevision(user, item.revision());
+            targets.put(userId, user);
+        }
+        return targets;
     }
 
     /**

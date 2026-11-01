@@ -61,7 +61,12 @@ export function registerMenuRoutes() {
           path: `${node.path.slice(1)}/edit/:id?`,
           name: 'article-editor',
           component: () => import('./views/ArticleEditor.vue'),
-          meta: { title: '文章编辑', permission: page.permission, componentKey: node.component },
+          meta: {
+            title: '文章编辑',
+            permission: page.permission,
+            componentKey: node.component,
+            articleListRoute: `menu-${node.menuId}`,
+          },
         }),
       )
     }

@@ -1,12 +1,15 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.entity.BlogMusic;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.vo.MusicPublicVO;
+
+import java.util.List;
 
 /**
  * 全站展示与后台维护共用同一份资料。
@@ -30,4 +33,6 @@ public interface IMusicService extends IService<BlogMusic> {
 
     /** 资源锁后核对版本，再物理删除元数据。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,8 +7,11 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/page-views',
   {
     visitorId: '',
@@ -46,7 +49,7 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    await request(`/admin/page-views/${row.viewId}`, { method: 'DELETE' })
+    await request('/admin/page-views/batch-delete', { method: 'POST', body: { ids: [row.viewId] } })
     ElMessage.success('记录已删除')
     load()
   } catch (failure) {
@@ -56,6 +59,22 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:view:delete', true)) {
+    actions.push({
+      label: '批量清理',
+      path: 'batch-delete',
+      revision: false,
+      danger: true,
+      warning: '清理会影响基于明细的PV/UV报表，不扣减文章累计阅读数。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -133,13 +152,21 @@ onMounted(load)
     <RequestError :message="error" @retry="load()" />
     <el-card shadow="never">
       <div class="card-heading"><h2>浏览记录列表</h2></div>
+            <BatchActions
+        ref="batch" resource="/admin/page-views" id-key="viewId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="viewId"
         empty-text="暂无记录"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="pageTitle" label="页面标题" min-width="180" show-overflow-tooltip />
         <el-table-column prop="siteCode" label="站点" min-width="80" show-overflow-tooltip />
         <el-table-column prop="pagePath" label="页面路径" min-width="240" show-overflow-tooltip />
@@ -159,10 +186,12 @@ onMounted(load)
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="visible" title="浏览记录详情" width="760px">

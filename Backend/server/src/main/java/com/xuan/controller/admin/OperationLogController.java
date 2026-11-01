@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchIdsDTO;
 import com.xuan.dto.OperationLogQueryDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
@@ -10,10 +11,11 @@ import com.xuan.vo.OperationLogDetailVO;
 import com.xuan.vo.OperationLogVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -41,11 +43,11 @@ public class OperationLogController {
         return Result.ok(logs.detail(IdUtils.parse(id)));
     }
 
-    /** 清理行为会由服务事务新增一条审计。 */
-    @DeleteMapping("/{id}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("sys:log:delete")
-    public Result<Void> delete(@PathVariable String id) {
-        logs.delete(IdUtils.parse(id));
+    public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
+        logs.deleteBatch(body.ids());
         return Result.ok(null);
     }
 }

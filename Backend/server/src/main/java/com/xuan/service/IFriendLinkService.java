@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
@@ -8,6 +9,8 @@ import com.xuan.entity.BlogFriendLink;
 import com.xuan.result.PageResult;
 import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
+
+import java.util.List;
 
 /**
  * 友链维护与公开展示直接连通，写入和成功审计共同提交。
@@ -31,4 +34,6 @@ public interface IFriendLinkService extends IService<BlogFriendLink> {
 
     /** 校验版本后物理删除，成功日志失败时删除一起回滚。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

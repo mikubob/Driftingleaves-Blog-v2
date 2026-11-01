@@ -2,23 +2,25 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.annotation.RateLimit;
+import com.xuan.dto.BatchIdsDTO;
 import com.xuan.dto.FileQueryDTO;
 import com.xuan.model.FileContent;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IFileService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchFileResultsVO;
 import com.xuan.vo.FileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -65,12 +67,11 @@ public class FileController {
         return image(files.original(IdUtils.parse(fileId)));
     }
 
-    /** 删除不要求版本，文件锁内必须查全部文章引用，并确认存储删除成功。 */
-    @DeleteMapping("/admin/files/{fileId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/admin/files/batch-delete")
     @SaCheckPermission("blog:file:delete")
-    public Result<Void> delete(@PathVariable String fileId) {
-        files.delete(IdUtils.parse(fileId));
-        return Result.ok(null);
+    public Result<BatchFileResultsVO> delete(@Valid @RequestBody BatchIdsDTO body) {
+        return Result.ok(files.deleteBatch(body.ids()));
     }
 
     /** 两项 query 权限及各自范围都要满足，文章还必须真正引用该文件。 */

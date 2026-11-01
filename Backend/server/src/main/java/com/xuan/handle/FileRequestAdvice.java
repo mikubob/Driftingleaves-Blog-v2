@@ -17,10 +17,13 @@ import java.util.Set;
         com.xuan.controller.blog.FileController.class})
 public class FileRequestAdvice {
 
-    /** POST 只接收一个 file 部件，其他接口没有请求体，分页才有明确查询字段。 */
+    /** 上传只收一个file部件，统一删除收JSON目标，读取仍拒绝请求体和额外参数。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) throws ServletException, IOException {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if ("POST /admin/files/batch-delete".equals(route)) {
+            return;
+        }
         if ("POST /admin/files".equals(route)) {
             if (request.getContentLengthLong() > 11 * 1024 * 1024) {
                 throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "multipart请求超过11MiB");

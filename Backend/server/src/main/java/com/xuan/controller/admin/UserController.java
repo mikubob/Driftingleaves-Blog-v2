@@ -4,12 +4,14 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.UserRolesDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IUserService;
 import com.xuan.vo.AdminUserProfileVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.UserAdminVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -103,6 +105,28 @@ public class UserController {
             @Valid @RequestBody UserRolesDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(users.adminAssignRoles(id(userId), body, revision));
+    }
+
+    /** 单条和批量启用共用逐项版本，不恢复旧会话。 */
+    @PutMapping("/batch-enable")
+    @SaCheckPermission("sys:user:update")
+    public Result<BatchVersionsVO> enable(@Valid @RequestBody BatchRevisionDTO body) {
+        return Result.ok(users.adminSetStatusBatch(body.getItems(), 1));
+    }
+
+    /** 按整批最终状态保护最后管理员，实际禁用时撤销全部会话。 */
+    @PutMapping("/batch-disable")
+    @SaCheckPermission("sys:user:update")
+    public Result<BatchVersionsVO> disable(@Valid @RequestBody BatchRevisionDTO body) {
+        return Result.ok(users.adminSetStatusBatch(body.getItems(), 0));
+    }
+
+    /** 一个用户也提交一项 items，引用和版本检查失败时整批保留。 */
+    @PostMapping("/batch-delete")
+    @SaCheckPermission("sys:user:delete")
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        users.adminDeleteBatch(body.getItems());
+        return Result.ok(null);
     }
 
     /**

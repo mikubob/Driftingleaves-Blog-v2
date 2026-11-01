@@ -5,6 +5,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.content.ArticleResources;
 import com.xuan.content.ArticleResources.References;
 import com.xuan.content.CommentVisibility;
@@ -12,6 +13,7 @@ import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogArticle;
 import com.xuan.entity.BlogArticleContent;
@@ -41,6 +43,7 @@ import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.ArticlePublicDetailVO;
 import com.xuan.vo.ArticlePublicVO;
 import com.xuan.vo.AuthorPublicVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 import lombok.RequiredArgsConstructor;
@@ -881,4 +884,169 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     private LocalDateTime now() {
         return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "blog:article", permission = "blog:article:publish")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        var sorted = BatchInputs.sorted(items);
+        lockBatchFiles(sorted, "publish");
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
+            ArticleRow article = locked.article();
+            requireNormal(article);
+            if (article.getStatus() == 0 && status == 2) {
+                throw new BusinessException(409, "STATE_CONFLICT", "草稿须先发布");
+            }
+            if (status == 1) {
+                String markdown = content(id).getMarkdownContent();
+                requirePublishable(markdown, article.getArticleType(), article.getOriginalUrl());
+                References references = resources.inspect(id, markdown, article.getCoverUrl());
+                validateFiles(references.fileIds(), locked.files());
+                lockAssociations(article.getCategoryId(), articles.tags(id).stream().map(BlogTag::getTagId).toList());
+            }
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, changeStatus(id, status, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:article", permission = "blog:article:delete")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public void recycleBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        lockBatchFiles(sorted, "delete");
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            lockArticle(id, "delete", revision, Set.of());
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            recycle(id, item.revision());
+        }
+    }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-restore", target = "blog:article", permission = "blog:article:restore")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public BatchVersionsVO restoreBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        lockBatchFiles(sorted, "restore");
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
+            if (article.getDeletedAt() == null) {
+                throw new BusinessException(409, "STATE_CONFLICT", "文章不在回收站");
+            }
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, restore(id, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-purge", target = "blog:article", permission = "blog:article:purge")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "tags", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true),
+            @CacheEvict(cacheNames = "comments", allEntries = true)
+    })
+    public void purgeBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        lockBatchFiles(sorted, "purge");
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
+            if (article.getDeletedAt() == null) {
+                throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
+            }
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            purge(id, item.revision());
+        }
+    }
+
+    /** 多篇文章先锁全部引用文件，再锁文章，保持文件引用与删除的既有锁顺序。 */
+    private void lockBatchFiles(List<BatchItemDTO> items, String operation) {
+        users.lockById(sessions.currentUserId());
+        Set<Long> files = new TreeSet<>();
+        for (var item : items) {
+            long id = IdUtils.parse(item.id());
+            ArticleRow row = requireArticle(articles.scoped(id, requireAdmin(operation), false));
+            files.addAll(resources.inspect(id, content(id).getMarkdownContent(), row.getCoverUrl()).fileIds());
+        }
+        for (long id : files) {
+            articles.lockFile(id);
+        }
+    }
+
 }

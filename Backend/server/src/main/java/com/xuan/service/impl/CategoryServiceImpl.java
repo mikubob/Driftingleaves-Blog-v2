@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryQueryDTO;
 import com.xuan.dto.CategoryUpdateDTO;
@@ -16,6 +18,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ICategoryService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.CategoryProfileVO;
@@ -32,6 +35,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * 分类和成功日志一起提交，删分类时由外键把文章的分类置空。
@@ -159,9 +163,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
             @CacheEvict(cacheNames = "sitemap", allEntries = true)
     })
     public void delete(long id, String revision) {
-        BlogCategory row = lockCategory(id, "delete");
-        checkRevision(row, revision);
-        categories.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 权限先于分类存在性检查，等待分类锁后再查一次，不能沿用旧授权。 */
@@ -208,4 +210,35 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
                 row.getDescription(), row.getSortOrder(), row.getStatus()));
         return new CategoryProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:category", permission = "blog:category:delete")
+    @Caching(evict = {
+            @CacheEvict(cacheNames = "articles", allEntries = true),
+            @CacheEvict(cacheNames = "search", allEntries = true),
+            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
+            @CacheEvict(cacheNames = "archives", allEntries = true),
+            @CacheEvict(cacheNames = "rankings", allEntries = true),
+            @CacheEvict(cacheNames = "categories", allEntries = true),
+            @CacheEvict(cacheNames = "authors", allEntries = true),
+            @CacheEvict(cacheNames = "statistics", allEntries = true),
+            @CacheEvict(cacheNames = "rss", allEntries = true),
+            @CacheEvict(cacheNames = "sitemap", allEntries = true)
+    })
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogCategory row = lockCategory(id, "delete");
+            checkRevision(row, revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            categories.deleteById(id);
+        }
+    }
+
 }

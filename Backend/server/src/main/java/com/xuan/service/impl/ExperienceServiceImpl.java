@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.ExperienceQueryDTO;
 import com.xuan.dto.ExperienceWriteDTO;
 import com.xuan.entity.CvExperience;
@@ -15,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IExperienceService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
@@ -29,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
@@ -106,9 +110,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @OperationLog(type = "delete", target = "cv:experience", permission = "cv:experience:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "experiences", allEntries = true)
     public void delete(long id, String revision) {
-        CvExperience row = lock(id, "delete");
-        RevisionUtils.check(profile(row).revision(), revision);
-        items.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
@@ -165,4 +167,24 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
                         row.getLogoUrl(), row.getContent(), row.getStartDate(), row.getEndDate(), row.getSortOrder(),
                         row.getStatus()))) + "\"");
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "cv:experience", permission = "cv:experience:delete")
+    @CacheEvict(cacheNames = "experiences", allEntries = true)
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            CvExperience row = lock(id, "delete");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            this.items.deleteById(id);
+        }
+    }
+
 }

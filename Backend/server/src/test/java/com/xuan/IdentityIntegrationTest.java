@@ -272,6 +272,9 @@ class IdentityIntegrationTest {
         MvcResult limited = call("GET", "/admin/auth/captcha", null, null);
         assertCode(limited, 429, "RATE_LIMITED");
         assertThat(limited.getResponse().getHeader("Retry-After")).isNotBlank();
+        assertThat(redis.keys(properties.getRedisPrefix() + "captcha:*")).hasSize(30);
+        assertCode(call("GET", "/blog/auth/captcha", null, null), 429, "RATE_LIMITED");
+        assertThat(redis.keys(properties.getRedisPrefix() + "captcha:*")).hasSize(30);
     }
 
     @Test
@@ -530,8 +533,11 @@ class IdentityIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role WHERE role_code='audit_fail'",
                 Integer.class)).isZero();
         assertThat(jdbc.queryForMap("SELECT result,error_message,operation_data FROM sys_operation_log"))
-                .containsEntry("result", 0).containsEntry("error_message", "SERVICE_UNAVAILABLE")
-                .containsEntry("operation_data", null);
+                .containsEntry("result", 0).containsEntry("error_message", "SERVICE_UNAVAILABLE");
+        JsonNode operationData = json.readTree(jdbc.queryForObject(
+                "SELECT operation_data FROM sys_operation_log", String.class));
+        assertThat(operationData.get("request").get("roleCode").asString()).isEqualTo("audit_fail");
+        assertThat(operationData.toString()).doesNotContain("secret", "raw-token", "SQL-internal");
     }
 
     @Test
@@ -553,8 +559,11 @@ class IdentityIntegrationTest {
                     .containsEntry("operation_target", "sys:user").containsEntry("permission_code", "sys:user:create")
                     .containsEntry("target_id", Long.parseLong(data(result).get("userId").asString()))
                     .containsEntry("ip_address", "198.51.100.9").containsEntry("result", 1)
-                    .containsEntry("operation_data", null).containsEntry("error_message", null);
-            assertThat(log.toString()).doesNotContain(PASSWORD, token, "audit_created", "Authorization", "Bearer");
+                    .containsEntry("error_message", null);
+            JsonNode operationData = json.readTree((String) log.get("operation_data"));
+            assertThat(operationData.get("request").get("username").asString()).isEqualTo("audit_created");
+            assertThat(operationData.get("request").has("password")).isFalse();
+            assertThat(log.toString()).doesNotContain(PASSWORD, token, "Authorization", "Bearer");
         } finally {
             properties.setTrustedProxies(List.of());
         }
@@ -1469,6 +1478,267 @@ class IdentityIntegrationTest {
         assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/blog/me", login("target_user"), null), 200, "OK");
         assertCode(adminPut("/admin/users/9223372036854775807", admin, current, userBody("叶", 1)), 404, "NOT_FOUND");
+    }
+
+    /** 批量启停只改状态，结果保持请求顺序；无变化不撤销，重新启用不恢复旧会话。 */
+    @Test
+    void adminUserBatchStatusPreservesProfileAndRevokesOnlyChangedUsers() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String first = data(register("batch_first")).get("userId").asString();
+        String second = data(register("batch_second")).get("userId").asString();
+        String firstToken = login("batch_first");
+        String anotherToken = login("batch_first");
+        String secondToken = login("batch_second");
+        String original = adminRevision(admin, first);
+        String body = userBatchBody(admin, second, first);
+
+        MvcResult unchanged = call("PUT", "/admin/users/batch-enable", admin, body);
+        assertCode(unchanged, 200, "OK");
+        assertThat(data(unchanged).get("items").get(0).get("id").asString()).isEqualTo(second);
+        assertThat(adminRevision(admin, first)).isEqualTo(original);
+        assertCode(call("GET", "/blog/me", firstToken, null), 200, "OK");
+
+        MvcResult disabled = call("PUT", "/admin/users/batch-disable", admin, body);
+        assertCode(disabled, 200, "OK");
+        assertThat(data(disabled).get("items").get(1).get("id").asString()).isEqualTo(first);
+        assertThat(data(disabled).get("items").get(1).get("revision").asString())
+                .isEqualTo(adminRevision(admin, first)).isNotEqualTo(original);
+        for (String token : List.of(firstToken, anotherToken, secondToken)) {
+            assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        }
+        JsonNode profile = data(call("GET", "/admin/users/" + first, admin, null));
+        assertThat(profile.get("nickname").asString()).isEqualTo("叶");
+        assertThat(profile.get("roleIds").toString()).isEqualTo("[\"3\"]");
+        assertThat(profile.get("status").asInt()).isZero();
+        String disabledBody = userBatchBody(admin, second, first);
+        assertCode(call("PUT", "/admin/users/batch-disable", admin, disabledBody), 200, "OK");
+        assertCode(call("PUT", "/admin/users/batch-enable", admin, disabledBody), 200, "OK");
+        assertCode(call("GET", "/blog/me", firstToken, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", login("batch_first"), null), 200, "OK");
+        String audit = jdbc.queryForObject("SELECT operation_data FROM sys_operation_log "
+                + "WHERE operation_type='batch-status' ORDER BY log_id DESC LIMIT 1", String.class);
+        assertThat(json.readTree(audit).get("ids").toString()).isEqualTo("[\"" + second + "\",\"" + first + "\"]");
+        assertThat(json.readTree(audit).get("selectedCount").asString()).isEqualTo("2");
+        assertThat(json.readTree(audit).get("status").asInt()).isEqualTo(1);
+    }
+
+    /** 三个入口共用严格请求模型，写权限不能隐式取得用户删除权限。 */
+    @Test
+    void adminUserBatchValidatesRequestsAndIndependentDeletePermission() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String id = data(register("batch_target")).get("userId").asString();
+        String member = login("batch_target");
+        String body = userBatchBody(admin, id);
+        for (String action : List.of("batch-enable", "batch-disable", "batch-delete")) {
+            String method = action.equals("batch-delete") ? "POST" : "PUT";
+            String endpoint = "/admin/users/" + action;
+            assertCode(call(method, endpoint, null, body), 401, "UNAUTHENTICATED");
+            assertCode(call(method, endpoint, member, body), 403, "FORBIDDEN");
+            for (String invalid : List.of("{}", "{\"items\":null}", "{\"items\":[]}",
+                    "{\"items\":[null]}", "{\"items\":[{\"id\":1}]}", "{\"items\":[{\"id\":\"01\"}]}",
+                    "{\"items\":[{\"id\":\"9223372036854775808\"}]}",
+                    body.replace("}]", "},{\"id\":\"" + id + "\"}]"),
+                    body.replace("}]", ",\"status\":0}]"), body.replace("}", ",\"unexpected\":1}"))) {
+                assertCode(call(method, endpoint, admin, invalid), 400, "VALIDATION_ERROR");
+            }
+            List<Map<String, String>> oversized = IntStream.range(1, 102)
+                    .mapToObj(value -> Map.of("id", Integer.toString(value))).toList();
+            assertCode(call(method, endpoint, admin, json.writeValueAsString(Map.of("items", oversized))),
+                    400, "VALIDATION_ERROR");
+            assertCode(call(method, endpoint + "?status=0", admin, body), 400, "VALIDATION_ERROR");
+            assertCode(mvc.perform(req(method, endpoint).header("Authorization", "Bearer " + admin)
+                    .header("If-Revision", adminRevision(admin, id)).contentType("application/json")
+                    .content(body)).andReturn(), 400, "VALIDATION_ERROR");
+        }
+        jdbc.update("INSERT INTO sys_role(role_id,role_code,role_name,data_scope) VALUES(9,'test_editor','编辑','SELF')");
+        jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1),(9,80),(9,82)");
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
+        String editorBody = userBatchBody(admin, id);
+        assertCode(call("POST", "/admin/users/batch-delete", member, editorBody), 403, "FORBIDDEN");
+        assertCode(call("PUT", "/admin/users/batch-enable", member, editorBody), 200, "OK");
+        // 固定后端权限不可删除，新增删除能力不扩大最后管理员保护名单。
+        assertThat(AuthorizationProvider.ADMIN_PERMISSIONS).doesNotContain("sys:user:delete");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE role_id=1 AND permission_id=84",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT parent_id FROM sys_menu WHERE permission_id=84", Long.class))
+                .isEqualTo(210L);
+        MvcResult permission = call("GET", "/admin/permissions/84", admin, null);
+        String permissionBody = json.writeValueAsString(Map.of("items", List.of(Map.of("id", "84", "revision",
+                permission.getResponse().getHeader("X-Revision")))));
+        assertCode(call("POST", "/admin/permissions/batch-delete", admin, permissionBody), 409, "STATE_CONFLICT");
+    }
+
+    /** 后半批版本失败或目标缺失时，前半批也不能修改或撤销会话。 */
+    @Test
+    void adminUserBatchChecksEveryVersionBeforeWriting() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String first = data(register("batch_first")).get("userId").asString();
+        String second = data(register("batch_second")).get("userId").asString();
+        String token = login("batch_first");
+        String body = userBatchBody(admin, first, second);
+        String stale = adminRevision(admin, second);
+        assertCode(adminPut("/admin/users/" + second, admin, stale, userBody("新昵称", 1)), 200, "OK");
+        for (String action : List.of("batch-enable", "batch-disable", "batch-delete")) {
+            String method = action.equals("batch-delete") ? "POST" : "PUT";
+            String endpoint = "/admin/users/" + action;
+            assertCode(call(method, endpoint, admin, body), 412, "REVISION_CONFLICT");
+            String current = userBatchBody(admin, first, second);
+            assertCode(call(method, endpoint, admin, current.replace("\"" + second + "\"", "\"9223372036854775807\"")),
+                    404, "NOT_FOUND");
+            assertCode(call(method, endpoint, admin, "{\"items\":[{\"id\":\"" + first + "\"}]}"),
+                    428, "PRECONDITION_REQUIRED");
+            assertCode(call(method, endpoint, admin, "{\"items\":[{\"id\":\"" + first + "\",\"revision\":\"*\"}]}"),
+                    400, "VALIDATION_ERROR");
+        }
+        assertThat(jdbc.queryForObject("SELECT status FROM sys_user WHERE user_id=?", Integer.class, first)).isEqualTo(1);
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
+        verify(sessions, times(0)).revokeAll(Long.parseLong(first));
+    }
+
+    /** 同批移除所有管理员必须回滚，合法自我禁用和自我删除仍能提交审计。 */
+    @Test
+    void adminUserBatchProtectsFinalAdministratorAndAllowsSelfDeletion() throws Exception {
+        String first = adminLogin("batch_admin_first");
+        String second = adminLogin("batch_admin_second");
+        String firstId = data(call("GET", "/blog/me", first, null)).get("userId").asString();
+        String secondId = data(call("GET", "/blog/me", second, null)).get("userId").asString();
+        String body = userBatchBody(first, firstId, secondId);
+        assertCode(call("PUT", "/admin/users/batch-disable", first, body), 409, "LAST_ADMIN");
+        assertCode(call("POST", "/admin/users/batch-delete", first, body), 409, "LAST_ADMIN");
+        assertCode(call("GET", "/blog/me", first, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", second, null), 200, "OK");
+        assertCode(call("PUT", "/admin/users/batch-disable", first, userBatchBody(first, firstId)), 200, "OK");
+        assertCode(call("PUT", "/admin/users/batch-enable", second, userBatchBody(second, firstId)), 200, "OK");
+        first = login("batch_admin_first");
+        assertCode(call("POST", "/admin/users/batch-delete", first, userBatchBody(first, firstId)), 200, "OK");
+        assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", second, null), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_type='batch-delete' "
+                + "AND operation_target='sys:user' AND result=1 AND user_id IS NULL", Integer.class)).isEqualTo(1);
+        assertCode(call("POST", "/admin/users/batch-delete", second, userBatchBody(second, secondId)), 409, "LAST_ADMIN");
+    }
+
+    /** Redis 或成功日志失败都必须恢复整批数据库写入及关联。 */
+    @Test
+    void adminUserBatchRedisAndAuditFailuresRollBackAllDatabaseChanges() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String first = data(register("batch_first")).get("userId").asString();
+        String second = data(register("batch_second")).get("userId").asString();
+        String body = userBatchBody(admin, first, second);
+        doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions)
+                .revokeAll(Long.parseLong(second));
+        assertCode(call("PUT", "/admin/users/batch-disable", admin, body), 503, "SERVICE_UNAVAILABLE");
+        assertCode(call("POST", "/admin/users/batch-delete", admin, body), 503, "SERVICE_UNAVAILABLE");
+        assertThat(userBatchBody(admin, first, second)).isEqualTo(body);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE user_id IN (?,?) AND status=1",
+                Integer.class, first, second)).isEqualTo(2);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_role WHERE user_id IN (?,?)",
+                Integer.class, first, second)).isEqualTo(2);
+        reset(sessions);
+        doAnswer(invocation -> {
+            SysOperationLog log = invocation.getArgument(0);
+            if (log.getResult() == 1) {
+                throw new DataIntegrityViolationException("injected audit failure");
+            }
+            return new SqlSessionTemplate(sqlSessionFactory).getMapper(OperationLogMapper.class).insertLog(log);
+        }).when(auditLogs).insertLog(any(SysOperationLog.class));
+        assertCode(call("POST", "/admin/users/batch-delete", admin, body), 503, "SERVICE_UNAVAILABLE");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE user_id IN (?,?)", Integer.class,
+                first, second)).isEqualTo(2);
+        reset(auditLogs);
+    }
+
+    /** 五类 RESTRICT 引用逐类验证，前面的可删用户也不能被部分删除。 */
+    @Test
+    void adminUserBatchDeleteRejectsAllContentReferences() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String adminId = data(call("GET", "/blog/me", admin, null)).get("userId").asString();
+        String first = data(register("batch_first")).get("userId").asString();
+        String target = data(register("batch_target")).get("userId").asString();
+        jdbc.update("INSERT INTO blog_article(article_id,author_id,title,slug) VALUES(1,?,'文章','batch_reference')", adminId);
+        List<String> inserts = List.of(
+                "INSERT INTO blog_article(article_id,author_id,title,slug,deleted_at) VALUES(2,?,'回收站','batch_trash',NOW(3))",
+                "INSERT INTO blog_comment(article_id,user_id,content,status) VALUES(1,?,'已删除',3)",
+                "INSERT INTO blog_file(uploader_id,original_name,object_key,mime_type,size_bytes) VALUES(?,'图片','batch-ref','image/png',1)",
+                "INSERT INTO home_profile(user_id,nickname) VALUES(?,'主页')",
+                "INSERT INTO blog_message(user_id,content,status) VALUES(?,'已删除',3)");
+        List<String> cleanup = List.of("DELETE FROM blog_article WHERE article_id=2", "DELETE FROM blog_comment",
+                "DELETE FROM blog_file", "DELETE FROM home_profile", "DELETE FROM blog_message");
+        for (int index = 0; index < inserts.size(); index++) {
+            jdbc.update(inserts.get(index), target);
+            try {
+                assertCode(call("POST", "/admin/users/batch-delete", admin, userBatchBody(admin, first, target)),
+                        409, "RESOURCE_IN_USE");
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE user_id IN (?,?)",
+                        Integer.class, first, target)).isEqualTo(2);
+            } finally {
+                jdbc.update(cleanup.get(index));
+            }
+        }
+        assertCode(call("POST", "/admin/users/batch-delete", admin, userBatchBody(admin, first, target)), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=1", Integer.class)).isEqualTo(1);
+    }
+
+    /** 物理删除级联安全关联，浏览和审计记录保留；只有一项时使用相同入口。 */
+    @Test
+    void adminUserBatchDeleteCascadesAssociationsAndPreservesHistory() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String adminId = data(call("GET", "/blog/me", admin, null)).get("userId").asString();
+        String target = data(register("batch_target")).get("userId").asString();
+        String token = login("batch_target");
+        String another = login("batch_target");
+        jdbc.update("INSERT INTO blog_article(article_id,author_id,title,slug) VALUES(1,?,'文章','batch_liked')", adminId);
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES(?,'GITHUB','batch_uuid')", target);
+        jdbc.update("INSERT INTO blog_article_like(article_id,user_id) VALUES(1,?)", target);
+        jdbc.update("INSERT INTO blog_rss_subscription(user_id,email) VALUES(?,'batch@example.test')", target);
+        jdbc.update("INSERT INTO blog_page_view(user_id,site_code,page_path) VALUES(?,'blog','/batch')", target);
+        jdbc.update("INSERT INTO sys_operation_log(user_id,operation_type,operation_target,result) VALUES(?,'test','batch-history',1)", target);
+        assertCode(call("POST", "/admin/users/batch-delete", admin, userBatchBody(admin, target)), 200, "OK");
+        for (String table : List.of("sys_user_role", "sys_user_oauth", "blog_article_like", "blog_rss_subscription")) {
+            assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE user_id=?", Integer.class, target)).isZero();
+        }
+        assertCode(call("GET", "/admin/users/" + target, admin, null), 404, "NOT_FOUND");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", another, null), 401, "UNAUTHENTICATED");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view WHERE page_path='/batch' AND user_id IS NULL",
+                Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_operation_log WHERE operation_target='batch-history' "
+                + "AND user_id IS NULL", Integer.class)).isEqualTo(1);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article WHERE article_id=1", Integer.class)).isEqualTo(1);
+    }
+
+    /** 上限 100 项须整批成功，排序和响应不能截断末尾目标。 */
+    @Test
+    void adminUserBatchAcceptsOneHundredTargets() throws Exception {
+        String admin = adminLogin("batch_admin");
+        String[] ids = new String[100];
+        for (int index = 0; index < ids.length; index++) {
+            String username = "batch_limit_" + index;
+            jdbc.update("INSERT INTO sys_user(username,nickname,status) VALUES(?, '批次上限', 1)", username);
+            ids[index] = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username=?", String.class, username);
+        }
+        MvcResult disabled = call("PUT", "/admin/users/batch-disable", admin, userBatchBody(admin, ids));
+        assertCode(disabled, 200, "OK");
+        assertThat(data(disabled).get("items").size()).isEqualTo(100);
+        assertThat(data(disabled).get("items").get(99).get("id").asString()).isEqualTo(ids[99]);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username LIKE 'batch_limit_%' AND status=0",
+                Integer.class)).isEqualTo(100);
+        assertCode(call("PUT", "/admin/users/batch-enable", admin, userBatchBody(admin, ids)), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username LIKE 'batch_limit_%' AND status=1",
+                Integer.class)).isEqualTo(100);
+        assertCode(call("POST", "/admin/users/batch-delete", admin, userBatchBody(admin, ids)), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username LIKE 'batch_limit_%'",
+                Integer.class)).isZero();
+        assertCode(call("GET", "/blog/me", admin, null), 200, "OK");
+    }
+
+    /** 每个显式目标读取各自详情版本，不从列表或第一项推断。 */
+    private String userBatchBody(String token, String... ids) throws Exception {
+        List<Map<String, String>> items = new ArrayList<>();
+        for (String id : ids) {
+            items.add(Map.of("id", id, "revision", adminRevision(token, id)));
+        }
+        return json.writeValueAsString(Map.of("items", items));
     }
 
     @Test
@@ -3000,8 +3270,9 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult roleDelete(String path, String token, String revision) throws Exception {
-        return mvc.perform(req("DELETE", path).header("Authorization", "Bearer " + token)
-                .header("If-Revision", revision)).andReturn();
+        var prepared = BatchTestRequests.prepare("DELETE", path, revision, null, json);
+        return mvc.perform(req(prepared.method(), prepared.path()).header("Authorization", "Bearer " + token)
+                .contentType("application/json").content(json.writeValueAsString(prepared.body()))).andReturn();
     }
 
     private String adminLogin(String username) throws Exception {
@@ -3045,6 +3316,21 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult call(String method, String path, String token, String body) throws Exception {
+        Object value = null;
+        if (body != null) {
+            try {
+                value = json.readValue(body, Map.class);
+            } catch (RuntimeException ignored) {
+                value = body;
+            }
+        }
+        var prepared = BatchTestRequests.prepare(method, path, null, value, json);
+        method = prepared.method();
+        path = prepared.path();
+        if (prepared.body() != value) {
+            body = json.writeValueAsString(prepared.body());
+        }
+
         var request = req(method, path);
         if (token != null) {
             request.header("Authorization", "Bearer " + token);

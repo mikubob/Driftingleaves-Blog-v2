@@ -1,26 +1,22 @@
 package com.xuan.dto;
 
 import jakarta.validation.constraints.AssertTrue;
-import lombok.AccessLevel;
 import lombok.Getter;
 
-/**
- * blockedUntil必须出现，null永久；实际UTC时间在业务入口检查。
- */
+/** 封禁结束时间必须明确填写，null才表示永久。 */
 @Getter
-public class VisitorBlockDTO {
-
+public class BatchBlockDTO extends BatchRevisionDTO {
     private String blockedUntil;
-
-    @Getter(AccessLevel.NONE)
+    @Getter(lombok.AccessLevel.NONE)
     private boolean supplied;
 
+    /** 区分明确的永久限制与漏传字段。 */
     public void setBlockedUntil(String value) {
         supplied = true;
         blockedUntil = value;
     }
 
-    /** 防止漏传字段被误当永久限制。 */
+    /** 防止漏填结束时间被误当作永久封禁。 */
     @AssertTrue(message = "blockedUntil必须显式出现")
     public boolean isComplete() {
         return supplied;

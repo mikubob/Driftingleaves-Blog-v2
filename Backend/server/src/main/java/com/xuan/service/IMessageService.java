@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -9,8 +10,11 @@ import com.xuan.dto.MessagePublicQueryDTO;
 import com.xuan.entity.BlogMessage;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
+
+import java.util.List;
 
 /**
  * 留言公开、本人和后台入口各自执行可见性/归属检查。
@@ -32,7 +36,7 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 编辑保留私密性和父关系，记录编辑时间并重新审核。 */
     ResourceVersion<MessagePrivateVO> edit(long id, MessageEditDTO request, String revision);
 
-    /** 本人删除幂等占位。 */
+    /** 只能选择本人留言，连同全部子回复删除。 */
     void deleteOwn(long id);
 
     /** ALL后台独立查询权限，私密内容不会由前台路径返回。 */
@@ -44,9 +48,13 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 实际转为通过后提交，再使用已确认订阅发送提醒。 */
     ResourceVersion<MessagePrivateVO> review(long id, int status, String revision);
 
-    /** ALL后台管理删除同样占位，不级联整树。 */
+    /** ALL后台管理删除目标留言及其全部子回复。 */
     void deleteAdmin(long id);
 
     /** 用实际后台操作者身份回复，继承完整私密范围。 */
     MessagePrivateVO replyAdmin(long id, MessageEditDTO request);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void deleteBatch(List<String> ids);
 }

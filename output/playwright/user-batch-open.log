@@ -1,0 +1,10 @@
+### Browser `user-batch-check` opened with pid 45972.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:5176');
+```
+### Page
+- Page URL: http://127.0.0.1:5176/login
+- Page Title: 管理控制台 · Drifting Leaves
+### Snapshot
+- [Snapshot](.playwright-cli\page-2026-11-01T03-05-16-689Z.yml)

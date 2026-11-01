@@ -1,10 +1,10 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.entity.BlogFriendLink;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IFriendLinkService;
@@ -14,7 +14,6 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -69,16 +68,11 @@ public class FriendLinkController {
         return profile(links.update(IdUtils.parse(linkId), body, revision));
     }
 
-    /** 删除友链前先检查版本，删除和成功日志都要一起提交。 */
-    @DeleteMapping("/{linkId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:link:delete")
-    public Result<Void> delete(@PathVariable String linkId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        if (body != null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
-        }
-        links.delete(IdUtils.parse(linkId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        links.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

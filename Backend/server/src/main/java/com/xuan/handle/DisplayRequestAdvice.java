@@ -48,9 +48,7 @@ public class DisplayRequestAdvice {
     /** JSON字段由DTO处理，这里先拒绝重复参数、未知参数及无请求体违规。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
-        String pattern = String.valueOf(request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE));
-        if (("GET".equals(request.getMethod()) || "DELETE".equals(request.getMethod()) || pattern.equals(
-                "/admin/visitors/{id}/unblock"))
+        if (("GET".equals(request.getMethod()) || "DELETE".equals(request.getMethod()))
                 && (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
         }

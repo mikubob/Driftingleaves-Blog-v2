@@ -94,7 +94,7 @@ onMounted(load)
       </div>
     </div>
     <RequestError :message="error" @retry="load" />
-    <el-card v-if="!error" shadow="never" class="profile-card">
+    <el-card v-if="!error" shadow="never">
       <form class="edit-form" @submit.prevent="save">
         <div class="form-section-heading">
           <h2>公开展示</h2>

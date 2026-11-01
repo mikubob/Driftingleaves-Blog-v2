@@ -3,6 +3,8 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
 import com.xuan.exception.BusinessException;
@@ -14,9 +16,11 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.service.IVisitorService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
@@ -28,6 +32,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 访问字段与限制字段分别写，防止后台保存旧统计资料覆盖并发访问。
@@ -98,9 +105,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @OperationLog(type = "delete", target = "blog:visitor", permission = "blog:visitor:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void delete(long id, String revision) {
-        BlogVisitor row = lock(id, "delete");
-        RevisionUtils.check(profile(row).revision(), revision);
-        visitors.deleteById(id);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 操作者和目标锁各自等待后重新检查原会话和独立ALL。 */
@@ -135,4 +140,69 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         }
         return row;
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:visitor", permission = "blog:visitor:delete")
+    @CacheEvict(cacheNames = "statistics", allEntries = true)
+    public void deleteBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogVisitor row = lock(id, "delete");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            visitors.deleteById(id);
+        }
+    }
+
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-block", target = "blog:visitor", permission = "blog:visitor:block")
+    public BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogVisitor row = lock(id, "block");
+            RevisionUtils.check(profile(row).revision(), revision);
+            LocalDateTime end = QueryTimeUtils.parse(until);
+            if (end != null && !end.isAfter(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
+            }
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, block(id, until, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-unblock", target = "blog:visitor", permission = "blog:visitor:unblock")
+    public BatchVersionsVO unblockBatch(List<BatchItemDTO> items) {
+        var sorted = BatchInputs.sorted(items);
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            String revision = item.revision();
+            BlogVisitor row = lock(id, "unblock");
+            RevisionUtils.check(profile(row).revision(), revision);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            versions.put(id, unblock(id, item.revision()).revision());
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
 }

@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryQueryDTO;
 import com.xuan.dto.CategoryUpdateDTO;
@@ -10,6 +11,8 @@ import com.xuan.result.PageResult;
 import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.CategoryProfileVO;
 import com.xuan.vo.CategoryPublicDetailVO;
+
+import java.util.List;
 
 /**
  * 分类是全站字典，SELF 权限也能操作整个字典，不按当前作者筛选。
@@ -36,4 +39,6 @@ public interface ICategoryService extends IService<BlogCategory> {
 
     /** 核对版本后删除，文章保留并把分类置空；失败时一起回滚。 */
     void delete(long id, String revision);
+    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

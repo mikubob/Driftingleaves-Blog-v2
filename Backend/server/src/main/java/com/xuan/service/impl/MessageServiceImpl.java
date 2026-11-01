@@ -5,8 +5,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.annotation.RateLimit;
+import com.xuan.batch.BatchInputs;
 import com.xuan.content.MessageVisibility;
 import com.xuan.content.SubscriptionNotifications;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -32,6 +34,7 @@ import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +53,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -193,7 +197,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireMember("deleteOwn");
         required(messages.scoped(id, actor));
         lockPath(id, "deleteOwn", false);
-        placeholder(required(messages.scoped(id, requireMember("deleteOwn"))), actor);
+        required(messages.scoped(id, requireMember("deleteOwn")));
+        deleteTree(id, true);
     }
 
     /** {@inheritDoc} */
@@ -252,8 +257,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:message", permission = "blog:message:moderate", targetIdArgument = 0)
     public void deleteAdmin(long id) {
-        lockAdmin(id, "moderate");
-        placeholder(required(messages.scoped(id, null)), null);
+        deleteBatch(List.of(Long.toString(id)));
     }
 
     /** {@inheritDoc} */
@@ -288,7 +292,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), null)), actor);
     }
 
-    /** 审核和占位也锁相同配置与父链，关闭enabled不阻止历史治理。 */
+    /** 审核和删除也锁相同配置与父链，关闭enabled不阻止历史治理。 */
     private List<BlogMessage> lockAdmin(long id, String operation) {
         long actor = requireAdmin(operation);
         users.lockById(actor);
@@ -407,14 +411,27 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return actor;
     }
 
-    /** 占位清掉内容与通知意愿，保留私密范围、作者归属和整条回复链。 */
-    private void placeholder(MessageRow row, Long user) {
-        if (row.getStatus() != 3) {
-            row.setContent(DELETED);
-            row.setContentFormat(0);
-            row.setNotifyReply(0);
-            row.setStatus(3);
-            messages.change(row, user);
+    /** 配置锁阻止新增后代，锁住待删分支并复核权限，再按子到父删除。 */
+    private void deleteTree(long id, boolean own) {
+        Map<Long, List<Long>> children = new HashMap<>();
+        for (MessageNode node : messages.nodes()) {
+            children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getMessageId());
+        }
+        List<Long> ids = new ArrayList<>();
+        ids.add(id);
+        for (int index = 0; index < ids.size(); index++) {
+            ids.addAll(children.getOrDefault(ids.get(index), List.of()));
+        }
+        for (long target : ids) {
+            messages.lockById(target);
+            if (own) {
+                requireMember("deleteOwn");
+            } else {
+                requireAdmin("moderate");
+            }
+        }
+        for (long target : ids.reversed()) {
+            messages.deleteById(target);
         }
     }
 
@@ -480,4 +497,67 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "留言配置不可用");
     }
+
+    /** 同批通过的祖先可满足后代条件，但未选中的隐藏祖先仍阻止整批通过。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-review", target = "blog:message", permission = "blog:message:review")
+    public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
+        var sorted = BatchInputs.sorted(items);
+        Set<Long> selected = new HashSet<>();
+        for (var item : items) {
+            selected.add(IdUtils.parse(item.id()));
+        }
+        Map<Long, MessageRow> rows = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            List<BlogMessage> path = lockAdmin(id, "review");
+            MessageRow row = required(messages.scoped(id, null));
+            RevisionUtils.check(revision(row), item.revision());
+            if (row.getStatus() == 3) {
+                throw conflict();
+            }
+            if (status == 1) {
+                for (BlogMessage parent : path.subList(0, path.size() - 1)) {
+                    if (parent.getStatus() != 1 && parent.getStatus() != 3 && !selected.contains(parent.getMessageId())) {
+                        throw conflict();
+                    }
+                }
+            }
+            rows.put(id, row);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (var item : sorted) {
+            long id = IdUtils.parse(item.id());
+            MessageRow row = rows.get(id);
+            boolean approved = row.getStatus() != 1 && status == 1;
+            if (row.getStatus() != status) {
+                row.setStatus(status);
+                messages.change(row, null);
+            }
+            if (approved) {
+                notifications.afterMessageApproved(id);
+            }
+            versions.put(id, revision(required(messages.scoped(id, null))));
+        }
+        return BatchInputs.versions(items, versions);
+    }
+
+    /** 全部显式目标先检查存在性，再清理重叠分支，保留未选中的祖先和兄弟。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:message", permission = "blog:message:moderate")
+    public void deleteBatch(List<String> ids) {
+        var sorted = BatchInputs.ids(ids);
+        for (long id : sorted) {
+            lockAdmin(id, "moderate");
+            required(messages.scoped(id, null));
+        }
+        for (long id : sorted) {
+            if (messages.selectById(id) != null) {
+                deleteTree(id, false);
+            }
+        }
+    }
+
 }

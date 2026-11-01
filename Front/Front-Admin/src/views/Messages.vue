@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
@@ -7,11 +7,14 @@ import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
+import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import SafeHtml from '../components/SafeHtml.vue'
 import CaptchaField from '../../../shared/CaptchaField.vue'
 
-const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
+const {
+  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
+} = useList(
   '/admin/messages',
   { status: '', userId: '', isSecret: '', begin: '', end: '' },
 )
@@ -43,7 +46,10 @@ async function review(row, status) {
   try {
     const path = `/admin/messages/${row.messageId}`
     const current = await request(path)
-    await request(`${path}/review`, { method: 'PUT', revision: current.revision, body: { status } })
+    await request('/admin/messages/batch-review', {
+      method: 'PUT',
+      body: { items: [{ id: row.messageId, revision: current.revision }], status },
+    })
     ElMessage.success('审核状态已更新')
     load()
   } catch (failure) {
@@ -81,7 +87,7 @@ async function sendReply() {
 
 async function remove(row) {
   try {
-    await ElMessageBox.confirm('删除这条留言？回复链将保留删除占位。', '删除留言', {
+    await ElMessageBox.confirm('删除这条留言及其全部子回复？删除后无法恢复。', '删除留言', {
       confirmButtonText: '删除',
       cancelButtonText: '取消',
     })
@@ -90,7 +96,7 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    await request(`/admin/messages/${row.messageId}`, { method: 'DELETE' })
+    await request('/admin/messages/batch-delete', { method: 'POST', body: { ids: [row.messageId] } })
     ElMessage.success('留言已删除')
     load()
   } catch (failure) {
@@ -100,6 +106,42 @@ async function remove(row) {
   }
 }
 onMounted(load)
+
+const batch = ref(null)
+const batchTable = ref(null)
+const batchActions = computed(() => {
+  const actions = []
+  if (can('blog:message:review', true)) {
+    actions.push({
+      label: '批量通过',
+      path: 'batch-review',
+      method: 'PUT',
+      body: { status: 1 },
+      accept: (row) => row.status !== 3,
+      invalidMessage: '历史删除占位不能重新审核。',
+    })
+  }
+  if (can('blog:message:review', true)) {
+    actions.push({
+      label: '批量驳回',
+      path: 'batch-review',
+      method: 'PUT',
+      body: { status: 2 },
+      accept: (row) => row.status !== 3,
+      invalidMessage: '历史删除占位不能重新审核。',
+    })
+  }
+  if (can('blog:message:moderate', true)) {
+    actions.push({
+      label: '批量删除',
+      path: 'batch-delete',
+      revision: false,
+      danger: true,
+      warning: '所选留言及其全部层级回复（包括悄悄话）都会删除，无法恢复。',
+    })
+  }
+  return actions
+})
 </script>
 
 <template>
@@ -159,13 +201,21 @@ onMounted(load)
         <h2>留言列表</h2>
         <span class="muted-text">悄悄话仅在授权范围内可见</span>
       </div>
+            <BatchActions
+        ref="batch" resource="/admin/messages" id-key="messageId"
+        :rows="rows" :table="batchTable" :actions="batchActions"
+        :disabled="loading || busy || !!error" @completed="load()"
+      />
       <el-table
+        ref="batchTable"
+        @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || busy"
+        v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="messageId"
         empty-text="暂无留言"
       >
+        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column label="留言" min-width="300">
           <template #default="{ row }">
             <button class="table-title" @click="view(row)">{{ row.content }}</button>
@@ -203,19 +253,21 @@ onMounted(load)
               <el-button v-if="can('blog:message:review', true)" link @click="view(row, true)">
                 回复
               </el-button>
-              <el-button v-if="can('blog:message:moderate', true)" link @click="remove(row)">
-                删除
-              </el-button>
             </template>
+            <el-button v-if="can('blog:message:moderate', true)" link @click="remove(row)">
+              删除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
       <ListPager
         :page="page"
+        :page-size="pageSize"
         :total="total"
         :total-pages="totalPages"
         :loading="loading || busy"
         @change="changePage"
+        @size-change="changePageSize"
       />
     </el-card>
     <el-dialog v-model="detailVisible" title="留言详情" width="720px" destroy-on-close>

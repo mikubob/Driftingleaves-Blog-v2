@@ -1,12 +1,16 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.SubscriptionQueryDTO;
 import com.xuan.dto.SubscriptionWriteDTO;
 import com.xuan.entity.BlogRssSubscription;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.SubscriptionVO;
+
+import java.util.List;
 
 /**
  * 邮件订阅必须先验证当前邮箱，XML Feed独立于本业务。
@@ -39,4 +43,8 @@ public interface ISubscriptionService extends IService<BlogRssSubscription> {
 
     /** 物理删除记录，所有旧票据因记录消失而无效。 */
     void delete(long id, String revision);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void deleteBatch(List<BatchItemDTO> items);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
 }

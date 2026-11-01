@@ -10,6 +10,7 @@ import ArticleCard from '../components/ArticleCard.vue'
 import EmailSubscription from '../components/EmailSubscription.vue'
 import ListPager from '../components/ListPager.vue'
 import ResourceState from '../components/ResourceState.vue'
+import CaptchaField from '../../../shared/CaptchaField.vue'
 const router = useRouter()
 const form = reactive({ nickname: '', email: '', avatar: '', intro: '' })
 const password = reactive({ current: '', next: '' })
@@ -20,6 +21,7 @@ const feedback = ref('')
 const busy = ref(false)
 const deleting = ref(null)
 const editing = ref(null)
+const messageCaptcha = ref(null)
 const editForm = reactive({ content: '', contentFormat: 0, notifyReply: false, revision: null })
 
 async function signOut() {
@@ -151,6 +153,7 @@ async function saveMessage() {
   try {
     await request(`/blog/me/messages/${editing.value}`, {
       method: 'PUT', revision: editForm.revision,
+      captcha: messageCaptcha.value.getValue(),
       body: {
         content: editForm.content.trim(), contentFormat: editForm.contentFormat,
         notifyReply: editForm.notifyReply ? 1 : 0,
@@ -162,6 +165,9 @@ async function saveMessage() {
   } catch (failure) {
     error.value = failure.message
   } finally {
+    if (editing.value) {
+      messageCaptcha.value?.refresh()
+    }
     busy.value = false
   }
 }
@@ -267,7 +273,7 @@ async function saveMessage() {
             </p>
             <div class="row">
               <button
-                v-if="item.status !== 3 && can(tab === 'comments' ? 'blog:comment:deleteOwn' : 'blog:message:deleteOwn')"
+                v-if="can(tab === 'comments' ? 'blog:comment:deleteOwn' : 'blog:message:deleteOwn')"
                 class="text-button"
                 @click="deleting = item"
               >
@@ -291,6 +297,12 @@ async function saveMessage() {
             <fieldset :disabled="busy">
               <label for="edit-content">编辑留言</label>
               <textarea id="edit-content" v-model="editForm.content" rows="4" maxlength="2000" required></textarea>
+              <CaptchaField
+                :ref="field => messageCaptcha = field"
+                :request="request"
+                endpoint="/blog/auth/captcha"
+                :disabled="busy"
+              />
               <div class="message-options">
                 <label>
                   格式
@@ -305,7 +317,7 @@ async function saveMessage() {
                 </label>
               </div>
               <div class="row">
-                <button class="primary" :disabled="busy">保存修改</button>
+                <button class="primary" :disabled="busy || !messageCaptcha?.ready">保存修改</button>
                 <button type="button" :disabled="busy" @click="editing = null">取消</button>
                 <button type="button" :disabled="busy" @click="editMessage(item)">重新获取详情</button>
               </div>
@@ -316,7 +328,7 @@ async function saveMessage() {
         <ListPager :data="activity.data" @change="page = $event" />
       </template>
       <div v-if="deleting" class="inline-confirm" role="group" aria-label="确认操作">
-        <span>{{ tab === 'liked-articles' ? '确认取消喜欢？' : '确认删除这条内容？' }}</span>
+        <span>{{ tab === 'liked-articles' ? '确认取消喜欢？' : '确认删除这条内容及其全部子回复？删除后无法恢复。' }}</span>
         <button :disabled="busy" @click="remove">确认</button>
         <button :disabled="busy" @click="deleting = null">取消</button>
       </div>

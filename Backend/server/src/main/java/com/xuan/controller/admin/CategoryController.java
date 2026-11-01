@@ -1,11 +1,11 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryQueryDTO;
 import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.entity.BlogCategory;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICategoryService;
@@ -14,7 +14,6 @@ import com.xuan.vo.CategoryProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -69,16 +68,11 @@ public class CategoryController {
         return profile(categories.update(IdUtils.parse(categoryId), body, revision));
     }
 
-    /** 删除分类前先检查版本，关联处理和成功日志都要一起提交。 */
-    @DeleteMapping("/{categoryId}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:category:delete")
-    public Result<Void> delete(@PathVariable String categoryId,
-            @RequestHeader(value = "If-Revision", required = false) String revision,
-            @RequestBody(required = false) String body) {
-        if (body != null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
-        }
-        categories.delete(IdUtils.parse(categoryId), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        categories.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

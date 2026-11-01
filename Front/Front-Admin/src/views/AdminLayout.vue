@@ -153,7 +153,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
       </header>
 
       <!-- 页面内容 -->
-      <main id="main-content" class="page-main" tabindex="-1">
+      <main
+        id="main-content"
+        class="page-main"
+        :class="{ 'editor-page': route.name === 'article-editor' }"
+        tabindex="-1"
+      >
         <router-view v-slot="{ Component }">
           <transition name="page-fade" mode="out-in">
             <keep-alive>
@@ -161,7 +166,11 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
             </keep-alive>
           </transition>
           <transition name="page-fade" mode="out-in">
-            <component :is="Component" v-if="!route.meta.keepAlive" :key="route.path" />
+            <component
+              :is="Component"
+              v-if="!route.meta.keepAlive"
+              :key="route.name === 'article-editor' ? route.name : route.path"
+            />
           </transition>
         </router-view>
       </main>

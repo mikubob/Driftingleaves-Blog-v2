@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleQueryDTO;
@@ -9,6 +10,8 @@ import com.xuan.entity.SysRole;
 import com.xuan.result.PageResult;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
+
+import java.util.List;
 
 /**
  * 后台角色操作每次都要查当前身份、后台入口和具体业务权限。
@@ -32,4 +35,6 @@ public interface IRoleService extends IService<SysRole> {
 
     /** 权限和菜单一起替换，补齐祖先并检查明确授予的权限，必须保留最后管理员。 */
     RoleProfileVO grants(long roleId, RoleGrantDTO request, String revision);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

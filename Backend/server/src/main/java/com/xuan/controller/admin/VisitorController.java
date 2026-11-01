@@ -1,7 +1,8 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
-import com.xuan.dto.VisitorBlockDTO;
+import com.xuan.dto.BatchBlockDTO;
+import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
 import com.xuan.model.ResourceVersion;
@@ -9,16 +10,16 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IVisitorService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -46,28 +47,25 @@ public class VisitorController {
         return response(visitors.detail(IdUtils.parse(id)));
     }
 
-    /** null表示永久，字段必须显式出现。 */
-    @PutMapping("/{id}/block")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PutMapping("/batch-block")
     @SaCheckPermission("blog:visitor:block")
-    public ResponseEntity<Result<BlogVisitor>> block(@PathVariable String id, @Valid @RequestBody VisitorBlockDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return response(visitors.block(IdUtils.parse(id), body.getBlockedUntil(), revision));
+    public Result<BatchVersionsVO> block(@Valid @RequestBody BatchBlockDTO body) {
+        return Result.ok(visitors.blockBatch(body.getItems(), body.getBlockedUntil()));
     }
 
-    /** 无请求体，相同目标也校验版本。 */
-    @PutMapping("/{id}/unblock")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PutMapping("/batch-unblock")
     @SaCheckPermission("blog:visitor:unblock")
-    public ResponseEntity<Result<BlogVisitor>> unblock(@PathVariable String id,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return response(visitors.unblock(IdUtils.parse(id), revision));
+    public Result<BatchVersionsVO> unblock(@Valid @RequestBody BatchRevisionDTO body) {
+        return Result.ok(visitors.unblockBatch(body.getItems()));
     }
 
-    /** 清理访客保留PV，UV随外键置NULL可能下降。 */
-    @DeleteMapping("/{id}")
+    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    @PostMapping("/batch-delete")
     @SaCheckPermission("blog:visitor:delete")
-    public Result<Void> delete(@PathVariable String id,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        visitors.delete(IdUtils.parse(id), revision);
+    public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
+        visitors.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 

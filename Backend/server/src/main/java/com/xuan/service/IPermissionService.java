@@ -1,6 +1,7 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.dto.PermissionUpdateDTO;
@@ -8,6 +9,8 @@ import com.xuan.entity.SysPermission;
 import com.xuan.result.PageResult;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
+
+import java.util.List;
 
 /**
  * 权限字典是全站资源，当前身份、后台入口和本次操作权限都必须有效。
@@ -28,4 +31,6 @@ public interface IPermissionService extends IService<SysPermission> {
 
     /** 锁内查版本后删除并清理角色关联，固定权限或仍被菜单引用的权限不能删，撤销会话失败就回滚。 */
     void delete(long permissionId, String revision);
+    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    void deleteBatch(List<BatchItemDTO> items);
 }

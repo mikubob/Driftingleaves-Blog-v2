@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.dto.OperationLogQueryDTO;
 import com.xuan.entity.SysOperationLog;
 import com.xuan.exception.BusinessException;
@@ -21,8 +22,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 查询与清理分别使用独立权限，清理自身也要留一条新日志。
@@ -36,6 +41,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
+    private final JsonMapper json;
 
     /** {@inheritDoc} */
     @Override
@@ -55,11 +61,12 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     public OperationLogDetailVO detail(long id) {
         requireAdmin("query");
         SysOperationLog row = required(logs.selectById(id));
-        // 现有审计写入者没有摘要白名单，不把数据库里的任意JSON直接当公开字段。
+        Map<String, Object> data = row.getOperationData() == null ? null
+                : json.readValue(row.getOperationData(), new TypeReference<Map<String, Object>>() { });
         return new OperationLogDetailVO(row.getLogId(), row.getUserId(), row.getOperationType(),
                 row.getOperationTarget(),
                 row.getTargetId(), row.getPermissionCode(), row.getResult(), row.getErrorMessage(), row.getIpAddress(),
-                row.getOperationTime(), null);
+                row.getOperationTime(), data);
     }
 
     /** {@inheritDoc} */
@@ -67,12 +74,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "sys:log", permission = "sys:log:delete", targetIdArgument = 0)
     public void delete(long id) {
-        users.lockById(sessions.currentUserId());
-        requireAdmin("delete");
-        SysOperationLog row = logs.lockById(id);
-        requireAdmin("delete");
-        required(row);
-        logs.deleteById(id);
+        deleteBatch(List.of(Long.toString(id)));
     }
 
     /** 不借query范围放宽delete，也不把SELF伪装为全局权限。 */
@@ -92,4 +94,23 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         }
         return row;
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "sys:log", permission = "sys:log:delete")
+    public void deleteBatch(List<String> ids) {
+        var sorted = BatchInputs.ids(ids);
+        for (long id : sorted) {
+            users.lockById(sessions.currentUserId());
+            requireAdmin("delete");
+            SysOperationLog row = logs.lockById(id);
+            requireAdmin("delete");
+            required(row);
+        }
+        for (long id : sorted) {
+            logs.deleteById(id);
+        }
+    }
+
 }

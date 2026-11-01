@@ -4,6 +4,8 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleQueryDTO;
@@ -18,6 +20,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IRoleService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
@@ -27,6 +30,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -142,16 +146,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "sys:role", permission = "sys:role:delete", targetIdArgument = 0)
     public void delete(long roleId, String revision) {
-        List<Long> affected = lockUsers(roleId, "sys:role:delete");
-        SysRole role = roles.lockById(roleId);
-        requireAdmin("sys:role:delete");
-        role = requireRole(role);
-        checkRevision(role, revision);
-        if (Set.of("admin", "author", "member").contains(role.getRoleCode())) {
-            throw new BusinessException(409, "STATE_CONFLICT", "内置角色禁止删除");
-        }
-        roles.deleteById(roleId);
-        revoke(affected);
+        deleteBatch(List.of(new BatchItemDTO(Long.toString(roleId), revision)));
     }
 
     /**
@@ -349,4 +344,44 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 role.getDataScope(), role.getStatus(), role.getCreateTime(), role.getUpdateTime(),
                 roles.permissionIds(role.getRoleId()), roles.menuIds(role.getRoleId()));
     }
+
+    /** 先验证整批授权对象，删除完成后统一撤销所有受影响用户会话。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "sys:role", permission = "sys:role:delete")
+    public void deleteBatch(List<BatchItemDTO> items) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        requireAdmin("sys:role:delete");
+        var sorted = BatchInputs.sorted(items);
+        Set<Long> affected = new TreeSet<>();
+        for (var item : sorted) {
+            affected.addAll(roles.userIds(IdUtils.parse(item.id())));
+        }
+        Set<Long> lockedUsers = new TreeSet<>(affected);
+        lockedUsers.add(sessions.currentUserId());
+        for (long id : lockedUsers) {
+            users.lockById(id);
+        }
+        for (var item : sorted) {
+            long roleId = IdUtils.parse(item.id());
+            String revision = item.revision();
+            SysRole role = roles.lockById(roleId);
+            requireAdmin("sys:role:delete");
+            role = requireRole(role);
+            checkRevision(role, revision);
+            if (Set.of("admin", "author", "member").contains(role.getRoleCode())) {
+                throw new BusinessException(409, "STATE_CONFLICT", "内置角色禁止删除");
+            }
+        }
+        for (var item : sorted) {
+            roles.deleteById(IdUtils.parse(item.id()));
+        }
+        if (users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
+            throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
+        }
+        revoke(new ArrayList<>(affected));
+    }
+
 }

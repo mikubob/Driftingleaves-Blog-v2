@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.batch.BatchInputs;
 import com.xuan.dto.PageViewQueryDTO;
 import com.xuan.entity.BlogPageView;
 import com.xuan.exception.BusinessException;
@@ -23,6 +24,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 明细与文章累计阅读独立，清理不会修改文章。
@@ -59,14 +61,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     @OperationLog(type = "delete", target = "blog:view", permission = "blog:view:delete", targetIdArgument = 0)
     @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void delete(long id) {
-        users.lockById(sessions.currentUserId());
-        requireAdmin("delete");
-        BlogPageView row = views.lockById(id);
-        requireAdmin("delete");
-        if (row == null) {
-            throw new BusinessException(404, "NOT_FOUND", "浏览记录不存在");
-        }
-        views.deleteById(id);
+        deleteBatch(List.of(Long.toString(id)));
     }
 
     /** 查询与清理分别使用自己的ALL，不能借另一项权限扩大范围。 */
@@ -78,4 +73,26 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
             throw new BusinessException(403, "FORBIDDEN", "此操作需要ALL范围");
         }
     }
+
+    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-delete", target = "blog:view", permission = "blog:view:delete")
+    @CacheEvict(cacheNames = "statistics", allEntries = true)
+    public void deleteBatch(List<String> ids) {
+        var sorted = BatchInputs.ids(ids);
+        for (long id : sorted) {
+            users.lockById(sessions.currentUserId());
+            requireAdmin("delete");
+            BlogPageView row = views.lockById(id);
+            requireAdmin("delete");
+            if (row == null) {
+                throw new BusinessException(404, "NOT_FOUND", "浏览记录不存在");
+            }
+        }
+        for (long id : sorted) {
+            views.deleteById(id);
+        }
+    }
+
 }
