@@ -78,7 +78,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
             throw invalid();
         }
 
-        // 3. 锁住统计标识后检查封禁；原 IP 只用于地域查询，落库前先脱敏。
+        // 3. 锁住统计标识后检查封禁；完整 IP 和地域仅供有权限的管理端查看。
         LocalDateTime at = now();
         visitors.ensure(request.getFingerprint(), at);
         BlogVisitor visitor = visitors.lockFingerprint(request.getFingerprint());
@@ -88,11 +88,11 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
             throw new BusinessException(403, "VISITOR_BLOCKED", "此统计标识暂不接收采集");
         }
         IpLocationResolver.GeoInfo geo = locations.getGeoInfo(ip);
-        String masked = IpUtils.anonymize(ip);
+        String address = IpUtils.normalize(ip);
         String agent = userAgent == null ? null : userAgent.codePoints().filter(c -> !Character.isISOControl(c))
                 .limit(1024)
                 .collect(StringBuilder::new, StringBuilder::appendCodePoint, StringBuilder::append).toString();
-        visitor.setIpAddress(masked);
+        visitor.setIpAddress(address);
         visitor.setUserAgent(agent);
         visitor.setCountry(geo.country());
         visitor.setProvince(geo.province());
@@ -109,7 +109,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         row.setPagePath(path);
         row.setPageTitle(request.getPageTitle());
         row.setReferer(referer);
-        row.setIpAddress(masked);
+        row.setIpAddress(address);
         row.setUserAgent(agent);
         row.setViewTime(at);
         views.insert(row);

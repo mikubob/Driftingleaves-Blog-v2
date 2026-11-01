@@ -2,6 +2,8 @@ package com.xuan.controller.blog;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
+import com.xuan.dto.EmailCodeDTO;
+import com.xuan.dto.EmailLoginDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
@@ -95,6 +97,31 @@ public class AuthController {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
             if ("AUTH_FAILED".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.username());
+            }
+            throw exception;
+        }
+    }
+
+    /** 图形验证码通过后发送注册或前台登录邮件，接口不返回邮件中的数字。 */
+    @PostMapping("/email-code")
+    public Result<Void> emailCode(@Valid @RequestBody EmailCodeDTO body, HttpServletRequest request) {
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        limiter.email(request, body.email());
+        users.sendEmailCode(body);
+        return Result.ok(null);
+    }
+
+    /** 邮箱验证码和图形验证码同时通过后，签发与密码登录同期限的前台会话。 */
+    @PostMapping("/email-login")
+    @RateLimit(value = "login-total", limit = 30)
+    public Result<SessionVO> emailLogin(@Valid @RequestBody EmailLoginDTO body, HttpServletRequest request) {
+        limiter.checkLogin(request, body.email());
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        try {
+            return Result.ok(users.loginEmail(body));
+        } catch (BusinessException exception) {
+            if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
+                limiter.loginFailed(request, body.email());
             }
             throw exception;
         }

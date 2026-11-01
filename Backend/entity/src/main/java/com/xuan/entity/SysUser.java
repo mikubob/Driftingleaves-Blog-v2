@@ -50,6 +50,12 @@ public class SysUser {
     @TableField("last_login_time")
     private LocalDateTime lastLoginTime;
 
+    /** 最近成功登录的完整 IP 与省市，仅管理端返回。 */
+    @TableField("last_login_ip")
+    private String lastLoginIp;
+    @TableField("last_login_location")
+    private String lastLoginLocation;
+
     /** 创建时间由数据库填写，应用不用赋值。 */
     @TableField("create_time")
     private LocalDateTime createTime;

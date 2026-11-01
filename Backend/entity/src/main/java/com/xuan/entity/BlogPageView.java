@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 统计标识不授予身份；IP只存脱敏值，时间由服务端确定。
+ * 统计标识不授予身份；完整 IP 仅管理端可见，时间由服务端确定。
  */
 @Data
 @TableName("blog_page_view")

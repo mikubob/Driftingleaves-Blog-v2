@@ -50,7 +50,7 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * 保留业务错误状态和错误码，限流时补充 Retry-After。
+     * 保留业务错误状态、错误码和字段说明，限流时补充 Retry-After。
      */
     @ExceptionHandler(BusinessException.class)
     public ResponseEntity<Result<Void>> business(BusinessException exception) {
@@ -62,7 +62,7 @@ public class GlobalExceptionHandler {
         if (exception.getRetryAfter() != null) {
             response.header("Retry-After", exception.getRetryAfter().toString());
         }
-        return response.body(Result.error(exception.getCode(), exception.getMessage()));
+        return response.body(new Result<>(exception.getCode(), exception.getMessage(), null, exception.getErrors()));
     }
 
     /**

@@ -20,7 +20,7 @@ public interface ISubscriptionService extends IService<BlogRssSubscription> {
     /** 仅取当前用户，未申请返回null。 */
     SubscriptionVO own();
 
-    /** 提交待验证状态后发送真实确认信，传输失败503，允许重发恢复。 */
+    /** 仅申请当前账号邮箱，提交待验证状态后发确认信，传输失败503，允许重发恢复。 */
     SubscriptionVO request(SubscriptionWriteDTO request);
 
     /** 同一用户锁内原子消费当前轮次票据，再提交激活状态。 */

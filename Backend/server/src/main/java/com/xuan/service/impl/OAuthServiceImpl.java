@@ -76,7 +76,7 @@ public class OAuthServiceImpl implements IOAuthService {
     }
 
     /**
-     * 核对并一次性消费流程后再取平台身份，完成本站注册、识别或绑定；可信流程成功发 60 秒 ticket，失败跳固定错误页，不可信关系直接报错，最后清理 JustAuth state，不能恢复流程。
+     * 核对并一次性消费流程后再取平台身份，识别已有绑定或绑定当前用户；可信流程成功发 60 秒 ticket，失败跳固定错误页，不可信关系直接报错，最后清理 JustAuth state，不能恢复流程。
      *
      * @param source 回调路径中的平台标识
      * @param state 平台返回的流程随机值
@@ -183,6 +183,9 @@ public class OAuthServiceImpl implements IOAuthService {
 
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
+            if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
+                throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+            }
             return new OAuthLoginResultVO("LOGIN",
                     users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
                             timeoutSeconds));

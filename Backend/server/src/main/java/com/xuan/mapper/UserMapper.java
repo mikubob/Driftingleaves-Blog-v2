@@ -15,6 +15,14 @@ import java.util.List;
 public interface UserMapper extends BaseMapper<SysUser> {
 
     /**
+     * 写入发生唯一冲突后，按数据库排序规则同时检查用户名和邮箱，修改时排除本人。
+     *
+     * @param user 写入失败的用户资料，创建时 userId 可为空
+     * @return 冲突字段名，只含 username、email，不返回其他账号资料
+     */
+    List<String> findIdentityConflicts(@Param("user") SysUser user);
+
+    /**
      * 按字面关键词、状态和全部角色关联筛选，创建时间相同时再按 ID 倒序排。
      *
      * @param page 分页插件使用的请求页码和页大小
@@ -84,6 +92,9 @@ public interface UserMapper extends BaseMapper<SysUser> {
      */
     SysUser lockByUsername(@Param("username") String username);
 
+    /** 邮箱唯一；登录在事务内锁住当前归属，避免换邮箱时使用旧资料发会话。 */
+    SysUser lockByEmail(@Param("email") String email);
+
     /**
      * 按本站用户 ID 锁住这一行，登录、密码、绑定和解绑都共用它，事务、身份和状态由调用方检查。
      *
@@ -110,12 +121,13 @@ public interface UserMapper extends BaseMapper<SysUser> {
     int updatePassword(@Param("userId") long userId, @Param("hash") String hash);
 
     /**
-     * 用数据库当前毫秒时间更新最近登录，连接用 UTC，调用要和用户锁、会话签发在同一事务。
+     * 用数据库 UTC 毫秒时间记录最近登录，同时保存可信 IP 和地域，与会话签发处于同一事务。
      *
      * @param userId 已确认启用且持有行锁的用户 ID
      * @return 更新影响行数
      */
-    int updateLastLogin(@Param("userId") long userId);
+    int updateLastLogin(@Param("userId") long userId, @Param("ip") String ip,
+            @Param("location") String location);
 
     /**
      * 给新用户分配启用的 member 角色，写 user_id、role_id 关联；角色缺失或禁用就不插入，调用方必须回滚注册。

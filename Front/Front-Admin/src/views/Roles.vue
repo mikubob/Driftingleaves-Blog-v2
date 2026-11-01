@@ -227,15 +227,16 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="200">
           <template #default="{ row }">
-            <el-button v-if="can('sys:role:update')" link @click="edit(row)">编辑</el-button>
+            <el-button type="primary" v-if="can('sys:role:update')" link @click="edit(row)">编辑</el-button>
             <el-button
+              type="primary"
               v-if="can('sys:role:grant') && can('sys:permission:query') && can('sys:menu:query')"
               link
               @click="grant(row)"
             >
               授权
             </el-button>
-            <el-button v-if="can('sys:role:delete')" link @click="remove(row)">删除</el-button>
+            <el-button type="danger" v-if="can('sys:role:delete')" link @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

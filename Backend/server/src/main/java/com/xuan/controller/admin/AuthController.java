@@ -2,7 +2,8 @@ package com.xuan.controller.admin;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
-import com.xuan.dto.LoginDTO;
+import com.xuan.dto.AdminEmailCodeDTO;
+import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
 import com.xuan.dto.RegisterDTO;
@@ -75,24 +76,42 @@ public class AuthController {
     }
 
     /**
-     * 用户名密码登录先检查失败次数；只有凭据错误才计数，验证密码、锁用户和发 Token 交给用户业务。
+     * 后台登录同时验证账密、绑定邮箱、邮件验证码和图形验证码，缺一项都不能发会话。
      *
-     * @param body 已校验的用户名和密码长度的登录请求
+     * @param body 已校验的后台登录凭据
      * @param request 用于 IP 与归一用户名维度限流的当前请求
      * @return 仅成功登录返回的独立 Bearer 会话
      */
     @PostMapping("/login")
     @RateLimit(value = "login-total", limit = 30)
-    public Result<SessionVO> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
+    public Result<SessionVO> login(@Valid @RequestBody AdminLoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
 
         // 2. 用户业务一起完成凭据验证、会话签发和登录时间写入。
         try {
-            return Result.ok(users.login(body, SessionManager.ADMIN_TIMEOUT_SECONDS));
+            return Result.ok(users.loginAdmin(body));
         } catch (BusinessException exception) {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
+            if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
+                limiter.loginFailed(request, body.username());
+            }
+            throw exception;
+        }
+    }
+
+    /** 图形验证码通过后，再核对账密和后台权限，只向账号当前邮箱发送验证码。 */
+    @PostMapping("/email-code")
+    @RateLimit(value = "login-total", limit = 30)
+    public Result<Void> emailCode(@Valid @RequestBody AdminEmailCodeDTO body, HttpServletRequest request) {
+        limiter.checkLogin(request, body.username());
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        limiter.email(request, body.email());
+        try {
+            users.sendAdminEmailCode(body);
+            return Result.ok(null);
+        } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.username());
             }
@@ -135,15 +154,16 @@ public class AuthController {
     public ResponseEntity<Result<OAuthAuthorizeVO>> authorize(@PathVariable String source,
             @Valid @RequestBody OAuthAuthorizeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
+        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
+            throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+        }
+        sessions.requireAdminAuthentication();
         // 1. 先查前端 Origin，再复用或创建浏览器标识；这个 Cookie 不能代表登录身份。
         requireOrigin(request);
         String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : TokenUtils.random();
 
         // 2. 限流通过后发起授权，绑定时的原会话和最近认证由业务服务检查。
         limiter.oauth(request, id);
-        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
-            captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
-        }
         OAuthAuthorizeVO result = oauth.authorize(source, body.operation(), id);
 
         // 3. 设置只关联流程的安全 Cookie，再返回授权 URL。
@@ -182,6 +202,7 @@ public class AuthController {
     @PostMapping("/oauth/exchange")
     public Result<Object> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
+        sessions.requireAdminAuthentication();
         // 1. 先查 Origin 和频率，再交给业务核对浏览器及一次性票据。
         requireOrigin(request);
         limiter.oauth(request, browser);

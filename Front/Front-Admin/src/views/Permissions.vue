@@ -205,8 +205,8 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('sys:permission:update')" link @click="edit(row)">编辑</el-button>
-            <el-button v-if="can('sys:permission:delete')" link @click="remove(row)">
+            <el-button type="primary" v-if="can('sys:permission:update')" link @click="edit(row)">编辑</el-button>
+            <el-button type="danger" v-if="can('sys:permission:delete')" link @click="remove(row)">
               删除
             </el-button>
           </template>

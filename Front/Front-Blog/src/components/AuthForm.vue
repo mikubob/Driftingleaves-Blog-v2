@@ -7,7 +7,8 @@ import ResourceState from './ResourceState.vue'
 import CaptchaField from '../../../shared/CaptchaField.vue'
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
-const form = reactive({ username: '', password: '', nickname: '' })
+const emailLogin = ref(false)
+const form = reactive({ username: '', password: '', nickname: '', email: '', emailCode: '' })
 const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
@@ -61,8 +62,14 @@ const providers = useResource(() => true, async (signal) => {
 async function submit() {
   error.value = ''
   feedback.value = ''
-  if (!/^[A-Za-z0-9_]{3,64}$/.test(form.username.trim()) || !validatePassword(form.password)) {
+  if ((!emailLogin.value || register.value)
+    && (!/^[A-Za-z0-9_]{3,64}$/.test(form.username.trim()) || !validatePassword(form.password))) {
     error.value = '账号为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。'
+    return
+  }
+  if ((register.value || emailLogin.value)
+    && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || !/^[0-9]{6}$/.test(form.emailCode))) {
+    error.value = '请输入有效邮箱和邮件中的六位验证码。'
     return
   }
   if (register.value && (!form.nickname.trim() || [...form.nickname.trim()].length > 64)) {
@@ -74,14 +81,46 @@ async function submit() {
     const body = { username: form.username.trim(), password: form.password }
     if (register.value) {
       body.nickname = form.nickname.trim()
+      body.email = form.email.trim()
+      body.emailCode = form.emailCode
       await request('/blog/auth/register', { method: 'POST', body, captcha: captcha.value.getValue() })
       register.value = false
+      emailLogin.value = false
+      form.emailCode = ''
+      form.password = ''
       feedback.value = '注册成功，请使用刚才的账号密码登录。'
       return
     }
-    const { data } = await request('/blog/auth/login', { method: 'POST', body, captcha: captcha.value.getValue() })
+    const path = emailLogin.value ? '/blog/auth/email-login' : '/blog/auth/login'
+    const credentials = emailLogin.value ? { email: form.email.trim(), emailCode: form.emailCode } : body
+    const { data } = await request(path, { method: 'POST', body: credentials, captcha: captcha.value.getValue() })
     await acceptSession(data)
     form.password = ''
+    form.emailCode = ''
+  } catch (failure) {
+    error.value = failure.message
+  } finally {
+    captcha.value?.refresh()
+    busy.value = false
+  }
+}
+
+/** 发送会消费图形验证码；收到邮件后使用新图片提交注册或登录。 */
+async function sendEmailCode() {
+  error.value = ''
+  feedback.value = ''
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
+    error.value = '请输入有效邮箱。'
+    return
+  }
+  busy.value = true
+  form.emailCode = ''
+  try {
+    await request('/blog/auth/email-code', {
+      method: 'POST', body: { email: form.email.trim(), purpose: register.value ? 'REGISTER' : 'LOGIN' },
+      captcha: captcha.value.getValue(),
+    })
+    feedback.value = '验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。'
   } catch (failure) {
     error.value = failure.message
   } finally {
@@ -127,18 +166,24 @@ async function authorize(provider) {
       <button :class="{ selected: !register }" :disabled="busy" @click="register = false">登录</button>
       <button :class="{ selected: register }" :disabled="busy" @click="register = true">注册账号</button>
     </div>
+    <div v-if="!register" class="auth-tabs">
+      <button :class="{ selected: !emailLogin }" :disabled="busy" @click="emailLogin = false">账号密码</button>
+      <button :class="{ selected: emailLogin }" :disabled="busy" @click="emailLogin = true">邮箱验证码</button>
+    </div>
     <form @submit.prevent="submit">
       <fieldset :disabled="busy">
-        <label for="auth-username">用户名</label>
-        <input
-          id="auth-username"
-          v-model="form.username"
-          autocomplete="username"
-          pattern="[A-Za-z0-9_]{3,64}"
-          maxlength="64"
-          required
-          placeholder="字母、数字或下划线"
-        />
+        <template v-if="register || !emailLogin">
+          <label for="auth-username">用户名</label>
+          <input
+            id="auth-username"
+            v-model="form.username"
+            autocomplete="username"
+            pattern="[A-Za-z0-9_]{3,64}"
+            maxlength="64"
+            required
+            placeholder="字母、数字或下划线"
+          />
+        </template>
         <template v-if="register">
           <label for="auth-nickname">昵称</label>
           <input
@@ -150,23 +195,33 @@ async function authorize(provider) {
             placeholder="希望大家怎样称呼你"
           />
         </template>
-        <label for="auth-password">密码</label>
-        <input
-          id="auth-password"
-          v-model="form.password"
-          type="password"
-          :autocomplete="register ? 'new-password' : 'current-password'"
-          required
-          placeholder="8–64 个字符"
-        />
+        <template v-if="register || !emailLogin">
+          <label for="auth-password">密码</label>
+          <input
+            id="auth-password"
+            v-model="form.password"
+            type="password"
+            :autocomplete="register ? 'new-password' : 'current-password'"
+            required
+            placeholder="8–64 个字符"
+          />
+        </template>
+        <template v-if="register || emailLogin">
+          <label for="auth-email">邮箱</label>
+          <input id="auth-email" v-model="form.email" type="email" autocomplete="email" maxlength="254" required />
+          <label for="auth-email-code">邮箱验证码</label>
+          <input id="auth-email-code" v-model="form.emailCode" inputmode="numeric" autocomplete="one-time-code"
+            pattern="[0-9]{6}" maxlength="6" required placeholder="邮件中的六位数字" />
+        </template>
         <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="busy" />
+        <button v-if="register || emailLogin" type="button" :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</button>
         <p v-if="error" role="alert" class="error-text">{{ error }}</p>
         <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
         <button class="primary full-width" :disabled="busy || !captcha?.ready">{{ submitLabel }}</button>
       </fieldset>
     </form>
-    <div>
-      <div class="auth-divider">或使用第三方账号</div>
+    <div v-if="!register">
+      <div class="auth-divider">或使用已绑定的第三方账号</div>
       <ResourceState :resource="providers" />
       <div class="provider-buttons">
         <button

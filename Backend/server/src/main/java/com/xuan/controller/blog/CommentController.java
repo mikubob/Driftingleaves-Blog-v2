@@ -4,11 +4,13 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentPublicQueryDTO;
+import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICommentService;
 import com.xuan.store.CaptchaStore;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.IpUtils;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentPublicVO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -33,6 +35,7 @@ public class CommentController {
 
     private final ICommentService comments;
     private final CaptchaStore captchas;
+    private final AuthProperties auth;
 
     /** 每次只展开一层，父链不可见和文章非公开都返回 404。 */
     @GetMapping
@@ -48,6 +51,7 @@ public class CommentController {
     public ResponseEntity<Result<CommentOwnVO>> create(@PathVariable String articleId,
             @Valid @RequestBody CommentCreateDTO body, HttpServletRequest request) {
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
-        return ResponseEntity.status(201).body(Result.ok(comments.create(IdUtils.parse(articleId), body)));
+        return ResponseEntity.status(201).body(Result.ok(comments.create(IdUtils.parse(articleId), body,
+                IpUtils.clientIp(request, auth.getTrustedProxies()), request.getHeader("User-Agent"))));
     }
 }

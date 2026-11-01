@@ -1,16 +1,19 @@
 package com.xuan.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
-import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.batch.BatchInputs;
 import com.xuan.client.OAuthProviderClient;
+import com.xuan.dto.AdminEmailCodeDTO;
+import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.EmailCodeDTO;
+import com.xuan.dto.EmailLoginDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
@@ -21,14 +24,19 @@ import com.xuan.entity.SysRole;
 import com.xuan.entity.SysUser;
 import com.xuan.entity.SysUserOauth;
 import com.xuan.exception.BusinessException;
+import com.xuan.location.IpLocationResolver;
+import com.xuan.properties.AuthProperties;
 import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.OAuthBindingMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.result.PageResult;
+import com.xuan.result.Result;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.EmailCodeStore;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.IpUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.AdminUserProfileVO;
@@ -44,10 +52,10 @@ import org.springframework.cache.annotation.Caching;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -75,9 +83,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final BCryptPasswordEncoder encoder;
     private final SessionManager sessions;
     private final OAuthProviderClient providers;
-    private final PlatformTransactionManager transactionManager;
     private final JsonMapper json;
     private final Clock clock;
+    private final EmailCodeStore emailCodes;
+    private final AuthProperties auth;
+    private final IpLocationResolver locations;
 
     /**
      * 同一快照里分页取全站用户和完整角色，只返回约定资料，不直接返回内部实体。
@@ -134,7 +144,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         user.setAvatar(request.getAvatar());
         user.setIntro(request.getIntro());
         user.setStatus(request.getStatus());
-        users.insert(user);
+        try {
+            users.insert(user);
+        } catch (DuplicateKeyException exception) {
+            throw identityConflict(user, exception);
+        }
         return adminView(users.selectById(user.getUserId()));
     }
 
@@ -170,7 +184,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         user.setAvatar(request.getAvatar());
         user.setIntro(request.getIntro());
         user.setStatus(request.getStatus());
-        users.updateAdmin(user);
+        try {
+            users.updateAdmin(user);
+        } catch (DuplicateKeyException exception) {
+            throw identityConflict(user, exception);
+        }
 
         // 3. 先确认修改后仍有有效管理员，再撤销会话；Redis 失败就不提交数据库。
         if (disabling) {
@@ -404,7 +422,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return new UserAdminVO(user.getUserId(), user.getUsername(), user.getNickname(), user.getEmail(),
                 user.getAvatar(), user.getIntro(), user.getStatus(), user.getPasswordHash() != null,
                 user.getLastLoginTime(), user.getCreateTime(), user.getUpdateTime(),
-                authorization.roleIds(user.getUserId()));
+                authorization.roleIds(user.getUserId()), user.getLastLoginIp(), user.getLastLoginLocation());
     }
 
     /**
@@ -416,10 +434,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MeVO register(RegisterDTO request) {
+        emailCodes.verify(request.email(), EmailCodeStore.REGISTER, request.emailCode());
         // 1. 只写注册允许的字段，密码用随机盐编码，账号状态由服务端确定。
         SysUser user = new SysUser();
         user.setUsername(request.username());
         user.setNickname(request.nickname());
+        user.setEmail(request.email());
         user.setPasswordHash(encoder.encode(request.password()));
         user.setStatus(1);
 
@@ -440,6 +460,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO login(LoginDTO request, int timeoutSeconds) {
+        if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
+            throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+        }
         // 1. 先锁用户再验凭据，避免旧密码验证通过后越过并发退出登录的时点又发 Token。
         SysUser user = users.lockByUsername(request.username());
 
@@ -452,6 +475,56 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 3. 凭据确认后再查账号启用状态，然后发会话、更新登录时间。
         enabled(user);
         return createSession(user, clock.millis(), "PASSWORD", timeoutSeconds);
+    }
+
+    /** {@inheritDoc} 发送不创建账号，验证码只能用于请求指定的操作。 */
+    @Override
+    public void sendEmailCode(EmailCodeDTO request) {
+        String purpose = request.purpose() == EmailCodeDTO.Purpose.REGISTER
+                ? EmailCodeStore.REGISTER : EmailCodeStore.LOGIN;
+        emailCodes.send(request.email(), purpose);
+    }
+
+    /** {@inheritDoc} 邮件发送失败不会签发会话或假装成功。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void sendAdminEmailCode(AdminEmailCodeDTO request) {
+        requireAdminCredentials(request.username(), request.password(), request.email());
+        emailCodes.send(request.email(), EmailCodeStore.ADMIN_LOGIN);
+    }
+
+    /** {@inheritDoc} 邮件验证码每次尝试都消费，失败不能重复猜测。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public SessionVO loginEmail(EmailLoginDTO request) {
+        SysUser user = users.lockByEmail(request.email());
+        emailCodes.verify(request.email(), EmailCodeStore.LOGIN, request.emailCode());
+        if (user == null) {
+            throw new BusinessException(401, "AUTH_FAILED", "邮箱或验证码错误");
+        }
+        enabled(user);
+        return createSession(user, clock.millis(), "EMAIL", SessionManager.BLOG_TIMEOUT_SECONDS);
+    }
+
+    /** {@inheritDoc} 只有完整后台认证才能创建带后台认证标记的会话。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public SessionVO loginAdmin(AdminLoginDTO request) {
+        SysUser user = requireAdminCredentials(request.username(), request.password(), request.email());
+        emailCodes.verify(request.email(), EmailCodeStore.ADMIN_LOGIN, request.emailCode());
+        return createSession(user, clock.millis(), "PASSWORD_EMAIL", SessionManager.ADMIN_TIMEOUT_SECONDS);
+    }
+
+    /** 用户锁内核对密码和当前邮箱，普通前台账号不能借此取得后台会话。 */
+    private SysUser requireAdminCredentials(String username, String password, String email) {
+        SysUser user = users.lockByUsername(username);
+        if (user == null || user.getPasswordHash() == null || !encoder.matches(password, user.getPasswordHash())
+                || user.getEmail() == null || !user.getEmail().equalsIgnoreCase(email)) {
+            throw new BusinessException(401, "AUTH_FAILED", "账号、密码或邮箱错误");
+        }
+        enabled(user);
+        permissions.requireScope(user.getUserId(), "admin:access");
+        return user;
     }
 
     /**
@@ -519,7 +592,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
 
         // 4. 保存后回查数据库时间，并按新资料返回整体版本。
-        users.updateProfile(user);
+        try {
+            users.updateProfile(user);
+        } catch (DuplicateKeyException exception) {
+            throw identityConflict(user, exception);
+        }
         return profile(users.selectById(user.getUserId()));
     }
 
@@ -616,58 +693,28 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * 只按已验证的平台身份找启用用户，首次访问一起创建用户、member 和绑定；不能按昵称或邮箱合并，唯一键冲突先回滚再用新事务查获胜记录，最多三次。
+     * 只按已验证的平台身份找启用用户，未绑定时要求先完成邮箱注册，不能绕过注册校验。
      *
      * @param source 服务端确认的平台标识
      * @param uuid 已由平台验证的身份标识，原样保留
-     * @param nickname 初始化展示昵称，空白使用默认值，超长按 Unicode 字符截取
-     * @param avatar 初始化头像，非法 URL 丢弃为 null
+     * @param nickname 平台展示昵称，不用于创建或合并账号
+     * @param avatar 平台头像，不用于创建或合并账号
      * @return 平台身份对应的启用用户 ID
      */
     @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public long resolveOAuth(String source, String uuid, String nickname, String avatar) {
-        // 1. 每次尝试都用新事务，唯一键冲突后的失败事务不能接着查写。
-        TransactionTemplate transaction = new TransactionTemplate(transactionManager);
-        transaction.setIsolationLevelName("ISOLATION_READ_COMMITTED");
-        for (int attempt = 0; attempt < 3; attempt++) {
-            try {
-                return transaction.execute(status -> {
-                    // 2. 只认平台验证过的 source 和 uuid，不能用昵称或邮箱合并账号。
-                    SysUserOauth existing = oauth.findIdentity(source, uuid);
-                    if (existing != null) {
-                        // 2. 已有绑定时先锁用户，再查一次绑定归属，避免等待期间身份变了。
-                        SysUser user = users.lockById(existing.getUserId());
-                        enabled(user);
-                        SysUserOauth current = oauth.findIdentity(source, uuid);
-                        if (current == null || !current.getUserId().equals(user.getUserId())) {
-                            throw new BusinessException(409, "STATE_CONFLICT", "绑定已变化，请重新发起");
-                        }
-                        return user.getUserId();
-                    }
-
-                    // 2. 首次注册生成本站用户名，密码和邮箱留 NULL，只初始化展示资料。
-                    SysUser user = new SysUser();
-                    user.setUsername("oauth_" + TokenUtils.random().replace('-', '_'));
-                    // 昵称按 Unicode 字符截取，头像无效就丢弃，平台身份标识不能改。
-                    String display = StrUtil.nullToEmpty(nickname).strip();
-                    user.setNickname(display.isEmpty() ? "用户" : display.substring(0,
-                            display.offsetByCodePoints(0, Math.min(64, display.codePointCount(0, display.length())))));
-                    user.setAvatar(UrlPolicy.valid(avatar) ? avatar : null);
-                    user.setStatus(1);
-
-                    // 2. 用户、member 关联和第三方绑定一起提交，任何一步失败都回滚。
-                    createMember(user);
-                    insertBinding(user.getUserId(), source, uuid);
-                    return user.getUserId();
-                });
-            } catch (DuplicateKeyException exception) {
-                // 3. 身份或随机用户名撞了唯一键，先回滚整笔，再查成功写入的那条记录。
-                if (attempt == 2) {
-                    throw exception;
-                }
-            }
+        SysUserOauth existing = oauth.findIdentity(source, uuid);
+        if (existing == null) {
+            throw new BusinessException(403, "OAUTH_NOT_BOUND", "请先使用邮箱注册，再到个人设置绑定第三方账号");
         }
-        throw new IllegalStateException("OAuth注册重试未结束");
+        SysUser user = users.lockById(existing.getUserId());
+        enabled(user);
+        SysUserOauth current = oauth.findIdentity(source, uuid);
+        if (current == null || !current.getUserId().equals(user.getUserId())) {
+            throw new BusinessException(409, "STATE_CONFLICT", "绑定已变化，请重新发起");
+        }
+        return user.getUserId();
     }
 
     /**
@@ -724,6 +771,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
+        if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
+            throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+        }
         // 1. 兑换时重新锁用户并查状态，不能只信回调时查到的结果。
         SysUser user = users.lockById(userId);
         enabled(user);
@@ -762,12 +812,43 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     private void createMember(SysUser user) {
         // 1. 先保存用户，拿数据库自增 ID 来写角色关联。
-        users.insert(user);
+        try {
+            users.insert(user);
+        } catch (DuplicateKeyException exception) {
+            throw identityConflict(user, exception);
+        }
 
         // 2. 只分配启用的 member，初始化不完整就让整个注册失败。
         if (users.assignMember(user.getUserId()) != 1) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "member角色未正确初始化");
         }
+    }
+
+    /**
+     * 唯一键拒绝写入后再查两个字段，合并提示；未查到账号字段冲突时保留原异常。
+     *
+     * @param user 写入失败的用户资料，修改时排除自己的 ID
+     * @param exception 数据库原始唯一冲突，不把其中的 SQL 或输入返回给用户
+     * @return 带冲突字段的业务错误，由原事务回滚本次操作
+     */
+    private BusinessException identityConflict(SysUser user, DuplicateKeyException exception) {
+        List<String> fields = users.findIdentityConflicts(user);
+        if (fields.isEmpty()) {
+            throw exception;
+        }
+
+        List<Result.FieldError> errors = new ArrayList<>();
+        if (fields.contains("username")) {
+            errors.add(new Result.FieldError("username", "用户名已被使用"));
+        }
+        if (fields.contains("email")) {
+            errors.add(new Result.FieldError("email", "邮箱已被使用"));
+        }
+        String message = errors.getFirst().message();
+        if (errors.size() == 2) {
+            message = "用户名和邮箱均已被使用";
+        }
+        return new BusinessException(409, "UNIQUE_CONFLICT", message, null, errors);
     }
 
     /**
@@ -842,8 +923,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 1. 用户锁内发独立 Token，会话组件同时登记事务失败时的清理。
         String token = sessions.create(user.getUserId(), authenticatedAt, method, timeoutSeconds);
 
-        // 2. 登录时间在同一事务更新，提交成功后才返回会话和资料。
-        users.updateLastLogin(user.getUserId());
+        // 2. 登录入口共用这里，IP 只从可信代理链取；内部非 HTTP 调用没有请求地址。
+        String ip = null;
+        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
+            ip = IpUtils.clientIp(attributes.getRequest(), auth.getTrustedProxies());
+        }
+        users.updateLastLogin(user.getUserId(), ip, ip == null ? null : locations.getIpLocation(ip));
         return new SessionVO("Bearer", token, timeoutSeconds, view(users.selectById(user.getUserId())));
     }
 

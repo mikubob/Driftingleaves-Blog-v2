@@ -5,6 +5,6 @@ package com.xuan.client;
  */
 public interface MailClient {
 
-    /** 收件地址由订阅业务确认；正文和标题只由服务端生成。 */
+    /** 收件地址由认证或订阅业务检查；正文和标题只由服务端生成。 */
     void send(String to, String subject, String text);
 }

@@ -50,6 +50,11 @@ public class AuthRateLimiter {
         hit("oauth", request, browser, properties.getRate().getOauth());
     }
 
+    /** 所有用途共享发送预算：同一 IP 每分钟五次，同一邮箱每分钟一次。 */
+    public void email(HttpServletRequest request, String email) {
+        limiter.hit(keys("email", request, email.strip().toLowerCase(Locale.ROOT)), 60, List.of(5, 1));
+    }
+
     /** 采集在任何行锁、地域解析和写入前原子累计全部独立维度。 */
     public void analytics(String ip, String fingerprint, Long actor) {
         String prefix = properties.getRedisPrefix() + "rate:analytics:";

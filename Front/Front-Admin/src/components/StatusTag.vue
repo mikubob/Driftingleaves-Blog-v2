@@ -8,10 +8,18 @@ const labels = {
   link: { 0: '待审核', 1: '展示中', 2: '已下架' },
   subscription: { 0: '待验证', 1: '已订阅', 2: '已退订' },
 }
+const tones = {
+  display: { 0: 'muted', 1: 'success' },
+  enabled: { 0: 'danger', 1: 'success' },
+  article: { 0: 'warning', 1: 'success', 2: 'muted' },
+  review: { 0: 'warning', 1: 'success', 2: 'danger', 3: 'muted' },
+  link: { 0: 'warning', 1: 'success', 2: 'muted' },
+  subscription: { 0: 'warning', 1: 'success', 2: 'muted' },
+}
 </script>
 
 <template>
-  <span :class="['status-tag', { 'is-active': value === 1, 'is-pending': value === 0 }]">
+  <span :class="['status-tag', `is-${tones[kind]?.[value] ?? 'muted'}`]">
     <i aria-hidden="true"></i>
     {{ labels[kind]?.[value] ?? '未知状态' }}
   </span>

@@ -9,6 +9,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
 import com.xuan.service.IUserService;
+import com.xuan.session.SessionManager;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -51,6 +52,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "POST /admin/auth/register", "POST /admin/auth/login", "POST /admin/auth/logout",
             "GET /admin/auth/oauth/providers", "POST /admin/auth/oauth/exchange",
             "POST /blog/auth/register", "POST /blog/auth/login", "POST /blog/auth/logout",
+            "POST /blog/auth/email-code", "POST /blog/auth/email-login", "POST /admin/auth/email-code",
             "GET /blog/auth/oauth/providers", "POST /blog/auth/oauth/exchange",
             "GET /blog/articles", "GET /blog/archives", "GET /blog/article-rankings",
             "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs",
@@ -63,6 +65,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "GET /cv/profile", "GET /cv/social-links", "GET /cv/configs", "GET /cv/experiences", "GET /cv/skills",
             "POST /cv/analytics/page-views", "POST /cv/analytics/online/tickets");
     private final IUserService users;
+    private final SessionManager sessions;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
     private final ObjectProvider<HttpServletRequest> requests;
@@ -133,6 +136,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
         // 4. 其余请求都实时检查登录和账号状态，后台再检查 admin:access。
         users.requireCurrent();
+        if (path.startsWith("/admin/")) {
+            sessions.requireAdminAuthentication();
+        }
         if (isAdminBusinessPath(path)) {
             StpUtil.checkPermission("admin:access");
         }

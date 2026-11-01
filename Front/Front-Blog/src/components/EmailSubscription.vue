@@ -4,7 +4,7 @@ import { apiRoot, request } from '../api.js'
 import { can, session } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
-const email = ref('')
+const email = computed(() => session.user?.email?.trim().toLowerCase() || '')
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
@@ -13,7 +13,6 @@ const subscription = useResource(() => session.user?.userId, async (signal) => {
     return null
   }
   const { data } = await request('/blog/me/rss-subscription', { signal })
-  email.value = data?.email || ''
   return data
 })
 const submitLabel = computed(() => {
@@ -69,14 +68,19 @@ async function update(cancel = false) {
           <label for="subscription-email">订阅邮箱</label>
           <input
             id="subscription-email"
-            v-model="email"
+            :value="email"
             type="email"
             maxlength="254"
             autocomplete="email"
             required
+            readonly
+            aria-describedby="subscription-email-hint"
           />
+          <p id="subscription-email-hint" class="form-hint">
+            {{ email ? '仅使用当前登录账号邮箱，不能在此修改。' : '请先在个人资料中设置账号邮箱。' }}
+          </p>
           <div class="row">
-            <button class="primary" :disabled="busy">{{ submitLabel }}</button>
+            <button class="primary" :disabled="busy || !email">{{ submitLabel }}</button>
             <button
               v-if="subscription.data && subscription.data.status !== 2"
               type="button"

@@ -14,6 +14,9 @@ public class CommentPublicVO {
     private Long articleId;
     private Long parentId;
     private String content;
+    private String location;
+    private String userAgentOs;
+    private String userAgentBrowser;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

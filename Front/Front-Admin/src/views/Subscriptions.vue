@@ -87,6 +87,7 @@ const batchActions = computed(() => {
   if (can('blog:rss:update', true)) {
     actions.push({
       label: '批量激活',
+      type: 'success',
       path: 'batch-status',
       method: 'PUT',
       body: { status: 1 },
@@ -96,6 +97,7 @@ const batchActions = computed(() => {
   if (can('blog:rss:update', true)) {
     actions.push({
       label: '批量退订',
+      type: 'warning',
       path: 'batch-status',
       method: 'PUT',
       body: { status: 2 },
@@ -180,8 +182,9 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="230">
           <template #default="{ row }">
-            <el-button link @click="view(row)">详情</el-button>
+            <el-button type="primary" link @click="view(row)">详情</el-button>
             <el-button
+              type="warning"
               v-if="can('blog:rss:update', true) && row.status !== 2"
               link
               @click="change(row, 2)"
@@ -189,13 +192,14 @@ const batchActions = computed(() => {
               退订
             </el-button>
             <el-button
+              type="success"
               v-if="can('blog:rss:update', true) && row.status === 2 && row.verifiedAt"
               link
               @click="change(row, 1)"
             >
               激活
             </el-button>
-            <el-button v-if="can('blog:rss:delete', true)" link @click="remove(row)">
+            <el-button type="danger" v-if="can('blog:rss:delete', true)" link @click="remove(row)">
               删除
             </el-button>
           </template>

@@ -7,7 +7,7 @@ import jakarta.validation.constraints.NotNull;
 import java.util.Locale;
 
 /**
- * 邮箱由本站用户主动选择，规范化后仍必须重新收信确认。
+ * 邮箱必须与当前账号邮箱一致，规范化后仍须收信确认。
  */
 public record SubscriptionWriteDTO(@NotNull @Email @TextLength(min = 1, max = 254) String email) {
 

@@ -5,6 +5,8 @@ import { session } from '../session.js'
 import { formatCount, ratio } from '../format.js'
 import RequestError from '../components/RequestError.vue'
 import TrendChart from '../components/TrendChart.vue'
+import ReportChart from '../components/ReportChart.vue'
+import { makeArticleOption, makeProvinceOption } from '../chartOptions.js'
 import AdminIcon from '../components/AdminIcon.vue'
 
 const today = new Date().toISOString().slice(0, 10)
@@ -15,19 +17,21 @@ const views = ref([])
 const visitors = ref([])
 const provinces = ref([])
 const articles = ref([])
+const articleOption = computed(() => makeArticleOption(articles.value))
+const provinceOption = computed(() => makeProvinceOption(provinces.value))
 const loading = ref(false)
 const error = ref('')
 let controller
 const cards = [
-  { key: 'pageViewCount', label: '区间浏览量', icon: 'chart' },
-  { key: 'visitorCount', label: '区间访客数', icon: 'user' },
-  { key: 'newVisitorCount', label: '区间新访客', icon: 'user' },
-  { key: 'articleCount', label: '文章总数', icon: 'document' },
-  { key: 'publishedArticleCount', label: '公开文章', icon: 'document' },
-  { key: 'commentCount', label: '评论总数', icon: 'chat' },
-  { key: 'messageCount', label: '留言总数', icon: 'mail' },
-  { key: 'pendingCommentCount', label: '待审评论', icon: 'chat' },
-  { key: 'pendingMessageCount', label: '待审留言', icon: 'mail' },
+  { key: 'pageViewCount', label: '区间浏览量', icon: 'chart', tone: 'blue' },
+  { key: 'visitorCount', label: '区间访客数', icon: 'user', tone: 'teal' },
+  { key: 'newVisitorCount', label: '区间新访客', icon: 'user', tone: 'green' },
+  { key: 'articleCount', label: '文章总数', icon: 'document', tone: 'purple' },
+  { key: 'publishedArticleCount', label: '公开文章', icon: 'document', tone: 'green' },
+  { key: 'commentCount', label: '评论总数', icon: 'chat', tone: 'blue' },
+  { key: 'messageCount', label: '留言总数', icon: 'mail', tone: 'teal' },
+  { key: 'pendingCommentCount', label: '待审评论', icon: 'chat', tone: 'orange' },
+  { key: 'pendingMessageCount', label: '待审留言', icon: 'mail', tone: 'orange' },
 ]
 const provinceMax = computed(() =>
   provinces.value.reduce(
@@ -123,7 +127,7 @@ onBeforeUnmount(() => controller?.abort())
     <RequestError :message="error" @retry="load" />
     <div v-if="!error" v-loading="loading">
       <div class="stats-grid">
-        <article v-for="card in cards" :key="card.key" class="stat-card">
+        <article v-for="card in cards" :key="card.key" :class="['stat-card', `tone-${card.tone}`]">
           <span class="stat-icon"><AdminIcon :name="card.icon" /></span>
           <div class="stat-info">
             <strong class="stat-value">{{ formatCount(overview?.[card.key]) }}</strong>
@@ -150,7 +154,7 @@ onBeforeUnmount(() => controller?.abort())
               浏览量
             </span>
           </div>
-          <TrendChart :rows="views" value-key="pageViewCount" label="浏览量" />
+          <TrendChart :rows="views" value-key="pageViewCount" label="浏览量" color="#2563eb" />
         </el-card>
         <el-card shadow="never">
           <div class="card-heading">
@@ -158,12 +162,12 @@ onBeforeUnmount(() => controller?.abort())
               <h2>新访客趋势</h2>
               <p class="muted-text">区间内首次访问的读者</p>
             </div>
-            <span class="chart-legend">
+            <span class="chart-legend is-visitors">
               <i></i>
               新访客
             </span>
           </div>
-          <TrendChart :rows="visitors" value-key="newVisitorCount" label="新访客数" />
+          <TrendChart :rows="visitors" value-key="newVisitorCount" label="新访客数" color="#258552" />
         </el-card>
       </div>
       <div class="charts-grid">
@@ -172,32 +176,41 @@ onBeforeUnmount(() => controller?.abort())
             <h2>文章访问排行</h2>
             <span class="muted-text">区间内 · 全部博客文章</span>
           </div>
-          <el-table :data="articles" empty-text="暂无文章访问数据">
-            <el-table-column type="index" label="#" width="50" />
-            <el-table-column prop="title" label="文章标题" min-width="180" show-overflow-tooltip />
-            <el-table-column label="浏览量" width="110" align="right">
-              <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
-            </el-table-column>
-          </el-table>
+          <ReportChart v-if="articles.length" :option="articleOption" label="文章访问排行柱状图" />
+          <details v-if="articles.length" class="chart-details">
+            <summary>查看文章访问明细</summary>
+            <el-table :data="articles">
+              <el-table-column type="index" label="#" width="50" />
+              <el-table-column prop="title" label="文章标题" min-width="180" show-overflow-tooltip />
+              <el-table-column label="浏览量" width="110" align="right">
+                <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
+              </el-table-column>
+            </el-table>
+          </details>
+          <el-empty v-else description="暂无文章访问数据" :image-size="70" />
         </el-card>
         <el-card shadow="never">
           <div class="card-heading">
             <h2>访客省份分布</h2>
             <span class="muted-text">按当前地域归类</span>
           </div>
-          <div v-if="provinces.length" class="province-list">
-            <div
-              v-for="province in provinces"
-              :key="province.province || 'unknown'"
-              class="province-row"
-            >
-              <span>{{ province.province || '未知' }}</span>
-              <span class="province-track">
-                <span :style="{ width: `${ratio(province.visitorCount, provinceMax)}%` }"></span>
-              </span>
-              <strong>{{ formatCount(province.visitorCount) }}</strong>
+          <ReportChart v-if="provinces.length" :option="provinceOption" label="访客省份分布环形图" />
+          <details v-if="provinces.length" class="chart-details">
+            <summary>查看省份数据</summary>
+            <div class="province-list">
+              <div
+                v-for="province in provinces"
+                :key="province.province || 'unknown'"
+                class="province-row"
+              >
+                <span>{{ province.province || '未知' }}</span>
+                <span class="province-track">
+                  <span :style="{ width: `${ratio(province.visitorCount, provinceMax)}%` }"></span>
+                </span>
+                <strong>{{ formatCount(province.visitorCount) }}</strong>
+              </div>
             </div>
-          </div>
+          </details>
           <el-empty v-else description="暂无地域数据" :image-size="70" />
         </el-card>
       </div>

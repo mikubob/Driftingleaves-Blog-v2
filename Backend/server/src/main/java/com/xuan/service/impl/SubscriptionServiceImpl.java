@@ -44,6 +44,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -83,11 +84,19 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         TransactionTemplate transaction = new TransactionTemplate(transactions);
         transaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
         Application application = transaction.execute(status -> {
-            users.lockById(actor);
+            var user = users.lockById(actor);
             requireMember("subscribe");
             BlogRssSubscription row = subscriptions.lockByUser(actor);
             requireMember("subscribe");
-            if (row != null && row.getStatus() == 1 && row.getEmail().equals(request.email())) {
+            String email = user.getEmail();
+            if (email == null || email.isBlank()) {
+                throw new BusinessException(409, "STATE_CONFLICT", "请先在个人资料中设置账号邮箱");
+            }
+            email = email.strip().toLowerCase(Locale.ROOT);
+            if (!email.equals(request.email())) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "订阅邮箱必须与当前登录账号邮箱一致");
+            }
+            if (row != null && row.getStatus() == 1 && row.getEmail().equals(email)) {
                 return new Application(row, null);
             }
 
@@ -97,7 +106,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
                 row = new BlogRssSubscription();
                 row.setUserId(actor);
             }
-            row.setEmail(request.email());
+            row.setEmail(email);
             row.setStatus(0);
             row.setVerifiedAt(null);
             row.setSubscribeTime(null);
@@ -129,16 +138,17 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     public SubscriptionVO confirm(String ticket) {
         // 1. 锁住当前用户及其订阅，锁等待后再次核对原会话。
         long actor = requireMember("subscribe");
-        users.lockById(actor);
+        var user = users.lockById(actor);
         requireMember("subscribe");
         BlogRssSubscription row = subscriptions.lockByUser(actor);
         requireMember("subscribe");
 
-        // 2. 票据必须匹配当前用户、邮箱和申请轮次，验证后只能消费一次。
+        // 2. 票据必须匹配当前用户、账号邮箱和申请轮次，验证后只能消费一次。
         String raw = tickets.read("confirm", ticket);
         SubscriptionConfirmation value = confirmation(raw);
         if (row == null || row.getStatus() != 0 || value.userId() != actor || value.subscriptionId() != row.getSubscriptionId()
-                || !value.email().equals(row.getEmail())) {
+                || !value.email().equals(row.getEmail()) || user.getEmail() == null
+                || !row.getEmail().equals(user.getEmail().strip().toLowerCase(Locale.ROOT))) {
             throw SubscriptionTicketStore.invalid();
         }
         tickets.consume(ticket, actor, value.round(), raw);

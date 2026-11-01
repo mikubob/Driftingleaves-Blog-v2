@@ -206,10 +206,10 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="150" fixed="right">
           <template #default="{ row }">
-            <el-button v-if="can('blog:music:update', true)" link @click="edit(row)">
+            <el-button type="primary" v-if="can('blog:music:update', true)" link @click="edit(row)">
               编辑
             </el-button>
-            <el-button v-if="can('blog:music:delete', true)" link @click="remove(row)">
+            <el-button type="danger" v-if="can('blog:music:delete', true)" link @click="remove(row)">
               删除
             </el-button>
           </template>

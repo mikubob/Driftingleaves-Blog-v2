@@ -2,6 +2,19 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 用户行锁必须由业务事务持有，权限和版本仍由业务层检查，不能靠 Mapper 代替。 -->
 <mapper namespace="com.xuan.mapper.UserMapper">
+    <!-- 一次查出两个字段的冲突，不能只按数据库首先报出的唯一键提示。 -->
+    <select id="findIdentityConflicts" resultType="string">
+        SELECT 'username' WHERE EXISTS (
+            SELECT 1 FROM sys_user WHERE username = #{user.username}
+            <if test="user.userId != null">AND user_id != #{user.userId}</if>
+        )
+        UNION ALL
+        SELECT 'email' WHERE EXISTS (
+            SELECT 1 FROM sys_user WHERE email = #{user.email}
+            <if test="user.userId != null">AND user_id != #{user.userId}</if>
+        )
+    </select>
+
     <!-- 列表和分页插件的总数用同样条件，INSTR 把 SQL 通配符当普通字符。 -->
     <select id="adminPage" resultType="com.xuan.entity.SysUser">
         SELECT u.* FROM sys_user u
@@ -76,6 +89,11 @@
         SELECT * FROM sys_user WHERE username = #{username} FOR UPDATE
     </select>
 
+    <!-- 邮箱登录与资料修改共用用户锁，禁用状态仍交给业务层判断。 -->
+    <select id="lockByEmail" resultType="com.xuan.entity.SysUser">
+        SELECT * FROM sys_user WHERE email = #{email} FOR UPDATE
+    </select>
+
     <!-- 按用户 ID 拿登录、密码和绑定共用的行锁，同一用户的安全操作在这里排队，不存在时由调用方按场景报错。 -->
     <select id="lockById" resultType="com.xuan.entity.SysUser">
         SELECT * FROM sys_user WHERE user_id = #{userId} FOR UPDATE
@@ -94,7 +112,8 @@
 
     <!-- 最近登录用数据库当前毫秒时间，连接固定 UTC，并与用户锁和会话签发在同一事务。 -->
     <update id="updateLastLogin">
-        UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3) WHERE user_id = #{userId}
+        UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3),
+        last_login_ip = #{ip}, last_login_location = #{location} WHERE user_id = #{userId}
     </update>
 
     <!-- 只给新用户插入启用的 member 关联，user_id、role_id 一起作主键；没有可用角色时插入零行，业务层必须回滚注册。 -->

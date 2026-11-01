@@ -16,7 +16,7 @@ final class CaptchaTestSupport {
         return builder.with(request -> {
             String path = request.getServletPath();
             if ("POST".equals(request.getMethod()) && path.matches(
-                    "/(admin|blog)/auth/(register|login|oauth/[^/]+/authorize)"
+                    "/(admin|blog)/auth/(register|login|email-code|email-login|oauth/[^/]+/authorize)"
                     + "|/blog/articles/[^/]+/comments|/blog/messages|/admin/messages/[^/]+/replies")
                     || "PUT".equals(request.getMethod()) && path.matches("/blog/me/messages/[^/]+")) {
                 String captchaId = new CaptchaStore(redis, auth).issue("012345");

@@ -28,7 +28,7 @@ public interface ICommentService extends IService<BlogComment> {
     PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query);
 
     /** 作者取会话，开关和审核策略取锁内最新配置，管理员也不免审。 */
-    CommentOwnVO create(long article, CommentCreateDTO request);
+    CommentOwnVO create(long article, CommentCreateDTO request, String ip, String userAgent);
 
     /** 本人只看自己的记录，下架文章也可以管理。 */
     PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query);

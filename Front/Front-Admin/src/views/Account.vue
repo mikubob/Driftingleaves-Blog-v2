@@ -80,7 +80,7 @@ async function changePassword(clear = false) {
   }
   try {
     await ElMessageBox.confirm(
-      clear ? '清除密码后必须通过第三方账号登录，确认继续？' : '修改密码后需要重新登录，确认继续？',
+      clear ? '清除密码后无法登录后台；需先通过前台第三方登录重新设置密码，确认继续？' : '修改密码后需要重新登录，确认继续？',
       '账号安全',
       { confirmButtonText: '确认', cancelButtonText: '取消' },
     )
@@ -292,6 +292,7 @@ onBeforeUnmount(() => {
                 {{ session.user?.hasPassword ? '修改密码' : '设置密码' }}
               </el-button>
               <el-button
+                type="danger"
                 v-if="session.user?.hasPassword"
                 :disabled="saving"
                 @click="changePassword(true)"
@@ -308,12 +309,13 @@ onBeforeUnmount(() => {
             <strong>{{ provider.displayName }}</strong>
             <el-button
               v-if="bindings.some((binding) => binding.source === provider.source)"
+              type="danger"
               :disabled="saving || bindingBusy"
               @click="unbind(provider.source)"
             >
               解除绑定
             </el-button>
-            <el-button v-else :disabled="saving" :loading="bindingBusy" @click="bind(provider)">
+            <el-button type="primary" v-else :disabled="saving" :loading="bindingBusy" @click="bind(provider)">
               绑定账号
             </el-button>
           </div>

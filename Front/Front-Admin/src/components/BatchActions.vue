@@ -133,7 +133,7 @@ defineExpose({ select, selectable, busy })
       <el-button
         v-for="action in actions"
         :key="action.path + action.label"
-        :type="action.danger ? 'danger' : 'default'"
+        :type="action.danger ? 'danger' : (action.type || 'primary')"
         plain
         :disabled="blocked || !selected.length"
         @click="choose(action)"

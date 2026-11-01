@@ -17,9 +17,8 @@ const info = computed(() => blogStore.personalInfo)
 const showCatModal = ref(false)
 const showTagModal = ref(false)
 const showRssModal = ref(false)
-const rssForm = ref({ email: '' })
+const rssEmail = computed(() => session.user?.email?.trim().toLowerCase() || '')
 const rssSubmitting = ref(false)
-const rssEditMode = ref(false)
 const rssError = ref('')
 const subscription = ref(null)
 const isSubscribed = computed(() => subscription.value?.status === 1)
@@ -37,12 +36,10 @@ async function openRssModal() {
     return
   }
   rssError.value = ''
-  rssEditMode.value = false
   showRssModal.value = true
   rssSubmitting.value = true
   try {
     subscription.value = (await request('/blog/me/rss-subscription')).data
-    rssForm.value.email = subscription.value?.email || ''
   } catch (error) {
     rssError.value = error.message
   } finally {
@@ -53,18 +50,17 @@ async function handleRssSubscribe() {
   if (!can('blog:rss:subscribe') || rssSubmitting.value) {
     return
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rssForm.value.email.trim())) {
-    rssError.value = '请输入有效邮箱'
+  if (!rssEmail.value) {
+    rssError.value = '请先在个人资料中设置账号邮箱'
     return
   }
   rssSubmitting.value = true
   rssError.value = ''
   try {
     subscription.value = (await request('/blog/me/rss-subscription', {
-      method: 'PUT', body: { email: rssForm.value.email.trim().toLowerCase() },
+      method: 'PUT', body: { email: rssEmail.value },
     })).data
     ElMessage.success(subscription.value.status === 1 ? '当前邮箱已订阅' : '确认邮件已发送，请查收邮件完成邮箱验证')
-    rssEditMode.value = false
   } catch (error) {
     rssError.value = error.message
   } finally {
@@ -241,7 +237,7 @@ function goTag(slug) {
     <!-- ===== RSS 订阅弹窗 ===== -->
     <el-dialog
       v-model="showRssModal"
-      :title="isSubscribed && !rssEditMode ? '已订阅 RSS' : 'RSS 订阅'"
+      :title="isSubscribed ? '已订阅 RSS' : 'RSS 订阅'"
       width="380px"
       :append-to-body="true"
     >
@@ -249,41 +245,44 @@ function goTag(slug) {
       <p v-if="subscription?.status === 0" role="status">等待邮箱验证，请查收邮件；可重新提交以重发确认邮件。</p>
       <p v-if="!can('blog:rss:subscribe')">当前账号没有邮件订阅权限。</p>
       <!-- 已订阅，查看状态 -->
-      <div v-if="isSubscribed && !rssEditMode" class="rss-status">
+      <div v-if="isSubscribed" class="rss-status">
         <div class="rss-status-row">
           <span class="rss-label">昵称</span>
           <span class="rss-value">{{ session.user?.nickname }}</span>
         </div>
         <div class="rss-status-row">
           <span class="rss-label">邮箱</span>
-          <span class="rss-value">{{ rssForm.email }}</span>
+          <span class="rss-value">{{ subscription.email }}</span>
         </div>
         <div class="rss-actions">
-          <button class="rss-edit-btn" @click="rssEditMode = true">编辑</button>
           <button class="rss-unsub-btn" :disabled="rssSubmitting" @click="handleRssUnsubscribe">
             {{ rssSubmitting ? '处理中...' : '取消订阅' }}
           </button>
         </div>
       </div>
-      <!-- 未订阅 / 编辑模式 -->
-      <div v-else class="rss-form">
+      <!-- 申请邮箱始终取当前账号，历史订阅邮箱只作状态展示。 -->
+      <div class="rss-form">
         <input
           :disabled="rssSubmitting"
           maxlength="254"
-          v-model="rssForm.email"
+          :value="rssEmail"
+          readonly
+          aria-describedby="rss-email-hint"
           aria-label="订阅邮箱"
           type="email"
           placeholder="邮箱 *"
           class="rss-form-input"
         />
+        <p id="rss-email-hint" class="form-hint">
+          {{ rssEmail ? '仅使用当前登录账号邮箱，不能在此修改。' : '请先在个人资料中设置账号邮箱。' }}
+        </p>
         <div class="rss-form-btns">
-          <button v-if="rssEditMode" class="rss-cancel-btn" @click="rssEditMode = false">取消</button>
           <button
             class="rss-submit-btn"
-            :disabled="rssSubmitting || !can('blog:rss:subscribe')"
+            :disabled="rssSubmitting || !rssEmail || !can('blog:rss:subscribe')"
             @click="handleRssSubscribe"
           >
-            {{ rssSubmitting ? '提交中...' : rssEditMode ? '保存' : '订阅' }}
+            {{ rssSubmitting ? '提交中...' : '订阅' }}
           </button>
         </div>
       </div>
@@ -594,21 +593,6 @@ function goTag(slug) {
 .rss-submit-btn:disabled {
   opacity: 0.5;
 }
-.rss-cancel-btn {
-  padding: 8px 20px;
-  font-size: 13px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #606266;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.15s;
-}
-.rss-cancel-btn:hover {
-  border-color: #303133;
-}
-
 /* RSS 已订阅状态 */
 .rss-status {
   display: flex;
@@ -633,21 +617,6 @@ function goTag(slug) {
   display: flex;
   gap: 8px;
   margin-top: 4px;
-}
-.rss-edit-btn {
-  flex: 1;
-  padding: 8px 0;
-  font-size: 13px;
-  border: 1px solid #e4e7ed;
-  background: #fff;
-  color: #303133;
-  border-radius: 6px;
-  cursor: pointer;
-  font-family: inherit;
-  transition: border-color 0.15s;
-}
-.rss-edit-btn:hover {
-  border-color: #303133;
 }
 .rss-unsub-btn {
   flex: 1;

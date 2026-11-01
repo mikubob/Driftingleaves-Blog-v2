@@ -25,6 +25,28 @@ function result(data, options = {}) {
   })
 }
 
+test('账号唯一冲突保留三种明确提示及字段明细', async () => {
+  for (const [message, fields] of [
+    ['用户名已被使用', ['username']],
+    ['邮箱已被使用', ['email']],
+    ['用户名和邮箱均已被使用', ['username', 'email']],
+  ]) {
+    const errors = fields.map((field) => ({
+      field, message: field === 'username' ? '用户名已被使用' : '邮箱已被使用',
+    }))
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      code: 'UNIQUE_CONFLICT', msg: message, data: null, errors,
+    }), { status: 409 })
+    await assert.rejects(request('/admin/users', { method: 'POST', body: {} }), (error) => {
+      assert.equal(error.status, 409)
+      assert.equal(error.code, 'UNIQUE_CONFLICT')
+      assert.equal(error.message, message)
+      assert.deepEqual(error.errors, errors)
+      return true
+    })
+  }
+})
+
 test('请求保留字符串 ID、带引号版本与内存 Bearer，只发送明确字段', async () => {
   const id = '9223372036854775807'
   globalThis.fetch = async (url, options) => {

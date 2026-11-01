@@ -25,7 +25,7 @@ const batchActions = computed(() => {
   const actions = []
   if (can('sys:user:update')) {
     actions.push(
-      { label: '批量启用', path: 'batch-enable', method: 'PUT' },
+      { label: '批量启用', type: 'success', path: 'batch-enable', method: 'PUT' },
       {
         label: '批量禁用', path: 'batch-disable', method: 'PUT', danger: true,
         warning: '将撤销所选账号的全部会话，必须保留至少一个有效管理员。',
@@ -293,15 +293,23 @@ onMounted(async () => {
         <el-table-column label="最近登录" width="180">
           <template #default="{ row }">{{ formatTime(row.lastLoginTime) }}</template>
         </el-table-column>
+        <el-table-column label="最近登录 IP" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lastLoginIp || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="最近登录地域" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.lastLoginLocation || '未知' }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
             <el-button
+              type="primary"
               v-if="can('sys:user:update')"
               link
               :disabled="deleting || batch?.busy"
               @click="edit(row)"
             >编辑</el-button>
             <el-button
+              type="primary"
               v-if="can('sys:user:assignRole') && can('sys:role:query')"
               link
               :disabled="deleting || batch?.busy"

@@ -3,6 +3,23 @@ async function smoke(page) {
   await page.unroute('**/api/v1/**')
   await page.setViewportSize({ width: 1280, height: 800 })
   const failures = []
+  const discussionFocusChecks = []
+
+  async function checkDiscussionInputs(scope, label) {
+    for (const field of await scope.locator('textarea, input:not([type="checkbox"]):not([type="radio"])').all()) {
+      if (!await field.isVisible() || await field.isDisabled()) {
+        continue
+      }
+      await field.focus()
+      if (!await field.evaluate((element) => {
+        const style = getComputedStyle(element)
+        return style.outlineStyle === 'none' || style.outlineWidth === '0px'
+      })) {
+        throw new Error(`${label}出现重复焦点边框`)
+      }
+      discussionFocusChecks.push(label)
+    }
+  }
   page.on('pageerror', (error) => failures.push(error.message))
   const revision = '"' + 'a'.repeat(64) + '"'
   const time = '2026-10-31T02:00:00.000Z'
@@ -223,7 +240,7 @@ async function smoke(page) {
         updateTime: time,
       },
     ],
-    '/admin/users': [user],
+    '/admin/users': [{ ...user, lastLoginIp: '192.0.2.42', lastLoginLocation: '江苏省 南京市' }],
     '/admin/roles': [
       {
         roleId: '1',
@@ -304,7 +321,7 @@ async function smoke(page) {
       {
         visitorId: '1',
         fingerprint: 'test-fingerprint',
-        ipAddress: '192.0.2.0/24',
+        ipAddress: '192.0.2.42',
         userAgent: 'Test Browser',
         country: '中国',
         province: '浙江',
@@ -326,7 +343,7 @@ async function smoke(page) {
         pagePath: '/articles/test-article',
         pageTitle: '测试文章',
         referer: null,
-        ipAddress: '192.0.2.0/24',
+        ipAddress: '192.0.2.42',
         userAgent: 'Test Browser',
         viewTime: time,
       },
@@ -352,12 +369,18 @@ async function smoke(page) {
     if (req.method() !== 'GET') {
       const body = req.postDataJSON()
       writes.push({ path, method: req.method(), body, headers: req.headers() })
-      if (path === '/admin/auth/login' || /\/replies$/.test(path)) {
+      if (['/admin/auth/login', '/admin/auth/email-code'].includes(path) || /\/replies$/.test(path)) {
         if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
           throw new Error('缺少正确的验证码请求头')
         }
       }
+      if (path === '/admin/auth/email-code') {
+        return respond(null)
+      }
       if (path === '/admin/auth/login') {
+        if (body.email !== 'admin@example.test' || body.emailCode !== '012345') {
+          throw new Error('后台登录没有同时提交绑定邮箱和邮件验证码')
+        }
         return respond({
           tokenType: 'Bearer',
           accessToken: 'browser-test-token',
@@ -496,6 +519,14 @@ async function smoke(page) {
   await page.screenshot({ path: 'output/playwright/login.png', fullPage: true })
   await page.getByRole('textbox', { name: '用户名', exact: true }).fill('test_admin')
   await page.getByRole('textbox', { name: '登录密码', exact: true }).fill('  fake-pass  ')
+  await page.getByLabel('绑定邮箱', { exact: true }).fill('admin@example.test')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '发送邮箱验证码', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '验证码已发送' }).waitFor()
+  if (await page.getByLabel('六位数字验证码', { exact: true }).inputValue()) {
+    throw new Error('发送邮件后未刷新图形验证码')
+  }
+  await page.getByLabel('邮箱验证码', { exact: true }).fill('012345')
   await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '登 录' }).click()
   await page.waitForURL('**/statistics/overview')
@@ -531,7 +562,49 @@ async function smoke(page) {
     if (await page.locator('.request-error').count()) {
       throw new Error(`${title}加载失败：${await page.locator('.request-error').innerText()}`)
     }
+    if (path === '/content/comments' || path === '/content/messages') {
+      await checkDiscussionInputs(page.locator('.filter-form'), `${title}筛选框`)
+      await page.keyboard.press('Escape')
+    }
+    if (path === '/content/messages') {
+      await page.getByRole('button', { name: '回复', exact: true }).click()
+      const replyDialog = page.getByRole('dialog', { name: '回复留言', exact: true })
+      await replyDialog.waitFor()
+      await page.waitForFunction(() => !document.querySelector('.el-dialog .captcha-controls input').disabled)
+      await checkDiscussionInputs(replyDialog, '后台留言回复框')
+      await replyDialog.getByRole('button', { name: '取消', exact: true }).click()
+    }
   }
+  await page.getByRole('button', { name: '详情', exact: true }).click()
+  const viewDialog = page.getByRole('dialog', { name: '浏览记录详情', exact: true })
+  await viewDialog.waitFor()
+  const viewTime = await page.evaluate((value) => new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium', timeStyle: 'short',
+  }).format(new Date(value)), time)
+  const expectedViewDetails = {
+    '记录 ID': '1', '访客 ID': '1', '用户 ID': '—', '文章 ID': id,
+    '页面标题': '测试文章', '站点': 'blog', '页面路径': '/articles/test-article',
+    '来源': '—', 'IP 地址': '192.0.2.42', 'User-Agent': 'Test Browser', '访问时间': viewTime,
+  }
+  for (const [label, expected] of Object.entries(expectedViewDetails)) {
+    const item = viewDialog.locator('tr').filter({ has: page.getByText(label, { exact: true }) })
+    const actual = await item.locator('.el-descriptions__content').innerText()
+    if (actual !== expected) {
+      throw new Error(`浏览记录详情字段 ${label} 显示错误：${actual}`)
+    }
+  }
+  await page.keyboard.press('Escape')
+  await viewDialog.waitFor({ state: 'hidden' })
+  await page.locator('nav a[href="/system/users"]').click()
+  await page.getByRole('cell', { name: '192.0.2.42', exact: true }).waitFor()
+  await page.getByRole('cell', { name: '江苏省 南京市', exact: true }).waitFor()
+  await page.locator('nav a[href="/statistics/visitors"]').click()
+  await page.getByRole('button', { name: '详情', exact: true }).click()
+  const visitorDialog = page.getByRole('dialog', { name: '访客详情', exact: true })
+  await visitorDialog.getByText('192.0.2.42', { exact: true }).waitFor()
+  await visitorDialog.getByText('中国 / 浙江 / 杭州', { exact: true }).waitFor()
+  await page.keyboard.press('Escape')
+  await visitorDialog.waitFor({ state: 'hidden' })
   const editPages = [
     ['/content/categories', '保存分类'],
     ['/content/tags', '保存标签'],
@@ -649,10 +722,13 @@ async function smoke(page) {
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await page.getByRole('dialog').getByRole('button', { name: '退出', exact: true }).click()
   await page.waitForURL('**/login')
-  await page.getByRole('button', { name: '测试平台', exact: true }).waitFor()
+  await page.getByRole('button', { name: '发送邮箱验证码', exact: true }).waitFor()
+  if (await page.locator('.oauth-buttons').count()) {
+    throw new Error('后台仍提供第三方直接登录入口')
+  }
   for (const failure of [429, 503, 'network']) {
     let requests = 0
-    await page.route('**/api/v1/admin/auth/oauth/providers', async (route) => {
+    await page.route('**/api/v1/admin/auth/captcha', async (route) => {
       requests += 1
       if (failure === 'network') {
         return route.abort('failed')
@@ -674,7 +750,7 @@ async function smoke(page) {
       throw new Error('异常页标题不正确')
     }
     await page.screenshot({ path: `output/playwright/error-${failure}.png`, fullPage: true })
-    await page.unroute('**/api/v1/admin/auth/oauth/providers')
+    await page.unroute('**/api/v1/admin/auth/captcha')
   }
   await page.getByRole('link', { name: '返回首页' }).click()
   await page.waitForURL('**/login')
@@ -684,6 +760,7 @@ async function smoke(page) {
   }
   return {
     pages: pageDefinitions.length,
+    discussionFocusChecks: discussionFocusChecks.length,
     articleSaved: true,
     conflictPreserved: true,
     mobileWidth: storage.width,

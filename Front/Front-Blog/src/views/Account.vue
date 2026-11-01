@@ -8,6 +8,7 @@ import { useResource } from '../composables/useResource.js'
 import { formatDate } from '../format.js'
 import ArticleCard from '../components/ArticleCard.vue'
 import EmailSubscription from '../components/EmailSubscription.vue'
+import OAuthBindings from '../components/OAuthBindings.vue'
 import ListPager from '../components/ListPager.vue'
 import ResourceState from '../components/ResourceState.vue'
 import CaptchaField from '../../../shared/CaptchaField.vue'
@@ -182,6 +183,7 @@ async function saveMessage() {
   <template v-else>
     <p v-if="error" role="alert" class="error-state">{{ error }}</p>
     <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
+    <OAuthBindings />
     <section class="panel">
       <p class="eyebrow">MY CORNER</p>
       <h2>你好，{{ session.user.nickname }}</h2>

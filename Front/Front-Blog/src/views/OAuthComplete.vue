@@ -4,7 +4,8 @@ import { useRouter } from 'vue-router'
 import { request } from '../api.js'
 import { acceptSession } from '../session.js'
 const router = useRouter()
-let ticket = new URLSearchParams(location.hash.slice(1)).get('ticket')
+const result = new URLSearchParams(location.hash.slice(1))
+let ticket = result.get('ticket')
 history.replaceState(history.state, '', location.pathname)
 const message = ref('正在完成登录，请稍候…')
 const failed = ref(false)
@@ -12,7 +13,9 @@ const failed = ref(false)
 onMounted(async () => {
   if (!ticket || ticket.length > 512) {
     failed.value = true
-    message.value = '缺少有效授权票据，请重新发起登录。'
+    message.value = result.get('error') === 'OAUTH_NOT_BOUND'
+      ? '此第三方账号尚未绑定。请先使用邮箱注册，再到个人设置绑定后登录。'
+      : '缺少有效授权票据，请重新发起登录。'
     return
   }
   // 邮件确认页用登录弹窗保留原页面内存票据，原页面核对来源后兑换。

@@ -144,7 +144,7 @@ class InfrastructureConfigTest {
                 .withPropertyValues("spring.profiles.active=dev")
                 .run(context -> {
                     var auth = Binder.get(context.getEnvironment()).bind("app.auth", AuthProperties.class).get();
-                    var filter = new AuthWebConfig(null, null, auth, null)
+                    var filter = new AuthWebConfig(null, null, null, auth, null)
                             .corsFilter(JsonMapper.builder().build()).getFilter();
                     var preflight = new MockHttpServletRequest("OPTIONS", "/api/v1/blog/me/profile");
                     preflight.setServerPort(5922);
@@ -186,7 +186,7 @@ class InfrastructureConfigTest {
             assertThat(auth.getAllowedOrigins().contains("http://127.0.0.1:5174")).isEqualTo("dev".equals(profile));
             assertThat(auth.getAllowedOrigins().contains("http://localhost:5174")).isEqualTo("dev".equals(profile));
             assertThat(auth.getAllowedOrigins().contains("http://localhost:5176")).isEqualTo("dev".equals(profile));
-            var filter = new AuthWebConfig(null, null, auth, null)
+            var filter = new AuthWebConfig(null, null, null, auth, null)
                     .corsFilter(JsonMapper.builder().build()).getFilter();
             var request = new MockHttpServletRequest("POST", "/api/v1/blog/auth/login");
             request.setServerPort(5922);

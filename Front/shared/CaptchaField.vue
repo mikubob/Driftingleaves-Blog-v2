@@ -96,6 +96,10 @@ onBeforeUnmount(() => controller?.abort())
   border-radius: 6px;
   font: inherit;
 }
+.captcha-controls input:focus {
+  border-color: currentColor;
+  outline: none;
+}
 .captcha-controls button {
   padding: 0;
   min-width: 125px;

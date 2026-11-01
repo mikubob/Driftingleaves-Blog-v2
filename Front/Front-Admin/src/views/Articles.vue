@@ -118,6 +118,7 @@ const batchActions = computed(() => {
   if (!trash.value && can('blog:article:publish')) {
     actions.push({
       label: '批量发布',
+      type: 'success',
       path: 'batch-status',
       method: 'PUT',
       body: { status: 1 },
@@ -126,6 +127,7 @@ const batchActions = computed(() => {
   if (!trash.value && can('blog:article:publish')) {
     actions.push({
       label: '批量下架',
+      type: 'warning',
       path: 'batch-status',
       method: 'PUT',
       body: { status: 2 },
@@ -143,6 +145,7 @@ const batchActions = computed(() => {
   if (trash.value && can('blog:article:restore')) {
     actions.push({
       label: '批量恢复',
+      type: 'success',
       path: 'batch-restore',
     })
   }
@@ -301,6 +304,7 @@ const batchActions = computed(() => {
         <el-table-column label="操作" min-width="235" fixed="right">
           <template #default="{ row }">
             <el-button
+              type="primary"
               v-if="!trash && can('blog:article:update')"
               link
               @click="router.push({ name: 'article-editor', params: { id: row.articleId } })"
@@ -310,11 +314,13 @@ const batchActions = computed(() => {
             <el-button
               v-if="!trash && can('blog:article:publish')"
               link
+              :type="row.status === 1 ? 'warning' : 'success'"
               @click="action(row, row.status === 1 ? 'unpublish' : 'publish')"
             >
               {{ row.status === 1 ? '下架' : '发布' }}
             </el-button>
             <el-button
+              type="danger"
               v-if="!trash && can('blog:article:delete')"
               link
               @click="action(row, 'recycle')"
@@ -322,6 +328,7 @@ const batchActions = computed(() => {
               回收
             </el-button>
             <el-button
+              type="success"
               v-if="trash && can('blog:article:restore')"
               link
               @click="action(row, 'restore')"
@@ -329,6 +336,7 @@ const batchActions = computed(() => {
               恢复
             </el-button>
             <el-button
+              type="danger"
               v-if="trash && can('blog:article:delete') && can('blog:article:purge')"
               link
               class="danger-text"

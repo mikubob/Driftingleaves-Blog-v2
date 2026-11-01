@@ -171,14 +171,14 @@ const batchActions = computed(() => {
         <el-table-column prop="siteCode" label="站点" min-width="80" show-overflow-tooltip />
         <el-table-column prop="pagePath" label="页面路径" min-width="240" show-overflow-tooltip />
         <el-table-column prop="referer" label="来源" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="ipAddress" label="IP 网段" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="ipAddress" label="IP 地址" min-width="160" show-overflow-tooltip />
         <el-table-column label="访问时间" width="180">
           <template #default="{ row }">{{ formatTime(row.viewTime) }}</template>
         </el-table-column>
         <el-table-column label="操作" width="150">
           <template #default="{ row }">
-            <el-button link @click="view(row)">详情</el-button>
-            <el-button v-if="can('blog:view:delete', true)" link @click="remove(row)">
+            <el-button type="primary" link @click="view(row)">详情</el-button>
+            <el-button type="danger" v-if="can('blog:view:delete', true)" link @click="remove(row)">
               删除
             </el-button>
           </template>
@@ -195,7 +195,21 @@ const batchActions = computed(() => {
       />
     </el-card>
     <el-dialog v-model="visible" title="浏览记录详情" width="760px">
-      <el-descriptions v-if="detail" :column="1" border>detail.value = { ...row }S</el-descriptions>
+      <el-descriptions v-if="detail" :column="1" border>
+        <el-descriptions-item label="记录 ID">{{ detail.viewId }}</el-descriptions-item>
+        <el-descriptions-item label="访客 ID">{{ detail.visitorId || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="用户 ID">{{ detail.userId || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="文章 ID">{{ detail.articleId || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="页面标题">{{ detail.pageTitle || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="站点">{{ detail.siteCode }}</el-descriptions-item>
+        <el-descriptions-item label="页面路径">{{ detail.pagePath }}</el-descriptions-item>
+        <el-descriptions-item label="来源">{{ detail.referer || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="IP 地址">{{ detail.ipAddress || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="User-Agent">{{ detail.userAgent || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="访问时间">
+          {{ formatTime(detail.viewTime) }}
+        </el-descriptions-item>
+      </el-descriptions>
     </el-dialog>
   </section>
 </template>

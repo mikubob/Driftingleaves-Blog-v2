@@ -13,6 +13,7 @@ import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISocialService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.EmailCodeStore;
 import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.zaxxer.hikari.HikariDataSource;
@@ -1615,6 +1616,80 @@ class ArticleIntegrationTest {
         assertThat(publicComment.has("userId")).isFalse();
         assertThat(publicComment.get("author").propertyNames()).containsExactlyInAnyOrder("userId", "nickname",
                 "avatar");
+    }
+
+    @Test
+    void clientDetailsCaptureTrustedIpAndPublishOnlyCommentLocationAndBrowser() throws Exception {
+        String admin = actor("client_info_admin", 1);
+        String member = actor("client_info_member", 3);
+        String article = published(admin, "client-info");
+        commentPolicy(true, false);
+
+        MvcResult login = mvc.perform(req("POST", "/blog/auth/login").contentType("application/json")
+                .content(json.writeValueAsString(Map.of("username", "client_info_member", "password", PASSWORD)))
+                .header("X-Forwarded-For", "8.8.8.8")
+                .with(request -> {
+                    request.setRemoteAddr("114.114.114.114");
+                    return request;
+                })).andReturn();
+        code(login, 200, "OK");
+        JsonNode ownUser = data(login).get("user");
+        assertThat(ownUser.has("lastLoginIp")).isFalse();
+        String memberId = userId("client_info_member");
+        JsonNode user = data(call("GET", "/admin/users/" + memberId, admin, null));
+        assertThat(user.get("lastLoginIp").asString()).isEqualTo("114.114.114.114");
+        assertThat(user.get("lastLoginLocation").asString()).isEqualTo("江苏省 南京市");
+        Map<String, Object> savedUser = jdbc.queryForMap("SELECT * FROM sys_user WHERE user_id=?", memberId);
+        assertThat(savedUser.get("last_login_ip")).isEqualTo("114.114.114.114");
+
+        String agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0 Safari/537.36 Edg/130.0";
+        MvcResult created = mvc.perform(req("POST", commentsPath(article))
+                .header("Authorization", "Bearer " + member).header("User-Agent", agent)
+                .header("X-Forwarded-For", "8.8.8.8").contentType("application/json")
+                .content(json.writeValueAsString(Map.of("content", "测试地域")))
+                .with(request -> {
+                    request.setRemoteAddr("114.114.114.114");
+                    return request;
+                })).andReturn();
+        code(created, 201, "OK");
+        assertThat(data(created).get("location").asString()).isEqualTo("江苏省 南京市");
+        String commentId = data(created).get("commentId").asString();
+        assertThat(jdbc.queryForObject("SELECT user_agent_browser FROM blog_comment WHERE comment_id=?",
+                String.class, commentId)).isEqualTo("Edge");
+        JsonNode comment = data(call("GET", commentsPath(article), null, null)).get("records").get(0);
+        assertThat(comment.get("location").asString()).isEqualTo("江苏省 南京市");
+        assertThat(comment.get("userAgentOs").asString()).isEqualTo("Windows");
+        assertThat(comment.get("userAgentBrowser").asString()).isEqualTo("Edge");
+        assertThat(comment.has("ipAddress")).isFalse();
+        assertThat(comment.has("userAgent")).isFalse();
+        assertThat(comment.toString()).doesNotContain("114.114.114.114", "8.8.8.8");
+
+        code(track(null, ORIGIN, tracking("client-info-visitor", "/", null)), 200, "OK");
+        String visitorId = jdbc.queryForObject("SELECT visitor_id FROM blog_visitor", String.class);
+        JsonNode visitor = data(call("GET", "/admin/visitors/" + visitorId, admin, null));
+        assertThat(visitor.get("ipAddress").asString()).isEqualTo("203.0.113.42");
+    }
+
+    @Test
+    void clientLocationMigrationPreservesExistingUsersAndComments() throws Exception {
+        String admin = actor("client_migration_admin", 1);
+        String article = published(admin, "client-migration");
+        String comment = data(postComment(admin, article, "迁移保留正文", null)).get("commentId").asString();
+        // 只在本测试自建的临时库模拟升级前结构，绝不连接已有业务库。
+        jdbc.execute("ALTER TABLE sys_user DROP COLUMN last_login_ip, DROP COLUMN last_login_location");
+        jdbc.execute("ALTER TABLE blog_comment DROP COLUMN location, DROP COLUMN user_agent_os, DROP COLUMN user_agent_browser");
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            ScriptUtils.executeSqlScript(connection,
+                    new FileSystemResource("../../sql/migrations/20261101_client_location.sql"));
+        }
+        assertThat(jdbc.queryForObject("SELECT content FROM blog_comment WHERE comment_id=?", String.class, comment))
+                .isEqualTo("迁移保留正文");
+        assertThat(jdbc.queryForObject("SELECT location FROM blog_comment WHERE comment_id=?", String.class, comment))
+                .isNull();
+        assertThat(jdbc.queryForObject("SELECT last_login_ip FROM sys_user WHERE username='client_migration_admin'",
+                String.class)).isNull();
+        assertThat(data(call("GET", "/admin/comments/" + comment, admin, null)).get("userAgentBrowser").isNull())
+                .isTrue();
     }
 
     @Test
@@ -3962,7 +4037,33 @@ class ArticleIntegrationTest {
                 "SELECT verified_at IS NOT NULL AND subscribe_time IS NOT NULL AND unsubscribe_time IS NULL FROM " +
                  "blog_rss_subscription",
                 Boolean.class)).isTrue();
-        assertThat(jdbc.queryForObject("SELECT email FROM sys_user WHERE username='rss_owner'", String.class)).isNull();
+        assertThat(jdbc.queryForObject("SELECT email FROM sys_user WHERE username='rss_owner'", String.class))
+                .isEqualTo("confirm@example.test");
+    }
+
+    @Test
+    void subscriptionOnlyAcceptsCurrentAccountEmailAndRejectsOldEmailConfirmation() throws Exception {
+        String token = actor("rss_account_email", 3);
+        code(call("PUT", "/blog/me/rss-subscription", token, "{\"email\":\"other@example.test\"}"), 400,
+                "VALIDATION_ERROR");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_rss_subscription", Integer.class)).isZero();
+        verifyNoInteractions(mail);
+
+        jdbc.update("UPDATE sys_user SET email=NULL WHERE username='rss_account_email'");
+        code(call("PUT", "/blog/me/rss-subscription", token, "{\"email\":\"other@example.test\"}"), 409,
+                "STATE_CONFLICT");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_rss_subscription", Integer.class)).isZero();
+        verifyNoInteractions(mail);
+
+        String old = requestSubscription(token, "  Old@Example.TEST ");
+        jdbc.update("UPDATE sys_user SET email='new@example.test' WHERE username='rss_account_email'");
+        code(confirm(token, old), 400, "SUBSCRIPTION_TICKET_INVALID");
+        code(call("PUT", "/blog/me/rss-subscription", token, "{\"email\":\"old@example.test\"}"), 400,
+                "VALIDATION_ERROR");
+        assertThat(data(call("GET", "/blog/me/rss-subscription", token, null)).get("status").asInt()).isZero();
+        code(confirm(token, requestSubscription(token, "new@example.test")), 200, "OK");
+        verify(mail).send(eq("old@example.test"), eq("确认邮件订阅"), anyString());
+        verify(mail).send(eq("new@example.test"), eq("确认邮件订阅"), anyString());
     }
 
     @Test
@@ -3970,11 +4071,15 @@ class ArticleIntegrationTest {
         String admin = actor("rss_admin", 1);
         String member = actor("rss_member", 3);
         String other = actor("rss_second", 3);
+        jdbc.update("UPDATE sys_user SET email='pending@example.test' WHERE username='rss_member'");
         doThrow(new BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用")).when(mail)
                 .send(anyString(), anyString(), anyString());
         code(call("PUT", "/blog/me/rss-subscription", member, "{\"email\":\"pending@example.test\"}"), 503,
                 "SERVICE_UNAVAILABLE");
         assertThat(data(call("GET", "/blog/me/rss-subscription", member, null)).get("status").asInt()).isZero();
+        // 历史订阅不随账号资料改写，其他账号仍不能抢占这个订阅邮箱。
+        jdbc.update("UPDATE sys_user SET email='changed@example.test' WHERE username='rss_member'");
+        jdbc.update("UPDATE sys_user SET email='pending@example.test' WHERE username='rss_second'");
         code(call("PUT", "/blog/me/rss-subscription", other, "{\"email\":\"PENDING@example.test\"}"), 409,
                 "UNIQUE_CONFLICT");
         String id = jdbc.queryForObject("SELECT subscription_id FROM blog_rss_subscription", String.class);
@@ -3982,6 +4087,7 @@ class ArticleIntegrationTest {
         code(write("PUT", "/admin/rss-subscriptions/" + id + "/status", admin, rev, Map.of("status", 1)), 409,
                 "STATE_CONFLICT");
         reset(mail);
+        jdbc.update("UPDATE sys_user SET email='rss_second@example.test' WHERE username='rss_second'");
         String ticket = requestSubscription(member, "pending@example.test");
         code(confirm(member, ticket), 200, "OK");
         code(call("DELETE", "/blog/me/rss-subscription", member, null), 200, "OK");
@@ -4301,6 +4407,9 @@ class ArticleIntegrationTest {
     }
 
     private String requestSubscription(String token, String email) throws Exception {
+        // 测试账号先设置申请邮箱，再走真实的订阅校验和确认流程。
+        String user = data(call("GET", "/blog/me", token, null)).get("userId").asString();
+        jdbc.update("UPDATE sys_user SET email=? WHERE user_id=?", email, user);
         code(call("PUT", "/blog/me/rss-subscription", token, json.writeValueAsString(Map.of("email", email))), 200, "OK");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(mail, atLeastOnce()).send(anyString(), eq("确认邮件订阅"), text.capture());
@@ -4321,7 +4430,7 @@ class ArticleIntegrationTest {
     }
 
     @Test
-    void analyticsMasksIpSanitizesUrlsAndDoesNotDoubleCountReading() throws Exception {
+    void analyticsKeepsAdminIpSanitizesUrlsAndDoesNotDoubleCountReading() throws Exception {
         String admin = actor("analytics_article", 1);
         String article = published(admin, "analytics-visible");
         Map<String, Object> value = tracking("fingerprint-analytics-one",
@@ -4334,7 +4443,9 @@ class ArticleIntegrationTest {
         Map<String, Object> saved = jdbc.queryForMap("SELECT * FROM blog_page_view");
         assertThat(saved.get("page_path")).isEqualTo("/articles/analytics-visible");
         assertThat(saved.get("referer")).isEqualTo("https://search.example.test/path");
-        assertThat(saved.get("ip_address")).isEqualTo("203.0.113.0");
+        assertThat(saved.get("ip_address")).isEqualTo("203.0.113.42");
+        assertThat(jdbc.queryForObject("SELECT ip_address FROM blog_visitor", String.class))
+                .isEqualTo("203.0.113.42");
         assertThat(saved.get("user_id").toString()).isEqualTo(userId("analytics_article"));
         assertThat(jdbc.queryForObject("SELECT view_count FROM blog_article WHERE article_id=?", Long.class,
                 article)).isZero();
@@ -5766,15 +5877,24 @@ class ArticleIntegrationTest {
     }
 
     private String actor(String username, int role) throws Exception {
+        String email = username + "@example.test";
+        String emailCode = EmailTestSupport.issue(redis, properties, email, EmailCodeStore.REGISTER);
         MvcResult registered = call("POST", "/blog/auth/register", null,
-                json.writeValueAsString(Map.of("username", username, "password", PASSWORD, "nickname", "叶")));
+                json.writeValueAsString(Map.of("username", username, "password", PASSWORD, "nickname", "叶",
+                        "email", email, "emailCode", emailCode)));
         code(registered, 201, "OK");
         if (role != 3) {
             jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)",
                     data(registered).get("userId").asString(), role);
         }
-        MvcResult logged = call("POST", "/blog/auth/login", null,
-                json.writeValueAsString(Map.of("username", username, "password", PASSWORD)));
+        String path = "/blog/auth/login";
+        Map<String, String> credentials = Map.of("username", username, "password", PASSWORD);
+        if (role != 3) {
+            path = "/admin/auth/login";
+            emailCode = EmailTestSupport.issue(redis, properties, email, EmailCodeStore.ADMIN_LOGIN);
+            credentials = Map.of("username", username, "password", PASSWORD, "email", email, "emailCode", emailCode);
+        }
+        MvcResult logged = call("POST", path, null, json.writeValueAsString(credentials));
         code(logged, 200, "OK");
         return data(logged).get("accessToken").asString();
     }

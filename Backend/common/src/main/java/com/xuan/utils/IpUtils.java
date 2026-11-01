@@ -43,7 +43,7 @@ public final class IpUtils {
         return current;
     }
 
-    /** 访问统计只保留IPv4 /24或IPv6 /48网段，不把完整客户端IP落库。 */
+    /** 需要脱敏展示时，取得 IPv4 /24 或 IPv6 /48 网段。 */
     public static String anonymize(String value) {
         String ip = normalize(value);
         if (ip == null) {

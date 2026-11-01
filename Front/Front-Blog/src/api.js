@@ -101,6 +101,7 @@ const message = (value) => model(value, {
 })
 const comment = (value) => model(value, {
   commentId: isId, articleId: isId, content: text, createTime: time,
+  location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
   status: (item) => [0, 1, 2, 3].includes(item),
 })
 const session = (value) => model(value, {
@@ -149,10 +150,15 @@ function validateData(path, data, method) {
     check = (value) => author(value) && count(value.articleCount)
   } else if (route === '/blog/me' || route === '/blog/me/profile' || route === '/blog/auth/register') {
     check = me
-  } else if (route === '/blog/auth/login') {
+  } else if (route === '/blog/auth/login' || route === '/blog/auth/email-login') {
     check = session
+  } else if (read && route === '/blog/auth/oauth/providers') {
+    check = (value) => Array.isArray(value) && value.every((item) => model(item, { source: text, displayName: text }))
+  } else if (read && route === '/blog/me/oauth-bindings') {
+    check = (value) => Array.isArray(value) && value.every((item) => model(item, { source: text, createTime: text }))
   } else if (route === '/blog/auth/oauth/exchange') {
     check = (value) => model(value, { operation: (item) => item === 'LOGIN', session })
+      || model(value, { operation: (item) => item === 'BIND', binding: (item) => model(item, { source: text, createTime: text }) })
   } else if (route.endsWith('/authorize')) {
     check = (value) => model(value, { authorizationUrl: text })
   } else if (route === '/blog/me/capabilities') {
@@ -256,7 +262,7 @@ export async function request(path, { body, revision, captcha, ...options } = {}
       message = '内容已更新，请保留当前输入，重新加载详情后合并修改。'
     } else if (response.status === 428) {
       message = '缺少编辑版本，请重新加载详情后操作。'
-    } else if (Array.isArray(result?.errors) && result.errors.length) {
+    } else if (result?.code !== 'UNIQUE_CONFLICT' && Array.isArray(result?.errors) && result.errors.length) {
       const errors = result.errors.filter((item) => typeof item.message === 'string')
       message += `：${errors.map((item) => item.message).join('；')}`
     }

@@ -70,6 +70,15 @@ public class SessionManager {
         return StpUtil.getTokenValue();
     }
 
+    /** 后台只接受完成密码和邮箱验证的会话，前台及历史会话不能绕过后台登录。 */
+    public void requireAdminAuthentication() {
+        String token = currentToken();
+        SaSession session = token == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
+        if (session == null || !"PASSWORD_EMAIL".equals(session.get("method"))) {
+            throw new BusinessException(403, "FORBIDDEN", "请使用账号密码、邮箱验证码和图形验证码登录后台");
+        }
+    }
+
     /** 写事务拿到用户锁后，再确认原 Token 还有效。 */
     public void requireActive(String token, long userId) {
         Object actual = StpUtil.getStpLogic().getLoginIdByToken(token);

@@ -502,6 +502,14 @@ html.dark .msg-form-textarea:focus {
   border-color: #888 !important;
 }
 
+/* 深色通用边框使用了 !important，错误状态需保留同等优先级。 */
+html.dark .form-input-error,
+html.dark .form-input-error:focus,
+html.dark .form-textarea-error,
+html.dark .form-textarea-error:focus {
+  border-color: #f56c6c !important;
+}
+
 html.dark .c-body,
 html.dark .msg-body {
   color: var(--blog-text2) !important;
@@ -532,8 +540,6 @@ html.dark .rss-submit-btn {
 html.dark .rss-submit-btn:hover {
   background: #fff !important;
 }
-html.dark .rss-edit-btn,
-html.dark .rss-cancel-btn,
 html.dark .rss-copy-btn {
   background: #2a2a2a !important;
   border-color: var(--blog-border) !important;

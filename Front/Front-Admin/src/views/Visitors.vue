@@ -108,6 +108,7 @@ const batchActions = computed(() => {
   if (can('blog:visitor:block', true)) {
     actions.push({
       label: '批量封禁',
+      type: 'warning',
       path: 'batch-block',
       method: 'PUT',
       block: true,
@@ -116,6 +117,7 @@ const batchActions = computed(() => {
   if (can('blog:visitor:unblock', true)) {
     actions.push({
       label: '批量解封',
+      type: 'success',
       path: 'batch-unblock',
       method: 'PUT',
     })
@@ -204,11 +206,11 @@ const batchActions = computed(() => {
             {{ [row.country, row.province, row.city].filter(Boolean).join(' / ') || '未知' }}
           </template>
         </el-table-column>
-        <el-table-column prop="ipAddress" label="IP 网段" min-width="150" />
+        <el-table-column prop="ipAddress" label="IP 地址" min-width="180" show-overflow-tooltip />
         <el-table-column label="采集状态" width="130">
           <template #default="{ row }">
-            <span :class="['status-tag', { 'is-active': !isBlocked(row) }]">
-              <i></i>
+            <span :class="['status-tag', isBlocked(row) ? 'is-danger' : 'is-success']">
+              <i aria-hidden="true"></i>
               {{ isBlocked(row) ? '已限制' : '正常' }}
             </span>
           </template>
@@ -218,18 +220,19 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <el-button link @click="view(row)">详情</el-button>
-            <el-button v-if="can('blog:visitor:block', true)" link @click="view(row, true)">
+            <el-button type="primary" link @click="view(row)">详情</el-button>
+            <el-button type="warning" v-if="can('blog:visitor:block', true)" link @click="view(row, true)">
               限制
             </el-button>
             <el-button
+              type="success"
               v-if="can('blog:visitor:unblock', true) && row.isBlocked"
               link
               @click="action(row, 'unblock')"
             >
               解除
             </el-button>
-            <el-button v-if="can('blog:visitor:delete', true)" link @click="action(row, 'delete')">
+            <el-button type="danger" v-if="can('blog:visitor:delete', true)" link @click="action(row, 'delete')">
               删除
             </el-button>
           </template>
@@ -249,7 +252,10 @@ const batchActions = computed(() => {
       <el-descriptions v-if="detail" :column="1" border>
         <el-descriptions-item label="访客 ID">{{ detail.visitorId }}</el-descriptions-item>
         <el-descriptions-item label="统计标识">{{ detail.fingerprint }}</el-descriptions-item>
-        <el-descriptions-item label="IP 网段">{{ detail.ipAddress }}</el-descriptions-item>
+        <el-descriptions-item label="IP 地址">{{ detail.ipAddress || '—' }}</el-descriptions-item>
+        <el-descriptions-item label="地域">
+          {{ [detail.country, detail.province, detail.city].filter(Boolean).join(' / ') || '未知' }}
+        </el-descriptions-item>
         <el-descriptions-item label="User-Agent">{{ detail.userAgent }}</el-descriptions-item>
         <el-descriptions-item label="首次访问">
           {{ formatTime(detail.firstVisitTime) }}

@@ -262,21 +262,31 @@ const batchActions = computed(() => {
         <el-table-column prop="menuName" label="菜单名称" min-width="230" />
         <el-table-column label="类型" width="80">
           <template #default="{ row }">
-            {{ { D: '目录', M: '页面', B: '按钮' }[row.menuType] }}
+            <el-tag
+              :type="{ D: 'warning', M: 'primary', B: 'success' }[row.menuType]"
+              :class="{ 'tag-page': row.menuType === 'M' }"
+              size="small"
+            >
+              {{ { D: '目录', M: '页面', B: '按钮' }[row.menuType] }}
+            </el-tag>
           </template>
         </el-table-column>
         <el-table-column prop="path" label="路由路径" min-width="180" />
         <el-table-column prop="component" label="组件键" min-width="210" show-overflow-tooltip />
         <el-table-column label="显示" width="80">
-          <template #default="{ row }">{{ row.isVisible ? '显示' : '隐藏' }}</template>
+          <template #default="{ row }">
+            <el-tag :type="row.isVisible ? 'success' : 'info'" size="small">
+              {{ row.isVisible ? '显示' : '隐藏' }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="enabled" /></template>
         </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            <el-button v-if="can('sys:menu:update')" link @click="edit(row)">编辑</el-button>
-            <el-button v-if="can('sys:menu:delete')" link @click="remove(row)">删除</el-button>
+            <el-button type="primary" v-if="can('sys:menu:update')" link @click="edit(row)">编辑</el-button>
+            <el-button type="danger" v-if="can('sys:menu:delete')" link @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -420,3 +430,12 @@ const batchActions = computed(() => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+/* 主题把 --el-color-primary 改成了黑色，type="primary" 的「页面」标签会渲染成灰白；这里单独给回蓝色 */
+.el-tag.el-tag--primary.tag-page {
+  --el-tag-bg-color: #ecf5ff;
+  --el-tag-border-color: #d9ecff;
+  --el-tag-text-color: #2b6cb0;
+}
+</style>

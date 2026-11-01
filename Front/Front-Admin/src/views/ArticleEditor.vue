@@ -297,6 +297,7 @@ onBeforeUnmount(() => {
         <el-button v-if="id" size="small" @click="previewVisible = true">已保存内容预览</el-button>
         <el-button
           size="small"
+          type="primary"
           :disabled="!editable || uploading"
           :loading="saving"
           @click="save(false)"
@@ -306,7 +307,7 @@ onBeforeUnmount(() => {
         <el-button
           v-if="can('blog:article:publish')"
           size="small"
-          type="primary"
+          type="success"
           :disabled="!editable || uploading"
           :loading="saving"
           @click="save(true)"

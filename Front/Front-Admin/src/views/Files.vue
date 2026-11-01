@@ -198,8 +198,8 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="140">
           <template #default="{ row }">
-            <el-button link @click="preview(row)">预览</el-button>
-            <el-button v-if="can('blog:file:delete')" link @click="remove(row)">删除</el-button>
+            <el-button type="primary" link @click="preview(row)">预览</el-button>
+            <el-button type="danger" v-if="can('blog:file:delete')" link @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

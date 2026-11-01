@@ -30,7 +30,7 @@
 ### 路径与鉴权
 
 - 下文使用完整路径，统一前缀 `/api/v1`。JSON 请求使用 `application/json`，上传使用 `multipart/form-data`。
-- 登录后通过 `Authorization: Bearer <accessToken>` 传递本站 Sa-Token。Blog 登录固定有效 259200 秒（3 天），Admin 登录固定有效 604800 秒（7 天），密码与 OAuth LOGIN 一致，无 refreshToken、无滑动续期。有效期由登录或兑换入口所在端决定，不接受客户端传入天数。
+- 登录后通过 `Authorization: Bearer <accessToken>` 传递本站 Sa-Token。Blog 的密码、邮箱验证码及已绑定第三方登录固定有效 259200 秒（3 天）；Admin 只有账密、绑定邮箱验证码和图形验证码同时通过才签发 604800 秒（7 天）会话。无 refreshToken、无滑动续期，不接受客户端指定有效期。前台及历史会话均不能访问受保护的后台接口，即使该用户拥有后台权限，也必须重新完成后台登录。
 - 浏览器以 localStorage 的 `dl-blog-session`、`dl-admin-session` 分别保存 `{accessToken, expiresAt}`，到期时间按登录响应的 expiresIn 换算。刷新或重新打开页面后先检查到期时间，再读取对应端 `/me`、`/me/capabilities` 核验身份和权限；Admin 还读取 `/me/menus`、确认 `admin:access` 后注册动态路由。资料、权限和菜单不持久化，恢复不续期。退出、核验失败或 401/UNAUTHENTICATED 清除本端持久凭据。浏览器禁用存储时仅本页有效；旧 Token 保留原到期时间，重新登录后采用新有效期。
 - **公开**：无需登录；**登录本人**：账号启用，身份只取当前会话；**后台：P**：账号启用，同时具备 `admin:access` 与权限 P。未认证 401，无权限 403。
 - 文章、文件、评论按本次权限的 ALL/SELF 范围检查；范围外资源返回 404。多个权限分别检查范围。分类、标签、用户、角色等全局资源不产生“本人版本”；标注 ALL 的操作必须具备 ALL 范围。
@@ -48,7 +48,7 @@
 | `code` | string | 成功为 `OK`，失败见 [错误码](#errors) |
 | `msg` | string | 成功为 `成功`，失败为可读提示 |
 | `data` | object/array/null | 业务数据；无返回值或失败时为 null |
-| `errors` | array | 始终存在；字段校验失败时为 `{field,message}[]`，其余为 [] |
+| `errors` | array | 始终存在；字段校验失败或账号用户名/邮箱唯一冲突时为 `{field,message}[]`，其余为 [] |
 
 ```json
 {"code":"OK","msg":"成功","data":null,"errors":[]}
@@ -100,6 +100,24 @@
 
 <a id="captcha"></a>
 
+### 邮箱验证与登录方式
+
+- 公开注册（`/blog/auth/register` 及保留的 `/admin/auth/register`）必须提供 `email` 和 `emailCode`，仅消费 REGISTER 用途验证码；注册只授予 member，不创建后台身份。
+- 前台可以选择用户名密码、邮箱验证码或已绑定第三方登录，三种登录均需填写图形验证码。第三方 LOGIN 不再自动注册账号；历史已有绑定仍可登录。
+- 后台仅允许用户名、密码、账号当前邮箱、邮件验证码和图形验证码组合登录；第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记，前台会话及旧会话需重新登录后台。
+
+| 接口 | JSON 请求体 | 成功响应 |
+| --- | --- | --- |
+| `POST /api/v1/blog/auth/email-code` | `{"email":"leaf@example.test","purpose":"REGISTER"}`；purpose 仅 REGISTER / LOGIN | `Result<null>` |
+| `POST /api/v1/blog/auth/email-login` | `{"email":"leaf@example.test","emailCode":"012345"}` | `Result<Session>`，三天 |
+| `POST /api/v1/admin/auth/email-code` | `{"username":"leaf","password":"Example-password-2026","email":"leaf@example.test"}` | `Result<null>`；先核对账密、当前邮箱、启用状态和 admin:access |
+
+以上接口均公开并要求 `X-Captcha-Id`、`X-Captcha-Code`，只接收声明字段、不接受查询参数。发送成功与失败都会消耗图形验证码；成功后前端刷新图片，注册或登录提交时填写新图片。邮件验证码六位纯数字、五分钟有效，按注册/前台登录/后台登录分开，任何一次邮件校验都会原子消费对应验证码；验证码不出现在 HTTP 响应或日志中。发送接口仅在 SMTP 接受后返回成功，未启用或发送失败返回 503，失败清理验证码。
+
+所有发送用途和端共享每邮箱每 60 秒一次、每可信 IP 每 60 秒五次的限额，超限 429 并带 Retry-After。发送接口在图形验证码通过后计数；后台发送还检查账号登录失败次数。前台密码/邮箱登录及后台登录/发送共用 login-total 每分钟 30 次的入口预算；邮箱或后台邮件验证码失败也计入已有登录失败预算。
+
+账号邮箱沿用 `sys_user.email` 唯一约束，不新增表或自动改写历史用户。邮箱验证码登录每次证明当前邮箱所有权，不把已有联系邮箱或订阅邮箱当作注册验证结果。旧管理员必须预先有可用的账号邮箱及密码；未配置时不能使用新后台登录，应由部署者通过既有账号管理或参数化运维操作补齐，禁止重建业务库。
+
 ### 图形验证码
 
 获取接口为 `GET /api/v1/admin/auth/captcha` 和 `GET /api/v1/blog/auth/captcha`，均公开、无查询参数、无请求体，返回 `Cache-Control: no-store`。两端共享每可信 IP 每 60 秒 30 次的生成窗口，超限返回 429 和 Retry-After。
@@ -127,7 +145,9 @@ GET /api/v1/blog/auth/captcha
 | 接口 | 验证范围 |
 | --- | --- |
 | `POST /api/v1/{admin,blog}/auth/register` | 注册 |
-| `POST /api/v1/{admin,blog}/auth/login` | 用户名密码登录 |
+| `POST /api/v1/{admin,blog}/auth/login` | 前台账密 / 后台账密与邮箱组合登录 |
+| `POST /api/v1/{admin,blog}/auth/email-code` | 发送邮箱验证码 |
+| `POST /api/v1/blog/auth/email-login` | 邮箱验证码登录 |
 | `POST /api/v1/{admin,blog}/auth/oauth/{source}/authorize` | 仅 `operation=LOGIN`；BIND 沿用原会话、最近认证、Origin 与浏览器校验 |
 | `POST /api/v1/blog/articles/{articleId}/comments` | 发表评论或回复 |
 | `POST /api/v1/blog/messages` | 发表留言或回复 |
@@ -311,6 +331,8 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `username` | string | 是 | 3..64 位 ASCII 字母、数字或下划线；全库不区分大小写唯一 |
 | `password` | string | 是 | 8..64 个字符且 UTF-8 ≤72 字节；不 trim、不截断 |
 | `nickname` | string | 是 | 1..64 字符 |
+| `email` | string | 是 | 合法邮箱，≤254 字符，去首尾空白并转小写；注册后保存为账号邮箱 |
+| `emailCode` | string | 是 | 对应用途邮件中的六位数字；五分钟有效，校验一次即失效 |
 
 ##### 请求示例
 
@@ -320,7 +342,7 @@ X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
 
-{"username":"leaf","password":"Example-password-2026","nickname":"落叶"}
+{"username":"leaf","password":"Example-password-2026","nickname":"落叶","email":"leaf@example.test","emailCode":"012345"}
 ```
 
 ##### 响应参数
@@ -333,27 +355,27 @@ Content-Type: application/json
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
+    "userId": "12", "username": "leaf", "nickname": "落叶", "email": "leaf@example.test", "avatar": null, "intro": null,
     "status": 1
   },
   "errors": []
 }
 ```
 
-用户和 member 关联同事务创建；仅返回资料，不自动登录，不接受角色、状态或客户端 userId。
+先验证 REGISTER 用途的邮箱验证码；用户和 member 关联同事务创建；仅返回资料，不自动登录，不接受角色、状态或客户端 userId。用户名、邮箱或二者重复时，返回 [409/UNIQUE_CONFLICT 及对应字段提示](#user-unique-conflict)。
 
 ---
 
 <a id="admin-api-2"></a>
 
-#### 1.1.2 账号密码登录
+#### 1.1.2 账密与邮箱组合登录
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/login` |
-| 接口描述 | 账号密码登录 |
+| 接口描述 | 账密与邮箱组合登录 |
 | Content-Type | application/json |
 | 访问要求 | 公开 |
 
@@ -365,6 +387,8 @@ Content-Type: application/json
 | `X-Captcha-Code` | string | 是 | Header；6 位数字，保留前导零 |
 | `username` | string | 是 | 3..64 位 ASCII 字母、数字或下划线；全库不区分大小写唯一 |
 | `password` | string | 是 | 8..64 个字符且 UTF-8 ≤72 字节；不 trim、不截断 |
+| `email` | string | 是 | 合法邮箱，≤254 字符，去首尾空白并转小写；必须匹配该账号当前邮箱 |
+| `emailCode` | string | 是 | 对应用途邮件中的六位数字；五分钟有效，校验一次即失效 |
 
 ##### 请求示例
 
@@ -374,7 +398,7 @@ X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
 
-{"username":"leaf","password":"Example-password-2026"}
+{"username":"leaf","password":"Example-password-2026","email":"leaf@example.test","emailCode":"012345"}
 ```
 
 ##### 响应参数
@@ -478,25 +502,23 @@ GET /api/v1/admin/auth/oauth/providers
 
 <a id="admin-api-5"></a>
 
-#### 1.1.5 发起第三方登录或绑定
+#### 1.1.5 发起第三方绑定
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/oauth/{source}/authorize` |
-| 接口描述 | 发起第三方登录或绑定 |
+| 接口描述 | 发起第三方绑定 |
 | Content-Type | application/json |
-| 访问要求 | LOGIN 公开；BIND 登录本人 + 最近 300 秒认证；均需浏览器 Cookie/Origin |
+| 访问要求 | 仅 BIND；须后台完整认证会话 + 最近 300 秒认证；浏览器 Cookie/Origin 必填 |
 
 ##### 请求参数
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `X-Captcha-Id` | string | LOGIN 是，BIND 否 | Header；见[验证码契约](#captcha) |
-| `X-Captcha-Code` | string | LOGIN 是，BIND 否 | Header；6 位数字，保留前导零 |
 | `source` | string | 是 | Path；服务端已启用平台的大写标识；未知或未启用 404 |
-| `operation` | string | 是 | LOGIN 登录；BIND 绑定当前用户；不接收 redirectUri/userId/uuid |
+| `operation` | string | 是 | 仅允许 BIND 绑定当前用户；LOGIN 返回 403/FORBIDDEN；不接收 redirectUri/userId/uuid |
 | `__Host-dl-oauth-browser` | string | 是（发起时可由后端新设） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
 | `Origin` | string | 是 | Header；浏览器自动发送，必须匹配配置前端 origin；BIND/兑换附加身份要求见访问要求 |
 
@@ -506,11 +528,10 @@ GET /api/v1/admin/auth/oauth/providers
 POST /api/v1/admin/auth/oauth/GITHUB/authorize
 Cookie: __Host-dl-oauth-browser=<browser-id>
 Origin: https://blog.example.com
-X-Captcha-Id: <captchaId>
-X-Captcha-Code: 012345
+Authorization: Bearer <admin-token>
 Content-Type: application/json
 
-{"operation":"LOGIN"}
+{"operation":"BIND"}
 ```
 
 ##### 响应参数
@@ -533,7 +554,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 }
 ```
 
-LOGIN 公开；BIND 需当前 Token 及最近 300 秒认证。两者均校验 Origin，并设置/读取 OAuth 浏览器 Cookie；BIND 使用弹窗保留原页面内存 Token。
+后台禁止第三方直接登录。BIND 需完成后台账密和邮箱验证的原 Token 及最近 300 秒认证，校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留原 Token。
 
 ---
 
@@ -593,16 +614,16 @@ Referrer-Policy: no-referrer
 
 <a id="admin-api-7"></a>
 
-#### 1.1.7 兑换一次性登录或绑定结果
+#### 1.1.7 兑换一次性绑定结果
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/oauth/exchange` |
-| 接口描述 | 兑换一次性登录或绑定结果 |
+| 接口描述 | 兑换一次性绑定结果 |
 | Content-Type | application/json |
-| 访问要求 | 同浏览器 Cookie；BIND 须原 Token；LOGIN 不需本站 Token |
+| 访问要求 | 同浏览器 Cookie；仅 BIND，须完成后台完整认证的原 Token；LOGIN 禁止 |
 
 ##### 请求参数
 
@@ -618,6 +639,7 @@ Referrer-Policy: no-referrer
 POST /api/v1/admin/auth/oauth/exchange
 Cookie: __Host-dl-oauth-browser=<browser-id>
 Origin: https://blog.example.com
+Authorization: Bearer <admin-token>
 Content-Type: application/json
 
 {"ticket":"<one-time-ticket>"}
@@ -629,24 +651,7 @@ Content-Type: application/json
 
 ##### 响应示例
 
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "operation": "LOGIN",
-    "session": {
-      "tokenType": "Bearer", "accessToken": "<site-token>", "expiresIn": 604800,
-      "user": {
-        "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
-        "status": 1
-      }
-    }
-  },
-  "errors": []
-}
-```
-
-BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session）：
+BIND 成功（200，原 Token 必须有效，不返回新 Session）：
 
 ```json
 {
@@ -661,7 +666,7 @@ BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session�
 }
 ```
 
-必须携带同浏览器 Cookie；LOGIN 返回 Session，BIND 必须带发起时的原 Token，仅返回 binding，不切换账号。票据有效期 60 秒且仅消费一次。
+必须携带同浏览器 Cookie 及发起时已完成后台完整认证的原 Token，仅返回 binding，不切换账号；禁止通过 LOGIN 票据获取后台会话。票据有效期 60 秒且仅消费一次。
 
 ---
 
@@ -1479,7 +1484,7 @@ Location: /api/v1/admin/users/12
 }
 ```
 
-新建用户不分配角色；需要 assignRole 权限才能另行分配，不沿用公开注册的 member 默认。
+新建用户不分配角色；需要 assignRole 权限才能另行分配，不沿用公开注册的 member 默认。用户名、邮箱或二者重复时，返回 [409/UNIQUE_CONFLICT 及对应字段提示](#user-unique-conflict)。
 
 ---
 
@@ -6222,6 +6227,8 @@ Content-Type: application/json
 | `username` | string | 是 | 3..64 位 ASCII 字母、数字或下划线；全库不区分大小写唯一 |
 | `password` | string | 是 | 8..64 个字符且 UTF-8 ≤72 字节；不 trim、不截断 |
 | `nickname` | string | 是 | 1..64 字符 |
+| `email` | string | 是 | 合法邮箱，≤254 字符，去首尾空白并转小写；注册后保存为账号邮箱 |
+| `emailCode` | string | 是 | 对应用途邮件中的六位数字；五分钟有效，校验一次即失效 |
 
 ##### 请求示例
 
@@ -6231,7 +6238,7 @@ X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
 
-{"username":"leaf","password":"Example-password-2026","nickname":"落叶"}
+{"username":"leaf","password":"Example-password-2026","nickname":"落叶","email":"leaf@example.test","emailCode":"012345"}
 ```
 
 ##### 响应参数
@@ -6244,14 +6251,14 @@ Content-Type: application/json
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
+    "userId": "12", "username": "leaf", "nickname": "落叶", "email": "leaf@example.test", "avatar": null, "intro": null,
     "status": 1
   },
   "errors": []
 }
 ```
 
-用户和 member 关联同事务创建；仅返回资料，不自动登录，不接受角色、状态或客户端 userId。
+先验证 REGISTER 用途的邮箱验证码；用户和 member 关联同事务创建；仅返回资料，不自动登录，不接受角色、状态或客户端 userId。用户名、邮箱或二者重复时，返回 [409/UNIQUE_CONFLICT 及对应字段提示](#user-unique-conflict)。
 
 ---
 
@@ -6444,7 +6451,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 }
 ```
 
-LOGIN 公开；BIND 需当前 Token 及最近 300 秒认证。两者均校验 Origin，并设置/读取 OAuth 浏览器 Cookie；BIND 使用弹窗保留原页面内存 Token。
+LOGIN 公开且仅接受已绑定第三方身份；未绑定返回 OAUTH_NOT_BOUND，必须先通过邮箱注册，再登录绑定。BIND 需当前 Token 及最近 300 秒认证。两者均校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留原 Token。
 
 ---
 
@@ -8413,14 +8420,14 @@ Authorization: Bearer <site-token>
 
 <a id="api-127"></a>
 
-#### 2.10.2 申请或修改本人邮件订阅
+#### 2.10.2 申请或重发本人邮件订阅
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/blog/me/rss-subscription` |
-| 接口描述 | 申请或修改本人邮件订阅 |
+| 接口描述 | 使用当前登录账号邮箱申请或重发邮件订阅 |
 | Content-Type | application/json |
 | 访问要求 | 登录 + `blog:rss:subscribe`；始终限制本人归属 |
 
@@ -8428,7 +8435,7 @@ Authorization: Bearer <site-token>
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `email` | string | 是 | 合法邮箱≤254；trim并转小写 |
+| `email` | string | 是 | 合法邮箱≤254；trim并转小写后必须等于当前登录用户的 `sys_user.email`；不得指定其他邮箱 |
 
 ##### 请求示例
 
@@ -8457,7 +8464,9 @@ Content-Type: application/json
 }
 ```
 
-首次或换邮箱写status=0、verifiedAt/subscribeTime/unsubscribeTime=null，旧邮箱推送立即停止；同一已激活邮箱幂等，不重复发信。待验证邮箱重试会重发确认邮件，限流返回429。确认票据24小时有效，绑定用户、subscriptionId、当前email及本次申请版本。SMTP/Redis失败503，已提交待验证记录可保留，通过重发恢复；不返回已激活成功。账号与邮箱唯一冲突409，不挪用其他用户订阅。
+订阅页面的邮箱只读，固定显示当前登录账号邮箱，不能在订阅表单中修改。服务端锁定当前用户后读取并规范化 `sys_user.email`，请求邮箱不一致返回400/VALIDATION_ERROR，账号未设置邮箱返回409/STATE_CONFLICT，均不修改订阅或发信；需要先在个人资料中设置账号邮箱。实际保存和发信地址由服务端账号资料决定，不能通过篡改请求订阅其他邮箱。
+
+首次申请，或账号邮箱修改后重新申请且与历史订阅邮箱不同时，写status=0、verifiedAt/subscribeTime/unsubscribeTime=null，旧邮箱推送立即停止；同一已激活邮箱幂等，不重复发信。历史订阅不会仅因资料修改而自动迁移，须用当前账号邮箱重新申请并收信确认。待验证邮箱重试会重发确认邮件，限流返回429。确认票据24小时有效，绑定用户、subscriptionId、当前email及本次申请版本。SMTP/Redis失败503，已提交待验证记录可保留，通过重发恢复；不返回已激活成功。账号与邮箱唯一冲突409，不挪用其他用户订阅。
 
 ---
 
@@ -8508,7 +8517,7 @@ Content-Type: application/json
 }
 ```
 
-需已登录的同一本站用户；可在另一个浏览器登录同一账号确认，不依赖旧访客存储。锁用户及订阅，验证当前pending状态、邮箱和申请版本，Redis原子消费后设置verifiedAt、subscribeTime、status=1。过期/复用/错账号或已被新申请替换统一400/SUBSCRIPTION_TICKET_INVALID。数据库失败回滚，已消费票据需重新申请；不把Redis与MySQL描述为共同事务。
+需已登录的同一本站用户；可在另一个浏览器登录同一账号确认，不依赖旧访客存储。锁用户及订阅，验证当前pending状态、邮箱和申请版本，订阅邮箱还须与当前账号邮箱规范化后一致，Redis原子消费后设置verifiedAt、subscribeTime、status=1。过期/复用/错账号、账号邮箱已变化或已被新申请替换统一400/SUBSCRIPTION_TICKET_INVALID。数据库失败回滚，已消费票据需重新申请；不把Redis与MySQL描述为共同事务。
 
 ---
 
@@ -9849,7 +9858,7 @@ Blog连接由实际 `view/Layout/index.vue` 管理，站点统计卡片只读取
 
 ### 18. 邮件订阅、RSS Feed 与站点地图
 
-邮件订阅需登录并确认订阅邮箱；RSS 与站点地图公开读取，不要求订阅邮箱。订阅邮箱不自动成为账号登录邮箱。
+邮件订阅仅能使用当前登录账号邮箱，页面只读且服务端强制核对，仍须收信确认；RSS 与站点地图公开读取，不要求订阅邮箱。订阅操作不修改账号登录邮箱。
 
 <a id="group-19"></a>
 
@@ -9896,6 +9905,8 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
 | `lastLoginTime` | Time | 最近登录 UTC 时间，未登录可 null |
+| `lastLoginIp` | string&#124;null | 最近成功登录的完整 IP，仅管理端可见；历史缺失为 null |
+| `lastLoginLocation` | string&#124;null | 最近登录的省市或国家，回环为本地 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 
@@ -10041,6 +10052,8 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
 | `lastLoginTime` | Time | 最近登录 UTC 时间，未登录可 null |
+| `lastLoginIp` | string&#124;null | 最近成功登录的完整 IP，仅管理端可见；历史缺失为 null |
+| `lastLoginLocation` | string&#124;null | 最近登录的省市或国家，回环为本地 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 | `roleIds` | ID[] | 已分配角色 ID 集合，包含禁用角色 |
@@ -10060,6 +10073,8 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
 | `lastLoginTime` | string&#124;null | 最近登录 UTC 时间，未登录可 null |
+| `lastLoginIp` | string&#124;null | 最近成功登录的完整 IP，仅管理端可见；历史缺失为 null |
+| `lastLoginLocation` | string&#124;null | 最近登录的省市或国家，回环为本地 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 | `roleIds` | ID[] | 已分配角色 ID 集合，包含禁用角色 |
@@ -10368,6 +10383,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `articleId` | ID | 文章 ID |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
 | `content` | string | 纯文本评论；占位固定“该评论已删除” |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
@@ -10388,6 +10406,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
 | `content` | string | 纯文本评论；占位固定“该评论已删除” |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
@@ -10403,6 +10424,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
 | `content` | string | 纯文本评论；占位固定“该评论已删除” |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
@@ -10947,10 +10971,36 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 ### 14.1 HTTP 与业务错误
 
+<a id="user-unique-conflict"></a>
+
+用户名（账号）和邮箱分别保持全库唯一，按数据库 `utf8mb4_0900_ai_ci` 排序规则判断，不区分大小写。注册、后台新建用户、Admin/Blog 本人资料修改及后台修改用户资料共用以下冲突响应；修改邮箱时排除目标用户本人，邮箱传 null 仍可清空。
+
+| 重复情况 | HTTP / code | `msg` | `errors` 中的字段 |
+| --- | --- | --- | --- |
+| 仅用户名重复 | 409 / UNIQUE_CONFLICT | 用户名已被使用 | username |
+| 仅邮箱重复 | 409 / UNIQUE_CONFLICT | 邮箱已被使用 | email |
+| 用户名和邮箱同时重复 | 409 / UNIQUE_CONFLICT | 用户名和邮箱均已被使用 | username、email |
+
+两个字段分别属于不同账号时，也一次返回两个冲突字段；不返回占用者 ID、原始输入、SQL 或数据库约束名。写入仍由数据库唯一约束保证，失败整笔回滚，不创建用户或角色关联，不保存部分资料。注册先验证并消费 REGISTER 邮箱验证码，冲突后重试需要重新获取验证码。前端直接展示 `msg`，避免再把相同字段说明追加一遍；需要定位输入项时可使用 `errors`。
+
+```json
+{
+  "code": "UNIQUE_CONFLICT",
+  "msg": "用户名和邮箱均已被使用",
+  "data": null,
+  "errors": [
+    {"field": "username", "message": "用户名已被使用"},
+    {"field": "email", "message": "邮箱已被使用"}
+  ]
+}
+```
+
 | HTTP | code | 适用场景 |
 | --- | --- | --- |
 | 200 | OK | 查询、更新、删除、幂等重放成功；除XML与文件成功响应外使用Result |
 | 201 | OK | 创建新业务记录（含注册、文章、评论、上传）；返回模型；后台创建设置对应详情Location，注册/评论通过响应ID及本人接口定位，不设置Location |
+| 400 | EMAIL_CODE_INVALID | 邮件验证码错误、过期、跨用途或已消费，重新发送 |
+| 403 | OAUTH_NOT_BOUND | 第三方身份未绑定；先完成邮箱注册，再登录绑定 |
 | 400 | CAPTCHA_INVALID | 验证码缺失、格式错误、过期、错误或已消费，需重新获取 |
 | 400 | VALIDATION_ERROR | 字段、枚举、分页、查询组合或 JSON 非法 |
 | 400 | OAUTH_STATE_INVALID | state/浏览器/操作不匹配、过期或已消费；不泄露哪一项失败 |
@@ -10965,7 +11015,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 403 | FORBIDDEN | 权限不足；全局操作拒绝 |
 | 403 | REAUTH_REQUIRED | 安全操作需最近 5 分钟内重新登录 |
 | 404 | NOT_FOUND | 不存在、非公开文章、SELF 不可访问的他人资源；不泄露目标存在性 |
-| 409 | UNIQUE_CONFLICT | username/email/slug/编码/路由唯一键冲突；已回滚 |
+| 409 | UNIQUE_CONFLICT | username/email/slug/编码/路由唯一键冲突；已回滚；账号字段按[重复情况](#user-unique-conflict)返回明确提示及字段明细 |
 | 409 | OAUTH_BIND_CONFLICT | 身份已属他人或本站用户同平台已绑定其他身份 |
 | 409 | LAST_LOGIN_METHOD | 清除密码/解绑会失去最后一种可用登录方式 |
 | 409 | LAST_ADMIN | 会使最后一个有效管理员失效 |

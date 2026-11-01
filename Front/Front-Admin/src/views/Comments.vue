@@ -77,6 +77,7 @@ const batchActions = computed(() => {
   if (can('blog:comment:review')) {
     actions.push({
       label: '批量通过',
+      type: 'success',
       path: 'batch-review',
       method: 'PUT',
       body: { status: 1 },
@@ -87,6 +88,7 @@ const batchActions = computed(() => {
   if (can('blog:comment:review')) {
     actions.push({
       label: '批量驳回',
+      type: 'warning',
       path: 'batch-review',
       method: 'PUT',
       body: { status: 2 },
@@ -179,9 +181,10 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" width="220">
           <template #default="{ row }">
-            <el-button link @click="view(row)">详情</el-button>
+            <el-button type="primary" link @click="view(row)">详情</el-button>
             <template v-if="row.status !== 3">
               <el-button
+                type="success"
                 v-if="can('blog:comment:review') && row.status !== 1"
                 link
                 @click="review(row, 1)"
@@ -189,6 +192,7 @@ const batchActions = computed(() => {
                 通过
               </el-button>
               <el-button
+                type="warning"
                 v-if="can('blog:comment:review') && row.status !== 2"
                 link
                 @click="review(row, 2)"
@@ -196,7 +200,7 @@ const batchActions = computed(() => {
                 驳回
               </el-button>
             </template>
-            <el-button v-if="can('blog:comment:moderate')" link @click="remove(row)">
+            <el-button type="danger" v-if="can('blog:comment:moderate')" link @click="remove(row)">
               删除
             </el-button>
           </template>
@@ -228,6 +232,9 @@ const batchActions = computed(() => {
           <el-descriptions-item label="状态">
             <StatusTag :value="detail.status" kind="review" />
           </el-descriptions-item>
+          <el-descriptions-item label="IP 属地">{{ detail.location || '未知' }}</el-descriptions-item>
+          <el-descriptions-item label="操作系统">{{ detail.userAgentOs || '未知' }}</el-descriptions-item>
+          <el-descriptions-item label="浏览器">{{ detail.userAgentBrowser || '未知' }}</el-descriptions-item>
         </el-descriptions>
         <p class="plain-content">{{ detail.content }}</p>
       </template>

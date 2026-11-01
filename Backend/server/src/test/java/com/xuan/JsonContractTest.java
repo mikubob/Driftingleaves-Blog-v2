@@ -76,9 +76,9 @@ class JsonContractTest {
                 RuntimeException.class);
         try (var factory = Validation.buildDefaultValidatorFactory()) {
             var validator = factory.getValidator();
-            assertThat(validator.validate(new RegisterDTO("leaf", "密".repeat(24), "😀".repeat(64)))).isEmpty();
-            assertThat(validator.validate(new RegisterDTO("leaf", "密".repeat(25), "叶"))).isNotEmpty();
-            assertThat(validator.validate(new RegisterDTO("leaf", "1234567", "叶"))).isNotEmpty();
+            assertThat(validator.validate(new RegisterDTO("leaf", "密".repeat(24), "😀".repeat(64), "leaf@example.test", "012345"))).isEmpty();
+            assertThat(validator.validate(new RegisterDTO("leaf", "密".repeat(25), "叶", "leaf@example.test", "012345"))).isNotEmpty();
+            assertThat(validator.validate(new RegisterDTO("leaf", "1234567", "叶", "leaf@example.test", "012345"))).isNotEmpty();
             assertThat(validator.validate(json.readValue("{}", ProfilePatchDTO.class))).isNotEmpty();
             assertThat(validator.validate(json.readValue("{\"nickname\":null}", ProfilePatchDTO.class))).isNotEmpty();
         }

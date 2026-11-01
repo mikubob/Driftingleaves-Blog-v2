@@ -151,6 +151,10 @@ fieldset {
     color: var(--blog-text);
     font: inherit;
   }
+  input:not([type='checkbox']):focus, textarea:focus, select:focus {
+    border-color: var(--blog-text);
+    outline: none;
+  }
   textarea {
     resize: vertical;
   }

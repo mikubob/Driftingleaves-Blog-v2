@@ -33,8 +33,9 @@ button:disabled {
   cursor: not-allowed;
 }
 
-:focus-visible {
-  outline: 2px solid #52525b;
+/* 下拉框由外层显示焦点，排除内部输入且不提高全局规则的优先级。 */
+:focus-visible:not(:where(.el-select__input)) {
+  outline: 2px solid var(--el-color-primary);
   outline-offset: 3px;
 }
 
@@ -254,6 +255,7 @@ h2 {
 }
 
 .table-title:hover {
+  color: var(--el-color-primary);
   text-decoration: underline;
 }
 
@@ -277,6 +279,9 @@ h2 {
 
 .small-badge {
   margin-left: 8px;
+  color: #7c3aed;
+  background: #f3e8ff;
+  border-color: #d8b4fe;
 }
 
 .plain-tag {
@@ -289,9 +294,9 @@ h2 {
   align-items: center;
   gap: 6px;
   padding: 2px 8px;
-  color: #85858d;
-  background: #fafafa;
-  border: 1px solid #ebebee;
+  color: #606266;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
   border-radius: 4px;
   font-size: 11px;
   white-space: nowrap;
@@ -304,10 +309,28 @@ h2 {
   border-radius: 50%;
 }
 
-.status-tag.is-active {
-  color: #424249;
-  background: #f1f2f4;
-  border-color: #dcdce1;
+.status-tag.is-success {
+  color: #256f47;
+  background: #eaf7f0;
+  border-color: #b7e1c6;
+}
+
+.status-tag.is-warning {
+  color: #9a4b0a;
+  background: #fff3e6;
+  border-color: #f5cf9f;
+}
+
+.status-tag.is-danger {
+  color: #b02a2a;
+  background: #fff0f0;
+  border-color: #f1c1c1;
+}
+
+.status-tag.is-purple {
+  color: #7c3aed;
+  background: #f3e8ff;
+  border-color: #d8b4fe;
 }
 
 .list-pager {
@@ -347,8 +370,8 @@ h2 {
 }
 
 .page-tabs > button.active {
-  border-bottom-color: #27272a;
-  color: #27272a;
+  border-bottom-color: var(--el-color-primary);
+  color: var(--el-color-primary);
   font-weight: 600;
 }
 
@@ -525,11 +548,36 @@ h2 {
   gap: 14px;
 }
 
+.stat-card.tone-blue {
+  --stat-color: #2563eb;
+  --stat-bg: #edf3ff;
+}
+
+.stat-card.tone-green {
+  --stat-color: #258552;
+  --stat-bg: #eaf7f0;
+}
+
+.stat-card.tone-teal {
+  --stat-color: #0f766e;
+  --stat-bg: #e7f6f3;
+}
+
+.stat-card.tone-purple {
+  --stat-color: #7c3aed;
+  --stat-bg: #f3e8ff;
+}
+
+.stat-card.tone-orange {
+  --stat-color: #b45309;
+  --stat-bg: #fff3e6;
+}
+
 .stat-icon {
   width: 44px;
   height: 44px;
   border-radius: 8px;
-  background-color: #f5f7fa;
+  background-color: var(--stat-bg, #f5f7fa);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -538,7 +586,7 @@ h2 {
 
 .stat-icon .iconfont {
   font-size: 22px;
-  color: #303133;
+  color: var(--stat-color, #303133);
 }
 
 .stat-value {
@@ -546,6 +594,10 @@ h2 {
   font-weight: 700;
   color: #303133;
   line-height: 1.2;
+}
+
+.stat-card.tone-orange .stat-value {
+  color: #b45309;
 }
 
 .stat-label {
@@ -573,12 +625,11 @@ h2 {
 .chart-legend i {
   width: 13px;
   height: 2px;
-  background: #303133;
+  background: #2563eb;
 }
 
-.trend-chart > svg {
-  display: block;
-  width: 100%;
+.chart-legend.is-visitors i {
+  background: #258552;
 }
 
 .chart-details {

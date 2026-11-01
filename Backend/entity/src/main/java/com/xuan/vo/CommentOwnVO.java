@@ -15,6 +15,9 @@ public class CommentOwnVO {
     private Long userId;
     private Long parentId;
     private String content;
+    private String location;
+    private String userAgentOs;
+    private String userAgentBrowser;
     private Integer status;
     private LocalDateTime createTime;
     private LocalDateTime updateTime;

@@ -14,6 +14,56 @@ async function smoke(page, reducedMotion = 'no-preference') {
     })
   })
   const failures = []
+  const discussionFocusChecks = []
+
+  async function checkDiscussionFocus(selector, label, validateContent = true) {
+    const viewport = page.viewportSize()
+    const wasDark = await page.evaluate(() => document.documentElement.classList.contains('dark'))
+    const form = page.locator(selector)
+    const textarea = form.locator('textarea')
+    const content = await textarea.inputValue()
+    await page.waitForFunction((selector) => !document.querySelector(`${selector} .captcha-controls input`).disabled, selector)
+    try {
+      if (validateContent) {
+        await textarea.fill('')
+        await textarea.blur()
+        await form.locator('.textarea-wrap .error-text').waitFor()
+      }
+      for (const dark of [false, true]) {
+        await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), dark)
+        for (const width of [1440, 390]) {
+          await page.setViewportSize({ width, height: 1000 })
+          for (const field of await form.locator('textarea, input:not([type="checkbox"]), select').all()) {
+            if (!await field.isVisible() || await field.isDisabled()) {
+              continue
+            }
+            await field.focus()
+            const style = await field.evaluate((element) => {
+              const style = getComputedStyle(element)
+              const error = element.closest('.textarea-wrap')?.querySelector('.error-text')
+              return {
+                outline: style.outlineStyle, width: style.outlineWidth,
+                border: style.borderTopColor,
+                errorColor: error ? getComputedStyle(error).color : null,
+              }
+            })
+            if (style.outline !== 'none' && style.width !== '0px') {
+              throw new Error(`${label}在${dark ? '深色' : '浅色'}/${width}px下出现重复焦点框`)
+            }
+            if (style.errorColor && style.border !== style.errorColor) {
+              throw new Error(`${label}在${dark ? '深色' : '浅色'}/${width}px下的错误边框被覆盖：${JSON.stringify(style)}`)
+            }
+            discussionFocusChecks.push(`${label}/${dark}/${width}`)
+          }
+        }
+      }
+    } finally {
+      await textarea.fill(content)
+      await textarea.blur()
+      await page.setViewportSize(viewport)
+      await page.evaluate((dark) => document.documentElement.classList.toggle('dark', dark), wasDark)
+    }
+  }
   const trackingWarnings = []
   const unexpected = []
   const calls = []
@@ -27,7 +77,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   const time = '2026-10-31T02:00:00.000Z'
   const revision = '"fictional-revision"'
   const user = {
-    userId: id, username: 'test_leaf', nickname: '测试读者', avatar: null, email: null,
+    userId: id, username: 'test_leaf', nickname: '测试读者', avatar: null, email: 'leaf@example.test',
     intro: null, hasPassword: true, status: 1, createTime: time, updateTime: time,
   }
   const category = { categoryId: '2', categoryName: '技术手记', slug: 'technology', description: '代码里的小发现', sortOrder: 0 }
@@ -58,9 +108,11 @@ async function smoke(page, reducedMotion = 'no-preference') {
   ]
   const comment = {
     commentId: '201', articleId: '101', parentId: null, author,
+    location: '江苏省 南京市', userAgentOs: 'Windows', userAgentBrowser: 'Edge',
     content: '谢谢分享，这是一条虚构测试评论。', status: 1, replyCount: '1', createTime: time, updateTime: time,
   }
   let liked = false
+  let bound = false
   let keywordFailed = false
   let profileConflict = false
   let subscriptionState = null
@@ -92,7 +144,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
       return route.fulfill({ status: 400, contentType: 'application/json',
         body: JSON.stringify({ code: 'CAPTCHA_INVALID', msg: '测试验证码错误', data: null, errors: [] }) })
     }
-    if (method === 'POST' && (['/blog/auth/login', '/blog/auth/register', '/blog/messages'].includes(path)
+    if (method === 'POST' && (['/blog/auth/login', '/blog/auth/register', '/blog/auth/email-code', '/blog/auth/email-login', '/blog/messages'].includes(path)
       || /\/comments$/.test(path) || (/\/authorize$/.test(path) && body.operation === 'LOGIN'))
       || method === 'PUT' && /^\/blog\/me\/messages\/[^/]+$/.test(path)) {
       if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
@@ -157,11 +209,21 @@ async function smoke(page, reducedMotion = 'no-preference') {
     } else if (path === '/blog/auth/oauth/providers') {
       data = [{ source: 'EXAMPLE', displayName: '测试平台' }]
     } else if (path === '/blog/auth/oauth/EXAMPLE/authorize') {
-      data = { authorizationUrl: 'http://127.0.0.1:5174/oauth/complete#ticket=fictional-popup-ticket', expiresIn: 300 }
+      const ticket = body.operation === 'BIND' ? 'fictional-binding-ticket' : 'fictional-popup-ticket'
+      data = { authorizationUrl: 'http://127.0.0.1:5174/oauth/complete#ticket=' + ticket, expiresIn: 300 }
     } else if (path === '/blog/auth/oauth/exchange') {
-      data = { operation: 'LOGIN', session: { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 259200, user } }
-    } else if (path === '/blog/auth/login') {
+      if (body.ticket === 'fictional-binding-ticket') {
+        bound = true
+        data = { operation: 'BIND', binding: { source: 'EXAMPLE', createTime: time } }
+      } else {
+        data = { operation: 'LOGIN', session: { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 259200, user } }
+      }
+    } else if (path === '/blog/auth/login' || path === '/blog/auth/email-login') {
       data = { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 259200, user }
+    } else if (path === '/blog/auth/email-code') {
+      data = null
+    } else if (path === '/blog/me/oauth-bindings') {
+      data = bound ? [{ source: 'EXAMPLE', createTime: time }] : []
     } else if (path === '/blog/auth/register' || path === '/blog/me') {
       data = user
     } else if (path === '/blog/me/capabilities') {
@@ -214,6 +276,42 @@ async function smoke(page, reducedMotion = 'no-preference') {
 
 
   // 1. 原站三栏首页、时钟日历、音乐和侧栏弹窗。
+  await page.goto('http://127.0.0.1:5174/login')
+  await page.getByRole('button', { name: '注册账号', exact: true }).click()
+  await page.getByLabel('用户名', { exact: true }).fill('test_leaf')
+  await page.getByLabel('密码', { exact: true }).fill('Fictional-password-2026')
+  await page.getByLabel('昵称', { exact: true }).fill('测试读者')
+  await page.getByLabel('邮箱', { exact: true }).fill('leaf@example.test')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '发送邮箱验证码', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '验证码已发送' }).waitFor()
+  if (await page.getByLabel('六位数字验证码', { exact: true }).inputValue()) {
+    throw new Error('注册发送邮件后没有刷新图形验证码')
+  }
+  await page.getByLabel('邮箱验证码', { exact: true }).fill('012345')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '创建账号 →', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '注册成功' }).waitFor()
+  const registration = calls.find((call) => call.path === '/blog/auth/register')
+  if (registration.body.email !== 'leaf@example.test' || registration.body.emailCode !== '012345') {
+    throw new Error('注册没有提交邮箱和邮件验证码')
+  }
+  await page.getByRole('button', { name: '邮箱验证码', exact: true }).click()
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '发送邮箱验证码', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '验证码已发送' }).waitFor()
+  await page.getByLabel('邮箱验证码', { exact: true }).fill('012345')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
+  await page.getByRole('button', { name: '登录 →', exact: true }).click()
+  await page.getByRole('button', { name: '退出登录', exact: true }).waitFor()
+  await page.getByRole('button', { name: '绑定账号', exact: true }).click()
+  await page.getByRole('status').filter({ hasText: '第三方账号已绑定' }).waitFor()
+  await page.getByRole('button', { name: '解除绑定', exact: true }).waitFor()
+  const binding = calls.find((call) => call.path === '/blog/auth/oauth/exchange' && call.body.ticket === 'fictional-binding-ticket')
+  if (binding.authorization !== 'Bearer fictional-memory-token') {
+    throw new Error('前台绑定兑换没有携带原会话')
+  }
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await page.goto('http://127.0.0.1:5174/')
   await page.getByRole('heading', { name: articles[0].title }).waitFor()
   await page.locator('.home-time-widgets').waitFor()
@@ -237,7 +335,6 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.locator('.search-toggle').click()
   await page.getByLabel('搜索文章', { exact: true }).fill('限流')
   await page.getByLabel('搜索文章', { exact: true }).press('Enter')
-  await page.getByRole('alert').filter({ hasText: '9 秒' }).waitFor()
   await page.getByRole('heading', { name: '404', exact: true }).waitFor()
   await page.getByRole('link', { name: '返回首页', exact: true }).click()
   await page.getByRole('heading', { name: articles[0].title }).waitFor()
@@ -271,6 +368,13 @@ async function smoke(page, reducedMotion = 'no-preference') {
   }
   await page.getByRole('button', { name: /^查看回复\s*\(\s*1\s*\)$/ }).click()
   await page.getByText('一条测试回复。', { exact: true }).waitFor()
+  for (const item of await page.locator('.comment-item').all()) {
+    for (const [label, expected] of [['IP 属地', '江苏省 南京市'], ['操作系统', 'Windows'], ['浏览器', 'Edge']]) {
+      if (await item.getByLabel(label, { exact: true }).first().innerText() !== expected) {
+        throw new Error(`评论或回复未显示正确的${label}`)
+      }
+    }
+  }
   await page.getByRole('button', { name: '登录后点赞', exact: true }).click()
   await page.getByLabel('用户名', { exact: true }).fill('test_leaf')
   await page.getByLabel('密码', { exact: true }).fill('Fictional-password-2026')
@@ -286,6 +390,11 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByRole('button', { name: '点赞', exact: true }).click()
   await page.getByRole('button', { name: '取消点赞', exact: true }).waitFor()
   await page.waitForFunction(() => window.blogEffects.some((effect) => effect.animation?.includes('keyframes-svg-filled')))
+  await checkDiscussionFocus('.comment-form', '评论正文与验证码')
+  await page.locator('.c-actions').getByRole('button', { name: '回复', exact: true }).first().click()
+  await page.locator('.reply-hint').waitFor()
+  await checkDiscussionFocus('.comment-form', '评论回复')
+  await page.locator('.cancel-reply').click()
   await page.getByLabel('评论正文', { exact: true }).fill('一条待审核的测试评论。')
   await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '发表评论', exact: true }).click()
@@ -300,6 +409,11 @@ async function smoke(page, reducedMotion = 'no-preference') {
 
   // 4. 原留言表单的 EmojiPicker、Markdown、私密性与编辑版本。
   await page.locator('.nav-desktop a[href="/message"]').click()
+  await checkDiscussionFocus('.msg-form', '留言正文与验证码')
+  await page.locator('.msg-actions').getByRole('button', { name: '回复', exact: true }).first().click()
+  await page.locator('.reply-tip').waitFor()
+  await checkDiscussionFocus('.msg-form', '留言回复')
+  await page.locator('.reply-tip .cancel').click()
   await page.getByLabel('留言正文', { exact: true }).fill('一条私密的测试留言。')
   await page.getByLabel('悄悄话', { exact: true }).check()
   await page.getByLabel('Markdown', { exact: true }).check()
@@ -312,6 +426,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   }
   await page.locator('.msg-actions').getByRole('button', { name: '编辑', exact: true }).click()
   await page.getByLabel('留言正文', { exact: true }).fill('编辑后的测试留言。')
+  await checkDiscussionFocus('.msg-form', '留言编辑')
   await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '修改', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
@@ -329,14 +444,29 @@ async function smoke(page, reducedMotion = 'no-preference') {
   // 5. 原 RSS 弹窗和保留的 V2 账号流程。
   await page.locator('.info-social button').click()
   await page.getByRole('dialog', { name: 'RSS 订阅', exact: true }).waitFor()
-  await page.getByLabel('订阅邮箱', { exact: true }).fill('leaf@example.test')
+  const rssEmail = page.getByLabel('订阅邮箱', { exact: true })
+  if (await rssEmail.inputValue() !== user.email || await rssEmail.getAttribute('readonly') === null) {
+    throw new Error('RSS 弹窗未锁定当前账号邮箱')
+  }
   await page.getByRole('button', { name: '订阅', exact: true }).click()
   await page.getByText('等待邮箱验证，请查收邮件；可重新提交以重发确认邮件。', { exact: true }).waitFor()
   await page.getByRole('dialog').locator('.el-dialog__headerbtn').click()
   await page.locator('.nav-desktop a[href="/account"]').click()
+  const accountEmail = page.getByLabel('订阅邮箱', { exact: true })
+  await accountEmail.waitFor()
+  if (await accountEmail.inputValue() !== user.email || await accountEmail.getAttribute('readonly') === null) {
+    throw new Error('个人中心未锁定当前账号邮箱')
+  }
+  await page.getByRole('button', { name: '申请 / 重发确认邮件', exact: true }).click()
+  await page.getByText('确认邮件已发送，请打开邮件中的链接完成邮箱验证。', { exact: true }).waitFor()
+  if (calls.filter((call) => call.path === '/blog/me/rss-subscription' && call.method === 'PUT')
+    .some((call) => call.body.email !== user.email)) {
+    throw new Error('订阅申请未使用当前账号邮箱')
+  }
   await page.getByRole('button', { name: '我的留言', exact: true }).click()
   await page.getByRole('button', { name: '编辑留言', exact: true }).click()
   await page.getByLabel('编辑留言', { exact: true }).fill('账号页编辑后的留言。')
+  await checkDiscussionFocus('.edit-message', '个人中心留言编辑', false)
   await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
   await page.getByRole('button', { name: '保存修改', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).last().waitFor()
@@ -435,5 +565,5 @@ async function smoke(page, reducedMotion = 'no-preference') {
   if (failures.length || unexpected.length || trackingWarnings.length) {
     throw new Error(JSON.stringify({ failures, unexpected, trackingWarnings }))
   }
-  return { passed: true, motionPreference: reducedMotion, originalUi: ['时钟日历', '导航音乐', '分类弹窗', '原文章卡片', '阅读目录', '评论和留言行', 'RSS 弹窗', '移动导航和主题'], runtimeErrors: failures, unexpectedRequests: unexpected, storage }
+  return { passed: true, discussionFocusChecks: discussionFocusChecks.length, motionPreference: reducedMotion, originalUi: ['时钟日历', '导航音乐', '分类弹窗', '原文章卡片', '阅读目录', '评论和留言行', 'RSS 弹窗', '移动导航和主题'], runtimeErrors: failures, unexpectedRequests: unexpected, storage }
 }

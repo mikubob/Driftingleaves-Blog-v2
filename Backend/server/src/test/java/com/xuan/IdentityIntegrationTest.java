@@ -13,7 +13,9 @@ import com.xuan.annotation.RateLimit;
 import com.xuan.audit.FailureAuditWriter;
 import com.xuan.client.JustAuthClient;
 import com.xuan.client.OAuthProviderClient;
+import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
+import com.xuan.dto.EmailCodeDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.dto.PermissionUpdateDTO;
@@ -35,6 +37,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.store.RedisOAuthStore;
 import com.xuan.store.CaptchaStore;
+import com.xuan.store.EmailCodeStore;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.SessionVO;
 import com.zaxxer.hikari.HikariDataSource;
@@ -91,6 +94,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
@@ -162,6 +166,12 @@ class IdentityIntegrationTest {
     AuthProperties properties;
 
     @Autowired
+    EmailTestSupport.Mailbox mailbox;
+
+    @Autowired
+    EmailCodeStore emailCodes;
+
+    @Autowired
     PlatformTransactionManager transactionManager;
 
     @Autowired
@@ -221,6 +231,8 @@ class IdentityIntegrationTest {
 
     @BeforeEach
     void resetIsolatedData() {
+        mailbox.messages.clear();
+        mailbox.fail = false;
         reset(sessions, users, roles, permissions, menus, auditLogs, failureAudits);
         doAnswer(invocation -> {
             @SuppressWarnings("unchecked")
@@ -281,13 +293,20 @@ class IdentityIntegrationTest {
     void allLoginAndDiscussionWritesRequireCaptchaAfterIdentityChecks() throws Exception {
         String token = adminLogin("captcha_admin");
         for (String end : List.of("admin", "blog")) {
-            assertCode(captchaWrite("/" + end + "/auth/login", loginBody("captcha_admin", PASSWORD),
+            String loginBody = loginBody("captcha_admin", PASSWORD);
+            if (end.equals("admin")) {
+                loginBody = json.writeValueAsString(Map.of("username", "captcha_admin", "password", PASSWORD,
+                        "email", "captcha_admin@example.test", "emailCode", "012345"));
+            }
+            assertCode(captchaWrite("/" + end + "/auth/login", loginBody,
                     null, null, null), 400, "CAPTCHA_INVALID");
             assertCode(captchaWrite("/" + end + "/auth/register",
-                    "{\"username\":\"captcha_new\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"新用户\"}",
+                    json.writeValueAsString(Map.of("username", "captcha_new", "password", PASSWORD,
+                            "nickname", "新用户", "email", "new@example.test", "emailCode", "012345")),
                     null, null, null), 400, "CAPTCHA_INVALID");
             assertCode(captchaWrite("/" + end + "/auth/oauth/GITHUB/authorize", "{\"operation\":\"LOGIN\"}",
-                    null, null, null), 400, "CAPTCHA_INVALID");
+                    null, null, null), end.equals("admin") ? 403 : 400,
+                    end.equals("admin") ? "FORBIDDEN" : "CAPTCHA_INVALID");
         }
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='captcha_new'", Long.class))
                 .isZero();
@@ -362,6 +381,134 @@ class IdentityIntegrationTest {
         }
     }
 
+    @Test
+    void registrationRequiresMailedCodeAndEmailLoginUsesSeparatePurpose() throws Exception {
+        String email = "mail_user@example.test";
+        String sendBody = json.writeValueAsString(Map.of("email", email, "purpose", "REGISTER"));
+        assertCode(captchaWrite("/blog/auth/email-code", sendBody, null, null, null), 400, "CAPTCHA_INVALID");
+        MvcResult sent = call("POST", "/blog/auth/email-code", null, sendBody);
+        assertCode(sent, 200, "OK");
+        assertThat(data(sent).isNull()).isTrue();
+        String code = EmailTestSupport.code(mailbox.messages.get(email));
+        assertThat(sent.getResponse().getContentAsString()).doesNotContain(code);
+        String registration = json.writeValueAsString(Map.of("username", "mail_user", "password", PASSWORD,
+                "nickname", "邮件用户", "email", " MAIL_USER@example.test ", "emailCode", code));
+        assertCode(call("POST", "/blog/auth/email-login", null,
+                json.writeValueAsString(Map.of("email", email, "emailCode", code))), 400, "EMAIL_CODE_INVALID");
+        MvcResult registered = call("POST", "/blog/auth/register", null, registration);
+        assertCode(registered, 201, "OK");
+        assertThat(data(registered).get("email").asString()).isEqualTo(email);
+        assertCode(call("POST", "/blog/auth/register", null, registration), 400, "EMAIL_CODE_INVALID");
+        assertCode(call("POST", "/blog/auth/register", null, createUserBody("no_mail")), 400, "VALIDATION_ERROR");
+
+        users.sendEmailCode(new EmailCodeDTO(email, EmailCodeDTO.Purpose.LOGIN));
+        String loginCode = EmailTestSupport.code(mailbox.messages.get(email));
+        String loginBody = json.writeValueAsString(Map.of("email", email, "emailCode", loginCode));
+        assertCode(captchaWrite("/blog/auth/email-login", loginBody, null, null, null), 400, "CAPTCHA_INVALID");
+        MvcResult logged = call("POST", "/blog/auth/email-login", null, loginBody);
+        assertCode(logged, 200, "OK");
+        assertThat(data(logged).get("expiresIn").asInt()).isEqualTo(SessionManager.BLOG_TIMEOUT_SECONDS);
+        assertThat(data(logged).get("user").get("userId").asString())
+                .isEqualTo(data(registered).get("userId").asString());
+        assertCode(call("POST", "/blog/auth/email-login", null, loginBody), 400, "EMAIL_CODE_INVALID");
+        assertCode(call("GET", "/admin/me", data(logged).get("accessToken").asString(), null), 403, "FORBIDDEN");
+    }
+
+    @Test
+    void adminLoginRequiresPasswordBoundEmailAndBothCodesWithoutOAuthBypass() throws Exception {
+        adminLogin("mail_admin");
+        String email = "mail_admin@example.test";
+        String send = json.writeValueAsString(Map.of("username", "mail_admin", "password", PASSWORD, "email", email));
+        assertCode(call("POST", "/admin/auth/login", null, loginBody("mail_admin", PASSWORD)), 400, "VALIDATION_ERROR");
+        assertCode(captchaWrite("/admin/auth/email-code", send, null, null, null), 400, "CAPTCHA_INVALID");
+        assertCode(call("POST", "/admin/auth/email-code", null, send.replace(email, "wrong@example.test")),
+                401, "AUTH_FAILED");
+        assertCode(call("POST", "/admin/auth/email-code", null, send), 200, "OK");
+        String code = EmailTestSupport.code(mailbox.messages.get(email));
+        String body = json.writeValueAsString(Map.of("username", "mail_admin", "password", PASSWORD,
+                "email", email, "emailCode", code));
+        assertCode(captchaWrite("/admin/auth/login", body, null, null, null), 400, "CAPTCHA_INVALID");
+        assertCode(call("POST", "/admin/auth/login", null, body.replace(PASSWORD, "wrong-password")), 401, "AUTH_FAILED");
+        MvcResult logged = call("POST", "/admin/auth/login", null, body);
+        assertCode(logged, 200, "OK");
+        assertThat(data(logged).get("expiresIn").asInt()).isEqualTo(SessionManager.ADMIN_TIMEOUT_SECONDS);
+        String token = data(logged).get("accessToken").asString();
+        assertCode(call("GET", "/admin/users", token, null), 200, "OK");
+        assertCode(call("POST", "/admin/auth/login", null, body), 400, "EMAIL_CODE_INVALID");
+        MvcResult blog = call("POST", "/blog/auth/login", null, loginBody("mail_admin", PASSWORD));
+        assertCode(blog, 200, "OK");
+        assertCode(call("GET", "/admin/users", data(blog).get("accessToken").asString(), null), 403, "FORBIDDEN");
+        assertCode(call("POST", "/admin/auth/oauth/GITHUB/authorize", null, "{\"operation\":\"LOGIN\"}"),
+                403, "FORBIDDEN");
+        String blogCode = EmailTestSupport.issue(redis, properties, email, EmailCodeStore.LOGIN);
+        assertCode(call("POST", "/admin/auth/login", null, body.replace(code, blogCode)), 400, "EMAIL_CODE_INVALID");
+        assertCode(call("POST", "/blog/auth/email-login", null,
+                json.writeValueAsString(Map.of("email", email, "emailCode", blogCode))), 200, "OK");
+    }
+
+    @Test
+    void emailCodeFailuresExpireConsumeAtomicallyAndSmtpFailureDoesNotSucceed() throws Exception {
+        String email = "atomic@example.test";
+        emailCodes.send(email, EmailCodeStore.REGISTER);
+        String code = EmailTestSupport.code(mailbox.messages.get(email));
+        String wrong = code.equals("000000") ? "000001" : "000000";
+        assertThatThrownBy(() -> emailCodes.verify(email, EmailCodeStore.REGISTER, wrong))
+                .isInstanceOf(BusinessException.class);
+        assertThatThrownBy(() -> emailCodes.verify(email, EmailCodeStore.REGISTER, code))
+                .isInstanceOf(BusinessException.class);
+        emailCodes.send(email, EmailCodeStore.REGISTER);
+        String next = EmailTestSupport.code(mailbox.messages.get(email));
+        Callable<Boolean> consume = () -> {
+            try {
+                emailCodes.verify(email, EmailCodeStore.REGISTER, next);
+                return true;
+            } catch (BusinessException exception) {
+                assertThat(exception.getCode()).isEqualTo("EMAIL_CODE_INVALID");
+                return false;
+            }
+        };
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var attempts = executor.invokeAll(List.of(consume, consume));
+            assertThat(List.of(attempts.get(0).get(), attempts.get(1).get()))
+                    .containsExactlyInAnyOrder(true, false);
+        }
+        emailCodes.send(email, EmailCodeStore.LOGIN);
+        String key = properties.getRedisPrefix() + "email-code:login:" + TokenUtils.digest(email);
+        assertThat(redis.getExpire(key)).isBetween(290L, 300L);
+        redis.expire(key, Duration.ZERO);
+        String expired = EmailTestSupport.code(mailbox.messages.get(email));
+        assertThatThrownBy(() -> emailCodes.verify(email, EmailCodeStore.LOGIN, expired))
+                .isInstanceOf(BusinessException.class);
+        mailbox.fail = true;
+        assertCode(call("POST", "/blog/auth/email-code", null,
+                json.writeValueAsString(Map.of("email", email, "purpose", "LOGIN"))), 503, "SERVICE_UNAVAILABLE");
+        assertThat(redis.hasKey(key)).isFalse();
+    }
+
+    @Test
+    void emailSendingSharesPerMailboxAndPerIpBudgetAcrossBothClients() throws Exception {
+        String email = "budget@example.test";
+        String body = json.writeValueAsString(Map.of("email", email, "purpose", "REGISTER"));
+        assertCode(call("POST", "/blog/auth/email-code", null, body), 200, "OK");
+        MvcResult limited = call("POST", "/blog/auth/email-code", null, body.replace("REGISTER", "LOGIN"));
+        assertCode(limited, 429, "RATE_LIMITED");
+        assertThat(limited.getResponse().getHeader("Retry-After")).isNotBlank();
+        for (int index = 0; index < 3; index++) {
+            assertCode(call("POST", "/blog/auth/email-code", null, body.replace(email, "other" + index + "@example.test")),
+                    200, "OK");
+        }
+        assertCode(call("POST", "/blog/auth/email-code", null, body.replace(email, "last@example.test")), 429, "RATE_LIMITED");
+    }
+
+    @Test
+    void unboundOAuthCannotRegisterWithoutEmailVerification() throws Exception {
+        OAuthFlow flow = start("LOGIN", null, null);
+        MvcResult result = callback(flow, "unregistered-identity");
+        assertThat(result.getResponse().getHeader("Location")).endsWith("#error=OAUTH_NOT_BOUND");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user", Integer.class)).isZero();
+        assertThat(redis.keys(properties.getRedisPrefix() + "oauth:ticket:*")).isEmpty();
+    }
+
     /** 独立构造请求，避免旧业务用例的自动验证码准备掩盖缺失或重放。 */
     private MvcResult captchaWrite(String path, String body, String token, String captchaId, String code)
             throws Exception {
@@ -382,14 +529,16 @@ class IdentityIntegrationTest {
     @Test
     void endpointsAreGroupedByClientAndKeepIdentityAndAdminRules() throws Exception {
         register("client_leaf");
-        MvcResult loggedIn = call("POST", "/admin/auth/login", null, loginBody("client_leaf", PASSWORD));
+        MvcResult loggedIn = call("POST", "/blog/auth/login", null, loginBody("client_leaf", PASSWORD));
         assertCode(loggedIn, 200, "OK");
         String token = data(loggedIn).get("accessToken").asString();
         for (String end : List.of("admin", "blog")) {
             assertCode(call("GET", "/" + end + "/auth/oauth/providers", null, null), 200, "OK");
             assertCode(call("GET", "/" + end + "/me", null, null), 401, "UNAUTHENTICATED");
-            assertCode(call("GET", "/" + end + "/me", token, null), 200, "OK");
-            assertCode(call("GET", "/" + end + "/me?userId=1", token, null), 400, "VALIDATION_ERROR");
+            assertCode(call("GET", "/" + end + "/me", token, null), end.equals("admin") ? 403 : 200,
+                    end.equals("admin") ? "FORBIDDEN" : "OK");
+            assertCode(call("GET", "/" + end + "/me?userId=1", token, null), end.equals("admin") ? 403 : 400,
+                    end.equals("admin") ? "FORBIDDEN" : "VALIDATION_ERROR");
             assertCode(call("POST", "/" + end + "/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
             assertCode(call("GET", "/" + end + "/auth/oauth/UNKNOWN/callback", null, null), 404, "NOT_FOUND");
         }
@@ -578,14 +727,22 @@ class IdentityIntegrationTest {
         pendingAudits.clear();
     }
 
-    /** 两端密码和 OAuth 登录都写入实际 Redis 有效期，读取本人资料不能续期。 */
+    /** 前台密码和 OAuth 为三天，后台完整认证为七天，读取资料不续期。 */
     @Test
     void clientSessionTimeoutsApplyToPasswordAndOAuth() throws Exception {
         assertCode(register("ttl_user"), 201, "OK");
+        long userId = Long.parseLong(data(call("GET", "/blog/me", login("ttl_user"), null)).get("userId").asString());
+        jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", userId);
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES(?,'GITHUB','ttl-oauth-identity')", userId);
         for (String client : List.of("blog", "admin")) {
             int expectedSeconds = "blog".equals(client) ? 259200 : 604800;
-            MvcResult password = call("POST", "/" + client + "/auth/login", null,
-                    "{\"username\":\"ttl_user\",\"password\":\"" + PASSWORD + "\"}");
+            Map<String, String> credentials = Map.of("username", "ttl_user", "password", PASSWORD);
+            if (client.equals("admin")) {
+                String code = EmailTestSupport.issue(redis, properties, "ttl_user@example.test", EmailCodeStore.ADMIN_LOGIN);
+                credentials = Map.of("username", "ttl_user", "password", PASSWORD,
+                        "email", "ttl_user@example.test", "emailCode", code);
+            }
+            MvcResult password = call("POST", "/" + client + "/auth/login", null, json.writeValueAsString(credentials));
             assertCode(password, 200, "OK");
             assertThat(data(password).get("expiresIn").asInt()).isEqualTo(expectedSeconds);
 
@@ -594,10 +751,18 @@ class IdentityIntegrationTest {
             MvcResult oauth = mvc.perform(req("POST", "/" + client + "/auth/oauth/exchange")
                     .header("Origin", ORIGIN).cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))
                     .contentType("application/json").content("{\"ticket\":\"" + ticket + "\"}")).andReturn();
-            assertCode(oauth, 200, "OK");
-            assertThat(data(oauth).get("session").get("expiresIn").asInt()).isEqualTo(expectedSeconds);
+            if (client.equals("admin")) {
+                assertCode(oauth, 403, "FORBIDDEN");
+            } else {
+                assertCode(oauth, 200, "OK");
+                assertThat(data(oauth).get("session").get("expiresIn").asInt()).isEqualTo(expectedSeconds);
+            }
 
-            for (JsonNode response : List.of(data(password), data(oauth).get("session"))) {
+            List<JsonNode> responses = new ArrayList<>(List.of(data(password)));
+            if (client.equals("blog")) {
+                responses.add(data(oauth).get("session"));
+            }
+            for (JsonNode response : responses) {
                 String token = response.get("accessToken").asString();
                 assertThat(sessions.remainingSeconds(token)).isBetween(expectedSeconds - 10L,
                         (long) expectedSeconds);
@@ -666,6 +831,66 @@ class IdentityIntegrationTest {
         assertCode(call("GET", "/blog/me", another, null), 403, "ACCOUNT_DISABLED");
         assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", "wrong-password")), 401, "AUTH_FAILED");
         assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", PASSWORD)), 403, "ACCOUNT_DISABLED");
+    }
+
+    /** 注册和后台创建同时查出两个冲突字段，大小写及分别占用的账号都按数据库规则判断。 */
+    @Test
+    void accountCreationReportsEveryConflictingIdentityField() throws Exception {
+        String admin = adminLogin("conflict_admin");
+        assertCode(register("identity_first"), 201, "OK");
+        assertCode(register("identity_second"), 201, "OK");
+        long userCount = jdbc.queryForObject("SELECT COUNT(*) FROM sys_user", Long.class);
+        long roleCount = jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_role", Long.class);
+
+        for (String path : List.of("/blog/auth/register", "/admin/users")) {
+            for (List<String> conflict : List.of(
+                    List.of("IDENTITY_FIRST", "unused@example.test", "用户名已被使用", "username"),
+                    List.of("identity_new", "IDENTITY_FIRST@EXAMPLE.TEST", "邮箱已被使用", "email"),
+                    List.of("IDENTITY_FIRST", "IDENTITY_FIRST@EXAMPLE.TEST", "用户名和邮箱均已被使用", "username", "email"),
+                    List.of("IDENTITY_FIRST", "IDENTITY_SECOND@EXAMPLE.TEST", "用户名和邮箱均已被使用", "username", "email"))) {
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("username", conflict.get(0));
+                body.put("email", conflict.get(1));
+                body.put("password", PASSWORD);
+                body.put("nickname", "叶");
+                if (path.equals("/blog/auth/register")) {
+                    body.put("emailCode", EmailTestSupport.issue(redis, properties, conflict.get(1),
+                            EmailCodeStore.REGISTER));
+                }
+                MvcResult result = call("POST", path, path.equals("/admin/users") ? admin : null,
+                        json.writeValueAsString(body));
+                assertIdentityConflict(result, conflict.get(2), conflict.subList(3, conflict.size()));
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user", Long.class)).isEqualTo(userCount);
+                assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_role", Long.class)).isEqualTo(roleCount);
+            }
+        }
+    }
+
+    /** 本人和后台修改邮箱时排除目标本人，重复邮箱失败后原资料和版本不变。 */
+    @Test
+    void profileEmailConflictsPreserveExistingDataAndRevision() throws Exception {
+        String admin = adminLogin("email_admin");
+        String id = data(register("email_target")).get("userId").asString();
+        assertCode(register("email_other"), 201, "OK");
+        String token = login("email_target");
+        String revision = adminRevision(admin, id);
+
+        assertCode(patch(token, revision, "{\"email\":\"EMAIL_TARGET@EXAMPLE.TEST\"}"), 200, "OK");
+        revision = adminRevision(admin, id);
+        String ownEmail = jdbc.queryForObject("SELECT email FROM sys_user WHERE user_id=?", String.class, id);
+        MvcResult ownConflict = patch(token, revision, "{\"nickname\":\"不应保存\",\"email\":\"EMAIL_OTHER@EXAMPLE.TEST\"}");
+        assertIdentityConflict(ownConflict, "邮箱已被使用", List.of("email"));
+        MvcResult adminConflict = adminPut("/admin/users/" + id, admin, revision,
+                userBody("不应保存", 0).replace("\"email\":null", "\"email\":\"EMAIL_OTHER@EXAMPLE.TEST\""));
+        assertIdentityConflict(adminConflict, "邮箱已被使用", List.of("email"));
+        assertThat(adminRevision(admin, id)).isEqualTo(revision);
+        assertThat(jdbc.queryForObject("SELECT email FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(ownEmail);
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
+
+        assertCode(patch(token, revision, "{\"email\":null}"), 200, "OK");
+        revision = adminRevision(admin, id);
+        assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("叶", 1)), 200, "OK");
+        assertThat(jdbc.queryForObject("SELECT email FROM sys_user WHERE user_id=?", String.class, id)).isNull();
     }
 
     @Test
@@ -825,6 +1050,9 @@ class IdentityIntegrationTest {
 
     @Test
     void oauthBrowserReplayExpiryAndVerifiedIdentity() throws Exception {
+        String owner = data(register("oauth_owner")).get("userId").asString();
+        jdbc.update("UPDATE sys_user SET password_hash=NULL WHERE user_id=?", owner);
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES(?,'GITHUB',' SameIdentity ')", owner);
         OAuthFlow flow = start("LOGIN", null, null);
         assertCode(mvc.perform(req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", flow.state())
                         .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", TokenUtils.random()))).andReturn(),
@@ -843,7 +1071,7 @@ class IdentityIntegrationTest {
         Thread.sleep(5);
         assertCode(callback(expiring, "same"), 400, "OAUTH_STATE_INVALID");
         OAuthFlow next = start("LOGIN", null, flow.browser());
-        String expires = callbackTicket(next, "another");
+        String expires = callbackTicket(next, " SameIdentity ");
         redis.expire("dl:test:oauth:ticket:" + TokenUtils.digest(expires), Duration.ofMillis(1));
         Thread.sleep(5);
         assertCode(exchange(expires, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
@@ -1093,6 +1321,8 @@ class IdentityIntegrationTest {
 
     @Test
     void concurrentIdentityRegistrationAndLastLoginMethodRemainAtomic() throws Exception {
+        String owner = data(register("oauth_owner")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES(?,'GITHUB','concurrent')", owner);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<Long>> calls = List.of(
                     () -> users.resolveOAuth("GITHUB", "concurrent", "用户", null),
@@ -1335,6 +1565,7 @@ class IdentityIntegrationTest {
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,80)");
         assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1)");
+        token = login("operator");
         assertCode(call("GET", "/admin/users", token, null), 200, "OK");
         // 有查询权限不等于能创建、修改或授权，入口身份和权限每次都要重查。
         for (int i = 2; i < paths.size(); i++) {
@@ -1554,6 +1785,7 @@ class IdentityIntegrationTest {
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,1),(9,80),(9,82)");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,9)", id);
         String editorBody = userBatchBody(admin, id);
+        member = login("batch_target");
         assertCode(call("POST", "/admin/users/batch-delete", member, editorBody), 403, "FORBIDDEN");
         assertCode(call("PUT", "/admin/users/batch-enable", member, editorBody), 200, "OK");
         // 固定后端权限不可删除，新增删除能力不扩大最后管理员保护名单。
@@ -1943,6 +2175,7 @@ class IdentityIntegrationTest {
         jdbc.update(
                 "INSERT INTO sys_role_permission(role_id,permission_id) SELECT 9,permission_id FROM sys_permission " +
                  "WHERE permission_code='sys:role:query'");
+        token = login("operator");
         assertCode(call("GET", "/admin/roles", token, null), 200, "OK");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_code='sys:role:query'");
         assertCode(call("GET", "/admin/roles", token, null), 403, "FORBIDDEN");
@@ -2361,6 +2594,7 @@ class IdentityIntegrationTest {
                     "FORBIDDEN");
         }
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,110)");
+        token = login("operator");
         assertCode(call("GET", "/admin/permissions", token, null), 200, "OK");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=110");
         assertCode(call("GET", "/admin/permissions", token, null), 403, "FORBIDDEN");
@@ -2755,6 +2989,7 @@ class IdentityIntegrationTest {
             assertCode(call(methods.get(index), paths.get(index), token, bodies.get(index)), 403, "FORBIDDEN");
         }
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(9,100)");
+        token = login("menu_operator");
         assertCode(call("GET", "/admin/menus", token, null), 200, "OK");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=100");
         assertCode(call("GET", "/admin/menus", token, null), 403, "FORBIDDEN");
@@ -3301,11 +3536,24 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult register(String username) throws Exception {
+        String email = username.toLowerCase(Locale.ROOT) + "@example.test";
+        String code = EmailTestSupport.issue(redis, properties, email, EmailCodeStore.REGISTER);
         return call("POST", "/blog/auth/register", null,
-                "{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\"}");
+                json.writeValueAsString(Map.of("username", username, "password", PASSWORD, "nickname", "叶",
+                        "email", email, "emailCode", code)));
     }
 
     private String login(String username) throws Exception {
+        long id = jdbc.queryForObject("SELECT user_id FROM sys_user WHERE username=?", Long.class, username);
+        if (authorization.capabilities(id).permissionCodes().contains("admin:access")) {
+            String email = jdbc.queryForObject("SELECT email FROM sys_user WHERE user_id=?", String.class, id);
+            if (email == null) {
+                email = username + "@example.test";
+                jdbc.update("UPDATE sys_user SET email=? WHERE user_id=?", email, id);
+            }
+            String code = EmailTestSupport.issue(redis, properties, email, EmailCodeStore.ADMIN_LOGIN);
+            return users.loginAdmin(new AdminLoginDTO(username, PASSWORD, email, code)).accessToken();
+        }
         MvcResult result = call("POST", "/blog/auth/login", null, loginBody(username, PASSWORD));
         assertCode(result, 200, "OK");
         return data(result).get("accessToken").asString();
@@ -3354,6 +3602,21 @@ class IdentityIntegrationTest {
 
     private JsonNode data(MvcResult result) throws Exception {
         return json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8)).get("data");
+    }
+
+    /** 冲突只公开字段名和提示，不返回占用账号、输入或 SQL。 */
+    private void assertIdentityConflict(MvcResult result, String message, List<String> fields) throws Exception {
+        assertCode(result, 409, "UNIQUE_CONFLICT");
+        JsonNode response = json.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+        assertThat(response.get("msg").asString()).isEqualTo(message);
+        assertThat(response.get("data").isNull()).isTrue();
+        List<Result.FieldError> errors = json.convertValue(response.get("errors"), new TypeReference<>() { });
+        assertThat(errors).extracting(Result.FieldError::field).containsExactlyElementsOf(fields);
+        for (Result.FieldError error : errors) {
+            assertThat(error.message()).isEqualTo(error.field().equals("username") ? "用户名已被使用" : "邮箱已被使用");
+        }
+        assertThat(result.getResponse().getContentAsString(StandardCharsets.UTF_8))
+                .doesNotContain("@example.test", "password", "INSERT", "UPDATE", "uk_sys_user");
     }
 
     private void assertCode(MvcResult result, int status, String code) throws Exception {
@@ -3405,6 +3668,8 @@ class IdentityIntegrationTest {
 
     @Test
     void invalidCallbackParametersDoNotConsumeTheOAuthFlow() throws Exception {
+        String id = data(register("model_oauth")).get("userId").asString();
+        jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES(?,'GITHUB','model_identity')", id);
         OAuthFlow flow = start("LOGIN", null, null);
         for (String extra : List.of("userId", "state", "code")) {
             assertCode(mvc.perform(req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", flow.state())
@@ -3565,6 +3830,12 @@ class IdentityIntegrationTest {
      */
     @TestConfiguration
     static class Boundaries {
+
+        @Bean
+        @Primary
+        EmailTestSupport.Mailbox mailbox() {
+            return new EmailTestSupport.Mailbox();
+        }
 
         @Bean
         @Primary

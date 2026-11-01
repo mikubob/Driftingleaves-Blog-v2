@@ -35,6 +35,15 @@ public class BlogComment {
     @TableField("content")
     private String content;
 
+    /** 发布时的 IP 属地，只保存地域文字，不公开原始 IP。 */
+    @TableField("location")
+    private String location;
+
+    @TableField("user_agent_os")
+    private String userAgentOs;
+    @TableField("user_agent_browser")
+    private String userAgentBrowser;
+
     /** 0待审核 1通过 2驳回 3作者删除占位。 */
     @TableField("status")
     private Integer status;

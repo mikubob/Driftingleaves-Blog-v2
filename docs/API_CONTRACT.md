@@ -39,7 +39,7 @@
 | code | string | 成功固定 `OK`；失败为第 14 节错误码，与旧项目整数 1/0 不同 |
 | msg | string | 成功固定 `成功`；失败供人阅读，前端以 code 分支 |
 | data | T 或 null | 错误和无返回值操作均为 null |
-| errors | `{field:string,message:string}[]` | 固定存在；仅字段校验失败非空，不回显密码等输入 |
+| errors | `{field:string,message:string}[]` | 固定存在；字段校验失败或账号用户名/邮箱唯一冲突时非空，不回显密码等输入 |
 
 `Page<T>` 使用旧分页命名：`{page:number,pageSize:number,total:string,totalPages:string,records:T[]}`。`page` 默认 1、范围 1..100000；`pageSize` 默认 10、范围 1..100，评论上限 50；越界报 400，不静默纠正。`totalPages=ceil(total/pageSize)`；零记录为 `"0"`，超末页 records 为空但保留请求页码。查询与 total 使用同一过滤/数据范围。分页不承诺跨请求快照；相同排序值追加主键确定顺序。
 
@@ -55,7 +55,7 @@ X-Revision 是本站自定义业务版本，不承担HTTP缓存校验；If-Revis
 
 ### 0.4 Sa-Token 会话与最近认证
 
-Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorization: Bearer <token>` 传递；后续实现配置相同 tokenName/tokenPrefix，关闭从请求体、URL、普通登录 Cookie 读取 Token。密码登录和 OAuth 登录交换结果返回相同 `Session`。多端可同时登录，每次登录签发独立 Token，不复用上次 Token。
+Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorization: Bearer <token>` 传递；后续实现配置相同 tokenName/tokenPrefix，关闭从请求体、URL、普通登录 Cookie 读取 Token。前台密码、邮箱验证码与已绑定第三方登录返回相同 `Session`；后台只接受账密、绑定邮箱邮件验证码和图形验证码组合登录，前台及历史会话不能访问受保护后台接口。多端可同时登录，每次登录签发独立 Token，不复用上次 Token。
 
 | Session 字段 | 类型 | 含义 |
 | --- | --- | --- |
@@ -76,7 +76,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 ### 0.5 RBAC、菜单与数据范围
 
-本文中 `登录本人` = 登录且账号启用，无额外业务权限，目标只取会话。`公开` = 无需登录。`后台(P)` = 登录 + 有效 `admin:access` + 有效权限 P。后台业务接口即使在前端菜单隐藏也执行上述检查；`/admin/auth`、`/admin/me` 分别沿用公开认证和登录本人规则；`admin` 角色不绕过检查，无通配权限。
+本文中 `登录本人` = 登录且账号启用，无额外业务权限，目标只取会话。`公开` = 无需登录。`后台(P)` = 登录 + 有效 `admin:access` + 有效权限 P。后台业务接口即使在前端菜单隐藏也执行上述检查；`/admin/auth` 按各认证接口规则访问；`/admin/me` 也要求完整后台认证会话；`admin` 角色不绕过检查，无通配权限。
 
 有效权限来自启用用户、启用角色、启用权限的连接；`ALL/SELF` 只从**授予本次 P 的有效角色**求并集，有 ALL 则全部，否则 SELF。文章归属为 authorId，文件为 uploaderId，评论管理为评论所属文章 authorId。每次查询、更新和删除在 SQL 中落实归属。操作需要多个权限时分别计算并同时满足其范围，例如已发布文章正文修改同时检查 update 与 publish，不能以 update 的 ALL 扩大 publish 的 SELF。
 
@@ -342,7 +342,10 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | Register.username | 必填 S(64)，设计决定仅 `[A-Za-z0-9_]{3,64}`；全库不区分大小写唯一 |
 | Register.password | 必填 string，8..64 字符且 UTF-8 最多 72 字节，不 trim/截断；BCrypt 随机盐，成本上线前校准 |
 | Register.nickname | 必填 S(64) |
-| Login | username:S(64)、password:string 均必填；密码同长度/字节边界；仅 username 登录，不以 email 登录 |
+| Register.email / emailCode | 邮箱必填、≤254字符、去首尾空白并转小写；REGISTER 邮件验证码必填六位数字，五分钟有效，校验一次即消费 |
+| Login | 前台账密登录：username:S(64)、password:string 均必填；密码同长度/字节边界 |
+| EmailLogin | 前台邮箱登录：email、六位 emailCode 均必填，仅消费 LOGIN 用途验证码 |
+| AdminLogin | username、password、账号当前 email、六位 emailCode 均必填；仅消费后台登录用途验证码并检查 admin:access |
 | ProfilePatch | nickname?:S(64)（若给不能 null）；email?:S(254)?（格式校验、空串转 null、唯一）；avatar?:URL?；intro?:S(500)?；至少一个字段。这里 `?` 在字段名表示可省略 |
 | Me | userId:ID、username:string、nickname:string、email:string?、avatar:URL?、intro:string?、status:0或1、hasPassword:boolean、lastLoginTime:Time?、createTime:Time、updateTime:Time |
 | OAuthBinding | source:S(32)、createTime:Time；只返回平台和绑定时间，不返回 uuid、oauthId、平台 Token |
@@ -354,7 +357,9 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | OAuthAuthorize | 请求仅operation:LOGIN或BIND；响应authorizationUrl:string、expiresIn:number（state有效秒数），平台/回跳地址由服务端配置 |
 | OAuthExchange | 仅ticket:string必填，43位ASCII `[A-Za-z0-9_-]{43}`；结果使用下述OAuthResult联合响应 |
 
-注册不收 email/avatar/roleIds/status，服务端固定启用并分配 member；注册仅返回 Me，不自动登录。邮箱在本站仅是可选联系资料，未验证，不能当登录、找回密码或自动合并依据。系统不得返回 passwordHash/password_hash/salt，包括管理员接口。
+注册必须提供 email 和 REGISTER 用途的 emailCode，不收 avatar/roleIds/status；服务端固定启用并分配 member，仅返回 Me，不自动登录。邮箱验证码仅证明当次邮箱所有权，个人资料和后台写入的联系邮箱不因此成为已验证邮箱，不用于自动合并账号。系统不得返回 passwordHash/password_hash/salt，包括管理员接口。
+
+用户名（账号）和邮箱分别保持全库唯一，按数据库排序规则判断；数据库唯一键拒绝写入后，一次检查两个字段，修改时排除目标本人。注册和后台新建账号的 409/UNIQUE_CONFLICT 必须区分“用户名已被使用”“邮箱已被使用”“用户名和邮箱均已被使用”，即使两个字段分别被不同账号占用也返回两项。errors 只包含对应的 username/email 及中文说明，不包含占用账号或原始输入；本人和后台修改邮箱沿用相同格式，邮箱 null 仍可清空。写入失败整笔回滚，注册已消费的邮件验证码不恢复；前端直接展示 msg，不重复追加 errors，完整示例见[账号唯一冲突](API.md#user-unique-conflict)。
 
 `OAuthResult` 为联合响应：LOGIN 只有 operation/session，BIND 只有 operation/binding。OAuth 票据和第三方 access_token 不得当成本站 Bearer。
 
@@ -366,7 +371,7 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | --- | --- |
 | UserCreate | username、password、nickname 必填，同 Register；其余可选 email:string?、avatar:URL?、intro:string?（约束同 ProfilePatch）、status:0或1（默认1）；不接收 roleIds |
 | UserUpdate | nickname:S(64)、email:string?、avatar:URL?、intro:S(500)?、status:0或1 均必填；username/密码不可改 |
-| UserAdmin | Me 全部字段 + roleIds:ID[]（包含已分配但禁用的角色）；不含 OAuth uuid 或 Token |
+| UserAdmin | Me 全部字段 + roleIds:ID[]（包含已分配但禁用的角色）+ lastLoginIp:string?、lastLoginLocation:string?（最近成功登录的完整 IP 和省市，仅后台用户管理返回，历史可空）；不含 OAuth uuid 或 Token |
 | UserBatch | 启用、禁用、删除均复用 BatchRevisionRequest；各项使用用户详情版本。启停为 sys:user:update，删除为新增固定权限 sys:user:delete，不扩大 ADMIN_PERMISSIONS；内置 admin 显式授予，其他角色须另行授权 |
 | UserRoles | roleIds:ID[] 必填，0..100 个、不重复、角色必须存在且启用；[] 清空；只能经此专用接口分配 |
 | RoleWrite | roleCode:S(64)，`[a-z][a-z0-9_]{0,63}`；roleName:S(64)；description:S(255)?；dataScope:ALL或SELF；status:0或1。POST roleCode/roleName 必填，其余默认 null/SELF/1；PUT 除 roleCode 外均必填，roleCode 创建后不可修改 |
@@ -462,8 +467,8 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | 模型 | 字段与约束 |
 | --- | --- |
 | CommentCreate | content:string 必填，trim 后1..2000字符纯文本；parentId:ID? 可选默认null；articleId仅取路径，userId取会话 |
-| CommentPublic | commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1或3、replyCount:string、createTime/updateTime:Time |
-| CommentOwn | commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2/3、createTime/updateTime:Time；不含其他用户私人信息 |
+| CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；旧记录和占位可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1或3、replyCount:string、createTime/updateTime:Time |
+| CommentOwn | location:string?、userAgentOs:string?、userAgentBrowser:string?（同公开评论）；commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2/3、createTime/updateTime:Time；不含其他用户私人信息 |
 | CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string；占位 author=null，用户不物理清除，作者关联仍存在 |
 | CommentReview | `{status:1或2}` 必填；1通过，2驳回，无审核备注字段 |
 | LikeState | `{liked:boolean,likeCount:string}` |
@@ -594,6 +599,8 @@ lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/jso
 
 status为0待验证、1已订阅、2已退订。每用户一条、每规范化邮箱一条，昵称读取用户公开资料，不复制旧nickname列。待验证或换邮箱时verifiedAt/subscribeTime/unsubscribeTime清空；激活必须有当前邮箱验证时间和订阅时间，unsubscribeTime=null；退订写时间但可保留原验证记录。任何请求都不能写userId/verifiedAt/审计时间，后台状态接口也不能更换邮箱或跳过验证。
 
+本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。账号邮箱变更后需重新申请并确认，历史订阅不自动迁移；确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
+
 确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，携带本站Bearer向确认接口提交JSON票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
 
 邮件退订票据30天有效，Redis绑定订阅ID、邮箱、verifiedAt、本轮subscribeTime，只允许退订该记录；有效票据可重复调用保持幂等。邮件链接由固定前端页面读取fragment并让用户确认，再POST退订；GET不修改订阅。重新申请/换邮箱/再激活或删除记录后，旧轮次票据失效。服务端不向本人状态接口或后台列表返回票据，不在访问日志中记录票据。实名登录只用于本站身份，邮箱确认不创建会话、不改变登录邮箱或角色。XML Feed独立于邮箱订阅，公开阅读不需要票据。
@@ -606,13 +613,13 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 
 ### 12.13 访问统计、报表与时间口径
 
-实施状态：第19章14个入口已接通可信Origin/最长站点路径前缀核验、PUBLIC规范slug核验、访客与明细同事务、限制/到期/清理及UTC报表。原IP仅在内存查离线地域，访问表持久化IPv4 /24或IPv6 /48网段；来源URL和页面路径剔除全部query/fragment。
+实施状态：第19章14个入口已接通可信Origin/最长站点路径前缀核验、PUBLIC规范slug核验、访客与明细同事务、限制/到期/清理及UTC报表。可信客户端 IP 用于离线地域查询，访客和浏览明细保存完整 IP，仅具备相应 ALL 查询权限的后台可见；来源URL和页面路径剔除全部query/fragment。
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `TrackingResult` | `recorded`:boolean（数据库成功记录本次浏览后为true，不返回访客会话） |
-| `Visitor` | `visitorId`:ID（统计访客ID，不是登录身份）；`fingerprint`:string（ASCII统计标识，不可作为鉴权凭据）；`ipAddress`:string&#124;null（最近脱敏IP网段，仅后台可见）；`userAgent`:string&#124;null（≤1024，最近User-Agent）；`country`:string&#124;null（国家）；`province`:string&#124;null（省份）；`city`:string&#124;null（城市）；`isBlocked`:integer（数据库封禁标记0/1；实际生效还需检查blockedUntil）；`blockedUntil`:Time&#124;null（封禁结束，已封禁且null表示永久）；`firstVisitTime`:Time（首次访问时间）；`lastVisitTime`:Time（最近访问时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `PageView` | `viewId`:ID（浏览记录ID）；`visitorId`:ID&#124;null（统计访客，清理后可空）；`userId`:ID&#124;null（采集时服务端确认的本站用户，匿名或清理后为空）；`articleId`:ID&#124;null（通过公开文章与规范路径核验的文章ID）；`siteCode`:string（home/blog/cv）；`pagePath`:S(2048)（不含敏感查询参数的规范路径）；`pageTitle`:S(200)?（页面标题）；`referer`:URL?（已脱敏的来源URL）；`ipAddress`:string&#124;null（脱敏IP网段，仅后台可见）；`userAgent`:string&#124;null（≤1024）；`viewTime`:Time（采集时间） |
+| `Visitor` | `visitorId`:ID（统计访客ID，不是登录身份）；`fingerprint`:string（ASCII统计标识，不可作为鉴权凭据）；`ipAddress`:string&#124;null（最近完整 IP，仅后台可见；旧脱敏值不能还原）；`userAgent`:string&#124;null（≤1024，最近User-Agent）；`country`:string&#124;null（国家）；`province`:string&#124;null（省份）；`city`:string&#124;null（城市）；`isBlocked`:integer（数据库封禁标记0/1；实际生效还需检查blockedUntil）；`blockedUntil`:Time&#124;null（封禁结束，已封禁且null表示永久）；`firstVisitTime`:Time（首次访问时间）；`lastVisitTime`:Time（最近访问时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `PageView` | `viewId`:ID（浏览记录ID）；`visitorId`:ID&#124;null（统计访客，清理后可空）；`userId`:ID&#124;null（采集时服务端确认的本站用户，匿名或清理后为空）；`articleId`:ID&#124;null（通过公开文章与规范路径核验的文章ID）；`siteCode`:string（home/blog/cv）；`pagePath`:S(2048)（不含敏感查询参数的规范路径）；`pageTitle`:S(200)?（页面标题）；`referer`:URL?（已脱敏的来源URL）；`ipAddress`:string&#124;null（完整 IP，仅后台可见；旧脱敏值不能还原）；`userAgent`:string&#124;null（≤1024）；`viewTime`:Time（采集时间） |
 | `PublicStatistics` | `articleCount`:string（PUBLIC文章数量）；`categoryCount`:string（可展示且至少含一篇PUBLIC文章的分类数）；`tagCount`:string（至少关联一篇PUBLIC文章的标签数）；`pageViewCount`:string（blog站点保留浏览明细条数；不等于累计文章阅读数）；`todayPageViewCount`:string（UTC当日blog浏览明细数）；`visitorCount`:string（blog浏览明细中不同非NULL visitorId数量） |
 | `AdminStatistics` | `pageViewCount`:string（筛选日期内保留浏览明细条数）；`visitorCount`:string（筛选日期内不同非NULL visitorId；不按IP或账号去重）；`newVisitorCount`:string（firstVisitTime在日期区间且符合站点访问条件的访客数）；`articleCount`:string（当前未回收文章数，不受访问日期筛选）；`publishedArticleCount`:string（当前PUBLIC文章数）；`commentCount`:string（当前非删除占位评论数，含待审/驳回）；`messageCount`:string（当前非删除占位留言数，含私密/待审/驳回）；`pendingCommentCount`:string（当前status=0的评论数）；`pendingMessageCount`:string（当前status=0的留言数） |
 | `ViewTrend` | `date`:date（UTC自然日，区间内逐日补零）；`pageViewCount`:string（该日浏览明细条数）；`visitorCount`:string（该日不同非NULL visitorId数） |
@@ -672,7 +679,7 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留内存 Token；URL 带 state。
 3. 平台回调本后端固定地址 `/api/v1/blog/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不携带本站 Bearer，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
-5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。LOGIN：已有绑定取本站启用用户；没有绑定则生成唯一 username、校验初始化昵称/头像、password_hash=NULL、email=NULL，在同一事务创建用户+绑定+member。昵称过长截为合法展示长度、空昵称用“用户”；不合法头像丢弃为 null。账号 username 用服务端随机标识并处理唯一键冲突。并发相同身份注册冲突整笔回滚，再按 source+uuid 查询唯一赢家并检查启用状态；不能覆盖其归属。
+5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。前台 LOGIN 仅接受已有绑定：先锁本站用户，再重查绑定归属及启用状态；没有绑定返回 OAUTH_NOT_BOUND，要求先完成邮箱注册、登录后绑定，不创建或合并账号。后台禁止第三方 LOGIN，只保留完整后台登录后的 BIND。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。
 7. 成功后只生成 60 秒、一次性的随机 ticket，在 Redis 绑定同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到**后端配置的固定前端页面** `/oauth/complete#ticket=<opaque>`。回调不把本站 Token、平台 code 或第三方 Token放在跳转 URL；设置 no-store、Referrer-Policy:no-referrer。
 8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，以 credentials 调 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，携带原内存 Token 与 credentials 调 exchange。弹窗不接收本站 Token、不在 URL 或存储中传 Token。后端原子校验并消费 ticket，再检查用户启用；LOGIN 此时在用户行锁内重查该 source+uuid 仍绑定同一用户，再调用 Sa-Token 创建本站 Session，并更新最近登录时间，认证时间记为已验证第三方身份的时间（不能借延迟交换刷新）；BIND 必须带原 Token 且返回绑定结果。重放/过期/浏览器不符统一 OAUTH_STATE_INVALID。网络响应丢失需重新发起，不能再兑换。
@@ -721,7 +728,7 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 
 | 操作 | 原子边界、锁与失败行为 |
 | --- | --- |
-| 注册/第三方首次注册 | 用户+member，第三方还含oauth绑定；唯一键冲突回滚整笔；平台身份冲突按[认证与第三方授权](API.md#group-1)重新查赢家 |
+| 邮箱验证注册 | 邮箱验证码通过后创建用户+member；唯一键冲突回滚整笔；第三方不自动注册，只接受已有绑定 |
 | 密码/绑定/解绑 | 所有方式变更先锁sys_user再读密码和绑定；清除/解绑保证至少一种方式；不写占位哈希/默认密码；需要撤销的操作先完成Redis失效再提交，失败处理同[会话生命周期](#auth-rules) |
 | 用户/角色/权限/授权 | 先固定管理员保护锁，再按ID升序锁所有受影响用户、目标角色/权限，检查最后管理员；关联集合替换同事务，先撤销会话/清缓存再提交；部分成功不允许 |
 | 菜单结构 | 同固定保护锁后检查整棵影响树，保存结构/父节点与约束；角色菜单+权限经grants共同保存 |
@@ -838,3 +845,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 单实例内连接登记、快照生成和广播保持同一顺序，发送有Spring会话保护。关闭/错误/超时/发送失败统一幂等移除；join与close交错不能残留成员。登录用户按账号去重，访客按站点/Origin/fingerprint去重，有有效登录连接的浏览器键排除匿名重复人数。故障无法确认身份时关闭相应连接，不能伪造匿名身份或0人数。
 
 只有Blog的站点统计卡片展示三项全站合计，Home/Cv保留匿名登记，Admin不参与；布局而非卡片维护连接。会话变更重连和旧异步结果隔离涵盖密码/OAuth共用登录入口、退出、401和账号安全变更。实际验证和未验证范围见[运行说明](后端运行说明.md#online-runtime)。
+
+### 邮件认证补充
+
+当前接口字段、发送/消费顺序和错误见 [邮箱验证与登录方式](API.md#邮箱验证与登录方式)。邮件验证码五分钟有效，注册、前台登录、后台登录分开，校验一次即消费。SMTP 失败返回503且清理验证码；接口不返回答案。第三方未绑定返回 OAUTH_NOT_BOUND，不能自动注册；后台第三方 LOGIN 禁止，绑定流程保留。

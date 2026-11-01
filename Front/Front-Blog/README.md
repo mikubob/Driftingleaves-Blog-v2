@@ -62,10 +62,12 @@ pnpm preview
 - 文章和留言只展示后端清理后的 HTML，不重新解析 Markdown。原 `MdPreview` 分支换为原页面已有的 HTML 正文分支，保留目录和锚点。公开封面/附件支持文章上下文路径，跨域时指向配置的 API，不读取后台私密文件。
 - 原在线访客 WebSocket 在 V2 没有对应接口，已移除该统计项和连接。今日浏览、总浏览、访客总量等使用真实公开统计。不把接口失败展示成空内容；读取提供加载、错误与重试。
 - 原 RSS 弹窗改为登录账号订阅，待验证邮箱不会标成已订阅。邮件确认页读取 `#confirmTicket` 后清除地址片段，登录同一账号后提交；退订页读取 `#unsubscribeTicket` 后，由用户点击确认才提交。刷新后需重新打开完整邮件链接。
-- 资料和留言编辑原样传递详情 `X-Revision` 至 `If-Revision`。412 保留输入并提示重新获取后合并，不自动覆盖。密码不 trim、不截断，遵守 8–64 字符和 UTF-8 ≤72 字节；修改成功后重新登录。第三方绑定/解绑和清除密码未在博客端新增入口。
+- 资料和留言编辑原样传递详情 `X-Revision` 至 `If-Revision`。412 保留输入并提示重新获取后合并，不自动覆盖。密码不 trim、不截断，遵守 8–64 字符和 UTF-8 ≤72 字节；修改成功后重新登录。个人中心提供第三方绑定/解绑，绑定弹窗核对来源、窗口和原 Token，解绑成功后重新登录；未新增清除密码入口。
 - 浏览统计只持久化随机 `dl-blog-visitor`，不是身份。路径与来源剔除 query/fragment；文章公开详情成功后带字符串 articleId 采集，不重放写请求。
 
 OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_COMPLETE_URL=https://<博客域名>/oauth/complete`。完整第三方登录使用 HTTPS 和 Secure Cookie；authorize/exchange 带 `credentials: include`。邮箱确认页使用登录弹窗保留原票据，仅接受同源且匹配已打开窗口的消息。部署策略需保留此同源弹窗通信。
+
+注册须填写邮箱及邮件中的六位验证码；前台可选账密、邮箱验证码或已绑定第三方登录，三种方式都填写图形验证码。发送邮件会消费图形验证码并刷新图片，注册/登录提交时填写新图片。邮件验证码五分钟有效，发送失败明确报错，每邮箱一分钟最多发送一次。验证码只由邮件接收，不出现在 HTTP 响应；注册与登录用途不能混用。第三方未绑定时先完成邮箱注册，再到个人中心绑定，后续第三方登录不重复验证邮箱。
 
 ## 验证
 
@@ -79,6 +81,8 @@ npx --package @playwright/cli playwright-cli -s=legacy-blog close
 ```
 
 截图在忽略目录 `output/playwright/legacy-*.png`。这些检查不代表真实 MySQL、Redis、OSS、SMTP 或 OAuth 平台联调。
+
+登录、注册和个人中心的原生输入框通过边框变色显示焦点，避免叠加全局轮廓；共享图形验证码输入框采用相同方式。两端登录焦点回归在后台 5176 与博客 5174 服务启动后，从仓库根目录执行 `npx --package @playwright/cli playwright-cli -s=auth-focus run-code --filename Front/shared/auth-focus-browser-smoke.mjs`，先用同一会话执行 `open about:blank`。该检查挂载真实登录组件，覆盖后台、博客账密与邮箱登录、注册，以及博客浅色和深色主题；HTTP 边界仅提供虚构验证码和平台列表。
 
 公共分页沿用老项目的数字页码与省略号，只有一页时隐藏；首页每页 6 条，其他列表保留各自条数。两端分页交互回归见 `../shared/pagination-browser-smoke.mjs`，运行方式见[管理端说明](../Front-Admin/README.md)。
 

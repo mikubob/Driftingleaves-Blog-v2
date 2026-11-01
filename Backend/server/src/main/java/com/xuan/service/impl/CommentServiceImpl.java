@@ -13,6 +13,7 @@ import com.xuan.dto.CommentPublicQueryDTO;
 import com.xuan.entity.BlogComment;
 import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
+import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.CommentMapper;
 import com.xuan.mapper.UserMapper;
@@ -25,6 +26,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.utils.UserAgentUtils;
 import com.xuan.vo.ArticlePublicVO.Author;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CommentAdminVO;
@@ -69,6 +71,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
+    private final IpLocationResolver locations;
 
     /** 同一快照里确认文章和完整父链，再分页直接回复，关闭评论不隐藏历史记录。 */
     @Override
@@ -94,7 +97,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "comments", allEntries = true)
-    public CommentOwnVO create(long article, CommentCreateDTO request) {
+    public CommentOwnVO create(long article, CommentCreateDTO request, String ip, String userAgent) {
         long actor = requireMember("blog:comment:create");
         users.lockById(actor);
         BlogSiteConfig config = lockConfig();
@@ -132,6 +135,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         comment.setParentId(parentId);
         // 纯文本原样保存，尖括号也是文字；响应没有 HTML 字段，展示端用文本节点渲染。
         comment.setContent(request.content());
+        comment.setLocation(locations.getIpLocation(ip));
+        comment.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
+        comment.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
         comment.setStatus(policy.get("reviewRequired").asBoolean() ? 0 : 1);
         comments.insert(comment);
         return ownView(comments.scoped(comment.getCommentId(), null, actor, false), new CommentOwnVO());
@@ -339,6 +345,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         value.setUserId(row.getUserId());
         value.setParentId(row.getParentId());
         value.setContent(row.getStatus() == 3 ? DELETED : row.getContent());
+        if (row.getStatus() != 3) {
+            value.setLocation(row.getLocation());
+            value.setUserAgentOs(row.getUserAgentOs());
+            value.setUserAgentBrowser(row.getUserAgentBrowser());
+        }
         value.setStatus(row.getStatus());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
@@ -364,6 +375,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         value.setArticleId(row.getArticleId());
         value.setParentId(row.getParentId());
         value.setContent(row.getStatus() == 3 ? DELETED : row.getContent());
+        if (row.getStatus() != 3) {
+            value.setLocation(row.getLocation());
+            value.setUserAgentOs(row.getUserAgentOs());
+            value.setUserAgentBrowser(row.getUserAgentBrowser());
+        }
         value.setStatus(row.getStatus());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());

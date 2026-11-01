@@ -26,6 +26,25 @@ afterEach(() => {
   setAuthorization('')
 })
 
+test('账号唯一冲突分别提示用户名、邮箱或二者，不重复追加字段说明', async () => {
+  for (const [message, fields] of [
+    ['用户名已被使用', ['username']],
+    ['邮箱已被使用', ['email']],
+    ['用户名和邮箱均已被使用', ['username', 'email']],
+  ]) {
+    globalThis.fetch = async () => new Response(JSON.stringify({
+      code: 'UNIQUE_CONFLICT', msg: message, data: null,
+      errors: fields.map((field) => ({ field, message: field === 'username' ? '用户名已被使用' : '邮箱已被使用' })),
+    }), { status: 409 })
+    await assert.rejects(request('/blog/auth/register', { method: 'POST', body: {} }), (error) => {
+      assert.equal(error.status, 409)
+      assert.equal(error.code, 'UNIQUE_CONFLICT')
+      assert.equal(error.message, message)
+      return true
+    })
+  }
+})
+
 test('字符串 BIGINT、计数和分页不丢精度', async () => {
   const id = '9223372036854775807'
   assert.equal(isId(id), true)
@@ -45,6 +64,23 @@ test('拒绝数字 ID、错误页结构及不完整文章响应', async () => {
   await assert.rejects(getPage('/test'), /分页/)
   respond({ page: 1, pageSize: 10, total: '1', totalPages: '1', records: [{ articleId: '1' }] })
   await assert.rejects(getPage('/blog/articles'), /数据格式/)
+})
+
+test('评论地域和浏览器只接受文本或空值，历史记录可以为空', async () => {
+  const comment = {
+    commentId: '1', articleId: '2', content: '测试评论', status: 1,
+    createTime: '2026-11-01T00:00:00.000Z', author: null, replyCount: '0',
+    location: '江苏省 南京市', userAgentOs: 'Windows', userAgentBrowser: 'Edge',
+  }
+  const result = { page: 1, pageSize: 10, total: '1', totalPages: '1', records: [comment] }
+  respond(result)
+  assert.equal((await getPage('/blog/articles/2/comments')).records[0].location, '江苏省 南京市')
+  for (const field of ['location', 'userAgentOs', 'userAgentBrowser']) {
+    respond({ ...result, records: [{ ...comment, [field]: null }] })
+    assert.equal((await getPage('/blog/articles/2/comments')).records[0][field], null)
+    respond({ ...result, records: [{ ...comment, [field]: {} }] })
+    await assert.rejects(getPage('/blog/articles/2/comments'), /数据格式/)
+  }
 })
 
 test('凭据错误保留会话，身份失效才清除；Token 只经 Authorization 发送', async () => {

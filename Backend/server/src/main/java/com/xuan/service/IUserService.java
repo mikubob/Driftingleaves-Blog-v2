@@ -1,10 +1,14 @@
 package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
+import com.xuan.dto.AdminEmailCodeDTO;
+import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.EmailCodeDTO;
+import com.xuan.dto.EmailLoginDTO;
 import com.xuan.dto.LoginDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
@@ -55,6 +59,18 @@ public interface IUserService extends IService<SysUser> {
     /** 先锁用户再验密码，按登录端指定的秒数发独立 Token、记录登录时间。 */
     SessionVO login(LoginDTO request, int timeoutSeconds);
 
+    /** 注册和邮箱登录分别发送验证码，SMTP 接受后才返回成功。 */
+    void sendEmailCode(EmailCodeDTO request);
+
+    /** 后台发送验证码前锁用户，核对账密、当前邮箱和后台权限。 */
+    void sendAdminEmailCode(AdminEmailCodeDTO request);
+
+    /** 按当前绑定邮箱锁用户，消费邮件验证码后签发前台会话。 */
+    SessionVO loginEmail(EmailLoginDTO request);
+
+    /** 同一用户锁内同时核对账密、当前邮箱、邮件验证码和后台权限。 */
+    SessionVO loginAdmin(AdminLoginDTO request);
+
     /** 同一用户锁内取资料，并用全部角色关联一起算整体版本。 */
     UserProfileVO me();
 
@@ -76,7 +92,7 @@ public interface IUserService extends IService<SysUser> {
     /** 拦截器和绑定等操作用它查当前账号，不能只信登录时的状态。 */
     long requireCurrent();
 
-    /** 用验证过的平台身份查找或首次注册，并发唯一键冲突后再查成功写入的记录。 */
+    /** 仅查找已经绑定的平台身份；未绑定时先完成邮箱注册，不自动创建账号。 */
     long resolveOAuth(String source, String uuid, String nickname, String avatar);
 
     /** 绑定在原用户锁内重查会话，不创建或切换其他账号。 */
