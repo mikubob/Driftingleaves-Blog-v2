@@ -167,6 +167,8 @@ const batchActions = computed(() => {
         v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="subscriptionId"
+        border
+        stripe
         empty-text="暂无订阅"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />

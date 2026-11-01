@@ -270,6 +270,8 @@ onMounted(async () => {
         @selection-change="batch?.select"
         :data="rows"
         row-key="userId"
+        border
+        stripe
         empty-text="暂无用户"
       >
         <el-table-column

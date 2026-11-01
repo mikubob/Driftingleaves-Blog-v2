@@ -255,6 +255,8 @@ const batchActions = computed(() => {
         v-loading="loading || batch?.busy"
         :data="rows"
         row-key="menuId"
+        border
+        stripe
         :tree-props="{ children: 'children' }"
         empty-text="暂无菜单"
       >

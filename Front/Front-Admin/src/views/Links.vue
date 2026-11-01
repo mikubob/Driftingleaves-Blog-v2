@@ -177,6 +177,8 @@ const batchActions = computed(() => {
         v-loading="loading || batch?.busy"
         :data="rows"
         row-key="linkId"
+        border
+        stripe
         empty-text="暂无友链"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
