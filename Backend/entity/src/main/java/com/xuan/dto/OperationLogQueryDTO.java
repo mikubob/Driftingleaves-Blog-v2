@@ -1,5 +1,6 @@
 package com.xuan.dto;
 
+import cn.hutool.core.util.ObjectUtil;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
@@ -13,7 +14,7 @@ public record OperationLogQueryDTO(@Min(1) @Max(100000) Integer page,
         @Pattern(regexp = "[A-Za-z0-9:_-]{1,100}") String operationTarget,
         @Min(0) @Max(1) Integer result, String begin, String end) {
     public OperationLogQueryDTO {
-        page = page == null ? 1 : page;
-        pageSize = pageSize == null ? 10 : pageSize;
+        page = ObjectUtil.defaultIfNull(page, 1);
+        pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
     }
 }

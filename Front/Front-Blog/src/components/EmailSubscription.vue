@@ -12,7 +12,7 @@ const subscription = useResource(() => session.user?.userId, async (signal) => {
   if (!session.user) {
     return null
   }
-  const { data } = await request('/me/rss-subscription', { signal })
+  const { data } = await request('/blog/me/rss-subscription', { signal })
   email.value = data?.email || ''
   return data
 })
@@ -28,7 +28,7 @@ async function update(cancel = false) {
   error.value = ''
   feedback.value = ''
   try {
-    const { data } = await request('/me/rss-subscription', {
+    const { data } = await request('/blog/me/rss-subscription', {
       method: cancel ? 'DELETE' : 'PUT',
       body: cancel ? undefined : { email: email.value.trim().toLowerCase() },
     })

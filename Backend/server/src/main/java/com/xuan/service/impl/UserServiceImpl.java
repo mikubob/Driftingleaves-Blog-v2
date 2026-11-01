@@ -1,5 +1,7 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -188,7 +190,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         List<Long> next = request.roleIds().stream().sorted().toList();
 
         // 2. 用户锁之后按 ID 升序锁角色，有缺失或禁用项就整笔失败。
-        if (!next.isEmpty()) {
+        if (CollUtil.isNotEmpty(next)) {
             List<SysRole> roles = users.lockRoles(next);
             if (roles.size() != next.size() || roles.stream().anyMatch(role -> role.getStatus() != 1)) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "roleIds须全部存在且启用");
@@ -198,7 +200,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         if (!previous.equals(next)) {
             // 3. 清掉旧关联再插入新关联，随后检查最后管理员；目标集合相同则保持不变。
             users.deleteRoles(userId);
-            if (!next.isEmpty()) {
+            if (CollUtil.isNotEmpty(next)) {
                 users.insertRoles(userId, next);
             }
             if (user.getStatus() == 1 && previous.contains(1L) && !next.contains(1L)) {
@@ -328,11 +330,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * 锁住用户后再验密码和状态、发会话、改最近登录时间；用户不存在、没密码或密码错误都报认证失败，事务没提交就撤销这次 Token。
      *
      * @param request 已完成入口校验的本站登录凭据
+     * @param timeoutSeconds 登录端决定的本站会话有效秒数
      * @return 独立本站会话及脱敏用户资料
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO login(LoginDTO request) {
+    public SessionVO login(LoginDTO request, int timeoutSeconds) {
         // 1. 先锁用户再验凭据，避免旧密码验证通过后越过并发退出登录的时点又发 Token。
         SysUser user = users.lockByUsername(request.username());
 
@@ -344,7 +347,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
         // 3. 凭据确认后再查账号启用状态，然后发会话、更新登录时间。
         enabled(user);
-        return createSession(user, clock.millis(), "PASSWORD");
+        return createSession(user, clock.millis(), "PASSWORD", timeoutSeconds);
     }
 
     /**
@@ -542,7 +545,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                     SysUser user = new SysUser();
                     user.setUsername("oauth_" + TokenUtils.random().replace('-', '_'));
                     // 昵称按 Unicode 字符截取，头像无效就丢弃，平台身份标识不能改。
-                    String display = nickname == null ? "" : nickname.strip();
+                    String display = StrUtil.nullToEmpty(nickname).strip();
                     user.setNickname(display.isEmpty() ? "用户" : display.substring(0,
                             display.offsetByCodePoints(0, Math.min(64, display.codePointCount(0, display.length())))));
                     user.setAvatar(UrlPolicy.valid(avatar) ? avatar : null);
@@ -610,12 +613,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param source 票据记录的平台标识
      * @param uuid 票据记录的已验证平台身份
      * @param authenticatedAt 平台验证成功时的毫秒时间戳
+     * @param timeoutSeconds 兑换端决定的本站会话有效秒数
      * @return 独立本站会话及脱敏用户资料
      * @throws BusinessException 用户不可用或原平台身份已解绑
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt) {
+    public SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
         // 1. 兑换时重新锁用户并查状态，不能只信回调时查到的结果。
         SysUser user = users.lockById(userId);
         enabled(user);
@@ -627,7 +631,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
 
         // 3. 认证时间用平台验证成功的时间，兑换等待不能刷新最近认证窗口。
-        return createSession(user, authenticatedAt, "OAUTH");
+        return createSession(user, authenticatedAt, "OAUTH", timeoutSeconds);
     }
 
     /**
@@ -727,15 +731,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param user 已锁定且确认启用的用户实体
      * @param authenticatedAt 本次凭据验证成功的毫秒时间戳
      * @param method Token 级认证方式，PASSWORD 或 OAUTH
+     * @param timeoutSeconds 当前登录端的固定有效秒数
      * @return 事务成功提交后可返回客户端的独立会话与脱敏资料
      */
-    private SessionVO createSession(SysUser user, long authenticatedAt, String method) {
+    private SessionVO createSession(SysUser user, long authenticatedAt, String method, int timeoutSeconds) {
         // 1. 用户锁内发独立 Token，会话组件同时登记事务失败时的清理。
-        String token = sessions.create(user.getUserId(), authenticatedAt, method);
+        String token = sessions.create(user.getUserId(), authenticatedAt, method, timeoutSeconds);
 
         // 2. 登录时间在同一事务更新，提交成功后才返回会话和资料。
         users.updateLastLogin(user.getUserId());
-        return new SessionVO("Bearer", token, 7200, view(users.selectById(user.getUserId())));
+        return new SessionVO("Bearer", token, timeoutSeconds, view(users.selectById(user.getUserId())));
     }
 
     /**

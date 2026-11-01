@@ -1,4 +1,4 @@
-package com.xuan.controller.me;
+package com.xuan.controller.blog;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.MessageEditDTO;
@@ -26,9 +26,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 本人留言只操作当前user_id，ALL也不能读取他人本人详情。
  */
 @RestController("meMessageController")
-@RequestMapping("/me/messages")
+@RequestMapping("/blog/me/messages")
 @RequiredArgsConstructor
-public class MessageController {
+public class MyMessageController {
 
     private final IMessageService messages;
 

@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -90,7 +91,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 .map(MessageNode::getMessageId).toList();
         int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
         List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
-        List<MessagePublicVO> rows = ids.isEmpty() ? List.of() : messages.visibleRows(ids).stream()
+        List<MessagePublicVO> rows = CollUtil.isEmpty(ids) ? List.of() : messages.visibleRows(ids).stream()
                 .map(row -> publicView(row, viewer)).toList();
         return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visible.size()),
                 Long.toString((visible.size() + (long) query.pageSize() - 1) / query.pageSize()), rows);
@@ -335,7 +336,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
 
     /** 普通回复还需当前前台能看到完整链，后台也不能回复待审、驳回或占位目标。 */
     private void requireReplyable(List<BlogMessage> path, long actor, boolean admin) {
-        if (path.isEmpty()) {
+        if (CollUtil.isEmpty(path)) {
             return;
         }
         BlogMessage target = path.getLast();

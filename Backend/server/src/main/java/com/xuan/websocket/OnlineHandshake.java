@@ -48,6 +48,7 @@ public class OnlineHandshake implements HandshakeInterceptor {
             String ip = IpUtils.clientIp(servlet, auth.getTrustedProxies());
             limiter.hit(List.of(auth.getRedisPrefix() + "rate:online:handshake:" + TokenUtils.digest(ip)), 60, 120);
             attributes.put("onlineOrigin", origin);
+            attributes.put("onlineSite", servlet.getServletPath().split("/")[1]);
             return true;
         } catch (BusinessException error) {
             reject(response, error);

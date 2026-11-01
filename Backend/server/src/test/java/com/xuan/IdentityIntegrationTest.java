@@ -34,6 +34,7 @@ import com.xuan.service.IRoleService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.store.RedisOAuthStore;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.SessionVO;
 import com.zaxxer.hikari.HikariDataSource;
@@ -170,6 +171,9 @@ class IdentityIntegrationTest {
     SessionManager sessions;
 
     @MockitoSpyBean
+    CaptchaStore captchaStore;
+
+    @MockitoSpyBean
     OperationLogMapper auditLogs;
 
     @MockitoSpyBean
@@ -202,7 +206,7 @@ class IdentityIntegrationTest {
             registry.add("app.auth.providers." + source + ".client-id", () -> "isolated-test-app");
             registry.add("app.auth.providers." + source + ".client-secret", () -> "isolated-boundary-value");
             registry.add("app.auth.providers." + source + ".redirect-uri",
-                    () -> ORIGIN + "/api/v1/auth/oauth/" + source + "/callback");
+                    () -> ORIGIN + "/api/v1/blog/auth/oauth/" + source + "/callback");
         }
     }
 
@@ -242,6 +246,169 @@ class IdentityIntegrationTest {
         jdbc.update("DELETE FROM sys_role WHERE role_id > 3");
         jdbc.update("UPDATE sys_menu SET status=1");
         redis.delete(redis.keys("dl:test:*"));
+    }
+
+    @Test
+    void captchaEndpointsArePublicUncachedAndShareGenerationBudget() throws Exception {
+        for (String end : List.of("admin", "blog")) {
+            MvcResult result = call("GET", "/" + end + "/auth/captcha", null, null);
+            assertCode(result, 200, "OK");
+            JsonNode captcha = data(result);
+            assertThat(captcha.get("captchaId").asString()).matches("[A-Za-z0-9_-]{43}");
+            assertThat(captcha.get("imageBase64").asString()).startsWith("data:image/png;base64,");
+            assertThat(captcha.get("expiresIn").asInt()).isEqualTo(120);
+            assertThat(captcha.size()).isEqualTo(3);
+            assertThat(result.getResponse().getHeader("Cache-Control")).isEqualTo("no-store");
+            assertThat(result.getResponse().getHeader("Set-Cookie")).isNull();
+            String key = properties.getRedisPrefix() + "captcha:"
+                    + TokenUtils.digest(captcha.get("captchaId").asString());
+            assertThat(redis.opsForValue().get(key)).matches("[0-9]{6}");
+            assertThat(redis.getExpire(key)).isBetween(115L, 120L);
+        }
+        assertCode(call("GET", "/blog/auth/captcha?answer=1", null, null), 400, "VALIDATION_ERROR");
+        for (int index = 2; index < 30; index++) {
+            assertCode(call("GET", "/blog/auth/captcha", null, null), 200, "OK");
+        }
+        MvcResult limited = call("GET", "/admin/auth/captcha", null, null);
+        assertCode(limited, 429, "RATE_LIMITED");
+        assertThat(limited.getResponse().getHeader("Retry-After")).isNotBlank();
+    }
+
+    @Test
+    void allLoginAndDiscussionWritesRequireCaptchaAfterIdentityChecks() throws Exception {
+        String token = adminLogin("captcha_admin");
+        for (String end : List.of("admin", "blog")) {
+            assertCode(captchaWrite("/" + end + "/auth/login", loginBody("captcha_admin", PASSWORD),
+                    null, null, null), 400, "CAPTCHA_INVALID");
+            assertCode(captchaWrite("/" + end + "/auth/register",
+                    "{\"username\":\"captcha_new\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"新用户\"}",
+                    null, null, null), 400, "CAPTCHA_INVALID");
+            assertCode(captchaWrite("/" + end + "/auth/oauth/GITHUB/authorize", "{\"operation\":\"LOGIN\"}",
+                    null, null, null), 400, "CAPTCHA_INVALID");
+        }
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='captcha_new'", Long.class))
+                .isZero();
+        assertThat(redis.keys(properties.getRedisPrefix() + "rate:login:*")).isEmpty();
+        assertCode(captchaWrite("/blog/articles/1/comments", "{\"content\":\"评论\",\"parentId\":null}",
+                token, null, null), 400, "CAPTCHA_INVALID");
+        assertCode(captchaWrite("/blog/messages",
+                "{\"content\":\"留言\",\"parentId\":null,\"contentFormat\":0,\"isSecret\":0,\"notifyReply\":0}",
+                token, null, null), 400, "CAPTCHA_INVALID");
+        assertCode(captchaWrite("/admin/messages/1/replies",
+                "{\"content\":\"回复\",\"contentFormat\":0,\"notifyReply\":0}", token, null, null),
+                400, "CAPTCHA_INVALID");
+        assertCode(captchaWrite("/blog/messages",
+                "{\"content\":\"留言\",\"parentId\":null,\"contentFormat\":0,\"isSecret\":0,\"notifyReply\":0}",
+                null, null, null), 401, "UNAUTHENTICATED");
+    }
+
+    @Test
+    void captchaKeepsLeadingZerosAndConsumesWrongExpiredAndReplayedAttempts() throws Exception {
+        register("captcha_user");
+        var captchas = new CaptchaStore(redis, properties);
+        String body = loginBody("captcha_user", PASSWORD);
+        String captchaId = captchas.issue("012345");
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "012345"), 200, "OK");
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "012345"), 400, "CAPTCHA_INVALID");
+        captchaId = captchas.issue("012345");
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "12345"), 400, "CAPTCHA_INVALID");
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "012345"), 400, "CAPTCHA_INVALID");
+        captchaId = captchas.issue("012345");
+        redis.expire(properties.getRedisPrefix() + "captcha:" + TokenUtils.digest(captchaId), Duration.ZERO);
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "012345"), 400, "CAPTCHA_INVALID");
+        captchaId = captchas.issue("012345");
+        assertCode(captchaWrite("/blog/auth/login", loginBody("captcha_user", "wrong-password"),
+                null, captchaId, "012345"), 401, "AUTH_FAILED");
+        assertCode(captchaWrite("/blog/auth/login", body, null, captchaId, "012345"), 400, "CAPTCHA_INVALID");
+    }
+
+    @Test
+    void captchaConsumptionIsAtomicInRealRedis() throws Exception {
+        var captchas = new CaptchaStore(redis, properties);
+        String captchaId = captchas.issue("000001");
+        var start = new CountDownLatch(1);
+        Callable<Boolean> consume = () -> {
+            start.await();
+            try {
+                captchas.verify(captchaId, "000001");
+                return true;
+            } catch (BusinessException failure) {
+                assertThat(failure.getCode()).isEqualTo("CAPTCHA_INVALID");
+                return false;
+            }
+        };
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(consume);
+            var second = executor.submit(consume);
+            start.countDown();
+            assertThat(List.of(first.get(), second.get())).containsExactlyInAnyOrder(true, false);
+        }
+    }
+
+    @Test
+    void captchaStorageFailureReturnsUnavailableWithoutIssuingSession() throws Exception {
+        try {
+            doThrow(new RedisConnectionFailureException("isolated-captcha-failure"))
+                    .when(captchaStore).verify(any(), any());
+            MvcResult failed = captchaWrite("/blog/auth/login", loginBody("captcha_user", PASSWORD),
+                    null, TokenUtils.random(), "012345");
+            assertCode(failed, 503, "SERVICE_UNAVAILABLE");
+            assertThat(data(failed).isNull()).isTrue();
+        } finally {
+            reset(captchaStore);
+        }
+    }
+
+    /** 独立构造请求，避免旧业务用例的自动验证码准备掩盖缺失或重放。 */
+    private MvcResult captchaWrite(String path, String body, String token, String captchaId, String code)
+            throws Exception {
+        var builder = request(HttpMethod.POST, "/api/v1" + path).contextPath("/api/v1").servletPath(path)
+                .header("Origin", ORIGIN).contentType("application/json").content(body);
+        if (token != null) {
+            builder.header("Authorization", "Bearer " + token);
+        }
+        if (captchaId != null) {
+            builder.header("X-Captcha-Id", captchaId);
+        }
+        if (code != null) {
+            builder.header("X-Captcha-Code", code);
+        }
+        return mvc.perform(builder).andReturn();
+    }
+
+    @Test
+    void endpointsAreGroupedByClientAndKeepIdentityAndAdminRules() throws Exception {
+        register("client_leaf");
+        MvcResult loggedIn = call("POST", "/admin/auth/login", null, loginBody("client_leaf", PASSWORD));
+        assertCode(loggedIn, 200, "OK");
+        String token = data(loggedIn).get("accessToken").asString();
+        for (String end : List.of("admin", "blog")) {
+            assertCode(call("GET", "/" + end + "/auth/oauth/providers", null, null), 200, "OK");
+            assertCode(call("GET", "/" + end + "/me", null, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/" + end + "/me", token, null), 200, "OK");
+            assertCode(call("GET", "/" + end + "/me?userId=1", token, null), 400, "VALIDATION_ERROR");
+            assertCode(call("POST", "/" + end + "/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
+            assertCode(call("GET", "/" + end + "/auth/oauth/UNKNOWN/callback", null, null), 404, "NOT_FOUND");
+        }
+        assertCode(call("GET", "/admin/users", token, null), 403, "FORBIDDEN");
+        for (String end : List.of("home", "blog", "cv")) {
+            for (String resource : List.of("profile", "social-links", "configs")) {
+                assertCode(call("GET", "/" + end + "/" + resource, null, null), 200, "OK");
+                assertCode(call("GET", "/" + end + "/" + resource + "?unknown=1", null, null),
+                        400, "VALIDATION_ERROR");
+            }
+            String body = "{\"fingerprint\":\"client-browser-0001\",\"siteCode\":\""
+                    + (end.equals("blog") ? "home" : "blog")
+                    + "\",\"pagePath\":\"/\",\"pageTitle\":null,\"referer\":null,\"articleId\":null}";
+            assertCode(call("POST", "/" + end + "/analytics/page-views", null, body), 400, "VALIDATION_ERROR");
+            String ticketBody = body.substring(0, body.indexOf(",\"pageTitle\"")) + "}";
+            assertCode(call("POST", "/" + end + "/analytics/online/tickets", null, ticketBody),
+                    400, "VALIDATION_ERROR");
+        }
+        for (String path : List.of("/auth/login", "/me", "/analytics/page-views", "/ws/online")) {
+            assertCode(call(path.equals("/auth/login") || path.contains("page-views") ? "POST" : "GET",
+                    path, token, null), 404, "NOT_FOUND");
+        }
     }
 
     @Test
@@ -292,11 +459,11 @@ class IdentityIntegrationTest {
         register("rate_leaf");
         String token = login("rate_leaf");
         for (int index = 0; index < 10; index++) {
-            assertCode(call(index % 2 == 0 ? "PUT" : "DELETE", "/me/password", token,
+            assertCode(call(index % 2 == 0 ? "PUT" : "DELETE", "/blog/me/password", token,
                     index % 2 == 0 ? "{\"currentPassword\":\"incorrect-password\",\"newPassword\":\"another-password\"}"
                             : "{\"currentPassword\":\"incorrect-password\"}"), 401, "AUTH_FAILED");
         }
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"incorrect-password\"}"), 429,
+        assertCode(call("DELETE", "/blog/me/password", token, "{\"currentPassword\":\"incorrect-password\"}"), 429,
                 "RATE_LIMITED");
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<Boolean>> requests = IntStream.range(0, 12).mapToObj(index -> (Callable<Boolean>) () -> {
@@ -402,16 +569,48 @@ class IdentityIntegrationTest {
         pendingAudits.clear();
     }
 
+    /** 两端密码和 OAuth 登录都写入实际 Redis 有效期，读取本人资料不能续期。 */
+    @Test
+    void clientSessionTimeoutsApplyToPasswordAndOAuth() throws Exception {
+        assertCode(register("ttl_user"), 201, "OK");
+        for (String client : List.of("blog", "admin")) {
+            int expectedSeconds = "blog".equals(client) ? 259200 : 604800;
+            MvcResult password = call("POST", "/" + client + "/auth/login", null,
+                    "{\"username\":\"ttl_user\",\"password\":\"" + PASSWORD + "\"}");
+            assertCode(password, 200, "OK");
+            assertThat(data(password).get("expiresIn").asInt()).isEqualTo(expectedSeconds);
+
+            OAuthFlow flow = start("LOGIN", null, null);
+            String ticket = callbackTicket(flow, "ttl-oauth-identity");
+            MvcResult oauth = mvc.perform(req("POST", "/" + client + "/auth/oauth/exchange")
+                    .header("Origin", ORIGIN).cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))
+                    .contentType("application/json").content("{\"ticket\":\"" + ticket + "\"}")).andReturn();
+            assertCode(oauth, 200, "OK");
+            assertThat(data(oauth).get("session").get("expiresIn").asInt()).isEqualTo(expectedSeconds);
+
+            for (JsonNode response : List.of(data(password), data(oauth).get("session"))) {
+                String token = response.get("accessToken").asString();
+                assertThat(sessions.remainingSeconds(token)).isBetween(expectedSeconds - 10L,
+                        (long) expectedSeconds);
+                StpUtil.getStpLogic().renewTimeout(token, 60);
+                assertCode(call("GET", "/" + client + "/me", token, null), 200, "OK");
+                assertThat(sessions.remainingSeconds(token)).isBetween(50L, 60L);
+                assertCode(call("POST", "/" + client + "/auth/logout", token, null), 200, "OK");
+                assertCode(call("GET", "/" + client + "/me", token, null), 401, "UNAUTHENTICATED");
+            }
+        }
+    }
+
     @Test
     void registrationLoginSessionsWhitelistAndValidation() throws Exception {
-        MvcResult providerList = call("GET", "/auth/oauth/providers", null, null);
+        MvcResult providerList = call("GET", "/blog/auth/oauth/providers", null, null);
         assertCode(providerList, 200, "OK");
         assertThat(data(providerList).size()).isEqualTo(2);
         assertThat(data(providerList).get(0).get("source").asString()).isEqualTo("GITEE");
         assertThat(data(providerList).get(1).get("displayName").asString()).isEqualTo("GitHub");
         assertThat(data(providerList).get(0).properties()).hasSize(2);
-        assertCode(call("POST", "/auth/oauth/github/authorize", null, "{\"operation\":\"LOGIN\"}"), 404, "NOT_FOUND");
-        assertCode(call("GET", "/auth/oauth/UNKNOWN/callback", null, null), 404, "NOT_FOUND");
+        assertCode(call("POST", "/blog/auth/oauth/github/authorize", null, "{\"operation\":\"LOGIN\"}"), 404, "NOT_FOUND");
+        assertCode(call("GET", "/blog/auth/oauth/UNKNOWN/callback", null, null), 404, "NOT_FOUND");
         MvcResult created = register("leaf");
         assertCode(created, 201, "OK");
         JsonNode me = data(created);
@@ -429,43 +628,43 @@ class IdentityIntegrationTest {
         String token = login("leaf");
         String another = login("leaf");
         assertThat(another).isNotEqualTo(token);
-        assertThat(StpUtil.getStpLogic().getTokenTimeout(token)).isBetween(7190L, 7200L);
+        assertThat(StpUtil.getStpLogic().getTokenTimeout(token)).isBetween(259190L, 259200L);
         assertThat(redis.keys("dl:test:session:*")).isNotEmpty();
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").size()).isEqualTo(8);
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("permissionCodes").size()).isEqualTo(8);
         assertThat(authorization.capabilities(id).permissionCodes()).containsExactlyInAnyOrder(
                 "blog:comment:create", "blog:comment:deleteOwn", "blog:article:like",
                 "blog:message:create", "blog:message:updateOwn", "blog:message:deleteOwn",
                 "blog:rss:subscribe", "blog:rss:unsubscribe");
-        assertCode(call("GET", "/me", null, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", null, null), 401, "UNAUTHENTICATED");
         assertCode(call("GET", "/blog/anything", null, null), 401, "UNAUTHENTICATED");
-        assertCode(mvc.perform(req("GET", "/me").param("Authorization", "Bearer " + token)).andReturn(), 401,
+        assertCode(mvc.perform(req("GET", "/blog/me").param("Authorization", "Bearer " + token)).andReturn(), 401,
                 "UNAUTHENTICATED");
-        assertCode(mvc.perform(req("GET", "/me").cookie(new Cookie("Authorization", token))).andReturn(), 401,
+        assertCode(mvc.perform(req("GET", "/blog/me").cookie(new Cookie("Authorization", token))).andReturn(), 401,
                 "UNAUTHENTICATED");
-        assertCode(call("POST", "/auth/register", null, "{\"username\":12}"), 400, "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/register", null, "{\"username\":\"a\",\"username\":\"b\"}"), 400,
+        assertCode(call("POST", "/blog/auth/register", null, "{\"username\":12}"), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/blog/auth/register", null, "{\"username\":\"a\",\"username\":\"b\"}"), 400,
                 "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/register", null,
+        assertCode(call("POST", "/blog/auth/register", null,
                         "{\"username\":\"leaf\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\",\"status\":1}"),
                          400,
                 "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/register", null, " ".repeat(8 * 1024 * 1024 + 1)), 413, "PAYLOAD_TOO_LARGE");
-        assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
-        assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/blog/auth/register", null, " ".repeat(8 * 1024 * 1024 + 1)), 413, "PAYLOAD_TOO_LARGE");
+        assertCode(call("POST", "/blog/auth/logout", token, null), 200, "OK");
+        assertCode(call("POST", "/blog/auth/logout", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
         jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", id);
-        assertCode(call("GET", "/me", another, null), 403, "ACCOUNT_DISABLED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", "wrong-password")), 401, "AUTH_FAILED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 403, "ACCOUNT_DISABLED");
+        assertCode(call("GET", "/blog/me", another, null), 403, "ACCOUNT_DISABLED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", "wrong-password")), 401, "AUTH_FAILED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", PASSWORD)), 403, "ACCOUNT_DISABLED");
     }
 
     @Test
     void profileRevisionAndCors() throws Exception {
         long id = Long.parseLong(data(register("leaf")).get("userId").asString());
         String token = login("leaf");
-        String original = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
-        assertCode(call("PATCH", "/me/profile", token, "{\"intro\":\"hello\"}"), 428, "PRECONDITION_REQUIRED");
+        String original = call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision");
+        assertCode(call("PATCH", "/blog/me/profile", token, "{\"intro\":\"hello\"}"), 428, "PRECONDITION_REQUIRED");
         assertCode(patch(token, "*", "{\"intro\":\"hello\"}"), 400, "VALIDATION_ERROR");
         for (String body : List.of("{}", "{\"nickname\":null}", "{\"nickname\":\" \"}",
                 "{\"userId\":\"1\"}", "{\"nickname\":12}", "{\"intro\":\"a\",\"intro\":\"b\"}")) {
@@ -488,7 +687,7 @@ class IdentityIntegrationTest {
         assertThat(revised).isNotEqualTo(original);
         assertCode(patch(token, original, "{\"intro\":null}"), 412, "REVISION_CONFLICT");
         assertCode(patch(token, revised, "{\"intro\":null}"), 200, "OK");
-        String current = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        String current = call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision");
         MvcResult filled = patch(token, current,
                 "{\"nickname\":\" 新昵称 \",\"email\":\" leaf@example.test \",\"avatar\":\" https://images.example" +
                  ".test/a.png \",\"intro\":\" 简介 \"}");
@@ -501,7 +700,7 @@ class IdentityIntegrationTest {
         String filledRevision = filled.getResponse().getHeader("X-Revision");
         assertCode(patch(token, filledRevision, "{\"nickname\":\"不应保存\",\"email\":\"USED@example.test\"}"), 409,
                 "UNIQUE_CONFLICT");
-        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(filledRevision);
+        assertThat(call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(filledRevision);
         MvcResult cleared = patch(token, filledRevision, "{\"email\":\" \",\"avatar\":null,\"intro\":\" \"}");
         assertCode(cleared, 200, "OK");
         assertThat(data(cleared).get("nickname").asString()).isEqualTo("新昵称");
@@ -509,18 +708,18 @@ class IdentityIntegrationTest {
             assertThat(data(cleared).get(field).isNull()).isTrue();
         }
         login("leaf");
-        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision"))
+        assertThat(call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision"))
                 .isEqualTo(cleared.getResponse().getHeader("X-Revision"));
-        String beforeRole = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        String beforeRole = call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision");
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES (?,2)", id);
-        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isNotEqualTo(beforeRole);
-        assertCode(call("PATCH", "/me/profile", token, "{\"nicknamePresent\":true}"), 400, "VALIDATION_ERROR");
-        var preflight = mvc.perform(req("OPTIONS", "/me").header("Origin", ORIGIN)
+        assertThat(call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision")).isNotEqualTo(beforeRole);
+        assertCode(call("PATCH", "/blog/me/profile", token, "{\"nicknamePresent\":true}"), 400, "VALIDATION_ERROR");
+        var preflight = mvc.perform(req("OPTIONS", "/blog/me").header("Origin", ORIGIN)
                 .header("Access-Control-Request-Method", "PATCH")
                 .header("Access-Control-Request-Headers", "Authorization,If-Revision")).andReturn();
         assertThat(preflight.getResponse().getStatus()).isEqualTo(200);
         assertThat(preflight.getResponse().getHeader("Access-Control-Allow-Origin")).isEqualTo(ORIGIN);
-        assertThat(mvc.perform(req("OPTIONS", "/me").header("Origin", "https://evil.test")
+        assertThat(mvc.perform(req("OPTIONS", "/blog/me").header("Origin", "https://evil.test")
                 .header("Access-Control-Request-Method", "GET")).andReturn().getResponse().getStatus()).isEqualTo(403);
     }
 
@@ -535,11 +734,11 @@ class IdentityIntegrationTest {
         assertCode(call("GET", "/admin/test/query", token, null), 200, "OK");
         assertCode(call("GET", "/admin/test/users", token, null), 403, "FORBIDDEN");
         assertCode(call("GET", "/admin/test/no-permission", token, null), 403, "FORBIDDEN");
-        assertThat(call("GET", "/me/menus", token, null).getResponse().getContentAsString())
+        assertThat(call("GET", "/blog/me/menus", token, null).getResponse().getContentAsString())
                 .contains("content/article/index", "\"menuType\":\"B\"", "\"isVisible\":0")
                 .doesNotContain("system/user/index");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(authorization.requireScope(id, "blog:article:update")).isEqualTo("SELF");
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=2");
         assertCode(call("GET", "/admin/test/query", token, null), 403, "FORBIDDEN");
@@ -556,31 +755,31 @@ class IdentityIntegrationTest {
         StpUtil.getStpLogic().getTokenSessionByToken(old).set("authenticatedAt", System.currentTimeMillis() - 301_000);
         String setBody = "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"" + PASSWORD + "\"}";
         String clearBody = "{\"currentPassword\":\"" + PASSWORD + "\"}";
-        assertCode(call("PUT", "/me/password", old, setBody), 403, "REAUTH_REQUIRED");
-        assertCode(call("DELETE", "/me/password", recent, clearBody), 409, "LAST_LOGIN_METHOD");
+        assertCode(call("PUT", "/blog/me/password", old, setBody), 403, "REAUTH_REQUIRED");
+        assertCode(call("DELETE", "/blog/me/password", recent, clearBody), 409, "LAST_LOGIN_METHOD");
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'UNKNOWN','not-available')", id);
-        assertCode(call("DELETE", "/me/password", recent, clearBody), 409, "LAST_LOGIN_METHOD");
+        assertCode(call("DELETE", "/blog/me/password", recent, clearBody), 409, "LAST_LOGIN_METHOD");
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','verified')", id);
-        assertCode(call("DELETE", "/me/password", recent, clearBody), 200, "OK");
+        assertCode(call("DELETE", "/blog/me/password", recent, clearBody), 200, "OK");
         assertThat(
                 jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isNull();
-        assertCode(call("GET", "/me", old, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", recent, null), 401, "UNAUTHENTICATED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
+        assertCode(call("GET", "/blog/me", old, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", recent, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
         OAuthFlow flow = start("LOGIN", null, null);
         String oauthToken = data(exchange(callbackTicket(flow, "verified"), flow.browser(), null)).get("session")
                 .get("accessToken").asString();
-        assertCode(call("DELETE", "/me/password", oauthToken, clearBody), 409, "STATE_CONFLICT");
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", oauthToken, null), 409, "LAST_LOGIN_METHOD");
+        assertCode(call("DELETE", "/blog/me/password", oauthToken, clearBody), 409, "STATE_CONFLICT");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", oauthToken, null), 409, "LAST_LOGIN_METHOD");
         StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "PASSWORD");
-        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 403,
+        assertCode(call("PUT", "/blog/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 403,
                 "REAUTH_REQUIRED");
         StpUtil.getStpLogic().getTokenSessionByToken(oauthToken).set("method", "OAUTH");
-        assertCode(call("PUT", "/me/password", oauthToken,
+        assertCode(call("PUT", "/blog/me/password", oauthToken,
                 "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}"), 400, "VALIDATION_ERROR");
-        assertCode(call("PUT", "/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 200, "OK");
-        assertCode(call("GET", "/me", oauthToken, null), 401, "UNAUTHENTICATED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", "new-password-2026")), 200, "OK");
+        assertCode(call("PUT", "/blog/me/password", oauthToken, "{\"newPassword\":\"new-password-2026\"}"), 200, "OK");
+        assertCode(call("GET", "/blog/me", oauthToken, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", "new-password-2026")), 200, "OK");
     }
 
     @Test
@@ -589,7 +788,7 @@ class IdentityIntegrationTest {
         String token = login("leaf");
         String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
         doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(id);
-        assertCode(call("PUT", "/me/password", token,
+        assertCode(call("PUT", "/blog/me/password", token,
                         "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"" + PASSWORD + "\"}"), 503,
                 "SERVICE_UNAVAILABLE");
         assertThat(
@@ -598,7 +797,7 @@ class IdentityIntegrationTest {
         reset(sessions);
         SessionVO[] created = new SessionVO[1];
         assertThatThrownBy(() -> new TransactionTemplate(transactionManager).execute(status -> {
-            created[0] = users.login(new LoginDTO("leaf", PASSWORD));
+            created[0] = users.login(new LoginDTO("leaf", PASSWORD), SessionManager.BLOG_TIMEOUT_SECONDS);
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
                 public void beforeCommit(boolean readOnly) {
@@ -618,7 +817,7 @@ class IdentityIntegrationTest {
     @Test
     void oauthBrowserReplayExpiryAndVerifiedIdentity() throws Exception {
         OAuthFlow flow = start("LOGIN", null, null);
-        assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
+        assertCode(mvc.perform(req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", flow.state())
                         .param("code", "same").cookie(new Cookie("__Host-dl-oauth-browser", TokenUtils.random()))).andReturn(),
                 400, "OAUTH_STATE_INVALID");
         String ticket = callbackTicket(flow, " SameIdentity ");
@@ -640,7 +839,7 @@ class IdentityIntegrationTest {
         Thread.sleep(5);
         assertCode(exchange(expires, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
         OAuthFlow denied = start("LOGIN", null, flow.browser());
-        MvcResult cancel = mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", denied.state())
+        MvcResult cancel = mvc.perform(req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", denied.state())
                 .param("error", "access_denied").param("error_description", "must-not-echo")
                 .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn();
         assertThat(cancel.getResponse().getHeader("Location")).isEqualTo(ORIGIN + "/oauth/complete#error=OAUTH_DENIED");
@@ -659,16 +858,16 @@ class IdentityIntegrationTest {
         assertCode(exchange(ticket, bind.browser(), otherUser), 400, "OAUTH_STATE_INVALID");
         assertCode(exchange(ticket, bind.browser(), sameUserOtherToken), 400, "OAUTH_STATE_INVALID");
         assertCode(exchange(ticket, bind.browser(), original), 200, "OK");
-        assertThat(data(call("GET", "/me/oauth-bindings", original, null)).size()).isEqualTo(1);
+        assertThat(data(call("GET", "/blog/me/oauth-bindings", original, null)).size()).isEqualTo(1);
         OAuthFlow conflict = start("BIND", otherUser, bind.browser());
         assertThat(callback(conflict, "bind-identity").getResponse().getHeader("Location")).endsWith(
                 "#error=OAUTH_BIND_CONFLICT");
         OAuthFlow revoked = start("BIND", original, bind.browser());
-        call("POST", "/auth/logout", original, null);
+        call("POST", "/blog/auth/logout", original, null);
         assertCode(callback(revoked, "new-identity"), 401, "UNAUTHENTICATED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth", Integer.class)).isEqualTo(1);
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", sameUserOtherToken, null), 200, "OK");
-        assertCode(call("GET", "/me", sameUserOtherToken, null), 401, "UNAUTHENTICATED");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", sameUserOtherToken, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", sameUserOtherToken, null), 401, "UNAUTHENTICATED");
     }
 
     @Test
@@ -727,8 +926,8 @@ class IdentityIntegrationTest {
         assertThat(store.containsKey(state)).isFalse();
         properties.getRate().setLoginFailures(1);
         try {
-            assertCode(call("POST", "/auth/login", null, loginBody("missing", PASSWORD)), 401, "AUTH_FAILED");
-            MvcResult limited = call("POST", "/auth/login", null, loginBody("MISSING", PASSWORD));
+            assertCode(call("POST", "/blog/auth/login", null, loginBody("missing", PASSWORD)), 401, "AUTH_FAILED");
+            MvcResult limited = call("POST", "/blog/auth/login", null, loginBody("MISSING", PASSWORD));
             assertCode(limited, 429, "RATE_LIMITED");
             assertThat(Integer.parseInt(limited.getResponse().getHeader("Retry-After"))).isPositive();
         } finally {
@@ -900,9 +1099,9 @@ class IdentityIntegrationTest {
             jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','method')", id);
             String token = login("leaf");
             List<Callable<Integer>> changes = List.of(
-                    () -> call("DELETE", "/me/password", token,
+                    () -> call("DELETE", "/blog/me/password", token,
                             "{\"currentPassword\":\"" + PASSWORD + "\"}").getResponse().getStatus(),
-                    () -> call("DELETE", "/me/oauth-bindings/GITHUB", token, null).getResponse().getStatus());
+                    () -> call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, null).getResponse().getStatus());
             List<Integer> statuses = new ArrayList<>();
             for (var result : executor.invokeAll(changes)) {
                 statuses.add(result.get());
@@ -936,7 +1135,7 @@ class IdentityIntegrationTest {
         String token = login("leaf");
         OAuthFlow flow = start("LOGIN", null, null);
         String ticket = callbackTicket(flow, "pending");
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, null), 200, "OK");
         assertCode(exchange(ticket, flow.browser(), null), 400, "OAUTH_STATE_INVALID");
         assertThat(
                 jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class, id)).isZero();
@@ -946,7 +1145,7 @@ class IdentityIntegrationTest {
     void concurrentProfilePatchesRejectTheStaleRevision() throws Exception {
         register("leaf");
         String token = login("leaf");
-        String revision = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
+        String revision = call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision");
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<MvcResult>> changes = List.of(
                     () -> patch(token, revision, "{\"nickname\":\"first\"}"),
@@ -963,7 +1162,7 @@ class IdentityIntegrationTest {
                 }
             }
             assertThat(statuses).containsExactlyInAnyOrder(200, 412);
-            assertThat(data(call("GET", "/me", token, null)).get("nickname").asString()).isEqualTo(saved);
+            assertThat(data(call("GET", "/blog/me", token, null)).get("nickname").asString()).isEqualTo(saved);
         }
     }
 
@@ -978,7 +1177,7 @@ class IdentityIntegrationTest {
             jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,?,?)", id, source, "own-identity");
         }
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','other-identity')", otherId);
-        MvcResult listed = call("GET", "/me/oauth-bindings", token, null);
+        MvcResult listed = call("GET", "/blog/me/oauth-bindings", token, null);
         assertCode(listed, 200, "OK");
         assertThat(data(listed).size()).isEqualTo(2);
         assertThat(data(listed).get(0).get("source").asString()).isEqualTo("GITEE");
@@ -993,29 +1192,29 @@ class IdentityIntegrationTest {
         try {
             github.setEnabled(false);
             gitee.setClientSecret("");
-            assertThat(data(call("GET", "/me/oauth-bindings", token, null)).isEmpty()).isTrue();
-            assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 409,
+            assertThat(data(call("GET", "/blog/me/oauth-bindings", token, null)).isEmpty()).isTrue();
+            assertCode(call("DELETE", "/blog/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 409,
                     "LAST_LOGIN_METHOD");
-            assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 404, "NOT_FOUND");
+            assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, null), 404, "NOT_FOUND");
         } finally {
             github.setEnabled(true);
             gitee.setClientSecret(giteeSecret);
         }
-        assertCode(call("DELETE", "/me/oauth-bindings/GITEE", otherToken, null), 404, "NOT_FOUND");
-        assertCode(call("DELETE", "/me/oauth-bindings/github", token, null), 404, "NOT_FOUND");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITEE", otherToken, null), 404, "NOT_FOUND");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/github", token, null), 404, "NOT_FOUND");
         StpUtil.getStpLogic().getTokenSessionByToken(another)
                 .set("authenticatedAt", System.currentTimeMillis() - 301_000);
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", another, null), 403, "REAUTH_REQUIRED");
-        assertCode(call("DELETE", "/me/password", another, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 403,
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", another, null), 403, "REAUTH_REQUIRED");
+        assertCode(call("DELETE", "/blog/me/password", another, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 403,
                 "REAUTH_REQUIRED");
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 200, "OK");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, null), 200, "OK");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'",
                 Integer.class, id)).isZero();
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=? AND source='GITHUB'",
                 Integer.class, otherId)).isEqualTo(1);
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", otherToken, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", otherToken, null), 200, "OK");
     }
 
     @Test
@@ -1026,22 +1225,22 @@ class IdentityIntegrationTest {
         String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
         for (String body : List.of("{\"newPassword\":\"new-password-2026\"}",
                 "{\"newPassword\":\"new-password-2026\",\"currentPassword\":null}")) {
-            assertCode(call("PUT", "/me/password", token, body), 400, "VALIDATION_ERROR");
+            assertCode(call("PUT", "/blog/me/password", token, body), 400, "VALIDATION_ERROR");
         }
-        assertCode(call("PUT", "/me/password", token,
+        assertCode(call("PUT", "/blog/me/password", token,
                 "{\"newPassword\":\"new-password-2026\",\"currentPassword\":\"wrong-password\"}"), 401, "AUTH_FAILED");
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"wrong-password\"}"), 401,
+        assertCode(call("DELETE", "/blog/me/password", token, "{\"currentPassword\":\"wrong-password\"}"), 401,
                 "AUTH_FAILED");
         assertThat(
                 jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(
                 before);
-        assertCode(call("PUT", "/me/password", token,
+        assertCode(call("PUT", "/blog/me/password", token,
                 "{\"newPassword\":\" new-password-2026 \",\"currentPassword\":\"" + PASSWORD + "\"}"), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", "new-password-2026")), 401, "AUTH_FAILED");
-        assertCode(call("POST", "/auth/login", null, loginBody("leaf", " new-password-2026 ")), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", PASSWORD)), 401, "AUTH_FAILED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", "new-password-2026")), 401, "AUTH_FAILED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("leaf", " new-password-2026 ")), 200, "OK");
     }
 
     @Test
@@ -1051,15 +1250,15 @@ class IdentityIntegrationTest {
         jdbc.update("INSERT INTO sys_user_oauth(user_id,source,uuid) VALUES (?,'GITHUB','rollback')", id);
         String before = jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id);
         doThrow(new RedisConnectionFailureException("injected external failure")).when(sessions).revokeAll(id);
-        assertCode(call("DELETE", "/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 503,
+        assertCode(call("DELETE", "/blog/me/password", token, "{\"currentPassword\":\"" + PASSWORD + "\"}"), 503,
                 "SERVICE_UNAVAILABLE");
         assertThat(
                 jdbc.queryForObject("SELECT password_hash FROM sys_user WHERE user_id=?", String.class, id)).isEqualTo(
                 before);
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, null), 503, "SERVICE_UNAVAILABLE");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, null), 503, "SERVICE_UNAVAILABLE");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user_oauth WHERE user_id=?", Integer.class,
                 id)).isEqualTo(1);
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
     }
 
     @Test
@@ -1072,9 +1271,9 @@ class IdentityIntegrationTest {
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (10,1),(10,10),(10,11)");
         jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES (9,110),(9,1011)");
         String token = login("leaf");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
         jdbc.update("INSERT INTO sys_role_menu(role_id,menu_id) VALUES (9,100),(9,200),(9,140)");
-        MvcResult menus = call("GET", "/me/menus", token, null);
+        MvcResult menus = call("GET", "/blog/me/menus", token, null);
         assertCode(menus, 200, "OK");
         assertThat(data(menus).size()).isEqualTo(1);
         assertThat(data(menus).get(0).get("children").size()).isEqualTo(1);
@@ -1082,7 +1281,7 @@ class IdentityIntegrationTest {
                 "1011");
         assertThat(menus.getResponse().getContentAsString()).contains("\"isVisible\":0")
                 .doesNotContain("system", "comment");
-        JsonNode capabilities = data(call("GET", "/me/capabilities", token, null));
+        JsonNode capabilities = data(call("GET", "/blog/me/capabilities", token, null));
         assertThat(capabilities.get("roleCodes").toString()).isEqualTo("[\"access\",\"member\",\"pages\"]");
         assertThat(capabilities.get("permissionCodes").toString())
                 .isEqualTo(
@@ -1092,19 +1291,19 @@ class IdentityIntegrationTest {
                                  "\"blog:rss:subscribe\",\"blog:rss:unsubscribe\"]");
         assertThat(capabilities.get("dataScopes").get("blog:article:query").asString()).isEqualTo("SELF");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES (9,10)");
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes").get("blog:article:query")
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("dataScopes").get("blog:article:query")
                 .asString()).isEqualTo("ALL");
         jdbc.update("UPDATE sys_permission SET status=0 WHERE permission_id=10");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("dataScopes")
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("dataScopes")
                 .has("blog:article:query")).isFalse();
         jdbc.update("UPDATE sys_permission SET status=1 WHERE permission_id=10");
         jdbc.update("UPDATE sys_menu SET status=0 WHERE menu_id=100");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("ALL");
         jdbc.update("UPDATE sys_role SET status=0 WHERE role_id=9");
         assertThat(authorization.requireScope(id, "blog:article:query")).isEqualTo("SELF");
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo(
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("roleCodes").toString()).isEqualTo(
                 "[\"access\",\"member\"]");
     }
 
@@ -1184,7 +1383,7 @@ class IdentityIntegrationTest {
         MvcResult disabled = call("POST", "/admin/users", admin,
                 valid.substring(0, valid.length() - 1) + ",\"status\":0}");
         assertCode(disabled, 201, "OK");
-        assertCode(call("POST", "/auth/login", null, loginBody("invalid_user", PASSWORD)), 403, "ACCOUNT_DISABLED");
+        assertCode(call("POST", "/blog/auth/login", null, loginBody("invalid_user", PASSWORD)), 403, "ACCOUNT_DISABLED");
     }
 
     @Test
@@ -1239,7 +1438,7 @@ class IdentityIntegrationTest {
         String another = login("target_user");
         String path = "/admin/users/" + id;
         String revision = adminRevision(admin, id);
-        assertThat(call("GET", "/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        assertThat(call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision")).isEqualTo(revision);
         assertCode(call("PUT", path, admin, userBody("叶", 1)), 428, "PRECONDITION_REQUIRED");
         assertCode(adminPut(path, admin, "*", userBody("叶", 1)), 400, "VALIDATION_ERROR");
         assertCode(adminPut(path, admin, revision + "," + revision, userBody("叶", 1)), 400, "VALIDATION_ERROR");
@@ -1261,14 +1460,14 @@ class IdentityIntegrationTest {
         assertThat(data(updated).get("roleIds").toString()).isEqualTo("[\"3\"]");
         String current = updated.getResponse().getHeader("X-Revision");
         assertThat(current).isNotEqualTo(revision);
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
         assertCode(adminPut(path, admin, revision, userBody("stale", 0)), 412, "REVISION_CONFLICT");
         assertCode(adminPut(path, admin, current, userBody("修改昵称", 0)), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", another, null), 401, "UNAUTHENTICATED");
         assertCode(adminPut(path, admin, adminRevision(admin, id), userBody("修改昵称", 1)), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", login("target_user"), null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", login("target_user"), null), 200, "OK");
         assertCode(adminPut("/admin/users/9223372036854775807", admin, current, userBody("叶", 1)), 404, "NOT_FOUND");
     }
 
@@ -1295,27 +1494,27 @@ class IdentityIntegrationTest {
         MvcResult assigned = adminPut(path, admin, revision, "{\"roleIds\":[\"3\",\"2\"]}");
         assertCode(assigned, 200, "OK");
         assertThat(data(assigned).get("roleIds").toString()).isEqualTo("[\"2\",\"3\"]");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", another, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", another, null), 401, "UNAUTHENTICATED");
         token = login("target_user");
         assertCode(call("GET", "/admin/test/query", token, null), 200, "OK");
         String current = assigned.getResponse().getHeader("X-Revision");
         MvcResult noop = adminPut(path, admin, current, "{\"roleIds\":[\"2\",\"3\"]}");
         assertCode(noop, 200, "OK");
         assertThat(noop.getResponse().getHeader("X-Revision")).isEqualTo(current);
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
         assertCode(adminPut("/admin/users/" + id, admin, revision, userBody("stale", 1)), 412, "REVISION_CONFLICT");
         assertCode(adminPut(path, admin, current, "{\"roleIds\":[]}"), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
         token = login("target_user");
         assertCode(call("GET", "/admin/test/query", token, null), 403, "FORBIDDEN");
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("permissionCodes").isEmpty()).isTrue();
     }
 
     @Test
     void adminLastAdministratorProtectionRollsBackBothKindsOfChange() throws Exception {
         String admin = adminLogin("adminroot");
-        String id = data(call("GET", "/me", admin, null)).get("userId").asString();
+        String id = data(call("GET", "/blog/me", admin, null)).get("userId").asString();
         String other = data(register("disabled_admin")).get("userId").asString();
         jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,1)", other);
         jdbc.update("UPDATE sys_user SET status=0 WHERE user_id=?", other);
@@ -1330,7 +1529,7 @@ class IdentityIntegrationTest {
         assertCode(adminPut("/admin/users/" + id + "/roles", admin, revision, "{\"roleIds\":[\"3\"]}"), 409,
                 "LAST_ADMIN");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
-        assertThat(data(call("GET", "/me", admin, null)).get("nickname").asString()).isEqualTo("叶");
+        assertThat(data(call("GET", "/blog/me", admin, null)).get("nickname").asString()).isEqualTo("叶");
         assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).contains("\"1\"");
     }
 
@@ -1348,14 +1547,14 @@ class IdentityIntegrationTest {
                 "SERVICE_UNAVAILABLE");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/admin/users/" + id, admin, null)).get("roleIds").toString()).isEqualTo("[\"3\"]");
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
         reset(sessions);
         jdbc.update("UPDATE sys_user SET email='used@example.test' WHERE username='adminroot'");
         assertCode(adminPut("/admin/users/" + id, admin, revision,
                         userBody("不应保存", 0).replace("\"email\":null", "\"email\":\"USED@example.test\"")), 409,
                 "UNIQUE_CONFLICT");
         assertThat(adminRevision(admin, id)).isEqualTo(revision);
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
     }
 
     @Test
@@ -1379,8 +1578,8 @@ class IdentityIntegrationTest {
     void concurrentAdminDisableAndRoleRemovalCannotCloseManagement() throws Exception {
         String first = adminLogin("first_admin");
         String second = adminLogin("second_admin");
-        String firstId = data(call("GET", "/me", first, null)).get("userId").asString();
-        String secondId = data(call("GET", "/me", second, null)).get("userId").asString();
+        String firstId = data(call("GET", "/blog/me", first, null)).get("userId").asString();
+        String secondId = data(call("GET", "/blog/me", second, null)).get("userId").asString();
         String firstRevision = adminRevision(first, firstId);
         String secondRevision = adminRevision(second, secondId);
         try (var executor = Executors.newFixedThreadPool(2)) {
@@ -1405,7 +1604,7 @@ class IdentityIntegrationTest {
     @Test
     void adminWriteRechecksPermissionAndTokenAfterWaitingForGuard() throws Exception {
         String admin = adminLogin("adminroot");
-        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", admin, null)).get("userId").asString());
         String target = data(register("target_user")).get("userId").asString();
         String revision = adminRevision(admin, target);
         try (var executor = Executors.newSingleThreadExecutor()) {
@@ -1570,19 +1769,19 @@ class IdentityIntegrationTest {
         assertThat(data(updated).get("roleName").asString()).isEqualTo("编辑");
         assertThat(data(updated).get("roleCode").asString()).isEqualTo("editor");
         assertThat(data(updated).get("description").isNull()).isTrue();
-        assertCode(call("GET", "/me", first, null), 200, "OK");
-        assertCode(call("GET", "/me", second, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", first, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", second, null), 200, "OK");
         assertCode(adminPut(path, admin, revision, roleBody("旧版本", "ALL", 1)), 412, "REVISION_CONFLICT");
         String current = updated.getResponse().getHeader("X-Revision");
         assertThat(current).isNotEqualTo(revision);
         assertCode(adminPut(path, admin, current, roleBody("编辑", "ALL", 1)), 200, "OK");
-        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", second, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", second, null), 401, "UNAUTHENTICATED");
         first = login("role_user");
         assertCode(adminPut(path, admin, roleRevision(admin, id), roleBody("编辑", "ALL", 0)), 200, "OK");
-        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
         assertCode(adminPut(path, admin, roleRevision(admin, id), roleBody("编辑", "ALL", 1)), 200, "OK");
-        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
     }
 
     @Test
@@ -1647,22 +1846,22 @@ class IdentityIntegrationTest {
         MvcResult saved = adminPut(path, admin, roleRevision(admin, id), grantBody(List.of(10L, 1L), List.of(110L)));
         assertCode(saved, 200, "OK");
         for (String token : List.of(first, another, second)) {
-            assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
         }
         first = login("first_user");
         assertThat(authorization.requireScope(Long.parseLong(firstId), "blog:article:query")).isEqualTo("SELF");
-        assertThat(call("GET", "/me/menus", first, null).getResponse().getContentAsString()).contains(
+        assertThat(call("GET", "/blog/me/menus", first, null).getResponse().getContentAsString()).contains(
                 "content/article/index");
         String revision = saved.getResponse().getHeader("X-Revision");
         MvcResult noop = adminPut(path, admin, revision, grantBody(List.of(1L, 10L), List.of(110L, 100L)));
         assertCode(noop, 200, "OK");
         assertThat(noop.getResponse().getHeader("X-Revision")).isEqualTo(revision);
-        assertCode(call("GET", "/me", first, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", first, null), 200, "OK");
         assertCode(adminPut(path, admin, revision, grantBody(List.of(), List.of())), 200, "OK");
-        assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
         first = login("first_user");
         assertCode(call("GET", "/admin/test/query", first, null), 403, "FORBIDDEN");
-        assertThat(data(call("GET", "/me/menus", first, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", first, null)).isEmpty()).isTrue();
     }
 
     @Test
@@ -1702,8 +1901,8 @@ class IdentityIntegrationTest {
                     id)).isZero();
         }
         assertThat(adminRevision(admin, user)).isNotEqualTo(userRevision);
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
-        assertCode(call("GET", "/me", second, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", second, null), 401, "UNAUTHENTICATED");
         assertCode(roleDelete(path, admin, revision), 404, "NOT_FOUND");
         for (String builtin : List.of("1", "2", "3")) {
             assertCode(roleDelete("/admin/roles/" + builtin, admin, roleRevision(admin, builtin)), 409,
@@ -1730,9 +1929,9 @@ class IdentityIntegrationTest {
         assertThat(roleRevision(admin, "1")).isEqualTo(revision);
         assertThat(jdbc.queryForList("SELECT menu_id FROM sys_role_menu WHERE role_id=1 ORDER BY menu_id",
                 Long.class)).isEqualTo(menus);
-        assertCode(call("GET", "/me", admin, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", admin, null), 200, "OK");
         assertCode(adminPut("/admin/roles/1", admin, revision, roleBody("管理员展示名", "ALL", 1)), 200, "OK");
-        assertCode(call("GET", "/me", admin, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", admin, null), 200, "OK");
     }
 
     @Test
@@ -1752,7 +1951,7 @@ class IdentityIntegrationTest {
         assertThat(roleRevision(admin, id)).isEqualTo(revision);
         assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("permissionIds").isEmpty()).isTrue();
         assertThat(data(call("GET", "/admin/roles/" + id, admin, null)).get("menuIds").isEmpty()).isTrue();
-        assertCode(call("GET", "/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
     }
 
     @Test
@@ -1807,7 +2006,7 @@ class IdentityIntegrationTest {
     void concurrentRoleAndUserChangesPreserveLastEffectiveAdmin() throws Exception {
         String first = adminLogin("first_admin");
         String second = adminLogin("second_admin");
-        String user = data(call("GET", "/me", first, null)).get("userId").asString();
+        String user = data(call("GET", "/blog/me", first, null)).get("userId").asString();
         String userRevision = adminRevision(first, user);
         String roleRevision = roleRevision(second, "1");
         try (var executor = Executors.newFixedThreadPool(2)) {
@@ -1826,7 +2025,7 @@ class IdentityIntegrationTest {
     @Test
     void roleWriteRechecksIdentityAndPermissionsAfterWaitingForGuard() throws Exception {
         String admin = adminLogin("adminroot");
-        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", admin, null)).get("userId").asString());
         String id = createRole(admin, "editor");
         String revision = roleRevision(admin, id);
         try (var executor = Executors.newSingleThreadExecutor()) {
@@ -1916,7 +2115,7 @@ class IdentityIntegrationTest {
         assertThat(data(created).get("createTime").asString()).matches(".*\\.\\d{3}Z");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
                 id)).isZero();
-        assertThat(data(call("GET", "/me/capabilities", admin, null)).get("permissionCodes").toString()).doesNotContain(
+        assertThat(data(call("GET", "/blog/me/capabilities", admin, null)).get("permissionCodes").toString()).doesNotContain(
                 "test:article:deleteOwn");
         assertCode(call("POST", "/admin/permissions", admin, permissionCreateBody("test:article:deleteOwn")), 409,
                 "UNIQUE_CONFLICT");
@@ -2022,7 +2221,7 @@ class IdentityIntegrationTest {
         assertThat(data(updated).get("description").isNull()).isTrue();
         String current = updated.getResponse().getHeader("X-Revision");
         assertThat(current).matches("\"[0-9a-f]{64}\"").isNotEqualTo(revision);
-        assertCode(call("GET", "/me", admin, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", admin, null), 200, "OK");
         assertCode(adminPut(path, admin, revision, permissionBody("旧版本", "test", 1)), 412, "REVISION_CONFLICT");
         jdbc.update(
                 "UPDATE sys_permission SET update_time=DATE_ADD(update_time,INTERVAL 1 SECOND) WHERE permission_id=?",
@@ -2077,12 +2276,12 @@ class IdentityIntegrationTest {
             String whileDisabled = login("first_user");
             assertCode(adminPut("/admin/permissions/" + id, admin, disabled.getResponse().getHeader("X-Revision"),
                     permissionBody("导出", "test", 1)), 200, "OK");
-            assertCode(call("GET", "/me", whileDisabled, null), 401, "UNAUTHENTICATED");
-            assertCode(call("GET", "/me", first, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/blog/me", whileDisabled, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/blog/me", first, null), 401, "UNAUTHENTICATED");
             assertThat(authorization.capabilities(Long.parseLong(firstId)).permissionCodes()).contains(
                     "test:article:export");
             assertThat(authorization.menus(Long.parseLong(firstId))).hasSize(1);
-            assertCode(call("GET", "/me", login("first_user"), null), 200, "OK");
+            assertCode(call("GET", "/blog/me", login("first_user"), null), 200, "OK");
         } finally {
             jdbc.update("UPDATE sys_menu SET permission_id=10 WHERE menu_id=110");
         }
@@ -2134,7 +2333,7 @@ class IdentityIntegrationTest {
         assertThat(roleRevision(admin, role)).isEqualTo(roleRevision);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_permission WHERE permission_id=?", Integer.class,
                 id)).isEqualTo(1);
-        assertCode(call("GET", "/me", first, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", first, null), 200, "OK");
         reset(sessions);
         MvcResult deleted = roleDelete(path, admin, revision);
         assertCode(deleted, 200, "OK");
@@ -2144,7 +2343,7 @@ class IdentityIntegrationTest {
                 id)).isZero();
         assertThat(roleRevision(admin, role)).isNotEqualTo(roleRevision);
         for (String token : List.of(first, second)) {
-            assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+            assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
         }
         assertCode(roleDelete(path, admin, revision), 404, "NOT_FOUND");
     }
@@ -2154,7 +2353,7 @@ class IdentityIntegrationTest {
         String admin = adminLogin("adminroot");
         String id = createPermission(admin, "test:article:export");
         jdbc.update("INSERT INTO sys_role_permission(role_id,permission_id) VALUES(1,?)", id);
-        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", admin, null)).get("userId").asString());
         String revision = permissionRevision(admin, id);
         doThrow(new RedisConnectionFailureException("injected")).when(sessions).revokeAll(actor);
         assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("不应保存", "other", 0)), 503,
@@ -2171,7 +2370,7 @@ class IdentityIntegrationTest {
             assertThat(permissionRevision(admin, fixedId)).isEqualTo(fixedRevision);
         }
         assertCode(adminPut("/admin/permissions/" + id, admin, revision, permissionBody("导出", "test", 0)), 200, "OK");
-        assertCode(call("GET", "/me", admin, null), 401, "UNAUTHENTICATED");
+        assertCode(call("GET", "/blog/me", admin, null), 401, "UNAUTHENTICATED");
         admin = login("adminroot");
         assertCode(call("GET", "/admin/permissions", admin, null), 200, "OK");
         assertThat(AuthorizationProvider.ADMIN_PERMISSIONS).doesNotContain("sys:log:query", "home:profile:query");
@@ -2196,7 +2395,7 @@ class IdentityIntegrationTest {
                     throw new IllegalStateException(exception);
                 }
             }).sorted().toList()).containsExactly(200, 412);
-            String user = data(call("GET", "/me", first, null)).get("userId").asString();
+            String user = data(call("GET", "/blog/me", first, null)).get("userId").asString();
             String userRevision = adminRevision(second, user);
             String protectedRevision = permissionRevision(second, "80");
             List<Callable<MvcResult>> protectedWrites = List.of(
@@ -2213,7 +2412,7 @@ class IdentityIntegrationTest {
     @Test
     void permissionWriteRechecksIdentityAndPermissionsAfterGuardWait() throws Exception {
         String admin = adminLogin("adminroot");
-        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", admin, null)).get("userId").asString());
         String id = createPermission(admin, "test:article:export");
         String revision = permissionRevision(admin, id);
         try (var executor = Executors.newSingleThreadExecutor()) {
@@ -2472,7 +2671,7 @@ class IdentityIntegrationTest {
         assertThat(findMenu(branch.get("children"), second).get("permissionCode").asString()).isEqualTo(
                 "blog:category:query");
         assertThat(branch.properties()).hasSize(18);
-        assertThat(findMenu(data(call("GET", "/me/menus", admin, null)), root)).isNull();
+        assertThat(findMenu(data(call("GET", "/blog/me/menus", admin, null)), root)).isNull();
         MvcResult detail = call("GET", "/admin/menus/" + root, admin, null);
         assertThat(data(detail).properties()).hasSize(16);
         assertThat(detail.getResponse().getHeader("X-Revision")).matches("\"[0-9a-f]{64}\"");
@@ -2575,22 +2774,22 @@ class IdentityIntegrationTest {
         fields.put("keepAlive", 1);
         assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)),
                 200, "OK");
-        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page).get("isVisible").asInt()).isZero();
-        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), button)).isNotNull();
+        assertThat(findMenu(data(call("GET", "/blog/me/menus", token, null)), page).get("isVisible").asInt()).isZero();
+        assertThat(findMenu(data(call("GET", "/blog/me/menus", token, null)), button)).isNotNull();
         fields.put("status", 0);
         assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page), json.writeValueAsString(fields)),
                 200, "OK");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/capabilities", token, null)).get("permissionCodes").toString()).contains(
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/capabilities", token, null)).get("permissionCodes").toString()).contains(
                 "blog:article:query");
         assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
                 menuBody("GrantedPage", root, "M", "20")), 200, "OK");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(
                 grants);
         assertCode(adminPut("/admin/menus/" + page, admin, menuRevision(admin, page),
                 menuBody("GrantedPage", other, "M", "10")), 200, "OK");
-        assertThat(data(call("GET", "/me/menus", token, null)).isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/menus", token, null)).isEmpty()).isTrue();
         assertThat(roleRevision(admin, role)).isEqualTo(roleVersion);
         assertThat(
                 jdbc.queryForObject("SELECT COUNT(*) FROM sys_role_menu WHERE role_id=? AND menu_id=?", Integer.class,
@@ -2599,7 +2798,7 @@ class IdentityIntegrationTest {
                 grantBody(List.of(1L, 10L, 11L), List.of(Long.parseLong(button)))), 200, "OK");
         token = login("menu_viewer");
         second = login("menu_viewer");
-        assertThat(findMenu(data(call("GET", "/me/menus", token, null)), page)).isNotNull();
+        assertThat(findMenu(data(call("GET", "/blog/me/menus", token, null)), page)).isNotNull();
         String beforeDelete = roleRevision(admin, role);
         doThrow(new RedisConnectionFailureException("must not revoke menu sessions")).when(sessions)
                 .revokeAll(Long.parseLong(user));
@@ -2612,8 +2811,8 @@ class IdentityIntegrationTest {
                 button)).isZero();
         assertThat(data(call("GET", "/admin/roles/" + role, admin, null)).get("permissionIds").toString()).isEqualTo(
                 grants);
-        assertCode(call("GET", "/me", token, null), 200, "OK");
-        assertCode(call("GET", "/me", second, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", second, null), 200, "OK");
         assertCode(roleDelete("/admin/menus/" + button, admin, "\"" + "0".repeat(64) + "\""), 404, "NOT_FOUND");
     }
 
@@ -2650,7 +2849,7 @@ class IdentityIntegrationTest {
     @Test
     void menuWriteRechecksIdentityPermissionAndTokenAfterGuardWaitAndRedisFailureRollsBack() throws Exception {
         String admin = adminLogin("adminroot");
-        long actor = Long.parseLong(data(call("GET", "/me", admin, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", admin, null)).get("userId").asString());
         String id = createMenu(admin, "Guarded", null, "D", null);
         String revision = menuRevision(admin, id);
         doThrow(new RedisConnectionFailureException("injected active check failure")).when(sessions)
@@ -2831,12 +3030,12 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult register(String username) throws Exception {
-        return call("POST", "/auth/register", null,
+        return call("POST", "/blog/auth/register", null,
                 "{\"username\":\"" + username + "\",\"password\":\"" + PASSWORD + "\",\"nickname\":\"叶\"}");
     }
 
     private String login(String username) throws Exception {
-        MvcResult result = call("POST", "/auth/login", null, loginBody(username, PASSWORD));
+        MvcResult result = call("POST", "/blog/auth/login", null, loginBody(username, PASSWORD));
         assertCode(result, 200, "OK");
         return data(result).get("accessToken").asString();
     }
@@ -2857,13 +3056,14 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult patch(String token, String revision, String body) throws Exception {
-        return mvc.perform(req("PATCH", "/me/profile").header("Authorization", "Bearer " + token)
+        return mvc.perform(req("PATCH", "/blog/me/profile").header("Authorization", "Bearer " + token)
                 .header("If-Revision", revision).contentType("application/json").content(body)).andReturn();
     }
 
     private MockHttpServletRequestBuilder req(String method, String path) {
-        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1")
-                .servletPath(path.split("\\?", 2)[0]);
+        return CaptchaTestSupport.withCaptcha(
+                request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1")
+                        .servletPath(path.split("\\?", 2)[0]), redis, properties);
     }
 
     private JsonNode data(MvcResult result) throws Exception {
@@ -2880,9 +3080,9 @@ class IdentityIntegrationTest {
     @Test
     void identityModelsRejectUndeclaredRepeatedAndBlankQueryInputs() throws Exception {
         String token = adminLogin("model_queries");
-        String id = data(call("GET", "/me", token, null)).get("userId").asString();
-        for (String path : List.of("/auth/oauth/providers", "/me", "/me/capabilities", "/me/menus",
-                "/me/oauth-bindings",
+        String id = data(call("GET", "/blog/me", token, null)).get("userId").asString();
+        for (String path : List.of("/blog/auth/oauth/providers", "/blog/me", "/blog/me/capabilities", "/blog/me/menus",
+                "/blog/me/oauth-bindings",
                 "/admin/users", "/admin/users/" + id, "/admin/roles", "/admin/roles/1",
                 "/admin/permissions", "/admin/permissions/1", "/admin/menus", "/admin/menus/100")) {
             assertCode(call("GET", path + "?userId=1", token, null), 400, "VALIDATION_ERROR");
@@ -2903,25 +3103,25 @@ class IdentityIntegrationTest {
     @Test
     void rejectedIdentityInputsDoNotCreateUsersLogoutOrUnbind() throws Exception {
         String token = adminLogin("model_writes");
-        assertCode(call("POST", "/auth/register?status=0", null, createUserBody("must_not_exist")), 400,
+        assertCode(call("POST", "/blog/auth/register?status=0", null, createUserBody("must_not_exist")), 400,
                 "VALIDATION_ERROR");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM sys_user WHERE username='must_not_exist'",
                 Integer.class)).isZero();
-        assertCode(call("POST", "/auth/login?userId=1", null, loginBody("model_writes", PASSWORD)), 400,
+        assertCode(call("POST", "/blog/auth/login?userId=1", null, loginBody("model_writes", PASSWORD)), 400,
                 "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
-        assertCode(call("POST", "/auth/logout?userId=1", token, null), 400, "VALIDATION_ERROR");
-        assertCode(call("DELETE", "/me/oauth-bindings/GITHUB", token, "{}"), 400, "VALIDATION_ERROR");
-        assertCode(call("GET", "/me", token, null), 200, "OK");
-        assertCode(call("POST", "/auth/logout", token, null), 200, "OK");
-        assertCode(call("GET", "/me", token, null), 401, "UNAUTHENTICATED");
+        assertCode(call("POST", "/blog/auth/logout", token, "{}"), 400, "VALIDATION_ERROR");
+        assertCode(call("POST", "/blog/auth/logout?userId=1", token, null), 400, "VALIDATION_ERROR");
+        assertCode(call("DELETE", "/blog/me/oauth-bindings/GITHUB", token, "{}"), 400, "VALIDATION_ERROR");
+        assertCode(call("GET", "/blog/me", token, null), 200, "OK");
+        assertCode(call("POST", "/blog/auth/logout", token, null), 200, "OK");
+        assertCode(call("GET", "/blog/me", token, null), 401, "UNAUTHENTICATED");
     }
 
     @Test
     void invalidCallbackParametersDoNotConsumeTheOAuthFlow() throws Exception {
         OAuthFlow flow = start("LOGIN", null, null);
         for (String extra : List.of("userId", "state", "code")) {
-            assertCode(mvc.perform(req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state())
+            assertCode(mvc.perform(req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", flow.state())
                             .param("code", "model_identity").param(extra, "unexpected")
                             .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400,
                     "VALIDATION_ERROR");
@@ -2934,7 +3134,7 @@ class IdentityIntegrationTest {
     @Test
     void roleAndPermissionWritesRecheckOriginalTokenAfterTheirTargetLock() throws Exception {
         String token = adminLogin("model_target_lock");
-        long actor = Long.parseLong(data(call("GET", "/me", token, null)).get("userId").asString());
+        long actor = Long.parseLong(data(call("GET", "/blog/me", token, null)).get("userId").asString());
         for (String kind : List.of("roles", "permissions")) {
             String id = kind.equals("roles") ? createRole(token, "model_lock") : createPermission(token,
                     "test:model:lock");
@@ -3006,7 +3206,7 @@ class IdentityIntegrationTest {
         String raw = store.read("state", flow.state());
         for (int index = 0; index < 30; index++) {
             String source = index % 2 == 0 ? "GITHUB" : "GITEE";
-            assertCode(mvc.perform(req("GET", "/auth/oauth/" + source + "/callback")
+            assertCode(mvc.perform(req("GET", "/blog/auth/oauth/" + source + "/callback")
                     .param("state", TokenUtils.random()).param("code", "verified")
                     .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn(), 400, "OAUTH_STATE_INVALID");
         }
@@ -3020,7 +3220,7 @@ class IdentityIntegrationTest {
     }
 
     private OAuthFlow start(String operation, String token, String browser) throws Exception {
-        var request = req("POST", "/auth/oauth/GITHUB/authorize").header("Origin", ORIGIN)
+        var request = req("POST", "/blog/auth/oauth/GITHUB/authorize").header("Origin", ORIGIN)
                 .contentType("application/json").content("{\"operation\":\"" + operation + "\"}");
         if (token != null) {
             request.header("Authorization", "Bearer " + token);
@@ -3040,7 +3240,7 @@ class IdentityIntegrationTest {
 
     private MvcResult callback(OAuthFlow flow, String identity) throws Exception {
         return mvc.perform(
-                req("GET", "/auth/oauth/GITHUB/callback").param("state", flow.state()).param("code", identity)
+                req("GET", "/blog/auth/oauth/GITHUB/callback").param("state", flow.state()).param("code", identity)
                         .cookie(new Cookie("__Host-dl-oauth-browser", flow.browser()))).andReturn();
     }
 
@@ -3053,7 +3253,7 @@ class IdentityIntegrationTest {
     }
 
     private MvcResult exchange(String ticket, String browser, String token) throws Exception {
-        var request = req("POST", "/auth/oauth/exchange").header("Origin", ORIGIN)
+        var request = req("POST", "/blog/auth/oauth/exchange").header("Origin", ORIGIN)
                 .cookie(new Cookie("__Host-dl-oauth-browser", browser)).contentType("application/json")
                 .content("{\"ticket\":\"" + ticket + "\"}");
         if (token != null) {

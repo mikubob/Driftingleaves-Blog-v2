@@ -38,11 +38,28 @@
         <jsoup.version>1.23.2</jsoup.version>
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <ip2region.version>3.3.7</ip2region.version>
+        <hutool.version>5.8.48</hutool.version>
     </properties>
 
     <!-- 这里只管理版本，不会自动给子模块加运行依赖。 -->
     <dependencyManagement>
         <dependencies>
+            <!-- Hutool 按需引入核心、摘要和验证码模块，共用一个版本。 -->
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-core</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-crypto</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-captcha</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
             <!-- IPv4 和 IPv6 都在本地查询，用不依赖 Spring 或 Jackson 的官方客户端。 -->
             <dependency>
                 <groupId>org.lionsoul</groupId>

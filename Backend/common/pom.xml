@@ -13,6 +13,21 @@
     <artifactId>common</artifactId>
 
     <dependencies>
+        <!-- 字符串判空和默认值处理直接使用核心模块，不依赖 crypto 的传递声明。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-core</artifactId>
+        </dependency>
+        <!-- 敏感标识的 SHA-256 摘要交给 Hutool，随机票据仍使用 SecureRandom。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-crypto</artifactId>
+        </dependency>
+        <!-- 六位数字圆圈验证码与现有 Hutool 模块保持同版。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-captcha</artifactId>
+        </dependency>
         <!-- 这里引入离线 IP 地域查询，加载和关闭查询器交给 server。 -->
         <dependency>
             <groupId>org.lionsoul</groupId>

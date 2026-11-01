@@ -1,5 +1,9 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
+import cn.hutool.core.util.EscapeUtil;
+import cn.hutool.core.util.ObjectUtil;
+import cn.hutool.core.util.StrUtil;
 import com.xuan.entity.BlogArticle;
 import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
@@ -69,13 +73,13 @@ public class FeedServiceImpl implements IFeedService {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
     public String sitemap(Integer requested) {
-        int wanted = requested == null ? 1 : requested;
+        int wanted = ObjectUtil.defaultIfNull(requested, 1);
         SitemapPages pages = new SitemapPages(wanted);
         pages.add(sites.base("blog").toString(), null);
-        if (sites.getHomeBaseUrl() != null && !sites.getHomeBaseUrl().isBlank()) {
+        if (!StrUtil.nullToEmpty(sites.getHomeBaseUrl()).isBlank()) {
             pages.add(sites.base("home").toString(), null);
         }
-        if (sites.getCvBaseUrl() != null && !sites.getCvBaseUrl().isBlank()) {
+        if (!StrUtil.nullToEmpty(sites.getCvBaseUrl()).isBlank()) {
             pages.add(sites.base("cv").toString(), null);
         }
         int kind = 0;
@@ -83,7 +87,7 @@ public class FeedServiceImpl implements IFeedService {
         LocalDateTime at = now();
         while (true) {
             List<SitemapRow> batch = feeds.sitemap(kind, after, at);
-            if (batch.isEmpty()) {
+            if (CollUtil.isEmpty(batch)) {
                 break;
             }
             for (SitemapRow row : batch) {
@@ -123,8 +127,7 @@ public class FeedServiceImpl implements IFeedService {
         StringBuilder clean = new StringBuilder();
         value.codePoints().forEach(c -> clean.appendCodePoint(c == 9 || c == 10 || c == 13 || c >= 32 && c <= 0xD7FF
                 || c >= 0xE000 && c <= 0xFFFD || c >= 0x10000 && c <= 0x10FFFF ? c : 0xFFFD));
-        return clean.toString().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
-                .replace("'", "&apos;");
+        return EscapeUtil.escapeXml(clean.toString());
     }
 
     /** 所有来自资料表的文本都经过同一个XML编码。 */

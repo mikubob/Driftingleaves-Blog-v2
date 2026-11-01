@@ -29,8 +29,8 @@ pnpm preview
 | --- | --- |
 | `GET /api/v1/home/profile` | 昵称、标签、简介、头像、所在地与公开联系方式 |
 | `GET /api/v1/home/social-links` | 后端排序的社交导航，保留字符串 ID |
-| `GET /api/v1/blog/configs` | 公开 site 标题、描述、备案和建站日期 |
-| `POST /api/v1/analytics/page-views` | 一次主页浏览，`siteCode=home`、`articleId=null` |
+| `GET /api/v1/home/configs` | 公开 site 标题、描述、备案和建站日期 |
+| `POST /api/v1/home/analytics/page-views` | 一次主页浏览，`siteCode=home`、`articleId=null` |
 
 资料、社交和配置独立处理加载、失败、重试与空数据，不用示例数据替代接口结果。未配置头像或图片加载失败时显示昵称首字。链接仅使用 HTTP(S) 或单一邮箱 mailto；图标 URL 使用 HTTP(S)，图标键仅匹配本地 SVG 白名单，未知键回落为链接图标。兼容参考工程的 `boke`、`jianli`、`youxiang`、`bilibili-line`、`csdn1` 键。博客、简历等入口由后台社交链接配置，不写死部署地址。
 

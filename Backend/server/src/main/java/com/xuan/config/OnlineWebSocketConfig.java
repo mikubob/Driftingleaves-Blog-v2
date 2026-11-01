@@ -9,7 +9,7 @@ import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
 import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry;
 
-/** 复用应用 context-path，外部路径为 /api/v1/ws/online。 */
+/** 复用应用 context-path，Home、Blog、Cv 使用各自端前缀的在线入口。 */
 @Configuration
 @EnableWebSocket
 @RequiredArgsConstructor
@@ -21,7 +21,7 @@ public class OnlineWebSocketConfig implements WebSocketConfigurer {
     /** {@inheritDoc} */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(handler, "/ws/online").addInterceptors(handshake)
+        registry.addHandler(handler, "/home/ws/online", "/blog/ws/online", "/cv/ws/online").addInterceptors(handshake)
                 .setAllowedOrigins(auth.getAllowedOrigins().toArray(String[]::new));
     }
 }

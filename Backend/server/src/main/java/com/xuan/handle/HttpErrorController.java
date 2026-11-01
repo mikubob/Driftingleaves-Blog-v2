@@ -1,4 +1,4 @@
-package com.xuan.controller.auth;
+package com.xuan.handle;
 
 import com.xuan.result.Result;
 import jakarta.servlet.RequestDispatcher;

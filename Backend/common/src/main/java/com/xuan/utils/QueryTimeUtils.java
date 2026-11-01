@@ -1,5 +1,6 @@
 package com.xuan.utils;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.exception.BusinessException;
 
 import java.time.DateTimeException;
@@ -17,7 +18,7 @@ public final class QueryTimeUtils {
 
     /** 将接口Time转换为数据库UTC值，不接受隐式本地时区。 */
     public static LocalDateTime parse(String value) {
-        if (value == null) {
+        if (ObjectUtil.isNull(value)) {
             return null;
         }
         try {
@@ -36,7 +37,7 @@ public final class QueryTimeUtils {
 
     /** 明细筛选使用[begin,end)，单侧界限允许缺失。 */
     public static void requireRange(LocalDateTime begin, LocalDateTime end) {
-        if (begin != null && end != null && !begin.isBefore(end)) {
+        if (ObjectUtil.isNotNull(begin) && ObjectUtil.isNotNull(end) && !begin.isBefore(end)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "begin须早于end");
         }
     }

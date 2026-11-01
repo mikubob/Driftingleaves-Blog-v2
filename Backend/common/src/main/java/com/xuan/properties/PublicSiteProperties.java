@@ -1,5 +1,6 @@
 package com.xuan.properties;
 
+import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
 import com.xuan.utils.UrlPolicy;
 import lombok.Data;
@@ -50,7 +51,7 @@ public class PublicSiteProperties {
         try {
             source = URI.create(origin == null ? "" : origin);
             if (source.getHost() == null || source.getRawUserInfo() != null || source.getRawQuery() != null || source.getRawFragment() != null
-                    || !(source.getPath() == null || source.getPath().isEmpty())) {
+                    || StrUtil.isNotEmpty(source.getPath())) {
                 throw new IllegalArgumentException();
             }
         } catch (IllegalArgumentException error) {
@@ -65,14 +66,14 @@ public class PublicSiteProperties {
                 case "blog" -> blogBaseUrl;
                 default -> cvBaseUrl;
             };
-            if (configured == null || configured.isBlank()) {
+            if (StrUtil.nullToEmpty(configured).isBlank()) {
                 continue;
             }
             URI value = base(candidate);
             String prefix = value.getPath();
             if (value.getScheme().equalsIgnoreCase(source.getScheme()) && value.getRawAuthority()
                     .equalsIgnoreCase(source.getRawAuthority())
-                    && (prefix.isEmpty() || path.equals(prefix) || path.startsWith(prefix + "/"))) {
+                    && (StrUtil.isEmpty(prefix) || path.equals(prefix) || path.startsWith(prefix + "/"))) {
                 if (prefix.length() == longest) {
                     throw new BusinessException(503, "SERVICE_UNAVAILABLE", "公开站点来源与路径配置重叠");
                 }

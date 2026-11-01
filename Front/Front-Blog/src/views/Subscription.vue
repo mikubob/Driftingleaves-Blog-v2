@@ -18,7 +18,7 @@ async function submit() {
   busy.value = true
   error.value = ''
   try {
-    await request(confirm ? '/me/rss-subscription/confirm' : '/blog/rss-subscriptions/unsubscribe', {
+    await request(confirm ? '/blog/me/rss-subscription/confirm' : '/blog/rss-subscriptions/unsubscribe', {
       method: 'POST', body: { ticket },
     })
     done.value = true

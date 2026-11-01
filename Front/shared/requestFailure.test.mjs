@@ -13,8 +13,8 @@ afterEach(() => {
 })
 
 for (const [name, read] of [
-  ['Blog', () => blog.request('/home/profile')],
-  ['Admin', () => admin.request('/home/profile')],
+  ['Blog', () => blog.request('/blog/profile')],
+  ['Admin', () => admin.request('/admin/me')],
   ['Home', () => home.getProfile()],
   ['Cv', () => cv.getProfile()],
 ]) {
@@ -71,7 +71,7 @@ test('统计采集失败保持静默且不自动重放写请求', async () => {
       return new Response('gateway error', { status })
     }
     await assert.rejects(home.recordPageView({}))
-    await assert.rejects(blog.request('/analytics/page-views', { method: 'POST', body: {} }))
+    await assert.rejects(blog.request('/blog/analytics/page-views', { method: 'POST', body: {} }))
     assert.equal(calls, 2)
   }
   assert.deepEqual(failures, [])

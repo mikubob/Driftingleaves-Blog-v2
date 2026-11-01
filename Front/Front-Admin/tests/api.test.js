@@ -113,14 +113,14 @@ test('AUTH_FAILED 保留有效会话，UNAUTHENTICATED 清除当前 Token', asyn
       new Response(JSON.stringify({ code, msg: '认证失败', data: null, errors: [] }), {
         status: 401,
       })
-    await assert.rejects(request('/me'), ApiError)
+    await assert.rejects(request('/admin/me'), ApiError)
     assert.equal(expired, code === 'AUTH_FAILED' ? 0 : 1)
   }
   globalThis.fetch = async (_url, options) => {
     assert.equal(options.headers.has('Authorization'), false)
     return result(null)
   }
-  await request('/auth/logout', { method: 'POST' })
+  await request('/admin/auth/logout', { method: 'POST' })
 })
 
 test('版本冲突保留错误语义，且不自动重试覆盖', async () => {
@@ -186,11 +186,37 @@ test('表单校验错误展示具体字段信息，不回显请求中的密码',
       { status: 400 },
     )
   await assert.rejects(
-    request('/me/password', { method: 'PUT', body: { newPassword: 'fake-password' } }),
+    request('/admin/me/password', { method: 'PUT', body: { newPassword: 'fake-password' } }),
     (error) => {
       assert.match(error.message, /newPassword UTF-8 不能超过72字节/)
       assert.equal(error.message.includes('fake-password'), false)
       return true
     },
   )
+})
+
+
+test('验证码保留前导零，经请求头提交并校验图片响应', async () => {
+  const captcha = { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 }
+  let seen
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options }
+    return new Response(JSON.stringify({ code: 'OK', msg: '成功', data: captcha, errors: [] }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  assert.deepEqual((await request('/admin/auth/captcha')).data, captcha)
+  await request('/test', { method: 'POST', body: { operation: 'LOGIN' },
+    credentials: 'include', captcha: { captchaId: captcha.captchaId, code: '012345' } })
+  assert.equal(seen.options.headers.get('X-Captcha-Id'), captcha.captchaId)
+  assert.equal(seen.options.headers.get('X-Captcha-Code'), '012345')
+  assert.equal(seen.options.credentials, 'include')
+  assert.deepEqual(JSON.parse(seen.options.body), { operation: 'LOGIN' })
+  assert.equal(Object.hasOwn(seen.options, 'captcha'), false)
+  await assert.rejects(request('/test', { captcha: { captchaId: captcha.captchaId, code: '12345' } }), /六位数字/)
+  captcha.captchaId = '1'
+  await assert.rejects(request('/admin/auth/captcha'), /验证码响应/)
+  captcha.captchaId = 'a'.repeat(43)
+  captcha.imageBase64 = 'https://example.test/image.png'
+  await assert.rejects(request('/admin/auth/captcha'), /验证码响应/)
 })

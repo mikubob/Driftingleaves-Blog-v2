@@ -96,7 +96,8 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
                 String ticket = body.path("ticket").asString();
                 String value = tickets.read(ticket);
                 OnlineBinding binding = json.readValue(value, OnlineBinding.class);
-                if (!binding.origin().equals(session.getAttributes().get("onlineOrigin"))) {
+                if (!binding.origin().equals(session.getAttributes().get("onlineOrigin"))
+                        || !binding.siteCode().equals(session.getAttributes().get("onlineSite"))) {
                     throw OnlineTicketStore.invalid();
                 }
                 identities.requireActive(binding);

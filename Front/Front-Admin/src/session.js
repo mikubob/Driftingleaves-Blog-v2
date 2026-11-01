@@ -1,6 +1,8 @@
 import { reactive } from 'vue'
 import { request, setAuthorization } from './api.js'
+import { readStoredSession, removeStoredSession, writeStoredSession } from '../../shared/sessionStorage.mjs'
 
+const storageKey = 'dl-admin-session'
 export const session = reactive({
   user: null,
   capabilities: { roleCodes: [], permissionCodes: [], dataScopes: {} },
@@ -8,9 +10,10 @@ export const session = reactive({
   ready: false,
 })
 
-/** 清除当前内存身份，不持久化 Token 或用户授权。 */
+/** 清除内存身份及持久凭据，用户授权每次从后端读取。 */
 export function clearSession() {
   setAuthorization('')
+  removeStoredSession(storageKey)
   session.user = null
   session.capabilities = { roleCodes: [], permissionCodes: [], dataScopes: {} }
   session.menus = []
@@ -30,16 +33,38 @@ export async function acceptSession(data) {
     !data ||
     data.tokenType !== 'Bearer' ||
     typeof data.accessToken !== 'string' ||
-    !data.accessToken
+    !data.accessToken ||
+    !Number.isSafeInteger(data.expiresIn) ||
+    data.expiresIn <= 0
   ) {
     throw new Error('登录响应缺少有效会话。')
   }
-  setAuthorization(data.accessToken, clearSession)
+  const expiresAt = Date.now() + data.expiresIn * 1000
+  await loadSession(data.accessToken)
+  writeStoredSession(storageKey, data.accessToken, expiresAt)
+}
+
+/** 刷新后核验服务端身份、权限和菜单，保留原到期时间。 */
+export async function restoreSession() {
+  const stored = readStoredSession(storageKey)
+  if (!stored) {
+    return
+  }
+  try {
+    await loadSession(stored.accessToken)
+  } catch {
+    // 读取失败时已清理会话，由路由守卫回到登录页。
+  }
+}
+
+/** 登录和恢复都重新读取后台权限，避免信任浏览器保存的授权。 */
+async function loadSession(accessToken) {
+  setAuthorization(accessToken, clearSession)
   try {
     const [me, capabilities, menus] = await Promise.all([
-      request('/me'),
-      request('/me/capabilities'),
-      request('/me/menus'),
+      request('/admin/me'),
+      request('/admin/me/capabilities'),
+      request('/admin/me/menus'),
     ])
     if (
       !me.data ||
@@ -65,7 +90,7 @@ export async function acceptSession(data) {
 
 export async function logout() {
   try {
-    await request('/auth/logout', { method: 'POST' })
+    await request('/admin/auth/logout', { method: 'POST' })
   } finally {
     clearSession()
   }

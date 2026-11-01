@@ -1,5 +1,6 @@
 package com.xuan.client;
 
+import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.store.RedisOAuthStore;
@@ -125,7 +126,8 @@ public class JustAuthClient implements OAuthProviderClient {
         URI complete = URI.create(properties.getFrontendCompleteUrl());
         String origin = complete.getScheme() + "://" + complete.getRawAuthority();
         return "https".equals(callback.getScheme()) && "https".equals(complete.getScheme())
-                && callback.getPath().equals("/api/v1/auth/oauth/" + source + "/callback")
+                && (callback.getPath().equals("/api/v1/blog/auth/oauth/" + source + "/callback")
+                || callback.getPath().equals("/api/v1/admin/auth/oauth/" + source + "/callback"))
                 && callback.getRawQuery() == null && callback.getRawFragment() == null
                 && complete.getPath().equals("/oauth/complete") && complete.getRawQuery() == null
                 && complete.getRawFragment() == null && properties.getAllowedOrigins().contains(origin);
@@ -135,6 +137,6 @@ public class JustAuthClient implements OAuthProviderClient {
      * null 或空白都视为配置缺失。
      */
     private boolean blank(String value) {
-        return value == null || value.isBlank();
+        return StrUtil.nullToEmpty(value).isBlank();
     }
 }

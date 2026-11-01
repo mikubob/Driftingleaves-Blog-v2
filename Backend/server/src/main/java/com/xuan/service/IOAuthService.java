@@ -16,6 +16,6 @@ public interface IOAuthService {
     /** 可信且已消费的流程返回固定跳转地址，关系不可信就直接报 HTTP 错误。 */
     String callback(String source, String state, String code, String error, String browser);
 
-    /** 登录签发 Session，绑定必须带原 Token 且只返回绑定结果。 */
-    Object exchange(String ticket, String browser);
+    /** 登录按兑换端指定的秒数签发 Session，绑定必须带原 Token 且只返回绑定结果。 */
+    Object exchange(String ticket, String browser, int timeoutSeconds);
 }

@@ -35,7 +35,7 @@ export const useBlogStore = defineStore('blog', () => {
     }
     const sources = [
       ['profile', async () => {
-        const { data } = await request('/home/profile')
+        const { data } = await request('/blog/profile')
         personalInfo.value = {
           ...data,
           nickname: data?.nickname || '', tag: data?.tagline || '',
@@ -70,7 +70,7 @@ export const useBlogStore = defineStore('blog', () => {
         }))
       }],
       ['social', async () => {
-        socialLinks.value = (await request('/home/social-links')).data
+        socialLinks.value = (await request('/blog/social-links')).data
       }],
     ]
     pending = Promise.allSettled(sources.map(async ([key, load]) => {

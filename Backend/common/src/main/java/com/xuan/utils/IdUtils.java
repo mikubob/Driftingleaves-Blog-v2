@@ -1,5 +1,6 @@
 package com.xuan.utils;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.exception.BusinessException;
 
 /**
@@ -12,7 +13,7 @@ public final class IdUtils {
 
     /** 可选参数没传就返回 null；有符号、前导零或超过 Long 范围都报错。 */
     public static Long parse(String value) {
-        if (value == null) {
+        if (ObjectUtil.isNull(value)) {
             return null;
         }
         if (value.matches("[1-9][0-9]{0,18}")) {

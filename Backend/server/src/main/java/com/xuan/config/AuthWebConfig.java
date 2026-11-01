@@ -1,5 +1,6 @@
 package com.xuan.config;
 
+import cn.hutool.core.util.StrUtil;
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.stp.StpUtil;
@@ -44,13 +45,22 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class AuthWebConfig implements WebMvcConfigurer {
 
-    private static final Set<String> PUBLIC = Set.of("POST /auth/register", "POST /auth/login", "POST /auth/logout",
-            "GET /auth/oauth/providers", "POST /auth/oauth/exchange", "GET /blog/articles", "GET /blog/archives",
-            "GET /blog/article-rankings", "GET /blog/categories", "GET /blog/tags", "GET /blog/links",
-            "GET /blog/configs", "GET /home/profile", "GET /home/social-links",
-            "GET /cv/experiences", "GET /cv/skills", "GET /blog/music", "POST /blog/rss-subscriptions/unsubscribe",
-            "GET /blog/rss.xml", "GET /blog/sitemap.xml", "GET /blog/messages", "POST /analytics/page-views",
-            "GET /blog/statistics", "GET /blog/authors", "POST /analytics/online/tickets");
+    private static final Set<String> PUBLIC = Set.of(
+            "GET /admin/auth/captcha", "GET /blog/auth/captcha",
+            "POST /admin/auth/register", "POST /admin/auth/login", "POST /admin/auth/logout",
+            "GET /admin/auth/oauth/providers", "POST /admin/auth/oauth/exchange",
+            "POST /blog/auth/register", "POST /blog/auth/login", "POST /blog/auth/logout",
+            "GET /blog/auth/oauth/providers", "POST /blog/auth/oauth/exchange",
+            "GET /blog/articles", "GET /blog/archives", "GET /blog/article-rankings",
+            "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs",
+            "GET /blog/profile", "GET /blog/social-links", "GET /blog/music", "GET /blog/messages",
+            "GET /blog/statistics", "GET /blog/authors", "GET /blog/rss.xml", "GET /blog/sitemap.xml",
+            "POST /blog/rss-subscriptions/unsubscribe", "POST /blog/analytics/page-views",
+            "POST /blog/analytics/online/tickets",
+            "GET /home/profile", "GET /home/social-links", "GET /home/configs",
+            "POST /home/analytics/page-views", "POST /home/analytics/online/tickets",
+            "GET /cv/profile", "GET /cv/social-links", "GET /cv/configs", "GET /cv/experiences", "GET /cv/skills",
+            "POST /cv/analytics/page-views", "POST /cv/analytics/online/tickets");
     private final IUserService users;
     private final OAuthProviderClient providers;
     private final AuthProperties properties;
@@ -76,7 +86,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             @Override
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
                     Object handler) {
-                if (request.getServletPath().startsWith("/admin/") && handler instanceof HandlerMethod method
+                if (isAdminBusinessPath(request.getServletPath()) && handler instanceof HandlerMethod method
                         && !AnnotatedElementUtils.hasAnnotation(method.getMethod(), SaCheckPermission.class)
                         && !AnnotatedElementUtils.hasAnnotation(method.getBeanType(), SaCheckPermission.class)) {
                     throw new BusinessException(403, "FORBIDDEN", "后台入口未声明业务权限");
@@ -98,15 +108,15 @@ public class AuthWebConfig implements WebMvcConfigurer {
         // 2. 按请求方法和完整路径逐条放行，不能把整个 auth 或 blog 都公开。
         String path = request.getServletPath();
         String route = request.getMethod() + " " + path;
-        if ("GET /ws/online".equals(route)) {
+        if ("GET".equals(request.getMethod()) && path.matches("/(home|blog|cv)/ws/online")) {
             return;
         }
         if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
                 || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
                 || path.matches("/blog/(authors|categories|tags)/[^/]+")))) {
-            if (("GET /blog/messages".equals(route) || "POST /analytics/page-views".equals(route)
-                    || "POST /analytics/online/tickets".equals(route)) && request.getHeader(
+            if (("GET /blog/messages".equals(route) || path.matches("/(home|blog|cv)/analytics/(page-views|online/tickets)")
+                    && "POST".equals(request.getMethod())) && request.getHeader(
                     "Authorization") != null) {
                 users.requireCurrent();
             }
@@ -114,17 +124,23 @@ public class AuthWebConfig implements WebMvcConfigurer {
         }
 
         // 3. OAuth 动态路径也要检查平台名单，绑定需要的原会话由业务服务检查。
-        if (("POST".equals(request.getMethod()) && path.matches("/auth/oauth/[^/]+/authorize"))
-                || ("GET".equals(request.getMethod()) && path.matches("/auth/oauth/[^/]+/callback"))) {
-            providers.requireEnabled(path.split("/")[3]);
+        if (("POST".equals(request.getMethod()) && path.matches("/(admin|blog)/auth/oauth/[^/]+/authorize"))
+                || ("GET".equals(request.getMethod()) && path.matches("/(admin|blog)/auth/oauth/[^/]+/callback"))) {
+            providers.requireEnabled(path.split("/")[4]);
             return;
         }
 
         // 4. 其余请求都实时检查登录和账号状态，后台再检查 admin:access。
         users.requireCurrent();
-        if (path.startsWith("/admin/")) {
+        if (isAdminBusinessPath(path)) {
             StpUtil.checkPermission("admin:access");
         }
+    }
+
+    /** 登录与本人设置沿用身份规则，后台业务才要求入口和业务权限。 */
+    private boolean isAdminBusinessPath(String path) {
+        return path.startsWith("/admin/") && !path.startsWith("/admin/auth/")
+                && !path.equals("/admin/me") && !path.startsWith("/admin/me/");
     }
 
     /**
@@ -138,7 +154,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             URI uri = URI.create(origin);
             if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) || uri.getHost() == null
                     || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
-                    || !(uri.getPath() == null || uri.getPath().isEmpty())) {
+                    || StrUtil.isNotEmpty(uri.getPath())) {
                 throw new IllegalArgumentException("allowed-origins必须是明确的HTTP(S) origin");
             }
         }
@@ -146,7 +162,8 @@ public class AuthWebConfig implements WebMvcConfigurer {
         // 2. 只开放约定的方法和请求头，让前端能读到版本、跳转地址和等待秒数。
         config.setAllowedOrigins(properties.getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Revision"));
+        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Revision",
+                "X-Captcha-Id", "X-Captcha-Code"));
         config.setExposedHeaders(List.of("X-Revision", "Location", "Retry-After"));
         config.setAllowCredentials(true);
         config.setMaxAge(600L);

@@ -9,6 +9,7 @@ import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import StatusTag from '../components/StatusTag.vue'
 import SafeHtml from '../components/SafeHtml.vue'
+import CaptchaField from '../../../shared/CaptchaField.vue'
 
 const { filters, rows, page, total, totalPages, loading, error, load, reset, changePage } = useList(
   '/admin/messages',
@@ -19,6 +20,7 @@ const detailVisible = ref(false)
 const replyVisible = ref(false)
 const busy = ref(false)
 const replyError = ref('')
+const captcha = ref(null)
 const reply = reactive({ content: '', contentFormat: 0, notifyReply: 0 })
 
 async function view(row, replying = false) {
@@ -57,6 +59,7 @@ async function sendReply() {
   try {
     await request(`/admin/messages/${detail.value.messageId}/replies`, {
       method: 'POST',
+      captcha: captcha.value.getValue(),
       body: {
         content: reply.content,
         contentFormat: reply.contentFormat,
@@ -69,6 +72,9 @@ async function sendReply() {
   } catch (failure) {
     replyError.value = failure.message
   } finally {
+    if (replyVisible.value) {
+      captcha.value?.refresh()
+    }
     busy.value = false
   }
 }
@@ -249,10 +255,11 @@ onMounted(load)
             邮件通知
             <el-switch v-model="reply.notifyReply" :active-value="1" :inactive-value="0" />
           </label>
+          <CaptchaField v-if="replyVisible" ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
           <p v-if="replyError" role="alert" class="error-text">{{ replyError }}</p>
           <div class="dialog-actions">
             <el-button :disabled="busy" @click="replyVisible = false">取消</el-button>
-            <el-button type="primary" native-type="submit" :loading="busy">发送回复</el-button>
+            <el-button type="primary" native-type="submit" :loading="busy" :disabled="!captcha?.ready">发送回复</el-button>
           </div>
         </form>
       </template>

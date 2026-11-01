@@ -14,7 +14,7 @@ import java.util.List;
  * 公开展示只返回启用资料。
  */
 @RestController("blogSocialController")
-@RequestMapping("/home/social-links")
+@RequestMapping("/blog/social-links")
 @RequiredArgsConstructor
 public class SocialController {
 

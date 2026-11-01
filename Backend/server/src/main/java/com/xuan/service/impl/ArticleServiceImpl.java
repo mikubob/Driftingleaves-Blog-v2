@@ -1,5 +1,7 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.bean.BeanUtil;
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -42,7 +44,6 @@ import com.xuan.vo.AuthorPublicVO;
 import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -100,11 +101,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
-        List<ArticlePublicVO> records = cached.records().stream().map(item -> {
-            ArticlePublicVO copy = new ArticlePublicVO();
-            BeanUtils.copyProperties(item, copy);
-            return copy;
-        }).toList();
+        List<ArticlePublicVO> records = cached.records().stream()
+                .map(item -> BeanUtil.copyProperties(item, ArticlePublicVO.class)).toList();
         PageResult<ArticlePublicVO> page = new PageResult<>(cached.page(), cached.pageSize(), cached.total(), cached.totalPages(), records);
         for (ArticlePublicVO value : page.records()) {
             ArticleRow current = articles.publicById(value.getArticleId(), now());
@@ -193,8 +191,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         String markdown = content(row.getArticleId()).getMarkdownContent();
         References references = resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown, references.html());
-        ArticlePublicDetailVO value = new ArticlePublicDetailVO();
-        BeanUtils.copyProperties(cached, value);
+        ArticlePublicDetailVO value = BeanUtil.copyProperties(cached, ArticlePublicDetailVO.class);
         value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
         value.setCommentCount(commentCount(row.getArticleId()));
@@ -511,7 +508,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 leaves.add(node.getCommentId());
             }
         }
-        while (!leaves.isEmpty()) {
+        while (CollUtil.isNotEmpty(leaves)) {
             long comment = leaves.remove();
             articles.deleteComment(id, comment);
             Long parent = parents.get(comment);
@@ -602,7 +599,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @param locked 文章锁前读取并持锁的文件快照；缺失记录不能在文章锁后补锁
      */
     private void validateFiles(Set<Long> ids, Map<Long, BlogFile> locked) {
-        if (ids.isEmpty()) {
+        if (CollUtil.isEmpty(ids)) {
             return;
         }
         long actor = sessions.currentUserId();

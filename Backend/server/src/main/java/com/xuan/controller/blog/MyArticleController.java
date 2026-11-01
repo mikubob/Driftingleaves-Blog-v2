@@ -1,4 +1,4 @@
-package com.xuan.controller.me;
+package com.xuan.controller.blog;
 
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.result.PageResult;
@@ -16,9 +16,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 个人中心只读取当前用户的点赞，身份不从参数取得。
  */
 @RestController("ownArticleController")
-@RequestMapping("/me/liked-articles")
+@RequestMapping("/blog/me/liked-articles")
 @RequiredArgsConstructor
-public class ArticleController {
+public class MyArticleController {
 
     private final IArticleService articles;
 

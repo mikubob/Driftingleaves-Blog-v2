@@ -1,5 +1,6 @@
 package com.xuan.properties;
 
+import cn.hutool.core.util.StrUtil;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -29,7 +30,7 @@ public class AliOssProperties {
     public void validateEnabled() {
         URI uri;
         try {
-            uri = URI.create(endpoint == null ? "" : endpoint);
+            uri = URI.create(StrUtil.nullToEmpty(endpoint));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("OSS endpoint 必须是 HTTPS origin");
         }
@@ -40,8 +41,8 @@ public class AliOssProperties {
         }
         if (region == null || !region.matches("[a-z0-9-]{1,63}")
                 || bucket == null || !bucket.matches("[a-z0-9][a-z0-9-]{1,61}[a-z0-9]")
-                || accessKeyId == null || accessKeyId.isBlank()
-                || accessKeySecret == null || accessKeySecret.isBlank()) {
+                || StrUtil.nullToEmpty(accessKeyId).isBlank()
+                || StrUtil.nullToEmpty(accessKeySecret).isBlank()) {
             throw new IllegalArgumentException("启用 OSS 必须提供 region、bucket 和外部凭据");
         }
         if (keyPrefix == null || keyPrefix.length() > 200

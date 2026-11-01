@@ -24,9 +24,9 @@ async function load() {
   error.value = ''
   try {
     const [me, bindingResult, providerResult] = await Promise.all([
-      request('/me'),
-      request('/me/oauth-bindings'),
-      request('/auth/oauth/providers'),
+      request('/admin/me'),
+      request('/admin/me/oauth-bindings'),
+      request('/admin/auth/oauth/providers'),
     ])
     session.user = me.data
     revision.value = me.revision
@@ -49,7 +49,7 @@ async function saveProfile() {
   saving.value = true
   formError.value = ''
   try {
-    const result = await request('/me/profile', {
+    const result = await request('/admin/me/profile', {
       method: 'PATCH',
       revision: revision.value,
       body: {
@@ -95,7 +95,7 @@ async function changePassword(clear = false) {
     if (!clear && session.user.hasPassword) {
       body.currentPassword = password.currentPassword
     }
-    await request('/me/password', { method: clear ? 'DELETE' : 'PUT', body })
+    await request('/admin/me/password', { method: clear ? 'DELETE' : 'PUT', body })
     Object.assign(password, { currentPassword: '', newPassword: '', confirmPassword: '' })
     clearSession()
     ElMessage.success('安全设置已更新，请重新登录')
@@ -125,7 +125,7 @@ async function bind(provider) {
   }
   bindingBusy.value = true
   try {
-    const { data } = await request(`/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
+    const { data } = await request(`/admin/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
       method: 'POST',
       body: { operation: 'BIND' },
       credentials: 'include',
@@ -164,7 +164,7 @@ async function receiveBinding(event) {
   clearPopup()
   bindingBusy.value = true
   try {
-    const { data } = await request('/auth/oauth/exchange', {
+    const { data } = await request('/admin/auth/oauth/exchange', {
       method: 'POST',
       body: { ticket: event.data.ticket },
       credentials: 'include',
@@ -173,7 +173,7 @@ async function receiveBinding(event) {
       throw new Error('授权结果与绑定流程不匹配。')
     }
     ElMessage.success('第三方账号已绑定')
-    bindings.value = (await request('/me/oauth-bindings')).data
+    bindings.value = (await request('/admin/me/oauth-bindings')).data
   } catch (failure) {
     ElMessage.error(failure.message)
   } finally {
@@ -193,7 +193,7 @@ async function unbind(source) {
   }
   saving.value = true
   try {
-    await request(`/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
+    await request(`/admin/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
     clearSession()
     ElMessage.success('已解除绑定，请重新登录')
   } catch (failure) {

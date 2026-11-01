@@ -83,13 +83,28 @@ async function smoke(page, reducedMotion = 'no-preference') {
     const method = req.method()
     const body = req.postDataJSON()
     calls.push({ path, method, body, authorization: req.headers().authorization, revision: req.headers()['if-revision'] })
+    if (path === '/blog/auth/captcha') {
+      return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+        code: 'OK', msg: '成功', errors: [], data: { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 },
+      }) })
+    }
+    if (method === 'POST' && req.headers()['x-captcha-code'] === '000000') {
+      return route.fulfill({ status: 400, contentType: 'application/json',
+        body: JSON.stringify({ code: 'CAPTCHA_INVALID', msg: '测试验证码错误', data: null, errors: [] }) })
+    }
+    if (method === 'POST' && (['/blog/auth/login', '/blog/auth/register', '/blog/messages'].includes(path)
+      || /\/comments$/.test(path) || (/\/authorize$/.test(path) && body.operation === 'LOGIN'))) {
+      if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
+        throw new Error('缺少正确的验证码请求头')
+      }
+    }
     let data = null
     let status = 200
     let code = 'OK'
     const headers = { 'X-Revision': revision }
     if (path.endsWith('/files/1/content')) {
       return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="800" height="600" fill="#bbc6b9"/><path d="M0 600 350 100 800 600" fill="#4c6359"/><path d="M200 600 650 200 950 600" fill="#83978a"/></svg>' })
-    } else if (path === '/home/profile') {
+    } else if (path === '/blog/profile') {
       data = { nickname: '落叶随记', tagline: '一个写代码、也写生活的人', description: '收集日常的微光，记录思考的痕迹。', avatar: null, website: null, githubUrl: null, publicEmail: null, location: '地球' }
     } else if (path === '/blog/configs') {
       data = [{ configKey: 'site', isPublic: 1, configValue: { title: 'DriftingLeaves', description: '随便坐坐，看看我写的字。些许技术、心得，以及生活里的胡思乱想。', icp: '', publicSecurityRecord: '', startDate: null } }]
@@ -115,7 +130,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
       data = pagination([{ linkId: '401', linkName: '测试友人', url: 'https://example.test/', avatar: null, description: '虚构的友链，用于交互验证。' }], url.searchParams)
     } else if (path === '/blog/music') {
       data = pagination([{ musicId: '601', title: '测试曲目', artist: '测试歌手', audioUrl: 'https://example.test/test.mp3', coverUrl: null }], url.searchParams)
-    } else if (path === '/home/social-links') {
+    } else if (path === '/blog/social-links') {
       data = []
     } else if (path === '/blog/articles') {
       const keyword = url.searchParams.get('keyword')
@@ -138,19 +153,19 @@ async function smoke(page, reducedMotion = 'no-preference') {
         liked = false
       }
       data = { liked, likeCount: liked ? '13' : '12' }
-    } else if (path === '/auth/oauth/providers') {
+    } else if (path === '/blog/auth/oauth/providers') {
       data = [{ source: 'EXAMPLE', displayName: '测试平台' }]
-    } else if (path === '/auth/oauth/EXAMPLE/authorize') {
+    } else if (path === '/blog/auth/oauth/EXAMPLE/authorize') {
       data = { authorizationUrl: 'http://127.0.0.1:5174/oauth/complete#ticket=fictional-popup-ticket', expiresIn: 300 }
-    } else if (path === '/auth/oauth/exchange') {
-      data = { operation: 'LOGIN', session: { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 3600, user } }
-    } else if (path === '/auth/login') {
-      data = { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 3600, user }
-    } else if (path === '/auth/register' || path === '/me') {
+    } else if (path === '/blog/auth/oauth/exchange') {
+      data = { operation: 'LOGIN', session: { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 259200, user } }
+    } else if (path === '/blog/auth/login') {
+      data = { tokenType: 'Bearer', accessToken: 'fictional-memory-token', expiresIn: 259200, user }
+    } else if (path === '/blog/auth/register' || path === '/blog/me') {
       data = user
-    } else if (path === '/me/capabilities') {
+    } else if (path === '/blog/me/capabilities') {
       data = { permissionCodes: permissions, roleCodes: ['member'], dataScopes: {} }
-    } else if (path === '/me/profile') {
+    } else if (path === '/blog/me/profile') {
       if (profileConflict) {
         status = 412
         code = 'REVISION_MISMATCH'
@@ -158,32 +173,36 @@ async function smoke(page, reducedMotion = 'no-preference') {
         Object.assign(user, body)
         data = user
       }
-    } else if (path === '/me/liked-articles') {
+    } else if (path === '/blog/me/liked-articles') {
       data = pagination([{ article: articles[0], likedAt: time }], url.searchParams)
-    } else if (path === '/me/comments') {
+    } else if (path === '/blog/me/comments') {
       data = pagination([comment], url.searchParams)
-    } else if (path === '/me/messages') {
+    } else if (path === '/blog/me/messages') {
       data = pagination([messageState], url.searchParams)
-    } else if (path === '/me/messages/301') {
+    } else if (path === '/blog/me/messages/301') {
       if (method === 'PUT') {
         messageState = { ...messageState, ...body, status: 0 }
       }
       data = method === 'DELETE' ? null : messageState
     } else if (path === '/blog/messages') {
       data = method === 'POST' ? { ...messageState, ...body, status: 0 } : pagination(url.searchParams.has('parentId') ? [] : [messageState], url.searchParams)
-    } else if (path === '/me/rss-subscription') {
+    } else if (path === '/blog/me/rss-subscription') {
       if (method === 'PUT') {
         subscriptionState = { subscriptionId: '501', email: body.email, status: 0 }
       } else if (method === 'DELETE') {
         subscriptionState = { ...subscriptionState, status: 2 }
       }
       data = subscriptionState
-    } else if (path === '/me/rss-subscription/confirm') {
+    } else if (path === '/blog/me/rss-subscription/confirm') {
       data = { subscriptionId: '501', email: 'leaf@example.test', status: 1 }
-    } else if (path === '/blog/rss-subscriptions/unsubscribe' || path === '/auth/logout' || path === '/me/comments/201') {
+    } else if (path === '/blog/rss-subscriptions/unsubscribe' || path === '/blog/auth/logout' || path === '/blog/me/comments/201') {
       data = null
-    } else if (path === '/analytics/page-views') {
+    } else if (path === '/blog/analytics/page-views') {
       data = { recorded: true }
+    } else if (path === '/blog/analytics/online/tickets') {
+      // 本检查只验证账号流程，在线服务在独立的 online-browser-smoke 中验证。
+      status = 503
+      code = 'SERVICE_UNAVAILABLE'
     } else {
       unexpected.push(`${method} ${path}`)
       status = 404
@@ -254,11 +273,26 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByRole('button', { name: '登录后点赞', exact: true }).click()
   await page.getByLabel('用户名', { exact: true }).fill('test_leaf')
   await page.getByLabel('密码', { exact: true }).fill('Fictional-password-2026')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
+  await page.getByRole('button', { name: '登录 →', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).waitFor()
+  if (await page.getByLabel('用户名', { exact: true }).inputValue() !== 'test_leaf'
+    || await page.getByLabel('六位数字验证码', { exact: true }).inputValue() !== '') {
+    throw new Error('验证码失败后没有保留用户名或清空验证码')
+  }
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '登录 →', exact: true }).click()
   await page.getByRole('button', { name: '点赞', exact: true }).click()
   await page.getByRole('button', { name: '取消点赞', exact: true }).waitFor()
   await page.waitForFunction(() => window.blogEffects.some((effect) => effect.animation?.includes('keyframes-svg-filled')))
   await page.getByLabel('评论正文', { exact: true }).fill('一条待审核的测试评论。')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('000000')
+  await page.getByRole('button', { name: '发表评论', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: '测试验证码错误' }).waitFor()
+  if (await page.getByLabel('评论正文', { exact: true }).inputValue() !== '一条待审核的测试评论。') {
+    throw new Error('验证码失败后丢失评论正文')
+  }
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '发表评论', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '评论已提交，审核通过后公开显示' }).waitFor()
   await page.screenshot({ path: 'output/playwright/legacy-article.png', fullPage: true })
@@ -268,6 +302,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByLabel('留言正文', { exact: true }).fill('一条私密的测试留言。')
   await page.getByLabel('悄悄话', { exact: true }).check()
   await page.getByLabel('Markdown', { exact: true }).check()
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '留言', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '留言已提交，正在等待审核' }).last().waitFor()
   const messageCall = calls.findLast((call) => call.path === '/blog/messages' && call.method === 'POST')
@@ -278,7 +313,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByLabel('留言正文', { exact: true }).fill('编辑后的测试留言。')
   await page.getByRole('button', { name: '修改', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: '留言已提交，正在等待审核' }).last().waitFor()
-  if (!calls.some((call) => call.path === '/me/messages/301' && call.method === 'PUT' && call.revision === revision)) {
+  if (!calls.some((call) => call.path === '/blog/me/messages/301' && call.method === 'PUT' && call.revision === revision)) {
     throw new Error('原留言编辑缺少 V2 版本头')
   }
 
@@ -300,7 +335,14 @@ async function smoke(page, reducedMotion = 'no-preference') {
   profileConflict = false
   await page.getByRole('button', { name: '保存资料', exact: true }).click()
   await page.getByText('个人资料已更新。', { exact: true }).waitFor()
+  const savedSession = await page.evaluate(() => localStorage.getItem('dl-blog-session'))
   await page.reload()
+  await page.getByLabel('昵称', { exact: true }).waitFor()
+  if (await page.evaluate(() => localStorage.getItem('dl-blog-session')) !== savedSession) {
+    throw new Error('刷新后延长了博客会话有效期')
+  }
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await page.goto('http://127.0.0.1:5174/account')
   await page.getByRole('heading', { name: '登录后，和这里保持联系' }).waitFor()
 
   // 6. 邮箱票据、登录弹窗来源验证与手动退订。
@@ -310,9 +352,10 @@ async function smoke(page, reducedMotion = 'no-preference') {
     throw new Error('邮箱票据未立即清除')
   }
   await page.evaluate(() => window.postMessage({ type: 'dl-blog-oauth-login', ticket: 'forged-ticket' }, location.origin))
-  if (calls.some((call) => call.path === '/auth/oauth/exchange' && call.body.ticket === 'forged-ticket')) {
+  if (calls.some((call) => call.path === '/blog/auth/oauth/exchange' && call.body.ticket === 'forged-ticket')) {
     throw new Error('接受了伪造弹窗消息')
   }
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '测试平台 ↗' }).click()
   await page.getByRole('button', { name: '确认订阅', exact: true }).click()
   await page.getByText('邮箱验证成功，已开启邮件订阅。', { exact: true }).waitFor()
@@ -364,8 +407,8 @@ async function smoke(page, reducedMotion = 'no-preference') {
     throw new Error('系统动画偏好禁用了站内过渡：' + reducedMotion)
   }
   const storage = await page.evaluate(() => ({ local: Object.keys(localStorage), session: Object.keys(sessionStorage) }))
-  if (storage.local.some((key) => key !== 'dl-blog-visitor') || storage.session.length) {
-    throw new Error('持久化了统计标识以外的信息')
+  if (storage.local.some((key) => !['dl-blog-visitor', 'dl-blog-session'].includes(key)) || storage.session.length) {
+    throw new Error('持久化了登录凭据和统计标识以外的信息')
   }
   if (failures.length || unexpected.length || trackingWarnings.length) {
     throw new Error(JSON.stringify({ failures, unexpected, trackingWarnings }))

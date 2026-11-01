@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.dto.MenuCreateDTO;
@@ -236,7 +237,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         Set<Long> found = new TreeSet<>();
         ArrayDeque<Long> pending = new ArrayDeque<>();
         pending.add(menuId);
-        while (!pending.isEmpty()) {
+        while (CollUtil.isNotEmpty(pending)) {
             long id = pending.remove();
             if (found.add(id)) {
                 pending.addAll(children.getOrDefault(id, List.of()));

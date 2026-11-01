@@ -51,7 +51,7 @@ async function doDelete(item) {
   deleting.value = true
   error.value = ''
   try {
-    await request('/me/' + props.kind + '/' + item.id, { method: 'DELETE' })
+    await request('/blog/me/' + props.kind + '/' + item.id, { method: 'DELETE' })
     await listing.reload()
   } catch (failure) {
     error.value = failure.message

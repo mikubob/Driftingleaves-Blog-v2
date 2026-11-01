@@ -24,7 +24,7 @@ onMounted(async () => {
     return
   }
   try {
-    const { data } = await request('/auth/oauth/exchange', {
+    const { data } = await request('/blog/auth/oauth/exchange', {
       method: 'POST', credentials: 'include', body: { ticket },
     })
     if (data.operation !== 'LOGIN' || !data.session) {

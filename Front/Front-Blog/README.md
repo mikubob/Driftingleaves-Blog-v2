@@ -57,7 +57,7 @@ pnpm preview
 - 文章正式地址为 `/articles/:slug`，与后端 RSS、站点地图和统计一致；原 `/article/:slug` 保留跳转。原搜索入口为 `/?search=`，兼容上一版 `/search?keyword=`。
 - 文章、分类、标签、作者、归档、友链和回复均使用 V2 分页。字典和播放列表继续读取全部页。ID、外键、BIGINT 计数及分页总数保持字符串，不用浮点数转换；原 Element Plus 数字总数分页改为保留字符串的 `ListPager`。
 - 卡片字段通过 `articleView` 映射：`articleId → id`、`coverUrl → coverImage`、分类/标签对象转为原组件属性，正文使用 `htmlContent`。不伪造缺失的地理位置、设备信息、分类计数或在线人数。
-- 原站访客会话、匿名昵称/邮箱输入和验证码不适用于 V2，已移除。Token 仅保存在内存，经 Bearer 发送给配置的 API；刷新后重新登录，不从 Cookie 或浏览器存储恢复身份。权限读取 `/me/capabilities`。
+- 原站访客会话、匿名昵称/邮箱输入和验证码不适用于 V2，已移除。密码与 OAuth 登录均固定有效 3 天（259200 秒）；localStorage 的 `dl-blog-session` 仅保存 Token 和固定到期时间，经 Bearer 发送给配置的 API。刷新或重新打开页面后先核验 `/blog/me`、`/blog/me/capabilities`，再恢复身份和权限，不续期；退出或核验失败清除持久凭据。浏览器禁用存储时仅本页有效。
 - 点赞、评论、留言和邮件订阅按 V2 权限操作。评论为纯文本；V2 没有评论 Markdown、评论悄悄话或评论编辑接口，这些旧入口已移除。留言保留 Markdown、悄悄话、回复通知意愿及本人编辑/删除。私密范围和审核状态始终由服务端决定。
 - 文章和留言只展示后端清理后的 HTML，不重新解析 Markdown。原 `MdPreview` 分支换为原页面已有的 HTML 正文分支，保留目录和锚点。公开封面/附件支持文章上下文路径，跨域时指向配置的 API，不读取后台私密文件。
 - 原在线访客 WebSocket 在 V2 没有对应接口，已移除该统计项和连接。今日浏览、总浏览、访客总量等使用真实公开统计。不把接口失败展示成空内容；读取提供加载、错误与重试。
@@ -87,3 +87,5 @@ npx --package @playwright/cli playwright-cli -s=legacy-blog close
 公共异常边界验证：在仓库根目录执行 `node --test Front/shared/requestFailure.test.mjs`。
 
 旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。浏览器 smoke 可分别传入 `no-preference`、`reduce`，通过真实 transitionrun / animationstart 验证两种系统偏好下的主要动效。
+
+图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。

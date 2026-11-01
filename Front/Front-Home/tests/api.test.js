@@ -16,7 +16,7 @@ test('三个公开 GET 使用 /api/v1，不附加鉴权、参数或请求体', a
   const responses = new Map([
     ['/api/v1/home/profile', profile],
     ['/api/v1/home/social-links', socials],
-    ['/api/v1/blog/configs', [config]],
+    ['/api/v1/home/configs', [config]],
   ])
   globalThis.fetch = async (url, options) => {
     assert.ok(responses.has(url))
@@ -138,7 +138,7 @@ test('采集精确发送契约字段与 JSON，无鉴权，失败不重放', asy
   let calls = 0
   globalThis.fetch = async (url, options) => {
     calls += 1
-    assert.equal(url, '/api/v1/analytics/page-views')
+    assert.equal(url, '/api/v1/home/analytics/page-views')
     assert.equal(options.method, 'POST')
     assert.deepEqual(options.headers, { Accept: 'application/json', 'Content-Type': 'application/json' })
     assert.deepEqual(JSON.parse(options.body), payload)

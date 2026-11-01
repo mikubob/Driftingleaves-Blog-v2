@@ -45,16 +45,16 @@ pnpm preview
 
 ## 请求与安全行为
 
-- API 前缀集中为 `/api/v1`。Token 仅存内存，通过 Bearer 发送；刷新页面需要重新登录，不写浏览器存储、Cookie、URL 或日志。
+- API 前缀集中为 `/api/v1`。密码与 OAuth 登录均固定有效 7 天（604800 秒）；localStorage 的 `dl-admin-session` 仅保存 Token 和固定到期时间，通过 Bearer 发送，不写 Cookie、URL 或日志。刷新或重新打开页面后重读本人资料、权限和菜单，确认 `admin:access` 后先注册动态路由再导航，不续期。浏览器禁用存储时仅本页有效。
 - ID、ID 数组、统计与字节数保持十进制字符串。分页页码使用数字，时间筛选转为 UTC 毫秒，报表使用 UTC 自然日。
 - PUT 只提交完整的允许字段，PATCH 明确区分缺失和 null；不会把响应整行、作者、审计时间或 HTML 提交给后端。
 - 编辑先取详情，再原样携带带引号的 `X-Revision`。412 保留表单输入并提示重新获取后合并，428 提示补充版本；失败写入不自动重试。400 展示字段错误，429 使用 `Retry-After`。
 - 文章编辑含未保存离开提醒。预览显示上次保存时由后端清理的 HTML，不在本地渲染未保存 Markdown。附件需先创建草稿；后台图片携带 Bearer 读取为临时对象 URL，关闭预览或离开时释放。
-- 修改/清除密码、解绑成功或会话失效会清除内存身份；密码错误不会无条件注销已有会话。角色/菜单/账号变更造成的会话撤销遵从后端返回。
+- 修改/清除密码、解绑成功或会话失效会清除内存身份与本端持久凭据；密码错误不会无条件注销已有会话。角色/菜单/账号变更造成的会话撤销遵从后端返回。
 
 ## OAuth 部署
 
-完成页为 `/oauth/complete`。后端只有一个全局 `OAUTH_COMPLETE_URL`，使用此 Admin 完成页时，应将它配置为 **Admin 自己的 HTTPS Origin + `/oauth/complete`**，并将该 Origin 加入 `FRONTEND_ORIGINS`；平台回调仍配置到后端 `/api/v1/auth/oauth/{source}/callback`。不能指向另一个前端模块来隐式共享登录身份。若未来要求多个不同 Origin 同时各自完成 OAuth，需要先扩展后端已校验的完成页配置，本次没有修改此后端契约。
+完成页为 `/oauth/complete`。后端只有一个全局 `OAUTH_COMPLETE_URL`，使用此 Admin 完成页时，应将它配置为 **Admin 自己的 HTTPS Origin + `/oauth/complete`**，并将该 Origin 加入 `FRONTEND_ORIGINS`；平台回调仍配置到后端 `/api/v1/admin/auth/oauth/{source}/callback`。不能指向另一个前端模块来隐式共享登录身份。若未来要求多个不同 Origin 同时各自完成 OAuth，需要先扩展后端已校验的完成页配置，本次没有修改此后端契约。
 
 完成页读取 ticket 后立即清除 fragment。绑定弹窗通过精确同源 `postMessage` 将票据交回保留 Token 的原页面，原页面校验 origin、source 和当前绑定流程后兑换。300 秒敏感认证窗口、Cookie、平台可用性与一次性票据均由后端控制。
 
@@ -62,7 +62,7 @@ pnpm preview
 
 `pnpm test` 使用 Node 内置测试运行器，覆盖真实请求与会话模块的版本头、字符串 ID、分页、multipart、错误分类、限流、私密图片地址、菜单白名单与权限范围、密码字节限制、列表取消和错误状态。
 
-浏览器检查文件为 `tests/browser-smoke.mjs`，用 Playwright CLI 在 HTTP 边界提供明确的虚构数据，检查全部 22 个管理页面、10 类编辑表单提交、文章保存请求、版本冲突保留输入、OAuth 绑定弹窗携带原会话兑换、移动端和刷新后重新登录。在已运行 `pnpm dev` 且本机存在可用浏览器时执行：
+浏览器检查文件为 `tests/browser-smoke.mjs`，用 Playwright CLI 在 HTTP 边界提供明确的虚构数据，检查全部 22 个管理页面、10 类编辑表单提交、文章保存请求、版本冲突保留输入、OAuth 绑定弹窗携带原会话兑换、移动端、刷新后恢复登录及固定到期时间。在已运行 `pnpm dev` 且本机存在可用浏览器时执行：
 
 ```powershell
 npx --yes --package @playwright/cli playwright-cli -s=drifting-admin open http://127.0.0.1:5176/login
@@ -80,8 +80,10 @@ npx --yes --package @playwright/cli playwright-cli -s=drifting-admin close
 
 按本站要求，已有动画和过渡始终启用，不随系统“减少动态效果”设置关闭。
 
-UI 资源位于 `src/assets/`；管理区保留当前内存会话与动态权限菜单；登录页保持当前 UI、OAuth 和表单校验。服务器异常与限流继续使用 FeiTwnd 的 404 展示，保留本站 HTTP 错误分类及 Retry-After。参考工程只读，不复制凭据、部署地址或业务数据。
+UI 资源位于 `src/assets/`；管理区保留持久登录与动态权限菜单；登录页保持当前 UI、OAuth 和表单校验。服务器异常与限流继续使用 FeiTwnd 的 404 展示，保留本站 HTTP 错误分类及 Retry-After。参考工程只读，不复制凭据、部署地址或业务数据。
 
 侧栏图标在 `src/navigation.js` 的页面白名单中按用途指定：22 个业务入口及个人资料入口各不相同。老项目已有图标使用本地 iconfont，标签、主页、社交、经历、技能和访客使用已安装的 Element Plus 图标补齐，无需修改后端菜单数据。
 
 浏览器检查还覆盖登录页设计保留、侧栏图标唯一性、折叠与展开、keepAlive 状态，以及未知路由、429、503、网络异常的全屏 404 与返回入口。
+
+图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。

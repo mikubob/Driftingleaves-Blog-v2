@@ -346,24 +346,32 @@ async function smoke(page) {
         headers: { 'X-Revision': revision },
         body: JSON.stringify({ code, msg: status < 400 ? '成功' : '测试错误', data, errors: [] }),
       })
+    if (path === '/admin/auth/captcha') {
+      return respond({ captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 })
+    }
     if (req.method() !== 'GET') {
       const body = req.postDataJSON()
       writes.push({ path, method: req.method(), body, headers: req.headers() })
-      if (path === '/auth/login') {
+      if (path === '/admin/auth/login' || /\/replies$/.test(path)) {
+        if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
+          throw new Error('缺少正确的验证码请求头')
+        }
+      }
+      if (path === '/admin/auth/login') {
         return respond({
           tokenType: 'Bearer',
           accessToken: 'browser-test-token',
-          expiresIn: 7200,
+          expiresIn: 604800,
           user,
         })
       }
-      if (path === '/auth/oauth/TEST/authorize') {
+      if (path === '/admin/auth/oauth/TEST/authorize') {
         return respond({
           authorizationUrl: 'http://127.0.0.1:5176/oauth/complete#ticket=browser-bind-ticket',
           expiresIn: 300,
         })
       }
-      if (path === '/auth/oauth/exchange') {
+      if (path === '/admin/auth/oauth/exchange') {
         return respond({ operation: 'BIND', binding: { source: 'TEST', createTime: time } })
       }
       if (path === '/admin/categories/1' && conflict) {
@@ -374,23 +382,23 @@ async function smoke(page) {
       }
       return respond(records[path]?.[0] || null)
     }
-    if (path === '/auth/oauth/providers') {
+    if (path === '/admin/auth/oauth/providers') {
       return respond([{ source: 'TEST', displayName: '测试平台' }])
     }
-    if (path === '/me/oauth-bindings') {
+    if (path === '/admin/me/oauth-bindings') {
       return respond([])
     }
-    if (path === '/me') {
+    if (path === '/admin/me') {
       return respond(user)
     }
-    if (path === '/me/capabilities') {
+    if (path === '/admin/me/capabilities') {
       return respond({
         roleCodes: ['test_admin'],
         permissionCodes: permissions,
         dataScopes: Object.fromEntries(permissions.map((code) => [code, 'ALL'])),
       })
     }
-    if (path === '/me/menus' || path === '/admin/menus') {
+    if (path === '/admin/me/menus' || path === '/admin/menus') {
       return respond(menus)
     }
     if (path === '/admin/home/profile') {
@@ -488,6 +496,7 @@ async function smoke(page) {
   await page.screenshot({ path: 'output/playwright/login.png', fullPage: true })
   await page.getByRole('textbox', { name: '用户名', exact: true }).fill('test_admin')
   await page.getByRole('textbox', { name: '登录密码', exact: true }).fill('  fake-pass  ')
+  await page.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await page.getByRole('button', { name: '登 录' }).click()
   await page.waitForURL('**/statistics/overview')
   await page.getByText('1,248', { exact: true }).waitFor()
@@ -559,7 +568,7 @@ async function smoke(page) {
   await page.getByRole('button', { name: '绑定账号', exact: true }).click()
   const bindingPopup = await popupPromise
   await page.getByText('第三方账号已绑定', { exact: true }).waitFor()
-  const bindingWrite = writes.find((write) => write.path === '/auth/oauth/exchange')
+  const bindingWrite = writes.find((write) => write.path === '/admin/auth/oauth/exchange')
   if (
     !bindingWrite ||
     bindingWrite.headers.authorization !== 'Bearer browser-test-token' ||
@@ -618,8 +627,9 @@ async function smoke(page) {
     width: document.documentElement.scrollWidth,
     viewport: window.innerWidth,
   }))
-  if (JSON.stringify(storage).includes('browser-test-token') || storage.width > storage.viewport) {
-    throw new Error('发现持久化 Token 或移动端页面溢出')
+  const savedSession = JSON.parse(storage.local['dl-admin-session'] || 'null')
+  if (savedSession?.accessToken !== 'browser-test-token' || storage.width > storage.viewport) {
+    throw new Error('登录凭据未持久化或移动端页面溢出')
   }
   await page.evaluate(async () => {
     const router = document.querySelector('#app').__vue_app__.config.globalProperties.$router
@@ -630,11 +640,19 @@ async function smoke(page) {
     throw new Error('未知路由未显示全屏 404')
   }
   await page.reload()
+  await page.getByRole('heading', { name: '404', exact: true }).waitFor()
+  await page.goto('http://127.0.0.1:5176/statistics/overview')
+  await page.getByText('1,248', { exact: true }).waitFor()
+  if (await page.evaluate(() => localStorage.getItem('dl-admin-session')) !== storage.local['dl-admin-session']) {
+    throw new Error('刷新后延长了管理端会话有效期')
+  }
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: '退出', exact: true }).click()
   await page.waitForURL('**/login')
   await page.getByRole('button', { name: '测试平台', exact: true }).waitFor()
   for (const failure of [429, 503, 'network']) {
     let requests = 0
-    await page.route('**/api/v1/auth/oauth/providers', async (route) => {
+    await page.route('**/api/v1/admin/auth/oauth/providers', async (route) => {
       requests += 1
       if (failure === 'network') {
         return route.abort('failed')
@@ -656,7 +674,7 @@ async function smoke(page) {
       throw new Error('异常页标题不正确')
     }
     await page.screenshot({ path: `output/playwright/error-${failure}.png`, fullPage: true })
-    await page.unroute('**/api/v1/auth/oauth/providers')
+    await page.unroute('**/api/v1/admin/auth/oauth/providers')
   }
   await page.getByRole('link', { name: '返回首页' }).click()
   await page.waitForURL('**/login')
@@ -669,7 +687,7 @@ async function smoke(page) {
     articleSaved: true,
     conflictPreserved: true,
     mobileWidth: storage.width,
-    refreshRequiresLogin: true,
+    refreshRestoresLogin: true,
     unexpectedRequests: unexpected,
     runtimeErrors: failures,
     editFormsSaved: editPages.length,

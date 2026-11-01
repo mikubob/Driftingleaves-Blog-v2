@@ -1,5 +1,6 @@
 package com.xuan.location;
 
+import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
 import com.xuan.utils.IpUtils;
 import org.lionsoul.ip2region.service.Ip2Region;
@@ -43,12 +44,11 @@ public class IpLocationResolver implements AutoCloseable {
             return "本地";
         }
         GeoInfo info = lookup(normalized);
-        String area = ((info.province() == null ? "" : info.province()) + " "
-                + (info.city() == null ? "" : info.city())).strip();
-        if (!area.isEmpty()) {
+        String area = (StrUtil.nullToEmpty(info.province()) + " " + StrUtil.nullToEmpty(info.city())).strip();
+        if (StrUtil.isNotEmpty(area)) {
             return area;
         }
-        return info.country() == null ? "未知" : info.country();
+        return StrUtil.nullToDefault(info.country(), "未知");
     }
 
     /** 把整理好的 IP 交给官方查询器，它支持并发；这里只取国家、省、市。 */
@@ -58,7 +58,7 @@ public class IpLocationResolver implements AutoCloseable {
         }
         try {
             String region = database.search(ip);
-            if (region == null || region.isBlank()) {
+            if (StrUtil.nullToEmpty(region).isBlank()) {
                 return UNKNOWN;
             }
 
@@ -84,7 +84,7 @@ public class IpLocationResolver implements AutoCloseable {
             return null;
         }
         String value = parts[index].strip();
-        return value.isEmpty() || "0".equals(value) ? null : value;
+        return StrUtil.isEmpty(value) || "0".equals(value) ? null : value;
     }
 
     /** 查询器共用到应用退出，由 Spring 关闭，不要查一次就关一次。 */

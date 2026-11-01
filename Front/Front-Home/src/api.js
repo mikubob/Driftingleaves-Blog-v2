@@ -128,7 +128,7 @@ export async function getSocialLinks(signal) {
 
 /** 仅使用公开 site 配置，空数组表示没有公开配置。 */
 export async function getSiteConfig(signal) {
-  const data = await request('/blog/configs', { signal })
+  const data = await request('/home/configs', { signal })
   assertResponse(Array.isArray(data) && data.every((item) => matchesFields(item, {
     configKey: (value) => value === 'site',
     isPublic: (value) => value === 1,
@@ -145,7 +145,7 @@ export async function getSiteConfig(signal) {
 
 /** 浏览统计单次发送；失败由调用方处理，不自动重放可能已写入的 POST。 */
 export async function recordPageView(payload, signal) {
-  const data = await request('/analytics/page-views', {
+  const data = await request('/home/analytics/page-views', {
     method: 'POST',
     signal,
     headers: { 'Content-Type': 'application/json' },
@@ -157,7 +157,7 @@ export async function recordPageView(payload, signal) {
 
 /** 公开站点匿名参与，不恢复其他站点的登录身份。 */
 export async function getOnlineTicket(body, signal) {
-  return validateOnlineTicket(await request('/analytics/online/tickets', {
+  return validateOnlineTicket(await request('/home/analytics/online/tickets', {
     signal,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

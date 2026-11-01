@@ -6,12 +6,14 @@ import { request } from '@/api.js'
 import { session, can } from '@/session.js'
 import { useDiscussionForm } from '@/composables/useDiscussionForm.js'
 import SidebarCard from '@/components/SidebarCard.vue'
+import CaptchaField from '../../../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import EmojiPicker from '@shared/EmojiPicker.vue'
 const route = useRoute()
 const { articleTitle, articleMeta } = inject('setHero')
 articleTitle.value = '留言板'
 articleMeta.value = '说点什么吧'
+const captcha = ref(null)
 const msgTextareaRef = ref(null)
 const { form, errors, contentLength, validateField, validateForm, insertEmoji: insertMsgEmoji, resetForm: clearForm } = useDiscussionForm(msgTextareaRef)
 const replyTarget = ref(null)
@@ -33,7 +35,7 @@ function startReply(item) {
 async function startEdit(item) {
   submitting.value = true
   try {
-    const result = await request('/me/messages/' + item.id)
+    const result = await request('/blog/me/messages/' + item.id)
     editTarget.value = { id: item.id, revision: result.revision }
     replyTarget.value = null
     form.value.content = result.data.content
@@ -56,11 +58,11 @@ async function handleSubmit() {
     const body = { content: form.value.content.trim(), contentFormat: form.value.isMarkdown ? 1 : 0, notifyReply: form.value.isNotice ? 1 : 0 }
     let result
     if (editTarget.value) {
-      result = await request('/me/messages/' + editTarget.value.id, { method: 'PUT', revision: editTarget.value.revision, body })
+      result = await request('/blog/me/messages/' + editTarget.value.id, { method: 'PUT', revision: editTarget.value.revision, body })
     } else {
       body.parentId = replyTarget.value?.id || null
       body.isSecret = form.value.isSecret || replyTarget.value?.isSecret === 1 ? 1 : 0
-      result = await request('/blog/messages', { method: 'POST', body })
+      result = await request('/blog/messages', { method: 'POST', body, captcha: captcha.value.getValue() })
     }
     resetForm()
     refresh.value += 1
@@ -68,6 +70,7 @@ async function handleSubmit() {
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
+    captcha.value?.refresh()
     submitting.value = false
   }
 }
@@ -115,6 +118,7 @@ async function handleSubmit() {
               /2000
             </div>
           </div>
+          <CaptchaField v-if="!editTarget" ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
           <div class="form-options">
             <label class="option-check">
               <input
@@ -134,7 +138,7 @@ async function handleSubmit() {
             </label>
             <div class="form-actions">
               <EmojiPicker @select="insertMsgEmoji" />
-              <button class="btn-submit" :disabled="submitting" @click="handleSubmit">
+              <button class="btn-submit" :disabled="submitting || (!editTarget && !captcha?.ready)" @click="handleSubmit">
                 {{ editTarget ? '修改' : '留言' }}
               </button>
             </div>

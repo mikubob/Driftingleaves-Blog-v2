@@ -1,4 +1,4 @@
-package com.xuan.controller.me;
+package com.xuan.controller.blog;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.PasswordClearDTO;
@@ -30,8 +30,8 @@ import java.util.List;
 /**
  * 这里操作当前用户的资料和安全设置，不收客户端目标用户 ID。
  */
-@RestController
-@RequestMapping("/me")
+@RestController("blogMeController")
+@RequestMapping("/blog/me")
 @RequiredArgsConstructor
 public class MeController {
 

@@ -1,4 +1,4 @@
-package com.xuan.controller.auth;
+package com.xuan.controller.admin;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
@@ -13,6 +13,7 @@ import com.xuan.result.Result;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthAuthorizeVO;
@@ -39,8 +40,8 @@ import java.util.List;
 /**
  * 登录和 OAuth 入口在这里；Cookie 只关联浏览器，绑定时需要的原会话由业务服务检查。
  */
-@RestController
-@RequestMapping("/auth")
+@RestController("adminAuthController")
+@RequestMapping("/admin/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
@@ -52,6 +53,7 @@ public class AuthController {
     private final OAuthProviderClient providers;
     private final AuthRateLimiter limiter;
     private final AuthProperties properties;
+    private final CaptchaStore captchas;
 
     /**
      * 注册先检查输入和频率，再创建用户返回 201；角色、状态和密码编码由用户业务处理，不自动登录。
@@ -66,6 +68,7 @@ public class AuthController {
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
         // 1. 注册写库前先检查 IP 和浏览器对应的请求次数。
         limiter.register(request, browser);
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
 
         // 2. 交给业务事务创建账号，只返回资料和 201，不在注册时自动登录。
         return ResponseEntity.status(201).body(Result.ok(users.register(body)));
@@ -83,10 +86,11 @@ public class AuthController {
     public Result<SessionVO> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
 
         // 2. 用户业务一起完成凭据验证、会话签发和登录时间写入。
         try {
-            return Result.ok(users.login(body));
+            return Result.ok(users.login(body, SessionManager.ADMIN_TIMEOUT_SECONDS));
         } catch (BusinessException exception) {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
             if ("AUTH_FAILED".equals(exception.getCode())) {
@@ -137,6 +141,9 @@ public class AuthController {
 
         // 2. 限流通过后发起授权，绑定时的原会话和最近认证由业务服务检查。
         limiter.oauth(request, id);
+        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
+            captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        }
         OAuthAuthorizeVO result = oauth.authorize(source, body.operation(), id);
 
         // 3. 设置只关联流程的安全 Cookie，再返回授权 URL。
@@ -180,7 +187,7 @@ public class AuthController {
         limiter.oauth(request, browser);
 
         // 2. 登录会返回新会话，绑定只确认原账号的绑定结果，不发新会话，也不切换账号。
-        return Result.ok(oauth.exchange(body.ticket(), browser));
+        return Result.ok(oauth.exchange(body.ticket(), browser, SessionManager.ADMIN_TIMEOUT_SECONDS));
     }
 
     /**

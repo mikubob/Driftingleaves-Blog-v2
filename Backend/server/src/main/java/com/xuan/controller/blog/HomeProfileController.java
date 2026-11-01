@@ -9,10 +9,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 博客、主页和CV都读取这份公开资料。
+ * 读取博客端使用的站点主人公开资料。
  */
 @RestController("blogHomeProfileController")
-@RequestMapping("/home/profile")
+@RequestMapping("/blog/profile")
 @RequiredArgsConstructor
 public class HomeProfileController {
 

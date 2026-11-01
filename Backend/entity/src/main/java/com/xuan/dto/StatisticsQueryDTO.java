@@ -1,5 +1,6 @@
 package com.xuan.dto;
 
+import cn.hutool.core.util.ObjectUtil;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
@@ -11,6 +12,6 @@ public record StatisticsQueryDTO(String begin, String end, @Pattern(regexp = "ho
                                  @Min(1) @Max(100) Integer limit) {
 
     public StatisticsQueryDTO {
-        limit = limit == null ? 10 : limit;
+        limit = ObjectUtil.defaultIfNull(limit, 10);
     }
 }

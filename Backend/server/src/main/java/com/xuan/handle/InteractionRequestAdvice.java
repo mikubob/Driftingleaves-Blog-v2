@@ -12,7 +12,7 @@ import java.util.Set;
 
 /** 第9章只接收文档声明的查询参数，避免 userId 等身份字段被 MVC 静默忽略。 */
 @ControllerAdvice(assignableTypes = {CommentController.class,
-        com.xuan.controller.me.CommentController.class, com.xuan.controller.admin.CommentController.class,
+        com.xuan.controller.blog.MyCommentController.class, com.xuan.controller.admin.CommentController.class,
         ArticleLikeController.class})
 public class InteractionRequestAdvice {
 
@@ -25,7 +25,7 @@ public class InteractionRequestAdvice {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         Set<String> allowed = switch (route) {
             case "GET /blog/articles/{articleId}/comments" -> Set.of("page", "pageSize", "parentId");
-            case "GET /me/comments" -> Set.of("page", "pageSize", "articleId", "status");
+            case "GET /blog/me/comments" -> Set.of("page", "pageSize", "articleId", "status");
             case "GET /admin/comments" -> Set.of("page", "pageSize", "articleId", "userId", "status");
             default -> Set.of();
         };

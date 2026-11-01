@@ -1,11 +1,12 @@
 import { validateOnlineTicket } from '../../shared/online.mjs'
+import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from '../../shared/captcha.mjs'
 import { reportRequestFailure } from '../../shared/requestFailure.mjs'
 
 export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
 let accessToken = ''
 let onExpired = () => {}
 
-/** 本站凭据只存内存；所有请求始终指向已配置的 API 根路径。 */
+/** 设置当前请求凭据；所有请求始终指向已配置的 API 根路径。 */
 export function setAuthorization(token, expired = onExpired) {
   accessToken = token
   onExpired = expired
@@ -32,6 +33,9 @@ const publicAttachment = /^\/api\/v1\/blog\/articles\/[1-9]\d*\/files\/[1-9]\d*\
 
 /** 外链与媒体在响应入口检查，不接受脚本、凭据或协议相对地址。 */
 function validateFields(value, key = '') {
+  if (key === 'captchaId' && isCaptchaId(value)) {
+    return
+  }
   if (value === null) {
     return
   }
@@ -117,9 +121,9 @@ function validateData(path, data, method) {
     '/blog/links': (item) => model(item, { linkId: isId, linkName: text, url: text, avatar: nullableText, description: nullableText }),
     '/blog/music': (item) => model(item, { musicId: isId, title: text, artist: nullableText, audioUrl: text }),
     '/blog/messages': message,
-    '/me/messages': message,
-    '/me/comments': comment,
-    '/me/liked-articles': (item) => model(item, { article, likedAt: time }),
+    '/blog/me/messages': message,
+    '/blog/me/comments': comment,
+    '/blog/me/liked-articles': (item) => model(item, { article, likedAt: time }),
   }
   if (read && (pageModels[route] || /^\/blog\/articles\/[1-9]\d*\/comments$/.test(route))) {
     const itemCheck = pageModels[route] || ((item) => comment(item)
@@ -143,25 +147,25 @@ function validateData(path, data, method) {
     check = (value) => tag(value) && count(value.articleCount)
   } else if (read && route.startsWith('/blog/authors/')) {
     check = (value) => author(value) && count(value.articleCount)
-  } else if (route === '/me' || route === '/me/profile' || route === '/auth/register') {
+  } else if (route === '/blog/me' || route === '/blog/me/profile' || route === '/blog/auth/register') {
     check = me
-  } else if (route === '/auth/login') {
+  } else if (route === '/blog/auth/login') {
     check = session
-  } else if (route === '/auth/oauth/exchange') {
+  } else if (route === '/blog/auth/oauth/exchange') {
     check = (value) => model(value, { operation: (item) => item === 'LOGIN', session })
   } else if (route.endsWith('/authorize')) {
     check = (value) => model(value, { authorizationUrl: text })
-  } else if (route === '/me/capabilities') {
+  } else if (route === '/blog/me/capabilities') {
     check = (value) => model(value, { permissionCodes: (items) => Array.isArray(items) && items.every(text) })
-  } else if (route === '/me/rss-subscription' || route === '/me/rss-subscription/confirm') {
+  } else if (route === '/blog/me/rss-subscription' || route === '/blog/me/rss-subscription/confirm') {
     check = (value) => value === null || subscription(value)
-  } else if (read && /^\/me\/messages\/[1-9]\d*$/.test(route)) {
+  } else if (read && /^\/blog\/me\/messages\/[1-9]\d*$/.test(route)) {
     check = message
   } else if (route === '/blog/messages' && method === 'POST') {
     check = message
   } else if (method === 'POST' && /^\/blog\/articles\/[1-9]\d*\/comments$/.test(route)) {
     check = comment
-  } else if (read && route === '/home/profile') {
+  } else if (read && route === '/blog/profile') {
     check = (value) => value === null || model(value, {
       nickname: text, tagline: text, description: nullableText, avatar: nullableText,
       website: nullableText, githubUrl: nullableText, publicEmail: nullableText, location: nullableText,
@@ -178,7 +182,7 @@ function validateData(path, data, method) {
       configKey: (key) => key === 'site', isPublic: (flag) => flag === 1,
       configValue: (value) => model(value, { title: text, description: text, icp: text, publicSecurityRecord: text }),
     }))
-  } else if (read && route === '/home/social-links') {
+  } else if (read && route === '/blog/social-links') {
     check = (items) => Array.isArray(items) && items.every((item) => model(item, { socialId: isId, name: text, url: text }))
   }
   if (check && !check(data)) {
@@ -195,8 +199,9 @@ export class ApiError extends Error {
 }
 
 /** 统一处理 Result、失效身份和 Retry-After，不重放写请求。 */
-export async function request(path, { body, revision, ...options } = {}) {
+export async function request(path, { body, revision, captcha, ...options } = {}) {
   const headers = new Headers({ Accept: 'application/json' })
+  setCaptchaHeaders(headers, captcha)
   if (accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
@@ -261,6 +266,9 @@ export async function request(path, { body, revision, ...options } = {}) {
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
     throw new Error('接口响应格式不正确。')
   }
+  if (path === '/blog/auth/captcha') {
+    validateCaptcha(result.data)
+  }
   validateFields(result.data)
   validateData(path, result.data, options.method || 'GET')
   return { data: result.data, revision: response.headers.get('X-Revision') }
@@ -302,6 +310,6 @@ export function validatePassword(value) {
 
 /** 在线票据复用当前内存 Bearer，只在 HTTP Header 中发送。 */
 export async function getOnlineTicket(body, signal) {
-  const { data } = await request('/analytics/online/tickets', { method: 'POST', body, signal })
+  const { data } = await request('/blog/analytics/online/tickets', { method: 'POST', body, signal })
   return validateOnlineTicket(data)
 }

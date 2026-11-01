@@ -1,5 +1,6 @@
 package com.xuan.cache;
 
+import cn.hutool.core.collection.CollUtil;
 import com.xuan.service.impl.ArticleServiceImpl;
 import com.xuan.service.impl.SiteConfigServiceImpl;
 import lombok.RequiredArgsConstructor;
@@ -103,7 +104,7 @@ public class PublicCacheScope {
             return point.proceed();
         } finally {
             CURRENT.get().pop();
-            if (CURRENT.get().isEmpty()) {
+            if (CollUtil.isEmpty(CURRENT.get())) {
                 CURRENT.remove();
             }
         }

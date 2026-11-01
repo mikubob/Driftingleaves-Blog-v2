@@ -13,6 +13,11 @@
     <artifactId>entity</artifactId>
 
     <dependencies>
+        <!-- 查询参数的缺省值使用 Hutool 核心工具，不引入应用 starter。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-core</artifactId>
+        </dependency>
         <!-- Lombok 在编译时生成模型代码，运行时不需要它。 -->
         <dependency>
             <groupId>org.projectlombok</groupId>

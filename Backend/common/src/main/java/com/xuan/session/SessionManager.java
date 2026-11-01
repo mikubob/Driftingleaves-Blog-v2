@@ -1,5 +1,6 @@
 package com.xuan.session;
 
+import cn.hutool.core.util.StrUtil;
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.stp.parameter.SaLoginParameter;
@@ -20,10 +21,13 @@ import java.util.Objects;
 @RequiredArgsConstructor
 public class SessionManager {
 
+    public static final int BLOG_TIMEOUT_SECONDS = 3 * 24 * 60 * 60;
+    public static final int ADMIN_TIMEOUT_SECONDS = 7 * 24 * 60 * 60;
+
     private final Clock clock;
 
     /** 调用前要在事务里锁住用户；数据库没提交成功，就撤销这次创建的 Token。 */
-    public String create(long userId, long authenticatedAt, String method) {
+    public String create(long userId, long authenticatedAt, String method, int timeoutSeconds) {
         // 1. 先生成本次 Token，后面签发或提交出错时才能找到它并清理。
         String token = TokenUtils.random();
 
@@ -41,9 +45,9 @@ public class SessionManager {
             }
         });
 
-        // 3. 每次创建独立 Token，固定有效 7200 秒，不滑动续期，也不复用旧 Token。
+        // 3. 按登录端设置固定有效期，不滑动续期，也不复用旧 Token。
         StpUtil.getStpLogic().createLoginSession(userId, new SaLoginParameter().setToken(token)
-                .setTimeout(7200).setActiveTimeout(-1).setIsShare(false));
+                .setTimeout(timeoutSeconds).setActiveTimeout(-1).setIsShare(false));
 
         // 4. 认证时间和方式跟着各自的 Token 保存，不能用一端登录刷新另一端的认证时间。
         SaSession session = StpUtil.getStpLogic().getTokenSessionByToken(token);
@@ -138,7 +142,7 @@ public class SessionManager {
     public void logout() {
         // 只撤销 Header 里的当前 Token；没传或早已失效时也算退出成功。
         String token = currentToken();
-        if (token != null && !token.isBlank()) {
+        if (!StrUtil.nullToEmpty(token).isBlank()) {
             StpUtil.logoutByTokenValue(token);
         }
     }

@@ -1,5 +1,6 @@
 package com.xuan.utils;
 
+import cn.hutool.core.util.StrUtil;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.InetAddress;
@@ -28,7 +29,7 @@ public final class IpUtils {
             return remote;
         }
         String header = request.getHeader("X-Forwarded-For");
-        if (header == null || header.isBlank()) {
+        if (StrUtil.nullToEmpty(header).isBlank()) {
             return remote;
         }
         String current = remote;
@@ -64,7 +65,7 @@ public final class IpUtils {
 
     /** 只收完整 IP 地址，不接受端口、zone ID、主机名或 IPv4 缩写。 */
     public static String normalize(String value) {
-        if (value == null || value.isEmpty() || value.length() > 45) {
+        if (StrUtil.isEmpty(value) || value.length() > 45) {
             return null;
         }
         if (value.contains(":")) {

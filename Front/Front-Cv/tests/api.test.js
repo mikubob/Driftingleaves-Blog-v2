@@ -14,7 +14,7 @@ function respond(data, status = 200, headers = {}) {
 
 test('公开资料使用新契约字段，无鉴权、无请求体', async () => {
   globalThis.fetch = async (url, options) => {
-    assert.equal(url, '/api/v1/home/profile')
+    assert.equal(url, '/api/v1/cv/profile')
     assert.deepEqual(options.headers, { Accept: 'application/json' })
     assert.equal(options.body, undefined)
     return respond(result({ ...profile, email: 'private@example.test' }))

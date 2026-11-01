@@ -7,8 +7,10 @@ import com.xuan.dto.MessagePublicQueryDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IMessageService;
+import com.xuan.store.CaptchaStore;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class MessageController {
 
     private final IMessageService messages;
+    private final CaptchaStore captchas;
 
     /** 默认根节点，每次只展开一层，total不计不可见内容。 */
     @GetMapping
@@ -39,7 +42,9 @@ public class MessageController {
     @PostMapping
     @SaCheckPermission("blog:message:create")
     @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)
-    public ResponseEntity<Result<MessagePrivateVO>> create(@Valid @RequestBody MessageCreateDTO request) {
+    public ResponseEntity<Result<MessagePrivateVO>> create(@Valid @RequestBody MessageCreateDTO request,
+            HttpServletRequest httpRequest) {
+        captchas.verify(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
         return ResponseEntity.status(201).body(Result.ok(messages.create(request)));
     }
 }

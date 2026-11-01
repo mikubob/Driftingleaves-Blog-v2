@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -172,7 +173,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         role = requireRole(role);
         checkRevision(role, revision);
         List<Long> permissions = request.permissionIds().stream().sorted().toList();
-        if (!permissions.isEmpty() && roles.lockEnabledPermissions(permissions).size() != permissions.size()) {
+        if (CollUtil.isNotEmpty(permissions) && roles.lockEnabledPermissions(permissions).size() != permissions.size()) {
             throw new BusinessException(400, "VALIDATION_ERROR", "permissionIds须全部存在且启用");
         }
         List<Long> menus = completeMenus(request.menuIds(), new HashSet<>(permissions));
@@ -183,10 +184,10 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         if (!permissions.equals(roles.permissionIds(roleId)) || !menus.equals(roles.menuIds(roleId))) {
             roles.deletePermissions(roleId);
             roles.deleteMenus(roleId);
-            if (!permissions.isEmpty()) {
+            if (CollUtil.isNotEmpty(permissions)) {
                 roles.insertPermissions(roleId, permissions);
             }
-            if (!menus.isEmpty()) {
+            if (CollUtil.isNotEmpty(menus)) {
                 roles.insertMenus(roleId, menus);
             }
 
@@ -239,7 +240,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     private List<Long> completeMenus(List<Long> selected, Set<Long> permissions) {
         Map<Long, SysMenu> nodes = new HashMap<>();
-        if (selected.isEmpty()) {
+        if (CollUtil.isEmpty(selected)) {
             return List.of();
         }
         roles.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));

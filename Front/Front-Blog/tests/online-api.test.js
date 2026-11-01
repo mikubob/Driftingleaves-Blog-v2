@@ -9,7 +9,7 @@ afterEach(() => { globalThis.fetch = originalFetch; setRequestFailureHandler() }
 test('在线请求精确发送三个字段，响应票据在 API 边界校验', async () => {
   const body = { fingerprint: '1234567890abcdef', siteCode: 'blog', pagePath: '/' }
   globalThis.fetch = async (url, options) => {
-    assert.equal(url, '/api/v1/analytics/online/tickets')
+    assert.equal(url, '/api/v1/blog/analytics/online/tickets')
     assert.equal(options.method, 'POST')
     assert.deepEqual(JSON.parse(options.body), body)
     return new Response(JSON.stringify({ code: 'OK', msg: '成功', errors: [],

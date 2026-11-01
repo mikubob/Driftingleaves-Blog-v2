@@ -1,6 +1,6 @@
 # 接口开发约定
 
-本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。章节编号沿用原接口文档；当前共160个已实现HTTP路由，另有1个WebSocket入口；第23章在线能力不改变原有159个业务路由语义。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；独立验证结果及恢复步骤见运行说明，既有路由数本身不代表缓存验收。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
+本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 187 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；独立验证结果及恢复步骤见运行说明，既有路由数本身不代表缓存验收。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
 - [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口规划.md)
@@ -18,7 +18,7 @@
 
 ### 0.1 路径、类型与输入
 
-- 根路径 `/api/v1`。`/auth` 身份流程，`/me` 操作本人，`/blog` 博客前台，`/home` 主站展示，`/cv` 简历展示，`/analytics` 公开访问采集及在线票据，`/admin` 后台。下文基本信息与请求示例均使用含此前缀的完整调用路径。
+- 根路径 `/api/v1`，其后先放端名 `/admin`、`/blog`、`/home` 或 `/cv`。认证与本人设置位于 `/admin/auth`、`/admin/me` 和 `/blog/auth`、`/blog/me`；公开统计与在线入口在 `/home/analytics`、`/blog/analytics`、`/cv/analytics` 及各端 `/ws/online`。精确路径见[四端索引](API_INDEX.md)，旧的无端名前缀入口不保留。
 - HTTPS；JSON 请求/响应 `application/json; charset=UTF-8`，属性 camelCase。设计决定JSON请求体上限8MiB（正文另有解码后1MiB限制）。文件上传为 multipart，文件内容和 OAuth 回调例外见各节。无请求体标为 `—`，不得用 GET 改变业务状态（OAuth 回调和阅读计数按各节约定）。
 - `ID` 是十进制字符串，范围 `1..9223372036854775807`，拒绝 JSON 数字、负数、小数和前导零；所有主键、外键和 ID 数组均如此。非 ID 的 BIGINT 计数、字节数也用十进制字符串输出，避免精度丢失；分页统计同样见下表。
 - `Time` 是 UTC、毫秒精度的 RFC 3339 字符串，如 `2026-10-29T02:00:00.000Z`。应用、连接统一使用 UTC，DATETIME(3) 按 UTC 存取；前端再转本地时区。请求中的审计时间和发布时间均不可由客户端写入；仅查询条件及明确声明的简历日期、建站日期、访客封禁到期时间可输入。
@@ -60,10 +60,12 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 | --- | --- | --- |
 | tokenType | string | 固定 Bearer |
 | accessToken | string | 仅登录成功返回，不写 URL/日志；没有 refreshToken |
-| expiresIn | number | 本次 Token 剩余有效秒数，首期绝对有效期 7200 秒，无滑动续期 |
+| expiresIn | number | 本次 Token 有效秒数；Blog 登录为 259200（3 天），Admin 登录为 604800（7 天），无滑动续期 |
 | user | Me | 当前用户模型，不含密码哈希 |
 
-浏览器前端 Token 仅存内存；刷新页面后重新登录。需要持久登录应另立设计，不自行把 Token 放 localStorage。OAuth 浏览器 Cookie 仅用于绑定流程，不作为业务登录凭证。带身份的响应及所有 `/auth、/me、/admin` 响应 `Cache-Control: no-store`；前台接口不混入隐式私人字段。除幂等注销接口外，携带过期或已注销会话访问受保护接口返回 401，前端清内存并回登录页。注销当前会话不依赖客户端 userId。
+密码登录和 OAuth LOGIN 兑换均由对应端的服务端入口决定有效期，不接受客户端指定天数；有效期从签发 Token 起计算。浏览器在 localStorage 的 `dl-blog-session`、`dl-admin-session` 独立保存 `{accessToken, expiresAt}`，其中 expiresAt 为接收登录响应时按 expiresIn 换算的毫秒时间戳。刷新或重新打开页面时，先检查到期时间，再用原 Bearer 请求对应端 `/me`、`/me/capabilities`；Admin 还须读取 `/me/menus` 并确认 `admin:access`，最后恢复动态路由。不持久化用户资料、权限或菜单，刷新和访问都不更新到期时间。浏览器禁用存储时仅本页登录有效。
+
+退出登录、恢复核验失败及 401/UNAUTHENTICATED 清除本端内存与持久凭据；其他端的存储键保留，但撤销的 Token 仍会被后端拒绝。OAuth 浏览器 Cookie 仅关联授权流程，不作为业务登录凭证；Token 不写 URL、Cookie 或日志，没有 refreshToken。带身份的响应及所有 `/blog/auth、/blog/me、/admin` 响应 `Cache-Control: no-store`；前台接口不混入隐式私人字段。除幂等注销接口外，携带过期或已注销会话访问受保护接口返回 401。注销当前会话不依赖客户端 userId。此前签发的两小时 Token 保持原有效期，不自动延长；前后端需一起部署，重新登录后使用新有效期。
 
 改密码、清除密码、解绑成功后撤销该用户**所有**本站会话；前端重新登录。账号禁用也撤销所有会话。角色/权限/授权变更撤销受影响会话并清除菜单权限缓存，重新登录后重新加载。停用菜单只影响菜单，不撤销接口权限。每个受保护请求均检查账号和有效授权，不能只信登录时快照。
 
@@ -73,7 +75,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 ### 0.5 RBAC、菜单与数据范围
 
-本文中 `登录本人` = 登录且账号启用，无额外业务权限，目标只取会话。`公开` = 无需登录。`后台(P)` = 登录 + 有效 `admin:access` + 有效权限 P。后台每个接口即使在前端菜单隐藏也执行上述检查；`admin` 角色不绕过检查，无通配权限。
+本文中 `登录本人` = 登录且账号启用，无额外业务权限，目标只取会话。`公开` = 无需登录。`后台(P)` = 登录 + 有效 `admin:access` + 有效权限 P。后台业务接口即使在前端菜单隐藏也执行上述检查；`/admin/auth`、`/admin/me` 分别沿用公开认证和登录本人规则；`admin` 角色不绕过检查，无通配权限。
 
 有效权限来自启用用户、启用角色、启用权限的连接；`ALL/SELF` 只从**授予本次 P 的有效角色**求并集，有 ALL 则全部，否则 SELF。文章归属为 authorId，文件为 uploaderId，评论管理为评论所属文章 authorId。每次查询、更新和删除在 SQL 中落实归属。操作需要多个权限时分别计算并同时满足其范围，例如已发布文章正文修改同时检查 update 与 publish，不能以 update 的 ALL 扩大 publish 的 SELF。
 
@@ -83,7 +85,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 ### 0.6 请求保护与跨域
 
-Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，不增加验证码系统。日志不得记录密码、Authorization、OAuth code/state/ticket 或第三方 Token。跨域只允许明确前端 origin，预检允许 Authorization/If-Revision，暴露 X-Revision/Location/Retry-After；带 OAuth Cookie 请求允许 credentials，不能使用通配 origin。非白名单业务路由默认拒绝匿名。
+Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Authorization、OAuth code/state/ticket 或第三方 Token。跨域只允许明确前端 origin，预检允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code，暴露 X-Revision/Location/Retry-After；带 OAuth Cookie 请求允许 credentials，不能使用通配 origin。非白名单业务路由默认拒绝匿名。
 
 全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，创建/编辑留言共享窗口按表中要求扩展。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
 
@@ -95,6 +97,8 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 | author | 后台入口、本人文章创建/查询/编辑/发布/回收/恢复、分类/标签只读、本人文件管理、前台评论/点赞、本人留言与邮件订阅，SELF；无评论审核或系统授权管理权限 |
 | member | 前台评论、删除本人评论、点赞/取消点赞、发表/编辑/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
 
+图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起、评论/留言及后台留言回复必须校验；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
+
 ### 0.7 鉴权组件落地要求
 
 Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验证的身份；应用负责查用户、查绑定和加载授权。注册、绑定、菜单、ALL/SELF 不由 starter 自动完成。下表为本项目要求，需在实现时配置并验证：
@@ -102,7 +106,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 配置/扩展 | 本项目契约 |
 | --- | --- |
 | Sa-Token 读取 | tokenName=Authorization、tokenPrefix=Bearer；只从 Header 读，关闭 Body/Query/Cookie 读取 |
-| 会话 | timeout=7200 秒；不启用滑动续期；多端并存、各次 Token 独立；最近认证时间存 Token 级会话，不能只存用户级时间 |
+| 会话 | Blog timeout=259200 秒（3 天）、Admin timeout=604800 秒（7 天），密码与 OAuth LOGIN 一致；不启用滑动续期；多端并存、各次 Token 独立；最近认证时间存 Token 级会话，不能只存用户级时间 |
 | `StpInterface` | 返回启用用户经启用角色得到的有效 role_code/permission_code；角色码无 ROLE_ 前缀 |
 | 拦截器与注解 | 实际注册登录/路由/权限检查；后台要求 admin:access 与具体权限同时成立；不依赖菜单隐藏或单个角色名放行 |
 | ALL/SELF | 业务查询和更新的 SQL 按本次权限计算归属，普通权限集合不足以表达此范围 |
@@ -110,7 +114,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | JustAuth state | Redis AuthStateCache timeout 使用毫秒；默认存在性检查不能代替本站流程一次性消费 |
 | OAuth 回调 | 回调白名单仅允许具体平台地址；绑定回调验证服务端存储的原会话，不要求平台附加本站 Authorization |
 
-框架核对依据：[Sa-Token 固定版本会话配置](https://raw.githubusercontent.com/dromara/Sa-Token/v1.46.0/sa-token-core/src/main/java/cn/dev33/satoken/config/SaTokenConfig.java)、[JustAuth 1.16.7 AuthStateCache](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/me/zhyd/oauth/cache/AuthStateCache.java)、[JustAuth 与本站用户整合](https://www.justauth.cn/features/integrate-existing-systems/)。有效期、票据、白名单与业务授权组合是本站设计，不是框架默认值。
+框架核对依据：[Sa-Token 固定版本会话配置](https://raw.githubusercontent.com/dromara/Sa-Token/v1.46.0/sa-token-core/src/main/java/cn/dev33/satoken/config/SaTokenConfig.java)、[JustAuth 1.16.7 AuthStateCache](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/blog/me/zhyd/oauth/cache/AuthStateCache.java)、[JustAuth 与本站用户整合](https://www.justauth.cn/features/integrate-existing-systems/)。有效期、票据、白名单与业务授权组合是本站设计，不是框架默认值。
 
 <a id="cache-contract"></a>
 
@@ -577,18 +581,18 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 
 1. 前端以 `fetch(...,{credentials:"include"})` 调 authorize。后端设置/读取随机 `__Host-dl-oauth-browser` Cookie：Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多存活 10 分钟，仅标识发起浏览器。前后端需同站部署，推荐同源 `/api` 反代；BIND 同时携带 Authorization。后端校验请求 Origin 为配置前端。
 2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留内存 Token；URL 带 state。
-3. 平台回调本后端固定地址 `/api/v1/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不携带本站 Bearer，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
+3. 平台回调本后端固定地址 `/api/v1/blog/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不携带本站 Bearer，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
 5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。LOGIN：已有绑定取本站启用用户；没有绑定则生成唯一 username、校验初始化昵称/头像、password_hash=NULL、email=NULL，在同一事务创建用户+绑定+member。昵称过长截为合法展示长度、空昵称用“用户”；不合法头像丢弃为 null。账号 username 用服务端随机标识并处理唯一键冲突。并发相同身份注册冲突整笔回滚，再按 source+uuid 查询唯一赢家并检查启用状态；不能覆盖其归属。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。
 7. 成功后只生成 60 秒、一次性的随机 ticket，在 Redis 绑定同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到**后端配置的固定前端页面** `/oauth/complete#ticket=<opaque>`。回调不把本站 Token、平台 code 或第三方 Token放在跳转 URL；设置 no-store、Referrer-Policy:no-referrer。
 8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，以 credentials 调 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，携带原内存 Token 与 credentials 调 exchange。弹窗不接收本站 Token、不在 URL 或存储中传 Token。后端原子校验并消费 ticket，再检查用户启用；LOGIN 此时在用户行锁内重查该 source+uuid 仍绑定同一用户，再调用 Sa-Token 创建本站 Session，并更新最近登录时间，认证时间记为已验证第三方身份的时间（不能借延迟交换刷新）；BIND 必须带原 Token 且返回绑定结果。重放/过期/浏览器不符统一 OAUTH_STATE_INVALID。网络响应丢失需重新发起，不能再兑换。
 
-失败回调：存在已验证且刚消费的本站流程时，303 固定 `/oauth/complete#error=<本文错误码>`；不得透传平台 error_description 或任意跳转地址。无可信 state/浏览器关系时直接以对应 HTTP JSON 错误结束，不重定向。前端仅显示通用失败并允许重试；无固定前端地址时禁止启用该平台。平台取消同样消费流程，结果为 OAUTH_DENIED。绑定已经提交而结果 ticket 丢失时，通过 GET /me/oauth-bindings 确认，不回滚已完成绑定。
+失败回调：存在已验证且刚消费的本站流程时，303 固定 `/oauth/complete#error=<本文错误码>`；不得透传平台 error_description 或任意跳转地址。无可信 state/浏览器关系时直接以对应 HTTP JSON 错误结束，不重定向。前端仅显示通用失败并允许重试；无固定前端地址时禁止启用该平台。平台取消同样消费流程，结果为 OAUTH_DENIED。绑定已经提交而结果 ticket 丢失时，通过 GET /blog/me/oauth-bindings 确认，不回滚已完成绑定。
 
 解绑/清除密码必须锁定同一 sys_user 行，串行检查跨表登录方式：有效 BCrypt 密码或至少一个仍被后端白名单启用、应用凭据配置完整的平台绑定。此处检查配置可用性，不要求实时探测平台在线，不能只数 oauth 行。服务配置停用平台前检查受影响的纯第三方用户并安排其他登录方式；平台短时故障不作为自动解绑理由。首期不提供管理员绕过最后登录方式保护的接口。
 
-BIND 必须保留发起页面：若原页面关闭、刷新、原 Token 丢失或会话过期，则不允许仅凭浏览器 Cookie 恢复本站身份；重新登录后通过绑定列表确认结果，再按需要重新发起。完成页的 postMessage 只传本次票据和白名单结果，不监听任意窗口发来的登录 Token。LOGIN 整页跳转返回后可创建新内存会话。
+BIND 必须保留发起页面及其弹窗流程：原页面关闭、刷新导致弹窗流程丢失时，先恢复有效 Bearer 或重新登录，再通过绑定列表确认结果，按需要重新发起；不允许仅凭浏览器 Cookie 恢复本站身份。完成页的 postMessage 只传本次票据和白名单结果，不监听任意窗口发来的登录 Token。LOGIN 整页跳转返回后创建对应端的持久会话，使用同一套保存与恢复逻辑。
 
 ### 13.2 授权、菜单与状态变化
 
@@ -598,7 +602,7 @@ BIND 必须保留发起页面：若原页面关闭、刷新、原 Token 丢失�
 
 菜单写操作统一在一个数据库事务中锁定菜单结构检查点（同[鉴权规则](#auth-rules)固定角色行，先于节点锁），检查自引用、移到后代、父类型和全部后代受类型变更影响的约束，防止并发移动产生环。有子节点时删除返回 RESOURCE_IN_USE；叶子删除级联 role_menu。移动后的角色授权不自动获得新祖先，没有完整祖先授权的分支不可见，需显式重新保存角色 grants。修改页面/按钮门禁后重新计算菜单，不能把新权限默默授予旧角色。
 
-`GET /me/menus`：先判断启用账号和有效 admin:access；取所有有效角色所授权节点并集，M/B 再与用户有效权限并集交集；逐祖先检查授权/启用状态，剔除无可访问 M 的空 D。允许不同有效角色贡献菜单和权限。isVisible=0 的已授权路由仍返回；B 返回节点供操作能力使用，但前端不得生成路由。禁用父节点截断整支；禁用菜单不影响独立接口授权。前端只解析注册组件，不动态执行数据库内容。
+`GET /blog/me/menus`：先判断启用账号和有效 admin:access；取所有有效角色所授权节点并集，M/B 再与用户有效权限并集交集；逐祖先检查授权/启用状态，剔除无可访问 M 的空 D。允许不同有效角色贡献菜单和权限。isVisible=0 的已授权路由仍返回；B 返回节点供操作能力使用，但前端不得生成路由。禁用父节点截断整支；禁用菜单不影响独立接口授权。前端只解析注册组件，不动态执行数据库内容。
 
 ### 13.3 文章过滤、查询与状态规则
 
@@ -738,7 +742,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 ## 23. 在线连接与统计身份
 
-完整 HTTP/消息定义见 [API 第23章](API.md#group-23)与[在线说明](实时在线人数接口规划.md)。公开白名单只增加 `POST /analytics/online/tickets`（可选 Bearer，一旦携带必须有效）；精确 `GET /ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
+完整 HTTP/消息定义见 [API 第23章](API.md#group-23)与[在线说明](实时在线人数接口规划.md)。公开白名单只增加 `POST /blog/analytics/online/tickets`（可选 Bearer，一旦携带必须有效）；精确 `GET /blog/ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
 
 在线服务只签发用途隔离的30秒随机票据，键保存摘要，载荷只保存服务端确认的userId、原Token摘要与到期时间；浏览器不能自报userId。join按Origin、原会话、账号状态重查后Lua比较完整载荷并删除。长连接通过 `SessionManager.requireOriginalActive` 只查绑定用户的原会话，不扫描Redis全键；现有敏感操作的 `originalToken/requireRecent` 仍要求最近300秒认证。心跳不续期Token、不写PV。
 

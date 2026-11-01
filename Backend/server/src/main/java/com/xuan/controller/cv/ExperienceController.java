@@ -1,4 +1,4 @@
-package com.xuan.controller.blog;
+package com.xuan.controller.cv;
 
 import com.xuan.dto.ExperienceQueryDTO;
 import com.xuan.result.PageResult;
@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 公开展示只返回启用资料。
  */
-@RestController("blogExperienceController")
+@RestController("cvExperienceController")
 @RequestMapping("/cv/experiences")
 @RequiredArgsConstructor
 public class ExperienceController {

@@ -26,9 +26,12 @@ async (page) => {
       total: '0', totalPages: '0', records: [],
     }
     let data = []
-    if (path === '/home/profile') {
+    if (path.endsWith('/auth/captcha')) {
+      data = { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 }
+    }
+    if (/^\/(home|blog|cv)\/profile$/.test(path)) {
       data = null
-    } else if (path === '/analytics/page-views') {
+    } else if (/^\/(home|blog|cv)\/analytics\/page-views$/.test(path)) {
       data = { recorded: true }
     } else if (path === '/blog/statistics') {
       data = {

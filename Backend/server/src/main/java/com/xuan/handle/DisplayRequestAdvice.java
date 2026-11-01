@@ -29,14 +29,18 @@ import java.util.Set;
         MusicController.class,
         com.xuan.controller.blog.HomeProfileController.class,
         com.xuan.controller.blog.SocialController.class,
-        com.xuan.controller.blog.ExperienceController.class,
-        com.xuan.controller.blog.SkillController.class,
+        com.xuan.controller.cv.ExperienceController.class,
+        com.xuan.controller.cv.SkillController.class,
         com.xuan.controller.blog.MusicController.class, OperationLogController.class,
         SubscriptionController.class,
-        com.xuan.controller.me.SubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
+        com.xuan.controller.blog.MySubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
         FeedController.class, MessageController.class,
-        com.xuan.controller.me.MessageController.class, com.xuan.controller.admin.MessageController.class,
+        com.xuan.controller.blog.MyMessageController.class, com.xuan.controller.admin.MessageController.class,
         AnalyticsController.class, com.xuan.controller.blog.OnlineController.class,
+        com.xuan.controller.home.AnalyticsController.class, com.xuan.controller.home.OnlineController.class,
+        com.xuan.controller.cv.AnalyticsController.class, com.xuan.controller.cv.OnlineController.class,
+        com.xuan.controller.home.HomeProfileController.class, com.xuan.controller.home.SocialController.class,
+        com.xuan.controller.cv.HomeProfileController.class, com.xuan.controller.cv.SocialController.class,
         VisitorController.class, PageViewController.class,
         StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
 public class DisplayRequestAdvice {
@@ -60,7 +64,7 @@ public class DisplayRequestAdvice {
                  "GET /admin/statistics/provinces" -> Set.of("begin", "end", "siteCode");
             case "GET /admin/statistics/articles" -> Set.of("begin", "end", "limit");
             case "GET /blog/messages" -> Set.of("page", "pageSize", "parentId");
-            case "GET /me/messages" -> Set.of("page", "pageSize", "status");
+            case "GET /blog/me/messages" -> Set.of("page", "pageSize", "status");
             case "GET /admin/messages" -> Set.of("page", "pageSize", "status", "userId", "isSecret", "begin", "end");
             case "GET /blog/sitemap.xml" -> Set.of("page");
             case "GET /admin/rss-subscriptions" -> Set.of("page", "pageSize", "email", "userId", "status");

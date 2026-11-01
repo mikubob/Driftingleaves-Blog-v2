@@ -1,11 +1,11 @@
 package com.xuan.utils;
 
+import cn.hutool.crypto.CryptoException;
+import cn.hutool.crypto.digest.DigestUtil;
+
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.HexFormat;
 
 /**
  * 这里只生成随机标识和 SHA-256 摘要，不依赖会话、Redis、业务模型或应用配置。
@@ -37,9 +37,8 @@ public final class TokenUtils {
      */
     public static String digest(String value) {
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
-                    .digest(value.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException exception) {
+            return DigestUtil.sha256Hex(value.getBytes(StandardCharsets.UTF_8));
+        } catch (CryptoException exception) {
             throw new IllegalStateException("JDK缺少SHA-256", exception);
         }
     }

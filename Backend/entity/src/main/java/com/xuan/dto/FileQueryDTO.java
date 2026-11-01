@@ -1,5 +1,6 @@
 package com.xuan.dto;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -15,8 +16,8 @@ public record FileQueryDTO(@Min(1) @Max(100000) Integer page,
                            @TextLength(min = 1, max = 100) String mimeType) {
 
     public FileQueryDTO {
-        page = page == null ? 1 : page;
-        pageSize = pageSize == null ? 10 : pageSize;
+        page = ObjectUtil.defaultIfNull(page, 1);
+        pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
         keyword = keyword == null ? null : keyword.strip();
         mimeType = mimeType == null ? null : mimeType.strip();
     }

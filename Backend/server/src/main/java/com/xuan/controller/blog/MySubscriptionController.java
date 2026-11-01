@@ -1,4 +1,4 @@
-package com.xuan.controller.me;
+package com.xuan.controller.blog;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.annotation.RateLimit;
@@ -21,9 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 本人订阅操作只使用当前会话，不从请求接收userId。
  */
 @RestController("meSubscriptionController")
-@RequestMapping("/me/rss-subscription")
+@RequestMapping("/blog/me/rss-subscription")
 @RequiredArgsConstructor
-public class SubscriptionController {
+public class MySubscriptionController {
 
     private final ISubscriptionService subscriptions;
 

@@ -38,7 +38,7 @@ export function trackingPayload(path, title, articleId = null) {
 
 export async function recordPage(path, title, articleId = null) {
   try {
-    await request('/analytics/page-views', {
+    await request('/blog/analytics/page-views', {
       method: 'POST', body: trackingPayload(path, title, articleId),
     })
   } catch {

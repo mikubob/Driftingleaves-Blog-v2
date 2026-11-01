@@ -1,4 +1,4 @@
-package com.xuan.controller.me;
+package com.xuan.controller.blog;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.CommentOwnQueryDTO;
@@ -22,9 +22,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 本人查询和删除只取会话用户，文章下架后仍能处理自己的评论。
  */
 @RestController("ownCommentController")
-@RequestMapping("/me/comments")
+@RequestMapping("/blog/me/comments")
 @RequiredArgsConstructor
-public class CommentController {
+public class MyCommentController {
 
     private final ICommentService comments;
 

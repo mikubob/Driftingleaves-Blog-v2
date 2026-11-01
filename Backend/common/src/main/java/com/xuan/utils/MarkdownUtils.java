@@ -1,5 +1,6 @@
 package com.xuan.utils;
 
+import cn.hutool.core.util.StrUtil;
 import org.commonmark.Extension;
 import org.commonmark.ext.autolink.AutolinkExtension;
 import org.commonmark.ext.gfm.tables.TablesExtension;
@@ -42,7 +43,7 @@ public final class MarkdownUtils {
      * @return 可输出的安全 HTML，含表格、代码、任务列表及标题锚点
      */
     public static String toHtml(String markdown) {
-        if (markdown == null || markdown.isBlank()) {
+        if (StrUtil.nullToEmpty(markdown).isBlank()) {
             return "";
         }
         Node document = PARSER.parse(markdown);
@@ -56,7 +57,7 @@ public final class MarkdownUtils {
      * @return 清理后的正文；允许规范相对 URL 和同页锚点
      */
     public static String sanitize(String html) {
-        if (html == null || html.isBlank()) {
+        if (StrUtil.nullToEmpty(html).isBlank()) {
             return "";
         }
         Safelist allowed = Safelist.relaxed()
@@ -76,7 +77,7 @@ public final class MarkdownUtils {
         for (Element heading : document.select("h1, h2, h3, h4, h5, h6")) {
             String base = PUNCTUATION.matcher(heading.text().strip().toLowerCase(Locale.ROOT)).replaceAll("");
             base = WHITESPACE.matcher(base).replaceAll("-");
-            if (base.isEmpty()) {
+            if (StrUtil.isEmpty(base)) {
                 base = "section";
             }
             String id = base;

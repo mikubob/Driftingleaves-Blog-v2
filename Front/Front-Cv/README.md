@@ -29,8 +29,8 @@ pnpm preview
 
 | 接口 | 用途 |
 | --- | --- |
-| `GET /api/v1/home/profile` | 公开资料，允许 `data=null` |
-| `GET /api/v1/home/social-links` | 可见社交链接 |
+| `GET /api/v1/cv/profile` | 公开资料，允许 `data=null` |
+| `GET /api/v1/cv/social-links` | 可见社交链接 |
 | `GET /api/v1/cv/experiences?page=1&pageSize=100` | 全部公开教育、工作和项目经历 |
 | `GET /api/v1/cv/skills?page=1&pageSize=100` | 全部公开技能 |
 

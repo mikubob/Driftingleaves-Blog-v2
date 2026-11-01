@@ -1,36 +1,63 @@
 import assert from 'node:assert/strict'
-import { afterEach, test } from 'node:test'
-import { acceptSession, can, clearSession, session } from '../src/session.js'
+import { afterEach, beforeEach, test } from 'node:test'
+import { acceptSession, can, clearSession, restoreSession, session } from '../src/session.js'
 import { allowedPages, flattenMenus, isInternalPath } from '../src/navigation.js'
 import { formatCount, ratio, validatePassword } from '../src/format.js'
 
 const originalFetch = globalThis.fetch
+const originalStorage = globalThis.localStorage
+beforeEach(() => {
+  const entries = new Map()
+  globalThis.localStorage = {
+    getItem: (key) => entries.get(key) ?? null,
+    setItem: (key, value) => entries.set(key, value),
+    removeItem: (key) => entries.delete(key),
+  }
+})
 afterEach(() => {
   globalThis.fetch = originalFetch
   clearSession()
+  globalThis.localStorage = originalStorage
 })
 
 test('登录从后端读取有效权限，ALL 与 SELF 按独立权限判断', async () => {
   const responses = {
-    '/api/v1/me': { userId: '9007199254740993', nickname: '测试作者' },
-    '/api/v1/me/capabilities': {
+    '/api/v1/admin/me': { userId: '9007199254740993', nickname: '测试作者' },
+    '/api/v1/admin/me/capabilities': {
       roleCodes: ['author'],
       permissionCodes: ['admin:access', 'blog:article:query', 'blog:statistics:query'],
       dataScopes: { 'blog:article:query': 'SELF', 'blog:statistics:query': 'SELF' },
     },
-    '/api/v1/me/menus': [],
+    '/api/v1/admin/me/menus': [],
   }
   globalThis.fetch = async (url, options) => {
     assert.equal(options.headers.get('Authorization'), 'Bearer fake-session')
     return new Response(
-      JSON.stringify({ code: 'OK', msg: '成功', data: responses[url], errors: [] }),
+      JSON.stringify({ code: 'OK', msg: '成功', data: responses[url] ?? null, errors: [] }),
     )
   }
-  await acceptSession({ tokenType: 'Bearer', accessToken: 'fake-session' })
+  const started = Date.now()
+  await acceptSession({ tokenType: 'Bearer', accessToken: 'fake-session', expiresIn: 604800 })
   assert.equal(session.ready, true)
   assert.equal(can('blog:article:query'), true)
   assert.equal(can('blog:statistics:query', true), false)
   assert.equal(can('sys:role:grant'), false)
+  const saved = localStorage.getItem('dl-admin-session')
+  const stored = JSON.parse(saved)
+  assert.ok(stored.expiresAt >= started + 604800000)
+  assert.ok(stored.expiresAt <= Date.now() + 604800000)
+  assert.deepEqual(Object.keys(stored).sort(), ['accessToken', 'expiresAt'])
+  localStorage.setItem('dl-blog-session', 'independent-blog-session')
+  const refreshed = await import('../src/session.js?refresh-test')
+  assert.equal(refreshed.session.ready, false)
+  await refreshed.restoreSession()
+  assert.equal(refreshed.session.ready, true)
+  assert.equal(refreshed.session.user.nickname, '测试作者')
+  assert.deepEqual(refreshed.session.capabilities, responses['/api/v1/admin/me/capabilities'])
+  assert.equal(localStorage.getItem('dl-admin-session'), saved)
+  await refreshed.logout()
+  assert.equal(localStorage.getItem('dl-admin-session'), null)
+  assert.equal(localStorage.getItem('dl-blog-session'), 'independent-blog-session')
   clearSession()
   assert.equal(session.ready, false)
   assert.equal(session.user, null)
@@ -39,7 +66,7 @@ test('登录从后端读取有效权限，ALL 与 SELF 按独立权限判断', a
 test('没有 admin:access 的普通账号不能进入后台', async () => {
   globalThis.fetch = async (url) => {
     let data = []
-    if (url.endsWith('/me')) {
+    if (url.endsWith('/admin/me')) {
       data = { userId: '1' }
     }
     if (url.endsWith('/capabilities')) {
@@ -48,10 +75,31 @@ test('没有 admin:access 的普通账号不能进入后台', async () => {
     return new Response(JSON.stringify({ code: 'OK', data, errors: [] }))
   }
   await assert.rejects(
-    acceptSession({ tokenType: 'Bearer', accessToken: 'member-token' }),
+    acceptSession({ tokenType: 'Bearer', accessToken: 'member-token', expiresIn: 604800 }),
     /没有进入/,
   )
   assert.equal(session.ready, false)
+  assert.equal(localStorage.getItem('dl-admin-session'), null)
+})
+
+test('过期和损坏的管理端凭据不恢复，已撤销会话会清除存储', async () => {
+  let requests = 0
+  globalThis.fetch = async () => {
+    requests += 1
+    throw new Error('过期凭据不应请求后端')
+  }
+  for (const saved of ['invalid-json', JSON.stringify({ accessToken: 'expired', expiresAt: Date.now() })]) {
+    localStorage.setItem('dl-admin-session', saved)
+    await restoreSession()
+    assert.equal(localStorage.getItem('dl-admin-session'), null)
+    assert.equal(session.ready, false)
+  }
+  assert.equal(requests, 0)
+  localStorage.setItem('dl-admin-session', JSON.stringify({ accessToken: 'revoked', expiresAt: Date.now() + 60000 }))
+  globalThis.fetch = async () => new Response(JSON.stringify({ code: 'UNAUTHENTICATED', data: null, errors: [] }), { status: 401 })
+  await restoreSession()
+  assert.equal(session.ready, false)
+  assert.equal(localStorage.getItem('dl-admin-session'), null)
 })
 
 test('菜单白名单支持隐藏页面，按钮、停用节点、未知组件不生成路由', () => {

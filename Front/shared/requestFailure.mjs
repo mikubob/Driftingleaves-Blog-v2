@@ -7,7 +7,7 @@ export function setRequestFailureHandler(handler = () => {}) {
 
 /** 统计失败沿用静默处理，不中断已成功加载的公开内容。 */
 export function reportRequestFailure(error, path) {
-  if (!['/analytics/page-views', '/analytics/online/tickets'].includes(path.split('?')[0])) {
+  if (!/^\/(home|blog|cv)\/analytics\/(page-views|online\/tickets)$/.test(path.split('?')[0])) {
     onFailure(error)
   }
   return error

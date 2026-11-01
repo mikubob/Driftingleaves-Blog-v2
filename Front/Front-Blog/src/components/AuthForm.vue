@@ -4,9 +4,11 @@ import { request, validatePassword } from '../api.js'
 import { acceptSession } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
+import CaptchaField from '../../../shared/CaptchaField.vue'
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
 const form = reactive({ username: '', password: '', nickname: '' })
+const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
@@ -29,7 +31,7 @@ async function popupResult(event) {
   busy.value = true
   error.value = ''
   try {
-    const { data } = await request('/auth/oauth/exchange', {
+    const { data } = await request('/blog/auth/oauth/exchange', {
       method: 'POST', credentials: 'include', body: { ticket: event.data.ticket },
     })
     if (data.operation !== 'LOGIN' || !data.session) {
@@ -49,7 +51,7 @@ onBeforeUnmount(() => {
   popupWindow?.close()
 })
 const providers = useResource(() => true, async (signal) => {
-  const { data } = await request('/auth/oauth/providers', { signal })
+  const { data } = await request('/blog/auth/oauth/providers', { signal })
   if (!Array.isArray(data) || !data.every((item) => typeof item.source === 'string' && typeof item.displayName === 'string')) {
     throw new Error('登录平台响应格式不正确。')
   }
@@ -72,17 +74,18 @@ async function submit() {
     const body = { username: form.username.trim(), password: form.password }
     if (register.value) {
       body.nickname = form.nickname.trim()
-      await request('/auth/register', { method: 'POST', body })
+      await request('/blog/auth/register', { method: 'POST', body, captcha: captcha.value.getValue() })
       register.value = false
       feedback.value = '注册成功，请使用刚才的账号密码登录。'
       return
     }
-    const { data } = await request('/auth/login', { method: 'POST', body })
+    const { data } = await request('/blog/auth/login', { method: 'POST', body, captcha: captcha.value.getValue() })
     await acceptSession(data)
     form.password = ''
   } catch (failure) {
     error.value = failure.message
   } finally {
+    captcha.value?.refresh()
     busy.value = false
   }
 }
@@ -99,8 +102,8 @@ async function authorize(provider) {
   busy.value = true
   error.value = ''
   try {
-    const { data } = await request(`/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
-      method: 'POST', credentials: 'include', body: { operation: 'LOGIN' },
+    const { data } = await request(`/blog/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
+      method: 'POST', credentials: 'include', body: { operation: 'LOGIN' }, captcha: captcha.value.getValue(),
     })
     if (props.popup) {
       awaitingPopup = true
@@ -112,6 +115,7 @@ async function authorize(provider) {
     error.value = failure.message
     popupWindow?.close()
   } finally {
+    captcha.value?.refresh()
     busy.value = false
   }
 }
@@ -155,9 +159,10 @@ async function authorize(provider) {
           required
           placeholder="8–64 个字符"
         />
+        <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="busy" />
         <p v-if="error" role="alert" class="error-text">{{ error }}</p>
         <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
-        <button class="primary full-width" :disabled="busy">{{ submitLabel }}</button>
+        <button class="primary full-width" :disabled="busy || !captcha?.ready">{{ submitLabel }}</button>
       </fieldset>
     </form>
     <div>
@@ -167,7 +172,7 @@ async function authorize(provider) {
         <button
           v-for="provider in providers.data"
           :key="provider.source"
-          :disabled="busy"
+          :disabled="busy || !captcha?.ready"
           @click="authorize(provider)"
         >
           {{ provider.displayName }}

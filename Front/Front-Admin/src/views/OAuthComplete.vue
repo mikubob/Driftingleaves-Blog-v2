@@ -25,7 +25,7 @@ onMounted(async () => {
     return
   }
   try {
-    const { data } = await request('/auth/oauth/exchange', {
+    const { data } = await request('/admin/auth/oauth/exchange', {
       method: 'POST',
       body: { ticket },
       credentials: 'include',

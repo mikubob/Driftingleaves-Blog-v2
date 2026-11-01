@@ -51,12 +51,12 @@ test('凭据错误保留会话，身份失效才清除；Token 只经 Authorizat
   let expired = false
   setAuthorization('fictional-memory-token', () => { expired = true })
   respond(null, 401, {}, 'AUTH_FAILED')
-  await assert.rejects(request('/auth/login', { method: 'POST', body: { password: '  密码  ' } }))
+  await assert.rejects(request('/blog/auth/login', { method: 'POST', body: { password: '  密码  ' } }))
   assert.equal(expired, false)
   assert.equal(calls[0].options.headers.get('Authorization'), 'Bearer fictional-memory-token')
   assert.equal(JSON.parse(calls[0].options.body).password, '  密码  ')
   respond(null, 401, {}, 'UNAUTHENTICATED')
-  await assert.rejects(request('/me'))
+  await assert.rejects(request('/blog/me'))
   assert.equal(expired, true)
   respond(null)
   await request('/test')
@@ -91,7 +91,7 @@ test('公开附件封面支持规范路径，拒绝后台文件和危险外链',
 
 test('OAuth 请求启用 Cookie，并保留服务端授权地址', async () => {
   respond({ authorizationUrl: 'https://example.test/authorize?state=fictional', expiresIn: 300 })
-  await request('/auth/oauth/EXAMPLE/authorize', {
+  await request('/blog/auth/oauth/EXAMPLE/authorize', {
     method: 'POST', credentials: 'include', body: { operation: 'LOGIN' },
   })
   assert.equal(calls[0].options.credentials, 'include')
@@ -117,4 +117,30 @@ test('网络错误、非 JSON 和 AbortError 保留失败语义', async () => {
   const abort = new DOMException('aborted', 'AbortError')
   globalThis.fetch = async () => { throw abort }
   await assert.rejects(request('/test'), (error) => error === abort)
+})
+
+
+test('验证码保留前导零，经请求头提交并校验图片响应', async () => {
+  const captcha = { captchaId: 'a'.repeat(43), imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=', expiresIn: 120 }
+  let seen
+  globalThis.fetch = async (url, options) => {
+    seen = { url, options }
+    return new Response(JSON.stringify({ code: 'OK', msg: '成功', data: captcha, errors: [] }), {
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }
+  assert.deepEqual((await request('/blog/auth/captcha')).data, captcha)
+  await request('/test', { method: 'POST', body: { operation: 'LOGIN' },
+    credentials: 'include', captcha: { captchaId: captcha.captchaId, code: '012345' } })
+  assert.equal(seen.options.headers.get('X-Captcha-Id'), captcha.captchaId)
+  assert.equal(seen.options.headers.get('X-Captcha-Code'), '012345')
+  assert.equal(seen.options.credentials, 'include')
+  assert.deepEqual(JSON.parse(seen.options.body), { operation: 'LOGIN' })
+  assert.equal(Object.hasOwn(seen.options, 'captcha'), false)
+  await assert.rejects(request('/test', { captcha: { captchaId: captcha.captchaId, code: '12345' } }), /六位数字/)
+  captcha.captchaId = '1'
+  await assert.rejects(request('/blog/auth/captcha'), /验证码响应/)
+  captcha.captchaId = 'a'.repeat(43)
+  captcha.imageBase64 = 'https://example.test/image.png'
+  await assert.rejects(request('/blog/auth/captcha'), /验证码响应/)
 })

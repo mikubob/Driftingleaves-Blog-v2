@@ -136,14 +136,14 @@ async function request(path, signal, options = {}) {
 
 /** 获取公开资料；null 表示管理员尚未配置。 */
 export async function getProfile(signal) {
-  const data = await request('/home/profile', signal)
+  const data = await request('/cv/profile', signal)
   assertResponse(data === null || matchesFields(data, profileFields))
   return data
 }
 
 /** 获取可见社交链接，图标只接受 URL 或本地注册键。 */
 export async function getSocialLinks(signal) {
-  const data = await request('/home/social-links', signal)
+  const data = await request('/cv/social-links', signal)
   assertResponse(Array.isArray(data) && data.every((item) => matchesFields(item, socialFields)))
   return data
 }
@@ -184,7 +184,7 @@ export function getSkills(signal) {
 
 /** 公开站点匿名参与，不恢复其他站点的登录身份。 */
 export async function getOnlineTicket(body, signal) {
-  return validateOnlineTicket(await request('/analytics/online/tickets', signal, {
+  return validateOnlineTicket(await request('/cv/analytics/online/tickets', signal, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),

@@ -147,6 +147,35 @@ class OnlineIntegrationTest {
     }
 
     @Test
+    void publicClientsHaveTheirOwnTicketAndWebSocketPaths() throws Exception {
+        for (String site : List.of("home", "blog", "cv")) {
+            int frontendPort = switch (site) {
+                case "home" -> Boolean.getBoolean("test.online.browser") ? 25173 : 5173;
+                case "cv" -> Boolean.getBoolean("test.online.browser") ? 25175 : 5175;
+                default -> Boolean.getBoolean("test.online.browser") ? 25174 : 5174;
+            };
+            String origin = "http://127.0.0.1:" + frontendPort;
+            String body = payload("client-browser-0001").replace("blog", site);
+            var response = post("/" + site + "/analytics/online/tickets", body, origin, null);
+            assertThat(response.statusCode()).isEqualTo(201);
+            String ticket = tree(response).path("data").path("ticket").asString();
+            Client client = new Client();
+            client.socket = http.newWebSocketBuilder().header("Origin", origin)
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/api/v1/" + site + "/ws/online"), client)
+                    .join();
+            clients.add(client);
+            client.send(json.writeValueAsString(Map.of("type", "join", "ticket", ticket)));
+            assertThat(client.next().path("type").asString()).isEqualTo("online.count");
+        }
+        Client wrongSite = new Client();
+        wrongSite.socket = http.newWebSocketBuilder().header("Origin", ORIGIN)
+                .buildAsync(URI.create("ws://127.0.0.1:" + port + "/api/v1/home/ws/online"), wrongSite).join();
+        clients.add(wrongSite);
+        wrongSite.send(json.writeValueAsString(Map.of("type", "join", "ticket", ticket(null, "client-browser-0002"))));
+        assertThat(wrongSite.next().path("code").asString()).isEqualTo("ONLINE_TICKET_INVALID");
+    }
+
+    @Test
     void ticketBoundaryValidatesOriginFieldsIdentityAndDoesNotRecordPageViews() throws Exception {
         int before = jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class);
         var response = issue(null, "browser-0000000001");
@@ -162,11 +191,11 @@ class OnlineIntegrationTest {
         for (String invalid : List.of(body.replace("blog", "admin"), body.replace("\"/\"", "\"/?ticket=secret\""),
                 body.replace("}", ",\"userId\":\"1\"}"), body.replace("}", ",\"siteCode\":\"blog\"}"),
                 body.replace("\"browser-0000000001\"", "12"), "{}")) {
-            assertThat(post("/analytics/online/tickets", invalid, ORIGIN, null).statusCode()).isEqualTo(400);
+            assertThat(post("/blog/analytics/online/tickets", invalid, ORIGIN, null).statusCode()).isEqualTo(400);
         }
-        assertThat(post("/analytics/online/tickets?userId=1", body, ORIGIN, null).statusCode()).isEqualTo(400);
-        assertThat(post("/analytics/online/tickets", body, null, null).statusCode()).isEqualTo(403);
-        assertThat(post("/analytics/online/tickets", body, "http://127.0.0.1:5173", null).statusCode()).isEqualTo(403);
+        assertThat(post("/blog/analytics/online/tickets?userId=1", body, ORIGIN, null).statusCode()).isEqualTo(400);
+        assertThat(post("/blog/analytics/online/tickets", body, null, null).statusCode()).isEqualTo(403);
+        assertThat(post("/blog/analytics/online/tickets", body, "http://127.0.0.1:5173", null).statusCode()).isEqualTo(403);
         String disabled = token("disabled", -301_000);
         jdbc.update("UPDATE sys_user SET status=0 WHERE username='disabled'");
         assertThat(tree(issue(disabled, "browser-0000000001")).path("code").asString()).isEqualTo("ACCOUNT_DISABLED");
@@ -209,7 +238,7 @@ class OnlineIntegrationTest {
     void realSocketsDeduplicateUsersAndGuestsAndRestoreAnonymousKeyOnLogout() throws Exception {
         String user = token("account-a", -301_000);
         String otherDevice = new TransactionTemplate(transactions).execute(status ->
-                sessions.create(userId("account-a"), clock.millis(), "OAUTH"));
+                sessions.create(userId("account-a"), clock.millis(), "OAUTH", SessionManager.BLOG_TIMEOUT_SECONDS));
         String secondUser = token("account-b", 0);
         Client guest = joined(null, "browser-0000000001");
         assertCounts(guest.next(), "1", "0", "1");
@@ -278,7 +307,7 @@ class OnlineIntegrationTest {
 
     @Test
     void ordinaryGetQueryAndHeaderIdentityCannotBypassHandshake() throws Exception {
-        var response = http.send(HttpRequest.newBuilder(uri("/ws/online")).header("Origin", ORIGIN).GET().build(),
+        var response = http.send(HttpRequest.newBuilder(uri("/blog/ws/online")).header("Origin", ORIGIN).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
         assertThat(response.statusCode()).isEqualTo(400);
         assertThat(tree(response).path("code").asString()).isEqualTo("VALIDATION_ERROR");
@@ -343,7 +372,7 @@ class OnlineIntegrationTest {
         sessions.requireOriginalActive(user, TokenUtils.digest(token), expiresAt);
         assertThatThrownBy(() -> sessions.originalToken(user, TokenUtils.digest(token)))
                 .isInstanceOfSatisfying(BusinessException.class, error -> assertThat(error.getCode()).isEqualTo("REAUTH_REQUIRED"));
-        clock.offset.addAndGet(7_200_000);
+        clock.offset.addAndGet(expiresAt - clock.millis() + 1);
         assertThatThrownBy(() -> sessions.requireOriginalActive(user, TokenUtils.digest(token), expiresAt))
                 .isInstanceOfSatisfying(BusinessException.class, error -> assertThat(error.getCode()).isEqualTo("UNAUTHENTICATED"));
     }
@@ -353,6 +382,11 @@ class OnlineIntegrationTest {
     void browserVerificationWindow() throws Exception {
         var directory = Path.of("../target/verification").toAbsolutePath();
         Files.createDirectories(directory);
+        // 浏览器窗口只验证在线流程，预置两张答案已知的验证码；真实生成和120秒TTL另有集成测试。
+        for (String captchaId : List.of("r".repeat(43), "l".repeat(43))) {
+            redis.opsForValue().set("dl:online-test:captcha:" + TokenUtils.digest(captchaId),
+                    "012345", Duration.ofMinutes(8));
+        }
         var done = directory.resolve("online-browser.done");
         Files.deleteIfExists(done);
         Files.writeString(directory.resolve("online-browser.json"),
@@ -367,7 +401,8 @@ class OnlineIntegrationTest {
     private String token(String name, long authenticatedOffset) {
         jdbc.update("INSERT INTO sys_user(username,nickname,status) VALUES(?,?,1)", name, name);
         return new TransactionTemplate(transactions).execute(status ->
-                sessions.create(userId(name), clock.millis() + authenticatedOffset, "PASSWORD"));
+                sessions.create(userId(name), clock.millis() + authenticatedOffset, "PASSWORD",
+                        SessionManager.BLOG_TIMEOUT_SECONDS));
     }
 
     private long userId(String name) {
@@ -379,7 +414,7 @@ class OnlineIntegrationTest {
     }
 
     private URI wsUri(String suffix) {
-        return URI.create("ws://127.0.0.1:" + port + "/api/v1/ws/online" + suffix);
+        return URI.create("ws://127.0.0.1:" + port + "/api/v1/blog/ws/online" + suffix);
     }
 
     private String payload(String fingerprint) {
@@ -399,7 +434,7 @@ class OnlineIntegrationTest {
     }
 
     private HttpResponse<String> issue(String token, String fingerprint) throws Exception {
-        return post("/analytics/online/tickets", payload(fingerprint), ORIGIN, token);
+        return post("/blog/analytics/online/tickets", payload(fingerprint), ORIGIN, token);
     }
 
     private JsonNode tree(HttpResponse<String> response) {

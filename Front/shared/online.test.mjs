@@ -42,14 +42,15 @@ function fixture(requestTicket = async () => ticket) {
 }
 
 test('票据、地址和字符串快照满足三站协议', async () => {
-  assert.equal(onlineSocketUrl('/api/v1', { href: 'https://home.example.test/' }), 'wss://home.example.test/api/v1/ws/online')
-  assert.equal(onlineSocketUrl('http://api.example.test/api/v1', { href: 'https://blog.example.test/' }), 'ws://api.example.test/api/v1/ws/online')
+  assert.equal(onlineSocketUrl('/api/v1/home', { href: 'https://home.example.test/' }), 'wss://home.example.test/api/v1/home/ws/online')
+  assert.equal(onlineSocketUrl('http://api.example.test/api/v1/blog', { href: 'https://blog.example.test/' }), 'ws://api.example.test/api/v1/blog/ws/online')
   assert.throws(() => validateOnlineTicket({ ...ticket, expiresIn: 31 }))
   assert.throws(() => validateOnlineTicket({ ticket: 'invalid', expiresIn: 30 }))
   const f = fixture()
   f.connection.start()
   await flush()
   const socket = f.sockets[0]
+  assert.equal(socket.url, 'wss://api.example.test/api/v1/blog/ws/online')
   socket.onopen()
   assert.deepEqual(socket.sent, [{ type: 'join', ticket: ticket.ticket }])
   socket.message('online.count', { data })

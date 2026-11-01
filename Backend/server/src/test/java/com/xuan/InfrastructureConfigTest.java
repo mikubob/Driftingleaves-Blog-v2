@@ -146,18 +146,21 @@ class InfrastructureConfigTest {
                     var auth = Binder.get(context.getEnvironment()).bind("app.auth", AuthProperties.class).get();
                     var filter = new AuthWebConfig(null, null, auth, null)
                             .corsFilter(JsonMapper.builder().build()).getFilter();
-                    var preflight = new MockHttpServletRequest("OPTIONS", "/api/v1/me/profile");
+                    var preflight = new MockHttpServletRequest("OPTIONS", "/api/v1/blog/me/profile");
                     preflight.setServerPort(5922);
                     preflight.addHeader("Origin", origin);
                     preflight.addHeader("Access-Control-Request-Method", "PATCH");
-                    preflight.addHeader("Access-Control-Request-Headers", "Authorization,Content-Type,If-Revision");
+                    preflight.addHeader("Access-Control-Request-Headers",
+                            "Authorization,Content-Type,If-Revision,X-Captcha-Id,X-Captcha-Code");
                     var preflightResponse = new MockHttpServletResponse();
                     filter.doFilter(preflight, preflightResponse, new MockFilterChain());
                     assertThat(preflightResponse.getStatus()).isEqualTo(200);
                     assertThat(preflightResponse.getHeader("Access-Control-Allow-Origin")).isEqualTo(origin);
                     assertThat(preflightResponse.getHeader("Access-Control-Allow-Credentials")).isEqualTo("true");
+                    assertThat(preflightResponse.getHeader("Access-Control-Allow-Headers"))
+                            .contains("X-Captcha-Id", "X-Captcha-Code");
 
-                    var login = new MockHttpServletRequest("POST", "/api/v1/auth/login");
+                    var login = new MockHttpServletRequest("POST", "/api/v1/blog/auth/login");
                     login.setServerPort(5922);
                     login.addHeader("Origin", origin);
                     login.setContentType("application/json");
@@ -185,7 +188,7 @@ class InfrastructureConfigTest {
             assertThat(auth.getAllowedOrigins().contains("http://localhost:5176")).isEqualTo("dev".equals(profile));
             var filter = new AuthWebConfig(null, null, auth, null)
                     .corsFilter(JsonMapper.builder().build()).getFilter();
-            var request = new MockHttpServletRequest("POST", "/api/v1/auth/login");
+            var request = new MockHttpServletRequest("POST", "/api/v1/blog/auth/login");
             request.setServerPort(5922);
             request.addHeader("Origin", "http://localhost:5177");
             var response = new MockHttpServletResponse();

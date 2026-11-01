@@ -1,5 +1,6 @@
 package com.xuan.utils;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.exception.BusinessException;
 
 import java.net.URI;
@@ -33,7 +34,7 @@ public final class SitePathUtils {
 
     /** 来源只保留协议、主机、端口与路径，不把登录票据或访问参数落库。 */
     public static String referer(String value) {
-        if (value == null) {
+        if (ObjectUtil.isNull(value)) {
             return null;
         }
         if (!UrlPolicy.valid(value)) {

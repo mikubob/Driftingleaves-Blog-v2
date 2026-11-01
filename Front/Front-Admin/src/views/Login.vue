@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from '../api.js'
+import CaptchaField from '../../../shared/CaptchaField.vue'
 import { acceptSession } from '../session.js'
 import { firstPage, registerMenuRoutes } from '../router.js'
 import { validatePassword } from '../format.js'
@@ -9,6 +10,7 @@ import { User, Lock, ArrowRight } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const form = reactive({ username: '', password: '' })
+const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
 const providers = ref([])
@@ -17,7 +19,7 @@ const providerError = ref('')
 async function loadProviders() {
   providerError.value = ''
   try {
-    const { data } = await request('/auth/oauth/providers')
+    const { data } = await request('/admin/auth/oauth/providers')
     if (
       !Array.isArray(data) ||
       !data.every(
@@ -45,9 +47,10 @@ async function login() {
   }
   busy.value = true
   try {
-    const { data } = await request('/auth/login', {
+    const { data } = await request('/admin/auth/login', {
       method: 'POST',
       body: { username: form.username, password: form.password },
+      captcha: captcha.value.getValue(),
     })
     form.password = ''
     await acceptSession(data)
@@ -56,6 +59,7 @@ async function login() {
   } catch (failure) {
     error.value = failure.message
   } finally {
+    captcha.value?.refresh()
     busy.value = false
   }
 }
@@ -64,9 +68,10 @@ async function oauth(provider) {
   busy.value = true
   error.value = ''
   try {
-    const { data } = await request(`/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
+    const { data } = await request(`/admin/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
       method: 'POST',
       body: { operation: 'LOGIN' },
+      captcha: captcha.value.getValue(),
       credentials: 'include',
     })
     const url = new URL(data.authorizationUrl)
@@ -75,6 +80,7 @@ async function oauth(provider) {
     }
     window.location.assign(url.href)
   } catch (failure) {
+    captcha.value?.refresh()
     error.value = failure.message
     busy.value = false
   }
@@ -124,6 +130,7 @@ onMounted(loadProviders)
           >
             <template #prefix><el-icon aria-hidden="true"><Lock /></el-icon></template>
           </el-input>
+          <CaptchaField ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
           <p v-if="error" class="error-text" role="alert">{{ error }}</p>
           <el-button
             class="login-submit"
@@ -131,6 +138,7 @@ onMounted(loadProviders)
             size="large"
             native-type="submit"
             :loading="busy"
+            :disabled="!captcha?.ready"
           >
             登 录
             <el-icon aria-hidden="true"><ArrowRight /></el-icon>
@@ -142,7 +150,7 @@ onMounted(loadProviders)
             <el-button
               v-for="provider in providers"
               :key="provider.source"
-              :disabled="busy"
+              :disabled="busy || !captcha?.ready"
               @click="oauth(provider)"
             >
               {{ provider.displayName }}

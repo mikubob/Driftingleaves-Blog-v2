@@ -7,6 +7,7 @@ import com.xuan.entity.SysOperationLog;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.properties.FileProperties;
+import com.xuan.properties.AuthProperties;
 import com.xuan.properties.PublicSiteProperties;
 import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.security.AuthorizationProvider;
@@ -122,6 +123,9 @@ class ArticleIntegrationTest {
 
     @Autowired
     StringRedisTemplate redis;
+
+    @Autowired
+    AuthProperties properties;
 
     @Autowired
     PlatformTransactionManager transactions;
@@ -1665,15 +1669,15 @@ class ArticleIntegrationTest {
             for (String method : List.of("GET", "PUT", "DELETE")) {
                 code(call(method, likePath(article), token, null), 404, "NOT_FOUND");
             }
-            assertThat(data(call("GET", "/me/comments?articleId=" + article, token, null)).get("total")
+            assertThat(data(call("GET", "/blog/me/comments?articleId=" + article, token, null)).get("total")
                     .asString()).isEqualTo("1");
             code(call("GET", "/admin/comments/" + id, token, null), 200, "OK");
         }
         code(review(token, id, 1), 200, "OK");
-        code(call("DELETE", "/me/comments/" + id, token, null), 200, "OK");
+        code(call("DELETE", "/blog/me/comments/" + id, token, null), 200, "OK");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_article_like", Integer.class)).isEqualTo(1);
         assertThat(
-                data(call("GET", "/me/comments", token, null)).get("records").get(0).has("markdownContent")).isFalse();
+                data(call("GET", "/blog/me/comments", token, null)).get("records").get(0).has("markdownContent")).isFalse();
     }
 
     @Test
@@ -1702,9 +1706,9 @@ class ArticleIntegrationTest {
         for (String id : List.of("0", "01", "-1", "1.2", "9223372036854775808")) {
             code(call("GET", commentsPath(id), null, null), 400, "VALIDATION_ERROR");
             code(call("GET", likePath(id), token, null), 400, "VALIDATION_ERROR");
-            code(call("DELETE", "/me/comments/" + id, token, null), 400, "VALIDATION_ERROR");
+            code(call("DELETE", "/blog/me/comments/" + id, token, null), 400, "VALIDATION_ERROR");
         }
-        for (String path : List.of(commentsPath(article), "/me/comments", "/admin/comments")) {
+        for (String path : List.of(commentsPath(article), "/blog/me/comments", "/admin/comments")) {
             for (String query : List.of("page=0", "page=100001", "pageSize=51", "pageSize=0", "page=x", "page=",
                     "page=1&page=2", "unknown=1", "authorId=1")) {
                 code(call("GET", path + "?" + query, token, null), 400, "VALIDATION_ERROR");
@@ -1713,17 +1717,17 @@ class ArticleIntegrationTest {
         for (String query : List.of("parentId=01", "parentId=0")) {
             code(call("GET", commentsPath(article) + "?" + query, null, null), 400, "VALIDATION_ERROR");
         }
-        for (String path : List.of("/me/comments?userId=1", "/me/comments?articleId=01", "/admin/comments?userId=0",
-                "/admin/comments?status=4", "/me/comments?status=-1", likePath(article) + "?userId=1")) {
+        for (String path : List.of("/blog/me/comments?userId=1", "/blog/me/comments?articleId=01", "/admin/comments?userId=0",
+                "/admin/comments?status=4", "/blog/me/comments?status=-1", likePath(article) + "?userId=1")) {
             code(call("GET", path, token, null), 400, "VALIDATION_ERROR");
         }
         String id = commentId(postComment(token, article, "body", null));
-        for (String path : List.of("/me/comments/" + id, "/admin/comments/" + id, likePath(article))) {
+        for (String path : List.of("/blog/me/comments/" + id, "/admin/comments/" + id, likePath(article))) {
             code(call("DELETE", path, token, "{\"userId\":\"1\"}"), 400, "VALIDATION_ERROR");
         }
         code(call("PUT", likePath(article), token, "{}"), 400, "VALIDATION_ERROR");
         code(call("GET", likePath(article), token, "{}"), 400, "VALIDATION_ERROR");
-        MvcResult empty = call("GET", "/me/comments?page=100000&pageSize=50", token, null);
+        MvcResult empty = call("GET", "/blog/me/comments?page=100000&pageSize=50", token, null);
         code(empty, 200, "OK");
         assertThat(data(empty).get("page").asInt()).isEqualTo(100000);
         assertThat(data(empty).get("records").isEmpty()).isTrue();
@@ -1736,7 +1740,7 @@ class ArticleIntegrationTest {
         String author = actor("interaction_guard_author", 2);
         String article = published(admin, "Guards");
         String id = commentId(postComment(member, article, "body", null));
-        for (String path : List.of(likePath(article), "/me/comments", "/admin/comments")) {
+        for (String path : List.of(likePath(article), "/blog/me/comments", "/admin/comments")) {
             code(call("GET", path, null, null), 401, "UNAUTHENTICATED");
         }
         code(postComment(null, article, "匿名", null), 401, "UNAUTHENTICATED");
@@ -1748,9 +1752,9 @@ class ArticleIntegrationTest {
         code(call("DELETE", "/admin/comments/" + id, member, null), 403, "FORBIDDEN");
         jdbc.update("DELETE FROM sys_role_permission WHERE role_id=3 AND permission_id IN(40,41,42,43,44,45)");
         code(call("GET", likePath(article), member, null), 200, "OK");
-        code(call("GET", "/me/comments", member, null), 200, "OK");
+        code(call("GET", "/blog/me/comments", member, null), 200, "OK");
         code(postComment(member, article, "无权限", null), 403, "FORBIDDEN");
-        code(call("DELETE", "/me/comments/" + id, member, null), 403, "FORBIDDEN");
+        code(call("DELETE", "/blog/me/comments/" + id, member, null), 403, "FORBIDDEN");
         for (String method : List.of("PUT", "DELETE")) {
             code(call(method, likePath(article), member, null), 403, "FORBIDDEN");
         }
@@ -1758,7 +1762,7 @@ class ArticleIntegrationTest {
         code(call("GET", likePath(article), member, null), 403, "ACCOUNT_DISABLED");
         jdbc.update("UPDATE sys_user SET status=1 WHERE username='interaction_guard_member'");
         sessions.revokeAll(Long.parseLong(userId("interaction_guard_member")));
-        code(call("GET", "/me/comments", member, null), 401, "UNAUTHENTICATED");
+        code(call("GET", "/blog/me/comments", member, null), 401, "UNAUTHENTICATED");
     }
 
     @Test
@@ -1802,11 +1806,11 @@ class ArticleIntegrationTest {
         String article = published(admin, "Own-comments");
         String theirs = commentId(postComment(member, article, "别人的原文", null));
         String own = commentId(postComment(admin, article, "我的原文", null));
-        code(call("DELETE", "/me/comments/" + theirs, admin, null), 404, "NOT_FOUND");
-        assertThat(data(call("GET", "/me/comments?articleId=" + article + "&status=0", admin, null)).get("total")
+        code(call("DELETE", "/blog/me/comments/" + theirs, admin, null), 404, "NOT_FOUND");
+        assertThat(data(call("GET", "/blog/me/comments?articleId=" + article + "&status=0", admin, null)).get("total")
                 .asString()).isEqualTo("1");
         for (int i = 0; i < 2; i++) {
-            MvcResult deleted = call("DELETE", "/me/comments/" + own, admin, null);
+            MvcResult deleted = call("DELETE", "/blog/me/comments/" + own, admin, null);
             code(deleted, 200, "OK");
             assertThat(deleted.getResponse().getHeader("X-Revision")).isNull();
         }
@@ -1814,7 +1818,7 @@ class ArticleIntegrationTest {
                 own)).isEqualTo("该评论已删除");
         assertThat(jdbc.queryForObject("SELECT content FROM blog_comment WHERE comment_id=?", String.class,
                 theirs)).isEqualTo("别人的原文");
-        assertThat(data(call("GET", "/me/comments?status=3", admin, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/me/comments?status=3", admin, null)).get("total").asString()).isEqualTo("1");
     }
 
     @Test
@@ -1919,7 +1923,7 @@ class ArticleIntegrationTest {
         code(call("GET", commentsPath(article) + "?parentId=" + child, token, null), 404, "NOT_FOUND");
         code(review(token, root, 1), 200, "OK");
         assertThat(articleComments(token, article)).isEqualTo("3");
-        code(call("DELETE", "/me/comments/" + child, token, null), 200, "OK");
+        code(call("DELETE", "/blog/me/comments/" + child, token, null), 200, "OK");
         assertThat(articleComments(token, article)).isEqualTo("2");
         JsonNode visible = data(call("GET", commentsPath(article) + "?parentId=" + child, null, null));
         assertThat(visible.get("records").get(0).get("commentId").asString()).isEqualTo(leaf);
@@ -2167,7 +2171,7 @@ class ArticleIntegrationTest {
                     case "comment" -> postComment(token, article, "禁止新增", null);
                     case "like", "unlike" ->
                             call(action.equals("like") ? "PUT" : "DELETE", likePath(article), token, null);
-                    case "own" -> call("DELETE", "/me/comments/" + id, token, null);
+                    case "own" -> call("DELETE", "/blog/me/comments/" + id, token, null);
                     case "review" ->
                             write("PUT", "/admin/comments/" + id + "/review", token, version, Map.of("status", 1));
                     default -> call("DELETE", "/admin/comments/" + id, token, null);
@@ -2307,7 +2311,7 @@ class ArticleIntegrationTest {
             assertThat(statuses).containsExactlyInAnyOrder(200, 412);
             work.clear();
             work.add(pool.submit(() -> call("DELETE", "/admin/comments/" + id, admin, null)));
-            work.add(pool.submit(() -> call("DELETE", "/me/comments/" + id, member, null)));
+            work.add(pool.submit(() -> call("DELETE", "/blog/me/comments/" + id, member, null)));
             for (Future<MvcResult> result : work) {
                 code(result.get(10, TimeUnit.SECONDS), 200, "OK");
             }
@@ -2324,7 +2328,7 @@ class ArticleIntegrationTest {
         for (int status : List.of(0, 1, 2)) {
             long id = 3000 + status;
             comment(id, article, user, null, status);
-            code(call("DELETE", "/me/comments/" + id, token, null), 200, "OK");
+            code(call("DELETE", "/blog/me/comments/" + id, token, null), 200, "OK");
             assertThat(jdbc.queryForObject("SELECT status FROM blog_comment WHERE comment_id=?", Integer.class,
                     id)).isEqualTo(3);
         }
@@ -2724,7 +2728,7 @@ class ArticleIntegrationTest {
         code(postComment(token, article, "关闭拒绝", null), 409, "STATE_CONFLICT");
         assertThat(data(call("GET", commentsPath(article), null, null)).get("total").asString()).isEqualTo("1");
         code(call("PUT", likePath(article), token, null), 200, "OK");
-        code(call("DELETE", "/me/comments/" + id, token, null), 200, "OK");
+        code(call("DELETE", "/blog/me/comments/" + id, token, null), 200, "OK");
         code(updateConfig(token, "comment", configBody(Map.of("enabled", true, "reviewRequired", true), 0)), 200, "OK");
         String pending = commentId(postComment(token, article, "管理员也待审", null));
         assertThat(jdbc.queryForObject("SELECT status FROM blog_comment WHERE comment_id=?", Integer.class,
@@ -3832,7 +3836,7 @@ class ArticleIntegrationTest {
         String token = actor("rss_owner", 3);
         String other = actor("rss_other", 3);
         String old = requestSubscription(token, "  Confirm@Example.TEST ");
-        MvcResult own = call("GET", "/me/rss-subscription", token, null);
+        MvcResult own = call("GET", "/blog/me/rss-subscription", token, null);
         code(own, 200, "OK");
         assertThat(data(own).get("email").asString()).isEqualTo("confirm@example.test");
         assertThat(data(own).get("status").asInt()).isZero();
@@ -3843,7 +3847,7 @@ class ArticleIntegrationTest {
         code(confirm(other, current), 400, "SUBSCRIPTION_TICKET_INVALID");
         code(confirm(token, current), 200, "OK");
         code(confirm(token, current), 400, "SUBSCRIPTION_TICKET_INVALID");
-        code(call("PUT", "/me/rss-subscription", token, "{\"email\":\"CONFIRM@example.test\"}"), 200, "OK");
+        code(call("PUT", "/blog/me/rss-subscription", token, "{\"email\":\"CONFIRM@example.test\"}"), 200, "OK");
         verify(mail, times(2)).send(eq("confirm@example.test"), eq("确认邮件订阅"), anyString());
         assertThat(jdbc.queryForObject(
                 "SELECT verified_at IS NOT NULL AND subscribe_time IS NOT NULL AND unsubscribe_time IS NULL FROM " +
@@ -3859,10 +3863,10 @@ class ArticleIntegrationTest {
         String other = actor("rss_second", 3);
         doThrow(new BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用")).when(mail)
                 .send(anyString(), anyString(), anyString());
-        code(call("PUT", "/me/rss-subscription", member, "{\"email\":\"pending@example.test\"}"), 503,
+        code(call("PUT", "/blog/me/rss-subscription", member, "{\"email\":\"pending@example.test\"}"), 503,
                 "SERVICE_UNAVAILABLE");
-        assertThat(data(call("GET", "/me/rss-subscription", member, null)).get("status").asInt()).isZero();
-        code(call("PUT", "/me/rss-subscription", other, "{\"email\":\"PENDING@example.test\"}"), 409,
+        assertThat(data(call("GET", "/blog/me/rss-subscription", member, null)).get("status").asInt()).isZero();
+        code(call("PUT", "/blog/me/rss-subscription", other, "{\"email\":\"PENDING@example.test\"}"), 409,
                 "UNIQUE_CONFLICT");
         String id = jdbc.queryForObject("SELECT subscription_id FROM blog_rss_subscription", String.class);
         String rev = call("GET", "/admin/rss-subscriptions/" + id, admin, null).getResponse().getHeader("X-Revision");
@@ -3871,9 +3875,9 @@ class ArticleIntegrationTest {
         reset(mail);
         String ticket = requestSubscription(member, "pending@example.test");
         code(confirm(member, ticket), 200, "OK");
-        code(call("DELETE", "/me/rss-subscription", member, null), 200, "OK");
+        code(call("DELETE", "/blog/me/rss-subscription", member, null), 200, "OK");
         String first = jdbc.queryForObject("SELECT unsubscribe_time FROM blog_rss_subscription", String.class);
-        code(call("DELETE", "/me/rss-subscription", member, null), 200, "OK");
+        code(call("DELETE", "/blog/me/rss-subscription", member, null), 200, "OK");
         assertThat(jdbc.queryForObject("SELECT unsubscribe_time FROM blog_rss_subscription", String.class)).isEqualTo(
                 first);
     }
@@ -3887,7 +3891,7 @@ class ArticleIntegrationTest {
                  "'45000' SET MESSAGE_TEXT='isolated failure'");
         code(confirm(token, ticket), 503, "SERVICE_UNAVAILABLE");
         jdbc.execute("DROP TRIGGER part7_fail");
-        assertThat(data(call("GET", "/me/rss-subscription", token, null)).get("status").asInt()).isZero();
+        assertThat(data(call("GET", "/blog/me/rss-subscription", token, null)).get("status").asInt()).isZero();
         code(confirm(token, ticket), 400, "SUBSCRIPTION_TICKET_INVALID");
         code(confirm(token, requestSubscription(token, "rollback@example.test")), 200, "OK");
     }
@@ -3996,7 +4000,7 @@ class ArticleIntegrationTest {
         MvcResult ownThread = call("GET", "/blog/messages?parentId=" + root, owner, null);
         code(ownThread, 200, "OK");
         assertThat(data(ownThread).get("records").get(0).get("content").asString()).isEqualTo("后台私密回复");
-        code(call("GET", "/me/messages/" + root, other, null), 404, "NOT_FOUND");
+        code(call("GET", "/blog/me/messages/" + root, other, null), 404, "NOT_FOUND");
         code(call("POST", "/blog/messages", other, json.writeValueAsString(messageBody(root, "不能插入", 0))), 404,
                 "NOT_FOUND");
     }
@@ -4020,7 +4024,7 @@ class ArticleIntegrationTest {
                 "1");
         reviewMessage(admin, root, 2);
         code(call("GET", "/blog/messages?parentId=" + secret, other, null), 404, "NOT_FOUND");
-        assertThat(data(call("GET", "/me/messages", other, null)).get("records").get(0).get("content")
+        assertThat(data(call("GET", "/blog/me/messages", other, null)).get("records").get(0).get("content")
                 .asString()).isEqualTo("私密分支");
     }
 
@@ -4032,28 +4036,28 @@ class ArticleIntegrationTest {
         reviewMessage(admin, root, 1);
         String child = createMessage(owner, root, "回复保留", 0);
         reviewMessage(admin, child, 1);
-        MvcResult old = call("GET", "/me/messages/" + root, owner, null);
+        MvcResult old = call("GET", "/blog/me/messages/" + root, owner, null);
         String revision = old.getResponse().getHeader("X-Revision");
         assertThat(data(old).get("htmlContent").asString()).contains("&lt;script&gt;", "<br>")
                 .doesNotContain("<script>");
         jdbc.update(
                 "UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',TRUE,'reviewRequired',FALSE) WHERE " +
                  "config_key='message'");
-        MvcResult edited = write("PUT", "/me/messages/" + root, owner, revision, messageEdit("修改后必须重审"));
+        MvcResult edited = write("PUT", "/blog/me/messages/" + root, owner, revision, messageEdit("修改后必须重审"));
         code(edited, 200, "OK");
         assertThat(data(edited).get("status").asInt()).isZero();
         assertThat(data(edited).get("editedAt").isNull()).isFalse();
         assertThat(data(call("GET", "/blog/messages", null, null)).get("total").asString()).isEqualTo("0");
-        code(write("PUT", "/me/messages/" + root, owner, revision, messageEdit("旧版本")), 412, "REVISION_CONFLICT");
+        code(write("PUT", "/blog/me/messages/" + root, owner, revision, messageEdit("旧版本")), 412, "REVISION_CONFLICT");
         reviewMessage(admin, root, 1);
-        code(call("DELETE", "/me/messages/" + root, owner, null), 200, "OK");
-        code(call("DELETE", "/me/messages/" + root, owner, null), 200, "OK");
+        code(call("DELETE", "/blog/me/messages/" + root, owner, null), 200, "OK");
+        code(call("DELETE", "/blog/me/messages/" + root, owner, null), 200, "OK");
         JsonNode placeholder = data(call("GET", "/blog/messages", null, null)).get("records").get(0);
         assertThat(placeholder.get("author").isNull()).isTrue();
         assertThat(placeholder.get("content").asString()).isEqualTo("该留言已删除");
         assertThat(data(call("GET", "/blog/messages?parentId=" + root, null, null)).get("total").asString()).isEqualTo(
                 "1");
-        code(write("PUT", "/me/messages/" + root, owner, edited.getResponse().getHeader("X-Revision"),
+        code(write("PUT", "/blog/me/messages/" + root, owner, edited.getResponse().getHeader("X-Revision"),
                 messageEdit("复活")), 412, "REVISION_CONFLICT");
         String current = call("GET", "/admin/messages/" + root, admin, null).getResponse().getHeader("X-Revision");
         code(write("PUT", "/admin/messages/" + root + "/review", admin, current, Map.of("status", 1)), 409,
@@ -4092,11 +4096,11 @@ class ArticleIntegrationTest {
                 "UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',FALSE,'reviewRequired',TRUE) WHERE " +
                  "config_key='message'");
         reviewMessage(admin, id, 1);
-        String rev = call("GET", "/me/messages/" + id, token, null).getResponse().getHeader("X-Revision");
-        code(write("PUT", "/me/messages/" + id, token, rev, messageEdit("不能编辑")), 409, "STATE_CONFLICT");
+        String rev = call("GET", "/blog/me/messages/" + id, token, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/blog/me/messages/" + id, token, rev, messageEdit("不能编辑")), 409, "STATE_CONFLICT");
         code(call("POST", "/admin/messages/" + id + "/replies", admin,
                 json.writeValueAsString(messageEdit("不能回复"))), 409, "STATE_CONFLICT");
-        code(call("DELETE", "/me/messages/" + id, token, null), 200, "OK");
+        code(call("DELETE", "/blog/me/messages/" + id, token, null), 200, "OK");
         code(call("GET", "/blog/messages?userId=1", token, null), 400, "VALIDATION_ERROR");
         code(call("GET", "/blog/messages", "invalid-token", null), 401, "UNAUTHENTICATED");
     }
@@ -4149,14 +4153,14 @@ class ArticleIntegrationTest {
     }
 
     private String requestSubscription(String token, String email) throws Exception {
-        code(call("PUT", "/me/rss-subscription", token, json.writeValueAsString(Map.of("email", email))), 200, "OK");
+        code(call("PUT", "/blog/me/rss-subscription", token, json.writeValueAsString(Map.of("email", email))), 200, "OK");
         ArgumentCaptor<String> text = ArgumentCaptor.forClass(String.class);
         verify(mail, atLeastOnce()).send(anyString(), eq("确认邮件订阅"), text.capture());
         return fragmentTicket(text.getValue(), "confirmTicket");
     }
 
     private MvcResult confirm(String token, String ticket) throws Exception {
-        return call("POST", "/me/rss-subscription/confirm", token, json.writeValueAsString(Map.of("ticket", ticket)));
+        return call("POST", "/blog/me/rss-subscription/confirm", token, json.writeValueAsString(Map.of("ticket", ticket)));
     }
 
     private MvcResult unsubscribe(String ticket) throws Exception {
@@ -4202,7 +4206,9 @@ class ArticleIntegrationTest {
         code(track(null, null, value), 403, "FORBIDDEN");
         code(track(null, "https://evil.example.test", value), 403, "FORBIDDEN");
         value.put("siteCode", "home");
-        code(track(null, ORIGIN, value), 403, "FORBIDDEN");
+        code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR");
+        code(mvc.perform(req("POST", "/home/analytics/page-views").header("Origin", ORIGIN)
+                .contentType("application/json").content(json.writeValueAsString(value))).andReturn(), 403, "FORBIDDEN");
         value.put("siteCode", "blog");
         value.put("pagePath", "/safe/%2e%2e/admin");
         code(track(null, ORIGIN, value), 400, "VALIDATION_ERROR");
@@ -4469,7 +4475,7 @@ class ArticleIntegrationTest {
     }
 
     private MvcResult track(String token, String origin, Map<String, Object> value) throws Exception {
-        var builder = req("POST", "/analytics/page-views").contentType("application/json")
+        var builder = req("POST", "/blog/analytics/page-views").contentType("application/json")
                 .content(json.writeValueAsString(value));
         if (origin != null) {
             builder.header("Origin", origin);
@@ -4546,7 +4552,7 @@ class ArticleIntegrationTest {
             assertThat(List.of(left.get(10, TimeUnit.SECONDS).getResponse().getStatus(),
                     right.get(10, TimeUnit.SECONDS).getResponse().getStatus())).containsExactlyInAnyOrder(200, 400);
         }
-        code(call("DELETE", "/me/rss-subscription", token, null), 200, "OK");
+        code(call("DELETE", "/blog/me/rss-subscription", token, null), 200, "OK");
         String expired = requestSubscription(token, "concurrent@example.test");
         redis.expire("dl:article-test:subscription:confirm:" + TokenUtils.digest(expired),
                 Duration.ZERO);
@@ -4744,13 +4750,13 @@ class ArticleIntegrationTest {
         String token = actor("discovery_input", 1);
         String article = published(token, "Discovery-input");
         seedDictionary();
-        for (String path : List.of("/blog/authors", "/me/liked-articles")) {
+        for (String path : List.of("/blog/authors", "/blog/me/liked-articles")) {
             for (String query : List.of("page=0", "pageSize=101", "page=1&page=2", "page=", "userId=1", "authorId=1")) {
                 code(call("GET", path + "?" + query, token, null), 400, "VALIDATION_ERROR");
             }
         }
         for (String path : List.of("/blog/authors/" + userId("discovery_input"), "/blog/categories/category",
-                "/blog/tags/tag-one", "/blog/authors", "/me/liked-articles")) {
+                "/blog/tags/tag-one", "/blog/authors", "/blog/me/liked-articles")) {
             code(call("GET", path, token, "{}"), 400, "VALIDATION_ERROR");
             code(call("GET", path + "?unknown=1", token, null), 400, "VALIDATION_ERROR");
         }
@@ -4782,7 +4788,7 @@ class ArticleIntegrationTest {
         code(call("PUT", likePath(third), other, null), 200, "OK");
         jdbc.update("UPDATE blog_article_like SET create_time='2026-01-01 00:00:00.000' WHERE user_id=?",
                 userId("discovery_like_member"));
-        MvcResult response = call("GET", "/me/liked-articles?pageSize=1", member, null);
+        MvcResult response = call("GET", "/blog/me/liked-articles?pageSize=1", member, null);
         code(response, 200, "OK");
         assertThat(data(response).get("total").asString()).isEqualTo("2");
         JsonNode record = data(response).get("records").get(0);
@@ -4792,38 +4798,38 @@ class ArticleIntegrationTest {
         assertThat(record.get("article").has("commentCount")).isTrue();
         assertThat(record.get("article").toString()).doesNotContain("markdownContent", "password", "authorId");
         code(call("PUT", likePath(first), member, null), 200, "OK");
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").get(0).get("article")
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("records").get(0).get("article")
                 .get("articleId").asString()).isEqualTo(second);
         code(call("DELETE", likePath(first), member, null), 200, "OK");
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
         code(call("PUT", likePath(first), member, null), 200, "OK");
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").get(0).get("article")
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("records").get(0).get("article")
                 .get("articleId").asString()).isEqualTo(first);
         code(status(admin, first, 2), 200, "OK");
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
         jdbc.update("UPDATE blog_article SET visibility=2 WHERE article_id=?", second);
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("records").isEmpty()).isTrue();
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("0");
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("records").isEmpty()).isTrue();
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("total").asString()).isEqualTo("0");
         code(status(admin, first, 1), 200, "OK");
-        assertThat(data(call("GET", "/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
-        assertThat(data(call("GET", "/me/liked-articles", other, null)).get("records").get(0).get("article")
+        assertThat(data(call("GET", "/blog/me/liked-articles", member, null)).get("total").asString()).isEqualTo("1");
+        assertThat(data(call("GET", "/blog/me/liked-articles", other, null)).get("records").get(0).get("article")
                 .get("articleId").asString()).isEqualTo(third);
         assertThat(jdbc.queryForObject("SELECT SUM(view_count) FROM blog_article", Long.class)).isZero();
     }
 
     @Test
     void discoveryLikedArticlesRequireCurrentEnabledIdentityWithoutWritePermission() throws Exception {
-        code(call("GET", "/me/liked-articles", null, null), 401, "UNAUTHENTICATED");
+        code(call("GET", "/blog/me/liked-articles", null, null), 401, "UNAUTHENTICATED");
         String token = actor("discovery_like_identity", 3);
         jdbc.update("DELETE FROM sys_role_permission WHERE role_id=3 AND permission_id=45");
-        code(call("GET", "/me/liked-articles", token, null), 200, "OK");
-        code(call("GET", "/me/liked-articles?userId=" + userId("discovery_like_identity"), token, null), 400,
+        code(call("GET", "/blog/me/liked-articles", token, null), 200, "OK");
+        code(call("GET", "/blog/me/liked-articles?userId=" + userId("discovery_like_identity"), token, null), 400,
                 "VALIDATION_ERROR");
         jdbc.update("UPDATE sys_user SET status=0 WHERE username='discovery_like_identity'");
-        code(call("GET", "/me/liked-articles", token, null), 403, "ACCOUNT_DISABLED");
+        code(call("GET", "/blog/me/liked-articles", token, null), 403, "ACCOUNT_DISABLED");
         jdbc.update("UPDATE sys_user SET status=1 WHERE username='discovery_like_identity'");
         sessions.revokeAll(Long.parseLong(userId("discovery_like_identity")));
-        code(call("GET", "/me/liked-articles", token, null), 401, "UNAUTHENTICATED");
+        code(call("GET", "/blog/me/liked-articles", token, null), 401, "UNAUTHENTICATED");
     }
 
     @Test
@@ -5191,7 +5197,7 @@ class ArticleIntegrationTest {
         String article = data(created).get("articleId").asString();
         code(status(token, article, 1), 200, "OK");
         var beforePrivate = redis.keys("dl:article-test:cache:public:*");
-        for (String path : List.of("/me", "/me/liked-articles", "/admin/articles/" + article, "/blog/messages")) {
+        for (String path : List.of("/blog/me", "/blog/me/liked-articles", "/admin/articles/" + article, "/blog/messages")) {
             code(call("GET", path, token, null), 200, "OK");
         }
         assertThat(redis.keys("dl:article-test:cache:public:*")).isEqualTo(beforePrivate);
@@ -5218,8 +5224,8 @@ class ArticleIntegrationTest {
         code(write("DELETE", "/admin/tags/701", token, call("GET", "/admin/tags/701", token, null).getResponse().getHeader("X-Revision"), null), 200, "OK");
         code(call("GET", "/blog/tags/tag-one", null, null), 404, "NOT_FOUND");
         assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("tags").isEmpty()).isTrue();
-        String meVersion = call("GET", "/me", token, null).getResponse().getHeader("X-Revision");
-        code(write("PATCH", "/me/profile", token, meVersion, Map.of("nickname", "New public author")), 200, "OK");
+        String meVersion = call("GET", "/blog/me", token, null).getResponse().getHeader("X-Revision");
+        code(write("PATCH", "/blog/me/profile", token, meVersion, Map.of("nickname", "New public author")), 200, "OK");
         assertThat(data(call("GET", "/blog/authors", null, null)).get("records").get(0).get("nickname").asString()).isEqualTo("New public author");
         assertThat(data(call("GET", "/blog/articles/Cache-renamed", null, null)).get("author").get("nickname").asString()).isEqualTo("New public author");
         // 热缓存失败仍回滚阅读，不发布事务中的候选片段。
@@ -5421,10 +5427,10 @@ class ArticleIntegrationTest {
     void rateLoginSuccessAndFailureConsumeTotalBudgetBeforePasswordWork() throws Exception {
         String token = actor("rate_login_total", 1);
         for (int n = 1; n < 30; n++) {
-            code(call("POST", "/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 200, "OK");
+            code(call("POST", "/blog/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 200, "OK");
         }
         String last = jdbc.queryForObject("SELECT CAST(last_login_time AS CHAR) FROM sys_user WHERE username='rate_login_total'", String.class);
-        code(call("POST", "/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 429, "RATE_LIMITED");
+        code(call("POST", "/blog/auth/login", null, json.writeValueAsString(Map.of("username", "rate_login_total", "password", PASSWORD))), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT CAST(last_login_time AS CHAR) FROM sys_user WHERE username='rate_login_total'", String.class)).isEqualTo(last);
         assertThat(redis.keys("dl:article-test:rate:login:*")).isEmpty();
         assertThat(token).isNotBlank();
@@ -5460,11 +5466,11 @@ class ArticleIntegrationTest {
         String id = createMessage(member, null, "message", 0);
         reviewMessage(admin, id, 1);
         for (int n = 0; n < 9; n++) {
-            String revision = call("GET", "/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
-            code(write("PUT", "/me/messages/" + id, member, revision, messageEdit("edit-" + n)), 200, "OK");
+            String revision = call("GET", "/blog/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
+            code(write("PUT", "/blog/me/messages/" + id, member, revision, messageEdit("edit-" + n)), 200, "OK");
         }
-        String revision = call("GET", "/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
-        code(write("PUT", "/me/messages/" + id, member, revision, messageEdit("rejected")), 429, "RATE_LIMITED");
+        String revision = call("GET", "/blog/me/messages/" + id, member, null).getResponse().getHeader("X-Revision");
+        code(write("PUT", "/blog/me/messages/" + id, member, revision, messageEdit("rejected")), 429, "RATE_LIMITED");
         code(call("POST", "/blog/messages", member, json.writeValueAsString(messageBody(null, "rejected", 0))), 429, "RATE_LIMITED");
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message", Integer.class)).isEqualTo(1);
         reviewMessage(admin, id, 1);
@@ -5572,7 +5578,7 @@ class ArticleIntegrationTest {
     }
 
     private MvcResult track(Map<String, Object> body) throws Exception {
-        return mvc.perform(req("POST", "/analytics/page-views").header("Origin", ORIGIN).contentType("application/json")
+        return mvc.perform(req("POST", "/blog/analytics/page-views").header("Origin", ORIGIN).contentType("application/json")
                 .content(json.writeValueAsString(body))).andReturn();
     }
     private Map<String, Object> cacheSocial(String name) {
@@ -5607,14 +5613,14 @@ class ArticleIntegrationTest {
     }
 
     private String actor(String username, int role) throws Exception {
-        MvcResult registered = call("POST", "/auth/register", null,
+        MvcResult registered = call("POST", "/blog/auth/register", null,
                 json.writeValueAsString(Map.of("username", username, "password", PASSWORD, "nickname", "叶")));
         code(registered, 201, "OK");
         if (role != 3) {
             jdbc.update("INSERT INTO sys_user_role(user_id,role_id) VALUES(?,?)",
                     data(registered).get("userId").asString(), role);
         }
-        MvcResult logged = call("POST", "/auth/login", null,
+        MvcResult logged = call("POST", "/blog/auth/login", null,
                 json.writeValueAsString(Map.of("username", username, "password", PASSWORD)));
         code(logged, 200, "OK");
         return data(logged).get("accessToken").asString();
@@ -5688,7 +5694,7 @@ class ArticleIntegrationTest {
         } else if (path.matches("/admin/(categories|tags)(?:/.*)?")) {
             String other = path.startsWith("/admin/categories") ? "tags" : "categories";
             domains = article.stream().filter(d -> !d.equals(other) && !d.equals("comments")).toList();
-        } else if (path.equals("/me/profile") || method.equals("PUT") && path.matches("/admin/users/[0-9]+")) {
+        } else if (path.equals("/blog/me/profile") || method.equals("PUT") && path.matches("/admin/users/[0-9]+")) {
             domains = List.of("authors", "articles", "search", "articleDetail", "comments");
         } else if (path.matches("/blog/articles/[0-9]+/comments") || path.matches("/(me|admin)/comments/[0-9]+(?:/review)?")) {
             domains = List.of("comments");
@@ -5710,8 +5716,9 @@ class ArticleIntegrationTest {
     }
 
     private MockHttpServletRequestBuilder req(String method, String path) {
-        return request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1")
-                .servletPath(path.split("\\?", 2)[0]);
+        return CaptchaTestSupport.withCaptcha(
+                request(HttpMethod.valueOf(method), "/api/v1" + path).contextPath("/api/v1")
+                        .servletPath(path.split("\\?", 2)[0]), redis, properties);
     }
 
     private JsonNode data(MvcResult result) throws Exception {

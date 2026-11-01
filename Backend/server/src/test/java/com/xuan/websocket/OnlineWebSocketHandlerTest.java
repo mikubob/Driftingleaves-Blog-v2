@@ -161,7 +161,7 @@ class OnlineWebSocketHandlerTest {
     private Peer peer() throws Exception {
         Peer peer = new Peer();
         when(peer.session.getId()).thenReturn("connection-" + ++sequence);
-        when(peer.session.getAttributes()).thenReturn(Map.of("onlineOrigin", "https://blog.example.test"));
+        when(peer.session.getAttributes()).thenReturn(Map.of("onlineOrigin", "https://blog.example.test", "onlineSite", "blog"));
         when(peer.session.isOpen()).thenAnswer(invocation -> peer.open.get());
         doAnswer(invocation -> {
             peer.messages.add(json.readTree(((TextMessage) invocation.getArgument(0)).getPayload()));

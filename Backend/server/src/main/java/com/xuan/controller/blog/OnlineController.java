@@ -1,6 +1,7 @@
 package com.xuan.controller.blog;
 
 import com.xuan.dto.OnlineTicketCreateDTO;
+import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
 import com.xuan.service.IOnlineService;
@@ -17,8 +18,8 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 公开可选 Bearer 入口，票据用途仅限在线统计。 */
-@RestController
-@RequestMapping("/analytics/online/tickets")
+@RestController("blogOnlineController")
+@RequestMapping("/blog/analytics/online/tickets")
 @RequiredArgsConstructor
 public class OnlineController {
     private final IOnlineService online;
@@ -28,6 +29,9 @@ public class OnlineController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body, HttpServletRequest request) {
+        if (!"blog".equals(body.siteCode())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
+        }
         return Result.ok(online.issue(body, request.getHeader("Origin"),
                 IpUtils.clientIp(request, auth.getTrustedProxies())));
     }

@@ -1,5 +1,6 @@
 package com.xuan.dto;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -16,9 +17,9 @@ public record AdminArticleQueryDTO(@Min(1) @Max(100000) Integer page,
                                    @Min(0) @Max(1) Integer trash) {
 
     public AdminArticleQueryDTO {
-        page = page == null ? 1 : page;
-        pageSize = pageSize == null ? 10 : pageSize;
-        trash = trash == null ? 0 : trash;
+        page = ObjectUtil.defaultIfNull(page, 1);
+        pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
+        trash = ObjectUtil.defaultIfNull(trash, 0);
         keyword = keyword == null ? null : keyword.strip();
     }
 }

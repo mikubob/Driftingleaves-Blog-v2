@@ -7,9 +7,11 @@ import com.xuan.dto.CommentPublicQueryDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICommentService;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.IdUtils;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentPublicVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class CommentController {
 
     private final ICommentService comments;
+    private final CaptchaStore captchas;
 
     /** 每次只展开一层，父链不可见和文章非公开都返回 404。 */
     @GetMapping
@@ -43,7 +46,8 @@ public class CommentController {
     @SaCheckPermission("blog:comment:create")
     @RateLimit(value = "comment:create", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResponseEntity<Result<CommentOwnVO>> create(@PathVariable String articleId,
-            @Valid @RequestBody CommentCreateDTO body) {
+            @Valid @RequestBody CommentCreateDTO body, HttpServletRequest request) {
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
         return ResponseEntity.status(201).body(Result.ok(comments.create(IdUtils.parse(articleId), body)));
     }
 }

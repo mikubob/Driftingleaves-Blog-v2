@@ -9,6 +9,19 @@ import static org.assertj.core.api.Assertions.assertThat;
  * 实际解析和清理 HTML，检查危险标签、URL、字数和阅读时间。
  */
 class MarkdownUtilsTest {
+
+    @Test
+    void nullHandlingPreservesExistingUnicodeWhitespaceRules() {
+        assertThat(MarkdownUtils.toHtml(null)).isEmpty();
+        assertThat(MarkdownUtils.sanitize(null)).isEmpty();
+        assertThat(MarkdownUtils.toHtml(" \t\n\u3000")).isEmpty();
+        assertThat(MarkdownUtils.sanitize(" \t\n\u3000")).isEmpty();
+        assertThat(MarkdownUtils.toHtml("\u00a0")).isNotEmpty();
+        assertThat(MarkdownUtils.toHtml("\u200c")).isNotEmpty();
+        assertThat(MarkdownUtils.sanitize("\u00a0")).isNotEmpty();
+        assertThat(MarkdownUtils.sanitize("\u200c")).isNotEmpty();
+    }
+
     @Test
     void sanitizesExecutableHtmlAndUnsafeUrlsIncludingEncodedProtocols() {
         String html = MarkdownUtils.toHtml("""

@@ -1,5 +1,6 @@
 package com.xuan.content;
 
+import cn.hutool.core.util.StrUtil;
 import com.xuan.client.AliOssClient;
 import com.xuan.entity.BlogFile;
 import com.xuan.exception.BusinessException;
@@ -337,7 +338,7 @@ public class ArticleResources {
     /** 配置过的 OSS endpoint 和 bucket 域名也不能拿来做公开直链绕过文章附件地址。 */
     private boolean storageHost(String host) {
         String endpoint = ossProperties.getEndpoint();
-        if (endpoint == null || endpoint.isBlank()) {
+        if (StrUtil.nullToEmpty(endpoint).isBlank()) {
             return false;
         }
         String storage = URI.create(endpoint).getHost();

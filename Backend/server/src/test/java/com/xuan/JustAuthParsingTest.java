@@ -13,6 +13,7 @@ import me.zhyd.oauth.request.AuthGithubRequest;
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedStatic;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -31,7 +32,7 @@ class JustAuthParsingTest {
     @Test
     void githubResponseParsingUsesCompatibleFastjsonApi() {
         AuthConfig config = AuthConfig.builder().clientId("test").clientSecret("test")
-                .redirectUri("https://blog.example.test/api/v1/auth/oauth/GITHUB/callback").build();
+                .redirectUri("https://blog.example.test/api/v1/blog/auth/oauth/GITHUB/callback").build();
         AuthGithubRequest request = new AuthGithubRequest(config) {
             @Override
             protected String doPostAuthorizationCode(String code) {
@@ -55,6 +56,27 @@ class JustAuthParsingTest {
                             "{\"error\":\"bad_verification_code\",\"error_description\":\"boundary-error\"}", null));
             assertThatThrownBy(() -> request.getUserInfo(token)).isInstanceOf(AuthException.class);
         }
+    }
+
+    @Test
+    void providersAcceptOnlyConfiguredClientCallbackPaths() {
+        AuthProperties properties = new AuthProperties();
+        properties.setAllowedOrigins(List.of("https://blog.example.test"));
+        properties.setFrontendCompleteUrl("https://blog.example.test/oauth/complete");
+        AuthProperties.Provider github = new AuthProperties.Provider();
+        github.setEnabled(true);
+        github.setClientId("test-client");
+        github.setClientSecret("test-secret");
+        properties.getProviders().put("GITHUB", github);
+        JustAuthClient gateway = new JustAuthClient(properties, null);
+        for (String client : List.of("admin", "blog")) {
+            github.setRedirectUri("https://api.example.test/api/v1/" + client + "/auth/oauth/GITHUB/callback");
+            assertThat(gateway.providers()).hasSize(1);
+        }
+        github.setRedirectUri("https://api.example.test/api/v1/auth/oauth/GITHUB/callback");
+        assertThat(gateway.providers()).isEmpty();
+        github.setRedirectUri("https://api.example.test/api/v1/home/auth/oauth/GITHUB/callback");
+        assertThat(gateway.providers()).isEmpty();
     }
 
     @Test

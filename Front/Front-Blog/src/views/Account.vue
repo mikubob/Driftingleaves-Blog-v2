@@ -34,7 +34,7 @@ const me = useResource(() => session.user?.userId, async (signal) => {
   if (!session.user) {
     return null
   }
-  const result = await request('/me', { signal })
+  const result = await request('/blog/me', { signal })
   Object.assign(form, {
     nickname: result.data.nickname,
     email: result.data.email || '',
@@ -47,7 +47,7 @@ const activity = useResource(() => [session.user?.userId, tab.value, page.value]
   if (!session.user) {
     return null
   }
-  return getPage(`/me/${tab.value}`, { page: page.value, pageSize: 10 }, signal)
+  return getPage(`/blog/me/${tab.value}`, { page: page.value, pageSize: 10 }, signal)
 })
 watch(tab, () => {
   page.value = 1
@@ -65,7 +65,7 @@ async function saveProfile() {
   }
   busy.value = true
   try {
-    const result = await request('/me/profile', {
+    const result = await request('/blog/me/profile', {
       method: 'PATCH', revision: me.data.revision,
       body: {
         nickname: form.nickname.trim(), email: form.email.trim() || null,
@@ -94,7 +94,7 @@ async function changePassword() {
     if (session.user.hasPassword) {
       body.currentPassword = password.current
     }
-    await request('/me/password', { method: 'PUT', body })
+    await request('/blog/me/password', { method: 'PUT', body })
     password.current = ''
     password.next = ''
     clearSession()
@@ -110,7 +110,7 @@ async function remove() {
   const item = deleting.value
   const path = tab.value === 'liked-articles'
     ? `/blog/articles/${item.article.articleId}/like`
-    : `/me/${tab.value}/${item.commentId || item.messageId}`
+    : `/blog/me/${tab.value}/${item.commentId || item.messageId}`
   busy.value = true
   error.value = ''
   try {
@@ -128,7 +128,7 @@ async function editMessage(item) {
   error.value = ''
   busy.value = true
   try {
-    const result = await request(`/me/messages/${item.messageId}`)
+    const result = await request(`/blog/me/messages/${item.messageId}`)
     editForm.content = result.data.content
     editForm.contentFormat = result.data.contentFormat
     editForm.notifyReply = result.data.notifyReply === 1
@@ -149,7 +149,7 @@ async function saveMessage() {
   }
   busy.value = true
   try {
-    await request(`/me/messages/${editing.value}`, {
+    await request(`/blog/me/messages/${editing.value}`, {
       method: 'PUT', revision: editForm.revision,
       body: {
         content: editForm.content.trim(), contentFormat: editForm.contentFormat,

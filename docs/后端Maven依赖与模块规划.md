@@ -54,7 +54,7 @@ Backend/
 | JJWT 0.12.5 三件套 | common `utils/JwtUtil.java`；server 的管理员拦截器、访客 Token、RSS 订阅等 | 本站登录改 Sa-Token Session；旧管理员/访客/RSS Token 体系不移植，不直接引入 JJWT |
 | Redis、Spring Cache | `RedisConfiguration.java`；会话/验证码/计数/业务缓存及监控采集使用 Redis；多个 Service 使用缓存注解 | 保留 Redis 客户端，供 Sa-Token/state/限流；首期不复制业务缓存和计数同步体系 |
 | Fastjson2 2.0.54，在三个模块声明 | pojo 的 `JSONField`，server 的日志/RSS JSON 处理；common 的 JSON 配置实际使用 Jackson | API JSON 统一 Boot 的 Jackson 3；不把旧 Fastjson 注解带入新 DTO。JustAuth 的内部兼容依赖单独处理 |
-| Hutool-all 5.8.32 | 多个 server Service 的 BeanUtil、HTTP、随机值等；common POM 也声明 | 不继承整包；新代码优先 JDK/Spring。JustAuth HTTP 可用 JDK 客户端，无需为它加 Hutool |
+| Hutool-all 5.8.32 | 多个 server Service 的 BeanUtil、HTTP、随机值等；common POM 也声明 | 2026-11-01 按用户要求引入 Hutool 5.8.48 的 core/crypto 模块，简化公开响应复制、XML 转义和 SHA-256 摘要；不继承旧版整包 |
 | Aliyun OSS 3.17.4 | common `utils/AliOssUtil.java` 与 `properties/AliOssProperties.java`，server `OssConfiguration.java` | 本次明确授权OSS，使用父POM统一管理的3.18.5；共享AliOssClient、外部属性、条件装配及生命周期。文件HTTP业务仍待实现，不自动迁移文件或改变已有ACL |
 | Thumbnailator 0.4.20、TwelveMonkeys WebP 3.9.4、Sejda WebP 0.1.6 | common `ImageCompressUtil.java` 用 Thumbnailator/ImageIO；模板要求转 WebP，两个 provider 没有普通 import 也可能通过 ImageIO SPI 生效 | 上传文件不等于必须压缩转码；暂不加入。后续确定 WebP 编码需求时再选 provider，不将两套编解码实现一起复制 |
 | CommonMark 核心 + 表格/自动链接/任务列表，均 0.21.0；jsoup 1.16.1 | common `utils/MarkdownUtil.java` 实际启用三个扩展并清理 HTML；server 有 `MarkdownUtilTest` | 保留这四个 CommonMark 组件及 jsoup，升级版本；对应新表的 Markdown 正文和可选 HTML 缓存 |
@@ -136,12 +136,17 @@ flowchart LR
 - **I**：内部模块，由本项目父 POM 管理为 `2.0.0-SNAPSHOT`。
 - scope 未标注时为 compile；test 依赖只进入测试类路径，provided 不进入应用运行依赖。
 
+Hutool core 在直接使用它的模块声明：对象判空及缺省值使用 ObjectUtil，字符串空值使用 StrUtil，已确认非 null 的集合使用 CollUtil。原有 `String.isBlank()` 的 Unicode 空白规则保留，通过 `StrUtil.nullToEmpty(value).isBlank()` 合并 null 处理，避免将不间断空格等额外字符改判为空白；仅缺少查询参数时补默认值，不覆盖显式传入的零或负数。
+
 ### 5.2 应直接声明的依赖
 
 | groupId | artifactId | 精确版本 | 用途 | 所属模块 / scope | 管理 |
 | --- | --- | --- | --- | --- | --- |
 | com.xuan | common | 2.0.0-SNAPSHOT | 引用共享结果、异常、正文工具 | server | I |
 | com.xuan | entity | 2.0.0-SNAPSHOT | 引用实体、DTO、VO | server | I |
+| cn.hutool | hutool-core | 5.8.48 | 字符串/集合判空、查询参数缺省值、公开响应复制和 XML 转义 | common、entity、server | E |
+| cn.hutool | hutool-captcha | 5.8.48 | 六位纯数字圆圈干扰 PNG 验证码，common/utils 生成、Redis 一次性验证 | common | E |
+| cn.hutool | hutool-crypto | 5.8.48 | UTF-8 SHA-256 摘要，保持 Redis 键与业务版本格式 | common | E |
 | org.projectlombok | lombok | 1.18.48 | 延续模型、构造器和日志注解 | entity、common、server / provided | B |
 | jakarta.validation | jakarta.validation-api | 3.1.1 | DTO 与共享配置属性的 Jakarta 校验注解；不是校验执行器 | entity、common | B |
 | com.baomidou | mybatis-plus-annotation | 3.5.17 | 实体表、主键、字段注解，避免 entity 引入整个 starter | entity | E |
@@ -225,13 +230,13 @@ MVC JSON 使用 Jackson 3，databind groupId 为 `tools.jackson.core`。旧 comm
 
 ### 6.3 JustAuth：普通库集成、旧 JSON 依赖与 state
 
-使用官方普通 Java 库 `me.zhyd.oauth:JustAuth:1.16.7`，不引入未知维护状态的第三方 Spring Boot starter。它并不负责本站会话，也不会自动配置 Redis 或绑定已有账号。其 POM 以 Java 8 为编译基线，本身不是一个依赖旧 Servlet 自动配置的 Boot 2 starter；JDK 21 的 HTTP 客户端可通过其 simple-http 层使用，无需再加 HttpClient/Hutool 全家桶。依据：[JustAuth Central POM](https://central.sonatype.com/artifact/me.zhyd.oauth/JustAuth)、[simple-http 官方客户端选择说明](https://raw.githubusercontent.com/xkcoding/simple-http/master/README.md)、[JustAuth HTTP 调用源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/me/zhyd/oauth/utils/HttpUtils.java)。
+使用官方普通 Java 库 `me.zhyd.oauth:JustAuth:1.16.7`，不引入未知维护状态的第三方 Spring Boot starter。它并不负责本站会话，也不会自动配置 Redis 或绑定已有账号。其 POM 以 Java 8 为编译基线，本身不是一个依赖旧 Servlet 自动配置的 Boot 2 starter；JDK 21 的 HTTP 客户端可通过其 simple-http 层使用，无需再加 HttpClient/Hutool 全家桶。依据：[JustAuth Central POM](https://central.sonatype.com/artifact/me.zhyd.oauth/JustAuth)、[simple-http 官方客户端选择说明](https://raw.githubusercontent.com/xkcoding/simple-http/master/README.md)、[JustAuth HTTP 调用源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/blog/me/zhyd/oauth/utils/HttpUtils.java)。
 
 **已落实的 JSON 依赖覆盖：** JustAuth 1.16.7 传递依赖 `com.alibaba:fastjson:1.2.83`。本规划在根 dependencyManagement 将这个相同 GA 锁定到 **2.0.66**，并在 server 直接声明兼容包，覆盖传递旧版本。`com.alibaba:fastjson:2.0.66` 是 Fastjson2 项目提供的 `fastjson1-compatible`，保留 `com.alibaba.fastjson.*` API；不能只删除 fastjson，再用不同包名的 `com.alibaba.fastjson2:fastjson2` 顶替。兼容包由 [Central POM](https://central.sonatype.com/artifact/com.alibaba/fastjson) 核实，项目仍有 [Fastjson2 官方维护记录](https://github.com/alibaba/fastjson2)。
 
 这是为固定 JustAuth 方案处理旧依赖的必要版本调整，**不是已经验证的二进制兼容结论**。后续必须验证选定平台的授权响应解析、错误响应、用户 ID 和头像等字段；不启用 AutoType，也不把 JustAuth 的内部 JSON 对象直接作为本站 API 响应。JustAuth POM 中支付宝 SDK、JJWT 等 provided/平台专用依赖不自动纳入当前 QQ/GITHUB/GITEE 一类普通 OAuth 登录；确定新增特殊平台后才补该平台确实需要的组件。
 
-Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了 Redis starter”代替实现。接口的 `cache(key,value,timeout)` **timeout 单位为毫秒**；接口只有写、读、存在性检查，没有删除/原子消费方法。因此还要有本站流程记录的浏览器绑定、登录/绑定操作类型、绑定用户及一次性原子消费设计，不能把 JustAuth 的“缓存里存在 state”误当成完整 CSRF 防护。[AuthStateCache 发布源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/me/zhyd/oauth/cache/AuthStateCache.java)、[默认授权流程源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/me/zhyd/oauth/request/AuthDefaultRequest.java)
+Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了 Redis starter”代替实现。接口的 `cache(key,value,timeout)` **timeout 单位为毫秒**；接口只有写、读、存在性检查，没有删除/原子消费方法。因此还要有本站流程记录的浏览器绑定、登录/绑定操作类型、绑定用户及一次性原子消费设计，不能把 JustAuth 的“缓存里存在 state”误当成完整 CSRF 防护。[AuthStateCache 发布源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/blog/me/zhyd/oauth/cache/AuthStateCache.java)、[默认授权流程源码](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/blog/me/zhyd/oauth/request/AuthDefaultRequest.java)
 
 回调的业务顺序遵守 SQL README：验证 state/第三方授权结果 → 按平台白名单的 source + 经验证的 uuid 查询绑定 → 校验本站账号启用 → 使用本站 user_id 调用 Sa-Token 登录。首次第三方注册在同一事务创建用户（密码为 NULL）、绑定身份和分配 member；邮箱/昵称不作为自动合并账号的依据。解绑/清除密码时锁定用户并保证至少一种可用登录方式。
 
@@ -251,7 +256,8 @@ Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了
 | Spring Security starter、Spring OAuth2 Client/Authorization Server、Sa-Token SSO/OAuth2 Server/JWT 插件 | 既定方案是 Sa-Token 本站 Session + JustAuth 第三方客户端；crypto 仅作独立密码库 |
 | JJWT 三件套 | 旧会话方案被替换；不为未选定的特殊 OAuth 平台预装 |
 | Druid starter | 当前只需单数据源连接池，HikariCP 已由 JDBC starter 提供；没有 Druid 监控需求 |
-| Hutool-all、业务 Fastjson2/Web 转换器 | JDK/Spring + Jackson 已覆盖当前业务；仅保留 JustAuth 所需兼容包 |
+| Hutool-all | 按当前用途只引入同版 core/crypto；随机票据仍用 SecureRandom，请求转实体仍按字段白名单赋值 |
+| 业务 Fastjson2/Web 转换器 | 业务 JSON 继续使用 Jackson；仅保留 JustAuth 所需兼容包 |
 | Thumbnailator、两套 WebP provider | 本次明确需求只有OSS客户端，无自动压缩转码要求；不引入 |
 | Mail、WebSocket、OSHI | 本次需求未要求验证码与找回密码、邮件订阅、在线人数或机器监控实现 |
 | Bucket4j、Caffeine、Spring Cache、单独锁版的AspectJ | 限流复用Redis，AspectJ由Boot4 starter/BOM统一管理；不复制本地桶和额外业务缓存 |
@@ -293,3 +299,5 @@ Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了
 固定版本的实际 JAR 确认 MyBatis-Plus Service API 已移至 `com.baomidou.mybatisplus.spring.service`，不是旧版 `extension.service`；Jackson 3 数字枚举开关位于 `EnumFeature`。未为此增加依赖或更改版本。entity 的注解依赖编译可能提示 JdbcType.UNDEFINED 的可选类型警告，运行层由 server 的 MyBatis 提供该类型。
 
 Sa-Token Redis DAO 通过官方 `wrapKey` 扩展隔离会话前缀；本机真实 Redis 5 不支持原实现的 KEEPTTL，因此同一 DAO 用原子 PTTL/SET/PEXPIRE 保留绝对到期时间，不创建已失效键。其余 DAO 行为复用官方组件。JustAuth 仍执行 AuthChecker 的 code/state 验证和真实平台适配器解析，外层统一脱敏，避免 login() 内部打印第三方响应异常。GitHub 固定响应解析已用边界替身验证兼容包；QQ/Gitee 的真实响应与各平台线上回调仍需联调。
+
+验证码采用 [Hutool 官方 CaptchaUtil API](https://plus.hutool.cn/apidocs/cn/hutool/captcha/CaptchaUtil.html) 的圆圈干扰生成器和数字字符集，接口与跨域约定见[图形验证码](API.md#captcha)。验证码不替代 Sa-Token 会话或 JustAuth state。

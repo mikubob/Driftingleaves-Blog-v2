@@ -13,7 +13,7 @@ async (page) => {
   for (const current of pages) {
     current.on('pageerror', (error) => errors.push(error.message))
     current.on('websocket', (socket) => {
-      if (!socket.url().includes('/api/v1/ws/online')) {
+      if (!/\/api\/v1\/(home|blog|cv)\/ws\/online$/.test(socket.url())) {
         return
       }
       sockets.push(socket.url())
@@ -40,11 +40,23 @@ async (page) => {
   }
   const duplicate = await context.newPage()
   duplicate.on('websocket', (socket) => {
-    if (!socket.url().includes('/api/v1/ws/online')) {
+    if (!/\/api\/v1\/(home|blog|cv)\/ws\/online$/.test(socket.url())) {
       return
     }
     sockets.push(socket.url())
     socket.on('framesent', (event) => sent.push(JSON.parse(event.payload)))
+  })
+  // 只替换两张图片，答案由隔离后端窗口预置，注册和登录仍真实消费 Redis 验证码。
+  const captchaIds = ['r'.repeat(43), 'l'.repeat(43)]
+  await duplicate.route('**/api/v1/blog/auth/captcha', async (route) => {
+    const captchaId = captchaIds.shift()
+    if (!captchaId) {
+      return route.continue()
+    }
+    return route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      code: 'OK', msg: '成功', errors: [], data: { captchaId, expiresIn: 120,
+        imageBase64: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=' },
+    }) })
   })
   await duplicate.goto('http://127.0.0.1:25174/login')
   await counts('3', '0', '3')
@@ -52,8 +64,10 @@ async (page) => {
   await duplicate.getByLabel('用户名', { exact: true }).fill(`online_browser_${Date.now()}`)
   await duplicate.getByLabel('昵称', { exact: true }).fill('在线验证')
   await duplicate.getByLabel('密码', { exact: true }).fill('Online-example-password-2026')
+  await duplicate.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await duplicate.getByRole('button', { name: '创建账号 →', exact: true }).click()
   await duplicate.getByText('注册成功，请使用刚才的账号密码登录。').waitFor()
+  await duplicate.getByLabel('六位数字验证码', { exact: true }).fill('012345')
   await duplicate.getByRole('button', { name: '登录 →', exact: true }).click()
   await counts('3', '1', '2')
   await duplicate.getByRole('button', { name: '退出登录', exact: true }).click()
@@ -70,7 +84,7 @@ async (page) => {
     || Object.keys(message).some((key) => !['type', 'ticket'].includes(key)))) {
     throw new Error('WebSocket 发送了协议外身份字段')
   }
-  if (sockets.some((url) => !/\/api\/v1\/ws\/online$/.test(url))) {
+  if (sockets.some((url) => !/\/api\/v1\/(home|blog|cv)\/ws\/online$/.test(url))) {
     throw new Error('WebSocket 地址包含额外参数')
   }
   let newTickets = 0
@@ -81,7 +95,7 @@ async (page) => {
     }
   })
   page.on('websocket', (socket) => {
-    if (socket.url().includes('/api/v1/ws/online')) {
+    if (/\/api\/v1\/(home|blog|cv)\/ws\/online$/.test(socket.url())) {
       newSockets++
     }
   })

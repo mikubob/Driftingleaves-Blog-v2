@@ -1,5 +1,6 @@
 package com.xuan.content;
 
+import cn.hutool.core.collection.CollUtil;
 import com.xuan.model.MessageNode;
 
 import java.util.ArrayList;
@@ -44,7 +45,7 @@ public final class MessageVisibility {
                 return false;
             }
         }
-        if (path.isEmpty()) {
+        if (CollUtil.isEmpty(path)) {
             return false;
         }
         Collections.reverse(path);

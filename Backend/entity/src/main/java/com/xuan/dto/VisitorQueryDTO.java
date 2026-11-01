@@ -1,5 +1,6 @@
 package com.xuan.dto;
 
+import cn.hutool.core.util.ObjectUtil;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -13,7 +14,7 @@ public record VisitorQueryDTO(@Min(1) @Max(100000) Integer page, @Min(1) @Max(10
                               @TextLength(min = 1, max = 64) String city, @Min(0) @Max(1) Integer isBlocked) {
 
     public VisitorQueryDTO {
-        page = page == null ? 1 : page;
-        pageSize = pageSize == null ? 10 : pageSize;
+        page = ObjectUtil.defaultIfNull(page, 1);
+        pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
     }
 }

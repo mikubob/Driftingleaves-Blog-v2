@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.util.StrUtil;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.OAuthAuthorizeDTO.Operation;
 import com.xuan.exception.BusinessException;
@@ -119,7 +120,7 @@ public class OAuthServiceImpl implements IOAuthService {
             }
 
             // 4. 这里只查身份是否合法，合法 uuid 原样保留，不能去空白或改大小写。
-            if (identity == null || identity.uuid() == null || identity.uuid().isBlank()
+            if (identity == null || StrUtil.nullToEmpty(identity.uuid()).isBlank()
                     || identity.uuid().codePointCount(0, identity.uuid().length()) > 255) {
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方身份无效");
             }
@@ -158,10 +159,11 @@ public class OAuthServiceImpl implements IOAuthService {
      *
      * @param ticket 固定完成页交回的一次性结果票据
      * @param browser 当前浏览器 Cookie 中的随机标识
+     * @param timeoutSeconds 兑换端决定的本站会话有效秒数，不接受前端指定
      * @return LOGIN 的本站会话结果，或 BIND 的绑定结果
      */
     @Override
-    public Object exchange(String ticket, String browser) {
+    public Object exchange(String ticket, String browser, int timeoutSeconds) {
         // 1. 先取未过期票据并核对浏览器，不能让其他浏览器消耗结果。
         String raw = store.read("ticket", ticket);
         OAuthTicket result = json.readValue(raw, OAuthTicket.class);
@@ -182,7 +184,8 @@ public class OAuthServiceImpl implements IOAuthService {
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
             return new OAuthLoginResultVO("LOGIN",
-                    users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt()));
+                    users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
+                            timeoutSeconds));
         }
         if (users.requireCurrent() != result.userId()) {
             throw RedisOAuthStore.invalid();

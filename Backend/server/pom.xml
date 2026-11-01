@@ -13,6 +13,11 @@
     <artifactId>server</artifactId>
 
     <dependencies>
+        <!-- 复制公开响应对象并转义 Feed XML，不用于请求字段批量写入。 -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-core</artifactId>
+        </dependency>
         <!-- 公开查询通过 Spring Cache 注解接入 Redis。 -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

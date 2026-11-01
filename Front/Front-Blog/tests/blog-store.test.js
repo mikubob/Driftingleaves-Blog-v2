@@ -13,11 +13,11 @@ test('原侧栏加载完整字典，失败重试只读取未成功模块，统�
     calls.push(path)
     let data
     let status = 200
-    if (path === '/home/profile') {
+    if (path === '/blog/profile') {
       data = null
     } else if (path === '/blog/statistics') {
       data = Object.fromEntries(['articleCount', 'categoryCount', 'tagCount', 'pageViewCount', 'visitorCount', 'todayPageViewCount'].map((key) => [key, '9007199254740993']))
-    } else if (path === '/blog/configs' || path === '/home/social-links') {
+    } else if (path === '/blog/configs' || path === '/blog/social-links') {
       data = []
     } else {
       const page = Number(target.searchParams.get('page'))
@@ -45,7 +45,7 @@ test('原侧栏加载完整字典，失败重试只读取未成功模块，统�
     assert.equal(store.loadError, '')
     assert.equal(calls.filter((path) => path === '/blog/categories').length, 2)
     assert.equal(calls.filter((path) => path === '/blog/tags').length, 2)
-    assert.equal(calls.filter((path) => path === '/home/profile').length, 1)
+    assert.equal(calls.filter((path) => path === '/blog/profile').length, 1)
   } finally {
     globalThis.fetch = originalFetch
   }

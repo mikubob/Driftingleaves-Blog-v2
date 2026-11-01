@@ -1,11 +1,12 @@
 import { reportRequestFailure } from '../../shared/requestFailure.mjs'
+import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from '../../shared/captcha.mjs'
 
 const apiOrigin = (import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')
 export const apiRoot = `${apiOrigin}/api/v1`
 let accessToken = ''
 let onUnauthenticated = () => {}
 
-/** Token 只保存在当前页面内存中，刷新后重新登录。 */
+/** 设置当前请求凭据，持久化与恢复由会话模块负责。 */
 export function setAuthorization(token, onExpired = onUnauthenticated) {
   accessToken = token
   onUnauthenticated = onExpired
@@ -30,6 +31,9 @@ export function isId(value) {
 
 /** 在响应入口检查 ID 与计数，避免 BIGINT 被当作浮点数继续使用。 */
 function validateNumbers(value, key = '') {
+  if (key === 'captchaId' && isCaptchaId(value)) {
+    return
+  }
   if (value === null) {
     return
   }
@@ -50,8 +54,9 @@ function validateNumbers(value, key = '') {
 }
 
 /** 统一处理鉴权、Result、版本及限流；失败请求不自动重放。 */
-export async function request(path, { body, revision, blob = false, ...options } = {}) {
+export async function request(path, { body, revision, captcha, blob = false, ...options } = {}) {
   const headers = new Headers({ Accept: blob ? 'image/png, image/jpeg' : 'application/json' })
+  setCaptchaHeaders(headers, captcha)
   if (accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`)
   }
@@ -130,6 +135,9 @@ export async function request(path, { body, revision, blob = false, ...options }
   }
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
     throw new Error('接口响应格式不正确。')
+  }
+  if (path === '/admin/auth/captcha') {
+    validateCaptcha(result.data)
   }
   validateNumbers(result.data)
   return { data: result.data, revision: response.headers.get('X-Revision') }

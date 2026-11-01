@@ -44,8 +44,8 @@ public interface IUserService extends IService<SysUser> {
     /** 用户和 member 关联一起创建，注册成功不自动登录。 */
     MeVO register(RegisterDTO request);
 
-    /** 先锁用户再验密码、发独立 Token、记录登录时间。 */
-    SessionVO login(LoginDTO request);
+    /** 先锁用户再验密码，按登录端指定的秒数发独立 Token、记录登录时间。 */
+    SessionVO login(LoginDTO request, int timeoutSeconds);
 
     /** 同一用户锁内取资料，并用全部角色关联一起算整体版本。 */
     UserProfileVO me();
@@ -75,5 +75,5 @@ public interface IUserService extends IService<SysUser> {
     OAuthBindingVO bindOAuth(long userId, String tokenHash, String source, String uuid);
 
     /** 票据消费后，用户锁内重查原身份仍绑定再发会话，兑换等待不能刷新认证时间。 */
-    SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt);
+    SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds);
 }

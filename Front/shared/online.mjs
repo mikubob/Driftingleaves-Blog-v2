@@ -97,12 +97,13 @@ export function createOnlineConnection({ apiRoot, requestTicket, payload, onStat
       }
     }, 10000)
     try {
-      const data = await requestTicket(payload(), controller.signal)
+      const body = payload()
+      const data = await requestTicket(body, controller.signal)
       if (!isCurrent()) {
         return
       }
       let ticket = data.ticket
-      socket = new browser.WebSocket(onlineSocketUrl(apiRoot, browser.location))
+      socket = new browser.WebSocket(onlineSocketUrl(`${apiRoot}/${body.siteCode}`, browser.location))
       socket.onopen = () => {
         if (isCurrent()) {
           socket.send(JSON.stringify({ type: 'join', ticket }))

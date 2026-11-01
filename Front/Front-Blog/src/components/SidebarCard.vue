@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElDialog, ElMessage } from 'element-plus'
@@ -41,7 +41,7 @@ async function openRssModal() {
   showRssModal.value = true
   rssSubmitting.value = true
   try {
-    subscription.value = (await request('/me/rss-subscription')).data
+    subscription.value = (await request('/blog/me/rss-subscription')).data
     rssForm.value.email = subscription.value?.email || ''
   } catch (error) {
     rssError.value = error.message
@@ -60,7 +60,7 @@ async function handleRssSubscribe() {
   rssSubmitting.value = true
   rssError.value = ''
   try {
-    subscription.value = (await request('/me/rss-subscription', {
+    subscription.value = (await request('/blog/me/rss-subscription', {
       method: 'PUT', body: { email: rssForm.value.email.trim().toLowerCase() },
     })).data
     ElMessage.success(subscription.value.status === 1 ? '当前邮箱已订阅' : '确认邮件已发送，请查收邮件完成邮箱验证')
@@ -75,7 +75,7 @@ async function handleRssUnsubscribe() {
   rssSubmitting.value = true
   rssError.value = ''
   try {
-    await request('/me/rss-subscription', { method: 'DELETE' })
+    await request('/blog/me/rss-subscription', { method: 'DELETE' })
     subscription.value = null
     showRssModal.value = false
     ElMessage.success('已取消订阅')

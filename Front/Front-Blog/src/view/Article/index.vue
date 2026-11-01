@@ -12,6 +12,7 @@ import { useArticleAnchors } from '@/composables/useArticleAnchors.js'
 import { articlePath, formatDate } from '@/format.js'
 import { recordPage } from '@/tracking.js'
 import SafeHtml from '@/components/SafeHtml.vue'
+import CaptchaField from '../../../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import TableOfContents from '@/components/TableOfContents.vue'
 import EmojiPicker from '@shared/EmojiPicker.vue'
@@ -65,6 +66,7 @@ async function toggleLike() {
   }
 }
 
+const captcha = ref(null)
 const commentTextareaRef = ref(null)
 const { form: commentForm, errors, contentLength, validateField, validateForm, insertEmoji: insertCommentEmoji, resetForm } = useDiscussionForm(commentTextareaRef)
 const replyTarget = ref(null)
@@ -85,6 +87,7 @@ async function handleSubmitComment() {
   try {
     const { data } = await request('/blog/articles/' + article.value.id + '/comments', {
       method: 'POST', body: { content: commentForm.value.content.trim(), parentId: replyTarget.value?.id || null },
+      captcha: captcha.value.getValue(),
     })
     resetForm()
     replyTarget.value = null
@@ -93,6 +96,7 @@ async function handleSubmitComment() {
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
+    captcha.value?.refresh()
     submitting.value = false
   }
 }
@@ -281,10 +285,11 @@ onUnmounted(() => {
                   /2000
                 </div>
               </div>
+              <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
               <div class="form-options">
                 <div class="form-actions">
                   <EmojiPicker @select="insertCommentEmoji" />
-                  <button class="form-submit" :disabled="submitting" @click="handleSubmitComment">
+                  <button class="form-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmitComment">
                     {{ submitting ? '提交中...' : '发表评论' }}
                   </button>
                 </div>
