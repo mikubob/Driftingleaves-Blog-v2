@@ -228,7 +228,7 @@ CREATE TABLE blog_comment (
   location VARCHAR(192) DEFAULT NULL COMMENT '发布时的省市或国家，不含完整IP',
   user_agent_os VARCHAR(64) DEFAULT NULL COMMENT '发布时的操作系统类型',
   user_agent_browser VARCHAR(64) DEFAULT NULL COMMENT '发布时的浏览器类型',
-  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回 3作者删除占位',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回',
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间，记录修改时自动更新',
   PRIMARY KEY (comment_id),
@@ -240,9 +240,9 @@ CREATE TABLE blog_comment (
   CONSTRAINT fk_comment_article FOREIGN KEY (article_id) REFERENCES blog_article (article_id) ON DELETE RESTRICT,
   CONSTRAINT fk_comment_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_comment_parent FOREIGN KEY (parent_id, article_id) REFERENCES blog_comment (comment_id, article_id) ON DELETE RESTRICT,
-  CONSTRAINT ck_comment_status CHECK (status IN (0, 1, 2, 3)),
+  CONSTRAINT ck_comment_status CHECK (status IN (0, 1, 2)),
   CONSTRAINT ck_comment_content CHECK (CHAR_LENGTH(TRIM(content)) BETWEEN 1 AND 2000)
-) ENGINE=InnoDB COMMENT='文章评论与回复；删除时清空内容为占位文案并置status=3，保留回复链';
+) ENGINE=InnoDB COMMENT='文章评论与回复；删除时物理删除目标及全部子回复';
 
 CREATE TABLE blog_article_like (
   article_id BIGINT NOT NULL COMMENT '被点赞的文章ID',
@@ -379,7 +379,7 @@ CREATE TABLE blog_message (
   content_format TINYINT NOT NULL DEFAULT 0 COMMENT '0纯文本 1Markdown；输出由应用安全渲染',
   is_secret TINYINT NOT NULL DEFAULT 0 COMMENT '0公开 1悄悄话；仅本人及获授ALL管理权限者可读，回复继承私密范围',
   notify_reply TINYINT NOT NULL DEFAULT 0 COMMENT '是否请求回复邮件通知；应用另行验证收件邮箱',
-  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回 3作者删除占位',
+  status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回',
   edited_at DATETIME(3) DEFAULT NULL COMMENT '作者最近编辑时间；编辑后重新审核',
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
@@ -389,12 +389,12 @@ CREATE TABLE blog_message (
   KEY idx_message_review (status, create_time, message_id),
   CONSTRAINT fk_message_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_message_parent FOREIGN KEY (parent_id) REFERENCES blog_message (message_id) ON DELETE RESTRICT,
-  CONSTRAINT ck_message_status CHECK (status IN (0, 1, 2, 3)),
+  CONSTRAINT ck_message_status CHECK (status IN (0, 1, 2)),
   CONSTRAINT ck_message_format CHECK (content_format IN (0, 1)),
   CONSTRAINT ck_message_secret CHECK (is_secret IN (0, 1)),
   CONSTRAINT ck_message_notify CHECK (notify_reply IN (0, 1)),
   CONSTRAINT ck_message_content CHECK (CHAR_LENGTH(TRIM(content)) BETWEEN 1 AND 2000)
-) ENGINE=InnoDB COMMENT='独立留言板与回复；删除采用占位文案保留回复链，管理员身份实时鉴权';
+) ENGINE=InnoDB COMMENT='独立留言板与回复；物理删除目标及全部子回复，管理员身份实时鉴权';
 
 CREATE TABLE blog_music (
   music_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '音乐ID',

@@ -82,7 +82,7 @@ const handleDelete = doDelete
               <span class="c-nick">{{ c.nickname }}</span>
               <span v-if="c.isApproved === 2" class="c-pending">未通过</span>
               <span v-if="c.isApproved === 0" class="c-pending">未审核</span>
-              <DiscussionMeta v-if="c.status !== 3" :item="c" />
+              <DiscussionMeta :item="c" />
               <span class="c-date">{{ fmtDate(c.createTime) }}</span>
             </div>
             <div class="c-body" style="white-space: pre-wrap">{{ c.content }}</div>
@@ -109,7 +109,7 @@ const handleDelete = doDelete
                   {{ c.replyCount }}
                   )
                 </a>
-                <template v-if="isOwn(c) && c.status !== 3 && can('blog:comment:deleteOwn')">
+                <template v-if="isOwn(c) && can('blog:comment:deleteOwn')">
                   <a
                     class="danger"
                     role="button"
@@ -151,7 +151,7 @@ const handleDelete = doDelete
               <span v-if="c.isSecret === 1" class="msg-pending">悄悄话</span>
               <span v-if="c.isApproved === 2" class="msg-pending">未通过</span>
               <span v-if="c.isApproved === 0" class="msg-pending">未审核</span>
-              <DiscussionMeta v-if="c.status !== 3" :item="c" />
+              <DiscussionMeta :item="c" />
               <span class="msg-date">{{ fmtDate(c.createTime) }}</span>
             </div>
             <SafeHtml class="msg-body" :html="c.contentHtml" />
@@ -176,7 +176,7 @@ const handleDelete = doDelete
                 >
                   回复
                 </span>
-                <template v-if="isMine(c) && c.status !== 3">
+                <template v-if="isMine(c)">
                   <span
                     class="act"
                     v-if="can('blog:message:updateOwn')"

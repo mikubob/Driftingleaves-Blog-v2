@@ -112,8 +112,6 @@ const batchActions = computed(() => {
       path: 'batch-review',
       method: 'PUT',
       body: { status: 1 },
-      accept: (row) => row.status !== 3,
-      invalidMessage: '历史删除占位不能重新审核。',
     })
   }
   if (can('blog:message:review', true)) {
@@ -123,8 +121,6 @@ const batchActions = computed(() => {
       path: 'batch-review',
       method: 'PUT',
       body: { status: 2 },
-      accept: (row) => row.status !== 3,
-      invalidMessage: '历史删除占位不能重新审核。',
     })
   }
   if (can('blog:message:moderate', true)) {
@@ -162,7 +158,6 @@ const batchActions = computed(() => {
           <el-option label="待审核" :value="0" />
           <el-option label="已通过" :value="1" />
           <el-option label="已驳回" :value="2" />
-          <el-option label="已删除" :value="3" />
         </el-select>
         <el-select
           v-model="filters.isSecret"
@@ -239,27 +234,25 @@ const batchActions = computed(() => {
         <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
-            <template v-if="row.status !== 3">
-              <el-button
-                type="success"
-                v-if="can('blog:message:review', true) && row.status !== 1"
-                link
-                @click="review(row, 1)"
-              >
-                通过
-              </el-button>
-              <el-button
-                type="warning"
-                v-if="can('blog:message:review', true) && row.status !== 2"
-                link
-                @click="review(row, 2)"
-              >
-                驳回
-              </el-button>
-              <el-button type="primary" v-if="can('blog:message:review', true)" link @click="view(row, true)">
-                回复
-              </el-button>
-            </template>
+            <el-button
+              type="success"
+              v-if="can('blog:message:review', true) && row.status !== 1"
+              link
+              @click="review(row, 1)"
+            >
+              通过
+            </el-button>
+            <el-button
+              type="warning"
+              v-if="can('blog:message:review', true) && row.status !== 2"
+              link
+              @click="review(row, 2)"
+            >
+              驳回
+            </el-button>
+            <el-button type="primary" v-if="can('blog:message:review', true)" link @click="view(row, true)">
+              回复
+            </el-button>
             <el-button type="danger" v-if="can('blog:message:moderate', true)" link @click="remove(row)">
               删除
             </el-button>

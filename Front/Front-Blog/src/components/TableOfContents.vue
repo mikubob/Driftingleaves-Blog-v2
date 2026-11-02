@@ -4,7 +4,7 @@ import { useThemeStore } from '@/stores'
 import { ensureHeadingIds } from '@/utils/markdownAnchors'
 
 const props = defineProps({
-  contentHtml: { type: String, default: '' },
+  markdown: { type: String, required: true },
   progress: { type: Number, default: 0 }
 })
 
@@ -167,7 +167,7 @@ const scrollActiveIntoView = (containerRef) => {
 }
 
 watch(
-  () => props.contentHtml,
+  () => props.markdown,
   () => {
     observeContent()
     extractHeadings()

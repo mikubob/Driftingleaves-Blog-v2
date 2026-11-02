@@ -29,8 +29,6 @@ export const router = createRouter({
         { path: 'subscription/:action(confirm|unsubscribe)', component: () => import('./views/Subscription.vue'), meta: { title: '邮件订阅', account: true, sensitive: true } },
       ],
     },
-    { path: '/search', redirect: (to) => ({ path: '/', query: { search: to.query.keyword || '' } }) },
-    { path: '/article/:slug', redirect: (to) => `/articles/${encodeURIComponent(to.params.slug)}` },
     { path: '/403', component: () => import('./view/Forbidden/index.vue') },
     { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('./view/NotFound/index.vue') },
   ],
