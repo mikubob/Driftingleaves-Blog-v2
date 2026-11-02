@@ -24,6 +24,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
 
 /**
  * 发送文章发布和留言回复通知，事务提交后才发给已确认的订阅，不发送私密原文。
@@ -41,6 +43,7 @@ public class SubscriptionNotifier {
     private final JsonMapper json;
     private final Clock clock;
     private final ExecutorService executor;
+    private final Semaphore deliveries;
 
     /** 初始化邮件通知，使用专用线程池，不传递请求线程、Token 或会话信息。 */
     public SubscriptionNotifier(SubscriptionMapper subscriptions, ArticleMapper articles, MessageMapper messages,
@@ -56,6 +59,7 @@ public class SubscriptionNotifier {
         this.json = json;
         this.clock = clock;
         this.executor = executor;
+        this.deliveries = new Semaphore(properties.getNotificationConcurrency());
     }
 
     /** 登记新文章通知，仅首次发布时调用，回滚、重新上架和普通编辑不触发。 */
@@ -65,7 +69,7 @@ public class SubscriptionNotifier {
 
     /** 登记留言回复通知，仅审核实际通过或免审创建时调用，不重复通知相同审核结果。 */
     public void afterMessageApproved(long id) {
-        afterCommit(() -> reply(id));
+        afterCommit(() -> deliver(() -> reply(id)));
     }
 
     /** 事务提交后发送邮件，发送失败只记录固定错误，不回滚已保存的内容。 */
@@ -92,31 +96,58 @@ public class SubscriptionNotifier {
         });
     }
 
-    /** 发送新文章通知，每批读取 100 个已激活订阅，发送前重新检查文章公开状态和当前订阅轮次。 */
+    /** 每批读取 100 个订阅并等待本批投递结束，避免一次加载全部收件人。 */
     private void article(long id) {
         long after = 0;
         while (true) {
+            if (articles.publicById(id, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC)) == null) {
+                return;
+            }
             List<BlogRssSubscription> batch = subscriptions.recipients(after);
             if (batch.isEmpty()) {
                 return;
             }
-            for (BlogRssSubscription candidate : batch) {
-                after = candidate.getSubscriptionId();
-                ArticleRow row = articles.publicById(id, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
-                if (row == null) {
-                    return;
-                }
-                BlogRssSubscription current = subscriptions.confirmed(candidate.getUserId());
-                if (current != null && current.getSubscriptionId().equals(candidate.getSubscriptionId())
-                        && Objects.equals(current.getEmail(), candidate.getEmail()) && Objects.equals(
-                        current.getSubscribeTime(), candidate.getSubscribeTime())) {
-                    try {
-                        send(current, "新文章发布", row.getTitle() + "\n" + sites.articleUrl(row.getSlug()));
-                    } catch (RuntimeException error) {
-                        failed();
-                    }
+            // 本批任务随父任务结束，容器关闭邮件执行器时仍能完成已接收的群发。
+            try (ExecutorService recipients = Executors.newThreadPerTaskExecutor(Thread.ofVirtual()
+                    .name("mail-recipient-", 0).inheritInheritableThreadLocals(false).factory())) {
+                for (BlogRssSubscription candidate : batch) {
+                    after = candidate.getSubscriptionId();
+                    recipients.submit(() -> deliver(() -> articleRecipient(id, candidate)));
                 }
             }
+        }
+    }
+
+    /** 获得发送名额后重新查询文章和订阅，等待期间下架、退订或换邮箱的收件人不发送。 */
+    private void articleRecipient(long id, BlogRssSubscription candidate) {
+        ArticleRow row = articles.publicById(id, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
+        if (row == null) {
+            return;
+        }
+        BlogRssSubscription current = subscriptions.confirmed(candidate.getUserId());
+        if (current == null || !current.getSubscriptionId().equals(candidate.getSubscriptionId())
+                || !Objects.equals(current.getEmail(), candidate.getEmail())
+                || !Objects.equals(current.getSubscribeTime(), candidate.getSubscribeTime())) {
+            return;
+        }
+        send(current, "新文章发布", row.getTitle() + "\n" + sites.articleUrl(row.getSlug()));
+    }
+
+    /** 限制文章和留言通知的总并发，单封失败不影响其他收件人，中断时恢复标记。 */
+    private void deliver(Runnable task) {
+        try {
+            deliveries.acquire();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            failed();
+            return;
+        }
+        try {
+            task.run();
+        } catch (RuntimeException error) {
+            failed();
+        } finally {
+            deliveries.release();
         }
     }
 
