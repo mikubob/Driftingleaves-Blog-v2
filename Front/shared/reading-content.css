@@ -1,0 +1,177 @@
+.rendered-content {
+  --reading-text: #303133;
+  --reading-muted: #606266;
+  --reading-fill: #f5f7fa;
+  --reading-border: #dcdfe6;
+  --reading-keyword: #a626a4;
+  --reading-string: #267d22;
+  --reading-number: #986801;
+  --reading-title: #005cc5;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--reading-text);
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+
+html.dark .rendered-content {
+  --reading-text: #dcdfe6;
+  --reading-muted: #adb2bd;
+  --reading-fill: #262a33;
+  --reading-border: #49505e;
+  --reading-keyword: #d8a0df;
+  --reading-string: #a4cf8c;
+  --reading-number: #e6bb85;
+  --reading-title: #8bbdff;
+}
+
+.rendered-content :is(h1, h2, h3, h4, h5, h6) {
+  margin: 28px 0 12px;
+  color: inherit;
+  scroll-margin-top: 90px;
+}
+
+.rendered-content p {
+  margin: 12px 0;
+}
+
+.rendered-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+.rendered-content table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 14px;
+}
+
+.rendered-content :is(th, td) {
+  min-width: 6em;
+  border: 1px solid var(--reading-border);
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.rendered-content th,
+.rendered-content :not(pre) > code {
+  background: var(--reading-fill);
+}
+
+.rendered-content :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+
+.rendered-content blockquote {
+  margin: 14px 0;
+  padding: 10px 16px;
+  border-left: 3px solid var(--reading-muted);
+  color: var(--reading-muted);
+  background: var(--reading-fill);
+}
+
+.rendered-content .reading-code {
+  margin: 16px 0;
+  border: 1px solid var(--reading-border);
+  border-radius: 6px;
+  background: var(--reading-fill);
+  color: var(--reading-text);
+  overflow: hidden;
+}
+
+.reading-code > summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font: 13px/1.6 system-ui, sans-serif;
+  list-style: none;
+}
+
+.reading-code > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reading-code > summary::after {
+  content: '展开';
+  flex-shrink: 0;
+  color: var(--reading-muted);
+}
+
+.reading-code[open] > summary::after {
+  content: '收起';
+}
+
+.reading-code-language {
+  margin-right: auto;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.reading-code-copy {
+  flex-shrink: 0;
+  border: 1px solid var(--reading-border);
+  border-radius: 4px;
+  padding: 3px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.reading-code :is(summary, button, pre):focus-visible {
+  outline: 2px solid var(--reading-title);
+  outline-offset: -2px;
+}
+
+.rendered-content .reading-code > pre {
+  margin: 0;
+  padding: 16px;
+  border-top: 1px solid var(--reading-border);
+  border-radius: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  background: transparent;
+  color: inherit;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  font: 13.5px/1.65 Consolas, Menlo, monospace;
+  tab-size: 4;
+}
+
+.rendered-content .reading-code code {
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+
+.reading-code :is(.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-type) {
+  color: var(--reading-keyword);
+}
+
+.reading-code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute) {
+  color: var(--reading-string);
+}
+
+.reading-code :is(.hljs-number, .hljs-symbol, .hljs-bullet, .hljs-variable, .hljs-attr) {
+  color: var(--reading-number);
+}
+
+.reading-code :is(.hljs-title, .hljs-name, .hljs-built_in, .hljs-section, .hljs-meta) {
+  color: var(--reading-title);
+}
+
+.reading-code :is(.hljs-comment, .hljs-quote) {
+  color: var(--reading-muted);
+  font-style: italic;
+}

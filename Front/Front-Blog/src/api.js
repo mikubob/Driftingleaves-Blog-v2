@@ -141,12 +141,14 @@ function validateData(path, data, method) {
       records: (items) => Array.isArray(items) && items.every(itemCheck),
     })
   } else if (read && /^\/blog\/articles\/[^/]+$/.test(route)) {
-    check = (value) => article(value) && model(value, {
-      htmlContent: text, wordCount: count, readingMinutes: (item) => Number.isInteger(item) && item >= 1,
-      prevArticle: (item) => item === null || navigation(item),
-      nextArticle: (item) => item === null || navigation(item),
-      relatedArticles: (items) => Array.isArray(items) && items.every(navigation),
-    })
+    check = (value) => article(value)
+      && (!Object.hasOwn(value, 'markdownContent') || text(value.markdownContent))
+      && model(value, {
+        htmlContent: text, wordCount: count, readingMinutes: (item) => Number.isInteger(item) && item >= 1,
+        prevArticle: (item) => item === null || navigation(item),
+        nextArticle: (item) => item === null || navigation(item),
+        relatedArticles: (items) => Array.isArray(items) && items.every(navigation),
+      })
   } else if (route.endsWith('/like')) {
     check = (value) => model(value, { liked: (item) => typeof item === 'boolean', likeCount: count })
   } else if (read && route.startsWith('/blog/categories/')) {

@@ -1,6 +1,9 @@
 <script setup>
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getImage } from '../api.js'
+import highlighter from 'highlight.js/lib/common'
+import { enhanceHtml } from '../../../shared/enhanceHtml.mjs'
+import '../../../shared/reading-content.css'
 
 const props = defineProps({ html: { type: String, default: '' } })
 const container = ref(null)
@@ -46,6 +49,7 @@ watch(
     // 首次立即监听可能早于容器挂载，等本轮 DOM 更新后再填正文。
     await nextTick()
     if (!current.signal.aborted && container.value) {
+      enhanceHtml(document.body, highlighter)
       container.value.replaceChildren(...document.body.childNodes)
     }
   },

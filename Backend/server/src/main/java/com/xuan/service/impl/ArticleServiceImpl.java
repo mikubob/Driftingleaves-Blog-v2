@@ -197,6 +197,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         References references = resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown, references.html());
         ArticlePublicDetailVO value = BeanUtil.copyProperties(cached, ArticlePublicDetailVO.class);
+        value.setMarkdownContent(markdown);
         value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
         value.setCommentCount(commentCount(row.getArticleId()));

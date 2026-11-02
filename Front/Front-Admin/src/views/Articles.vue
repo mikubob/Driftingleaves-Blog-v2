@@ -11,7 +11,7 @@ import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
-import SafeHtml from '../components/SafeHtml.vue'
+import MarkdownPreview from '../components/MarkdownPreview.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -365,7 +365,7 @@ const batchActions = computed(() => {
         <p class="muted-text">
           {{ detail.author?.nickname }} · {{ formatTime(detail.updateTime) }}
         </p>
-        <SafeHtml :html="detail.htmlContent" />
+        <MarkdownPreview :markdown="detail.markdownContent" />
       </template>
     </el-dialog>
   </section>

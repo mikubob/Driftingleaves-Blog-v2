@@ -5,14 +5,20 @@ import cn.hutool.core.util.EscapeUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import com.xuan.entity.BlogArticle;
+import com.xuan.entity.BlogArticleContent;
 import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
+import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.FeedMapper;
 import com.xuan.mapper.SiteConfigMapper;
 import com.xuan.model.SitemapRow;
+import com.xuan.policy.ArticleAttachmentPolicy;
 import com.xuan.properties.PublicSiteProperties;
 import com.xuan.service.IFeedService;
 import lombok.RequiredArgsConstructor;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -38,6 +44,8 @@ public class FeedServiceImpl implements IFeedService {
     private static final String OPEN = XML + "<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\">";
     private static final String CLOSE = "</urlset>";
     private final FeedMapper feeds;
+    private final ArticleMapper articles;
+    private final ArticleAttachmentPolicy attachments;
     private final SiteConfigMapper configs;
     private final PublicSiteProperties sites;
     private final JsonMapper json;
@@ -54,7 +62,8 @@ public class FeedServiceImpl implements IFeedService {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "公开站点配置不可用");
         }
         JsonNode value = json.readTree(config.getConfigValue());
-        StringBuilder xml = new StringBuilder(XML).append("<rss version=\"2.0\"><channel>");
+        StringBuilder xml = new StringBuilder(XML).append(
+                "<rss version=\"2.0\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\"><channel>");
         xml.append(tag("title", value.path("title").asString())).append(tag("link", base))
                 .append(tag("description", value.path("description").asString()));
         for (BlogArticle row : feeds.recent(now())) {
@@ -63,7 +72,8 @@ public class FeedServiceImpl implements IFeedService {
                     .append("<guid isPermaLink=\"true\">").append(escape(link)).append("</guid>")
                     .append(tag("pubDate",
                             DateTimeFormatter.RFC_1123_DATE_TIME.format(row.getPublishTime().atOffset(ZoneOffset.UTC))))
-                    .append(tag("description", row.getSummary())).append("</item>");
+                    .append(tag("description", row.getSummary()))
+                    .append(tag("content:encoded", articleHtml(row, link))).append("</item>");
         }
         return xml.append("</channel></rss>").toString();
     }
@@ -128,6 +138,27 @@ public class FeedServiceImpl implements IFeedService {
         value.codePoints().forEach(c -> clean.appendCodePoint(c == 9 || c == 10 || c == 13 || c >= 32 && c <= 0xD7FF
                 || c >= 0xE000 && c <= 0xFFFD || c >= 0x10000 && c <= 0x10FFFF ? c : 0xFFFD));
         return EscapeUtil.escapeXml(clean.toString());
+    }
+
+    /** 复用文章详情的正文和附件检查，订阅地址使用公开配置，不增加阅读量。 */
+    private String articleHtml(BlogArticle row, String link) {
+        BlogArticleContent content = articles.content(row.getArticleId());
+        if (content == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "文章正文不可用");
+        }
+        String html = attachments.inspect(row.getArticleId(), content.getMarkdownContent(), row.getCoverUrl()).html();
+        Document document = Jsoup.parseBodyFragment(html, link);
+        for (Element element : document.select("a[href], img[src]")) {
+            String attribute = element.normalName().equals("a") ? "href" : "src";
+            String value = element.attr(attribute);
+            if (value.startsWith("/api/v1/blog/articles/")) {
+                element.attr(attribute, sites.base("api") + value.substring("/api/v1".length()));
+            } else {
+                // RSS 没有当前文章页面作为基址，页内锚点和普通相对链接也要补全。
+                element.attr(attribute, element.absUrl(attribute));
+            }
+        }
+        return document.body().html();
     }
 
     /** 所有来自资料表的文本都经过同一个XML编码。 */

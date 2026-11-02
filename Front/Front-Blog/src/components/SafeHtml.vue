@@ -1,7 +1,14 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { apiRoot } from '../api.js'
-const props = defineProps({ html: { type: String, required: true }, outline: Boolean })
+import highlighter from 'highlight.js/lib/common'
+import { enhanceHtml } from '../../../shared/enhanceHtml.mjs'
+import '../../../shared/reading-content.css'
+const props = defineProps({
+  html: { type: String, required: true },
+  outline: Boolean,
+  previewTheme: { type: String, default: '' },
+})
 const emit = defineEmits(['headings'])
 const container = ref(null)
 
@@ -31,11 +38,15 @@ watch(() => [props.html, container.value], () => {
       headings.push({ id: heading.id, text: heading.textContent, level: Number(heading.tagName[1]) })
     })
   }
+  enhanceHtml(content.body, highlighter, !!props.previewTheme)
   container.value.replaceChildren(...content.body.childNodes)
   emit('headings', headings)
 }, { flush: 'post', immediate: true })
 </script>
 
 <template>
-  <div ref="container" class="rendered-content"></div>
+  <div
+    ref="container"
+    :class="previewTheme ? ['article-html-preview', 'md-editor-preview', 'md-editor-scrn', `${previewTheme}-theme`] : 'rendered-content'"
+  ></div>
 </template>

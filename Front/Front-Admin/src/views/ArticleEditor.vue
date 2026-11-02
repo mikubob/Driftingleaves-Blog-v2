@@ -3,13 +3,14 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MdEditor } from 'md-editor-v3'
-import filterXSS from 'xss'
 import 'md-editor-v3/lib/style.css'
-import { getOptions, isId, request } from '../api.js'
+import { getImage, getOptions, isId, request } from '../api.js'
 import { can } from '../session.js'
 import { nullable } from '../format.js'
+import { adminArticleUrl } from '../editorPreview.mjs'
+import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'
 import RequestError from '../components/RequestError.vue'
-import SafeHtml from '../components/SafeHtml.vue'
+import MarkdownPreview from '../components/MarkdownPreview.vue'
 import EmojiPicker from '../components/EmojiPicker.vue'
 
 const route = useRoute()
@@ -26,7 +27,7 @@ const categories = ref([])
 const tags = ref([])
 const preview = ref('')
 const previewVisible = ref(false)
-const mdEditor = ref(null)
+
 const initialForm = {
   title: '',
   slug: '',
@@ -42,6 +43,12 @@ const initialForm = {
   tagIds: [],
 }
 const form = reactive({ ...initialForm, tagIds: [] })
+const previewTheme = useMarkdownPreferences('author')
+const { renderer: mdEditor, error: imageError, sanitize, headingId, onRendered } = useMarkdownRendering(
+  computed(() => form.markdownContent),
+  adminArticleUrl,
+  getImage,
+)
 const saved = ref(JSON.stringify(form))
 const dirty = computed(() => JSON.stringify(form) !== saved.value)
 const markdownBytes = computed(() => new TextEncoder().encode(form.markdownContent).length)
@@ -59,7 +66,7 @@ function updateVersion(result) {
   id.value = result.data.articleId
   revision.value = result.revision
   status.value = result.data.status
-  preview.value = result.data.htmlContent
+  preview.value = result.data.markdownContent
 }
 
 function applyDetail(result) {
@@ -338,17 +345,29 @@ onBeforeUnmount(() => {
     </div>
     <div v-if="!error" class="edit-body">
       <div class="editor-panel">
+        <div class="markdown-preferences">
+          <label>
+            作者排版
+            <select v-model="previewTheme" aria-label="作者排版">
+              <option v-for="item in previewThemes" :key="item" :value="item">{{ item }}</option>
+            </select>
+          </label>
+        </div>
+        <p v-if="imageError" role="alert" class="error-text">{{ imageError }}</p>
         <MdEditor
           ref="mdEditor"
           v-model="form.markdownContent"
-          preview-theme="github"
+          :preview-theme="previewTheme"
+          theme="light"
+          :md-heading-id="headingId"
           :toolbars-exclude="['mermaid', 'katex', 'github', 'save']"
-          :sanitize="filterXSS"
+          :sanitize="sanitize"
           :disabled="!editable"
           no-mermaid
           no-katex
           no-echarts
           class="md-editor-fill"
+          @on-html-changed="onRendered"
           @on-change="form.markdownContent = $event"
           @on-upload-img="uploadImages"
         />
@@ -357,7 +376,7 @@ onBeforeUnmount(() => {
         </div>
         <p class="editor-hint">
           {{ markdownBytes.toLocaleString() }} / 1,048,576 字节 · 实时预览仅用于编辑，
-          以保存后的服务端预览为准 · 先保存草稿再上传图片
+          已保存预览展示上次保存的原文 · 先保存草稿再上传图片
         </p>
       </div>
       <aside class="edit-aside">
@@ -487,7 +506,7 @@ onBeforeUnmount(() => {
     </div>
     <el-dialog v-model="previewVisible" title="已保存内容预览" width="850px" destroy-on-close>
       <p v-if="dirty" class="muted-text">当前修改尚未保存，以下为上次保存时的正文。</p>
-      <SafeHtml :html="preview" />
+      <MarkdownPreview :markdown="preview" />
     </el-dialog>
   </section>
 </template>

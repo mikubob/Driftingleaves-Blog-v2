@@ -12,6 +12,7 @@ import java.util.List;
 @EqualsAndHashCode(callSuper = true)
 public class ArticlePublicDetailVO extends ArticlePublicVO {
 
+    private String markdownContent;
     private String htmlContent;
     private Long wordCount;
     private Integer readingMinutes;

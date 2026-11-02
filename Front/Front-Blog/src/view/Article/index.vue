@@ -11,7 +11,7 @@ import { useDiscussionForm } from '@/composables/useDiscussionForm.js'
 import { useArticleAnchors } from '@/composables/useArticleAnchors.js'
 import { articlePath, formatDate } from '@/format.js'
 import { recordPage } from '@/tracking.js'
-import SafeHtml from '@/components/SafeHtml.vue'
+import MarkdownPreview from '@/components/MarkdownPreview.vue'
 import CaptchaField from '../../../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import TableOfContents from '@/components/TableOfContents.vue'
@@ -170,7 +170,12 @@ onUnmounted(() => {
             </div>
             <!-- 正文 -->
             <div ref="articleContentRef" class="article-content" @click.capture="onAnchorClick">
-              <SafeHtml :html="article.contentHtml" class="fallback-content" @headings="onContentRendered" />
+              <MarkdownPreview
+                :markdown="article.markdownContent"
+                :html="article.contentHtml"
+                class="article-body"
+                @rendered="onContentRendered"
+              />
             </div>
             <!-- 点赞 + 转发 -->
             <div class="article-actions-inline">
@@ -437,6 +442,10 @@ onUnmounted(() => {
   word-break: break-word;
 }
 
+.article-body {
+  font-size: 15.5px;
+}
+
 .article-content :deep(h1),
 .article-content :deep(h2),
 .article-content :deep(h3),
@@ -444,96 +453,6 @@ onUnmounted(() => {
 .article-content :deep(h5),
 .article-content :deep(h6) {
   scroll-margin-top: 90px;
-}
-
-.article-content :deep(.md-editor) {
-  background: transparent !important;
-  border: none;
-}
-.article-content :deep(.md-editor-preview-wrapper) {
-  padding: 0;
-}
-.article-content :deep(.md-editor-preview) {
-  font-size: 15.5px;
-  line-height: 1.85;
-  color: var(--blog-text, #333);
-}
-
-.article-content :deep(table) {
-  display: block;
-  max-width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-/* 图片圆角 */
-.article-content :deep(img) {
-  max-width: 100%;
-  border-radius: 6px;
-  margin: 8px 0;
-}
-/* 回退 v-html 用的极简样式 */
-.fallback-content {
-  font-size: 15.5px;
-  line-height: 1.85;
-  color: var(--blog-text, #333);
-}
-.fallback-content :deep(h1),
-.fallback-content :deep(h2),
-.fallback-content :deep(h3),
-.fallback-content :deep(h4) {
-  color: var(--blog-text, #303133);
-  margin: 28px 0 12px;
-  font-weight: 700;
-}
-.fallback-content :deep(pre) {
-  background: #282c34;
-  color: #abb2bf;
-  padding: 16px;
-  border-radius: 6px;
-  overflow-x: auto;
-  margin: 14px 0;
-  font-size: 13.5px;
-  line-height: 1.6;
-}
-.fallback-content :deep(pre code) {
-  background: none;
-  padding: 0;
-  color: inherit;
-}
-.fallback-content :deep(code) {
-  background: #f5f7fa;
-  padding: 2px 5px;
-  border-radius: 3px;
-  font-size: 14px;
-}
-.fallback-content :deep(img) {
-  max-width: 100%;
-  border-radius: 6px;
-  margin: 8px 0;
-}
-.fallback-content :deep(blockquote) {
-  margin: 14px 0;
-  padding: 10px 16px;
-  border-left: 3px solid #303133;
-  background: #f5f7fa;
-  color: #606266;
-}
-.fallback-content :deep(table) {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 14px 0;
-  font-size: 14px;
-}
-.fallback-content :deep(th),
-.fallback-content :deep(td) {
-  border: 1px solid #e4e7ed;
-  padding: 8px 12px;
-  text-align: left;
-}
-.fallback-content :deep(th) {
-  background: #f5f7fa;
-  font-weight: 600;
 }
 
 /* 点赞+转发 */
@@ -1173,36 +1092,5 @@ onUnmounted(() => {
     flex-direction: column;
     align-items: stretch;
   }
-}
-</style>
-
-<style>
-/* 代码块容器 */
-.article-content .md-editor-code {
-  max-width: 100% !important;
-  width: 100% !important;
-  box-sizing: border-box !important;
-}
-/* pre 限制宽度 */
-.article-content .md-editor-code > pre {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-.article-content .md-editor-code > pre > code {
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-  overflow-x: auto !important;
-  display: block !important;
-}
-/* md-editor-code-block */
-.article-content .md-editor-code .md-editor-code-block {
-  width: auto !important;
-  min-width: 0 !important;
-}
-/* summary 不浮在导航栏上方 */
-.article-content .md-editor-code > .md-editor-code-head {
-  z-index: 1 !important;
-  position: relative !important;
 }
 </style>

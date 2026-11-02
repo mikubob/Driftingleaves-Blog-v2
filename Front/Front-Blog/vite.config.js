@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     resolve: {
-      dedupe: ['vue'],
+      dedupe: ['vue', 'md-editor-v3', 'xss', 'highlight.js'],
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
         '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),

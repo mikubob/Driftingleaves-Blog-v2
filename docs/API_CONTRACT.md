@@ -431,13 +431,13 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 | ArticleAdminSummary | articleId/authorId:ID、author:{userId:ID,nickname:string}、category:Category?、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、status:0/1/2、visibility:1/2、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/deletedAt:Time?、createTime/updateTime:Time、tags:Tag[] |
 | ArticleAdminDetail | ArticleAdminSummary + categoryId:ID?、tagIds:ID[]、markdownContent:string、htmlContent:string（每次按当前规则从Markdown重渲染清理，不信历史HTML缓存） |
 | ArticlePublic | articleId:ID、author:{userId:ID,nickname:string,avatar:URL?}、category:CategoryPublic?、tags:TagPublic[]、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/createTime/updateTime:Time |
-| ArticlePublicDetail | ArticlePublic + htmlContent:string、wordCount:string、readingMinutes:integer、prevArticle/nextArticle:ArticleNavigation?、relatedArticles:ArticleNavigation[]；派生规则见12.15，不返回Markdown源、作者邮箱、后台状态或deletedAt |
+| ArticlePublicDetail | ArticlePublic + markdownContent:string、htmlContent:string、wordCount:string、readingMinutes:integer、prevArticle/nextArticle:ArticleNavigation?、relatedArticles:ArticleNavigation[]；派生规则见12.15，仅在PUBLIC复核及附件检查后返回Markdown源，保留安全HTML兼容旧消费者；不返回作者邮箱、后台状态或deletedAt |
 | ArticleState | `{status:1或2}`，必填；不接收publishTime |
 | Archive | month:string（UTC的YYYY-MM）、articleCount:string（该月PUBLIC文章数）；分页total为月份数，不是文章数 |
 
 tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1/3的节点，排除待审/驳回/占位及被隐藏的后代；likeCount 按明细 COUNT，不维护表中不存在的副本。所有资源关联名称为当前资料，非历史快照。ArticlePublic 的 status 隐含已发布，不额外重复字段。
 
-正文仅接收 Markdown，拒绝客户端 htmlContent。CommonMark 渲染后由 jsoup 白名单清理，存可选 html_content 缓存；输出时保证符合当前清理规则，缓存不可信时重新清理。保留基本段落/标题/表格/代码/任务列表，禁止脚本、事件属性、iframe、任意 style 和危险 URL；外链加 noopener/noreferrer。评论为纯文本。本站资源引用规则见[文件与附件](API.md#group-11)；前端不可通过原始 Markdown/raw HTML 绕过此渲染链。
+正文仅接收 Markdown，拒绝客户端 htmlContent。CommonMark 渲染后由 jsoup 白名单清理，存可选 html_content 缓存；输出时保证符合当前清理规则，缓存不可信时重新清理。保留基本段落/标题/表格/代码/任务列表，禁止脚本、事件属性、iframe、任意 style 和危险 URL；外链加 noopener/noreferrer。评论为纯文本。本站资源引用规则见[文件与附件](API.md#group-11)；网页文章明确使用MdPreview解析原文并清理结果，原始Markdown/raw HTML不得绕过清理及附件权限；服务端继续独立生成安全HTML供RSS和旧消费者使用，不信任客户端生成的HTML。前后端解析差异见[Markdown阅读说明](Markdown阅读说明.md)。
 
 设计决定：POST 固定创建 `status=0` 草稿，作者由登录用户设置；PUT 不收 status/publishTime/deletedAt/计数/authorId。状态只经专用接口变更：草稿0→发布1、发布1→下架2、下架2→发布1；重复目标幂等，无“重新变草稿”。首次发布写当前UTC publishTime，后续发布/编辑不覆盖，禁止未来发布时间/客户端定时发布。发布校验正文、转载来源、关联和可公开资源。修改当前已发布文章的正文/标题/可见性等内容，还须 `blog:article:publish` 并满足其范围，防止利用编辑绕过发布控制。
 
