@@ -61,17 +61,17 @@ async function block() {
     blockError.value = '请选择晚于当前时间的结束时间，或明确勾选永久限制。'
     return
   }
-  await execute(blockAction.value, {
+  await execute(blockAction.value, selected.value, {
     blockedUntil: permanent.value ? null : blockedUntil.value.toISOString(),
   })
 }
 
 /** 批量操作前先读取所有选中记录的版本，再确认操作对象，最后只发送一次批量请求。 */
-async function execute(action, extra = {}) {
-  if (blocked.value || !selected.value.length) {
+async function execute(action, rows = selected.value, extra = {}) {
+  if (blocked.value || !rows.length) {
     return
   }
-  const targets = [...selected.value]
+  const targets = [...rows]
   if (action.accept && !targets.every(action.accept)) {
     ElMessage.warning(action.invalidMessage)
     return
@@ -123,7 +123,7 @@ async function execute(action, extra = {}) {
   }
 }
 
-defineExpose({ select, selectable, busy })
+defineExpose({ select, selectable, busy, execute })
 </script>
 
 <template>

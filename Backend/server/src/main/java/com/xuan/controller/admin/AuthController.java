@@ -3,7 +3,8 @@ package com.xuan.controller.admin;
 import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminEmailCodeDTO;
-import com.xuan.dto.AdminLoginDTO;
+import com.xuan.dto.EmailLoginDTO;
+import com.xuan.dto.LoginDTO;
 import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
 import com.xuan.dto.RegisterDTO;
@@ -76,7 +77,7 @@ public class AuthController {
     }
 
     /**
-     * 登录后台，用户名、密码、绑定邮箱、邮件验证码和图形验证码全部通过后才创建会话。
+     * 使用用户名密码和图形验证码登录后台，用户必须拥有后台入口权限。
      *
      * @param body 已校验的后台登录凭据
      * @param request 用于按 IP 和统一格式后的用户名限流的请求
@@ -84,28 +85,28 @@ public class AuthController {
      */
     @PostMapping("/login")
     @RateLimit(value = "login-total", limit = 30)
-    public Result<SessionVO> login(@Valid @RequestBody AdminLoginDTO body, HttpServletRequest request) {
+    public Result<SessionVO> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
 
         // 2. 用户业务一起完成凭据验证、会话签发和登录时间写入。
         try {
-            return Result.ok(users.loginAdmin(body));
+            return Result.ok(users.login(body, SessionManager.ADMIN_TIMEOUT_SECONDS));
         } catch (BusinessException exception) {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
-            if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
+            if ("AUTH_FAILED".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.username());
             }
             throw exception;
         }
     }
 
-    /** 发送后台登录验证码，先校验图形验证码、用户名、密码和后台权限，只发送到账号当前邮箱。 */
+    /** 发送后台登录验证码，先校验图形验证码和后台权限，只发送到账号当前邮箱。 */
     @PostMapping("/email-code")
     @RateLimit(value = "login-total", limit = 30)
     public Result<Void> emailCode(@Valid @RequestBody AdminEmailCodeDTO body, HttpServletRequest request) {
-        limiter.checkLogin(request, body.username());
+        limiter.checkLogin(request, body.email());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
         limiter.email(request, body.email());
         try {
@@ -113,7 +114,23 @@ public class AuthController {
             return Result.ok(null);
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode())) {
-                limiter.loginFailed(request, body.username());
+                limiter.loginFailed(request, body.email());
+            }
+            throw exception;
+        }
+    }
+
+    /** 使用邮箱验证码和图形验证码登录后台，不要求本站密码。 */
+    @PostMapping("/email-login")
+    @RateLimit(value = "login-total", limit = 30)
+    public Result<SessionVO> emailLogin(@Valid @RequestBody EmailLoginDTO body, HttpServletRequest request) {
+        limiter.checkLogin(request, body.email());
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        try {
+            return Result.ok(users.loginEmail(body, SessionManager.ADMIN_TIMEOUT_SECONDS));
+        } catch (BusinessException exception) {
+            if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
+                limiter.loginFailed(request, body.email());
             }
             throw exception;
         }

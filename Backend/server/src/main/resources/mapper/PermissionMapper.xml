@@ -30,7 +30,7 @@
     <!-- 编码不能改，禁用不删角色授权或菜单限制，重新启用也不能恢复旧 Token。 -->
     <update id="updatePermission">
         UPDATE sys_permission SET permission_name = #{permission.permissionName}, module = #{permission.module},
-        description = #{permission.description}, status = #{permission.status}
+        description = #{permission.description}
         WHERE permission_id = #{permission.permissionId}
     </update>
 
@@ -38,4 +38,8 @@
     <select id="menuReferences" resultType="long">
         SELECT COUNT(*) FROM sys_menu WHERE permission_id = #{permissionId}
     </select>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE sys_permission SET status = #{status} WHERE permission_id = #{id}
+    </update>
 </mapper>

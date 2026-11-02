@@ -53,6 +53,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "GET /admin/auth/oauth/providers", "POST /admin/auth/oauth/exchange",
             "POST /blog/auth/register", "POST /blog/auth/login", "POST /blog/auth/logout",
             "POST /blog/auth/email-code", "POST /blog/auth/email-login", "POST /admin/auth/email-code",
+            "POST /admin/auth/email-login", "GET /blog/auth/math-captcha",
             "GET /blog/auth/oauth/providers", "POST /blog/auth/oauth/exchange",
             "GET /blog/articles", "GET /blog/archives", "GET /blog/article-rankings",
             "GET /blog/categories", "GET /blog/tags", "GET /blog/links", "GET /blog/configs",

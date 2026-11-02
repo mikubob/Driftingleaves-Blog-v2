@@ -20,6 +20,10 @@
     <update id="replace">
         UPDATE cv_experience SET experience_type=#{row.experienceType}, title=#{row.title}, subtitle=#{row.subtitle},
         logo_url=#{row.logoUrl}, content=#{row.content}, start_date=#{row.startDate}, end_date=#{row.endDate},
-        sort_order=#{row.sortOrder}, status=#{row.status} WHERE experience_id = #{row.experienceId}
+        sort_order=#{row.sortOrder} WHERE experience_id = #{row.experienceId}
+    </update>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE cv_experience SET status = #{status} WHERE experience_id = #{id}
     </update>
 </mapper>

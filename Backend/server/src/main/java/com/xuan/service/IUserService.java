@@ -2,7 +2,6 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.AdminEmailCodeDTO;
-import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
@@ -41,7 +40,7 @@ public interface IUserService extends IService<SysUser> {
     /** 创建带密码的用户，不分配默认角色，用户名或邮箱重复时全部回滚。 */
     UserAdminVO adminCreate(AdminUserCreateDTO request);
 
-    /** 根据id更新用户，先拿保护锁，再按id锁住用户；加锁后重新检查身份、权限和版本，禁用前先撤销会话。 */
+    /** 根据id更新用户资料，先拿保护锁和用户锁，再重新检查身份、权限和版本；状态单独批量修改。 */
     AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision);
 
     /** 根据id更新用户角色，在同一个保护锁事务中完整替换为启用的角色；保留最后一个有效管理员，提交前撤销该用户的全部会话。 */
@@ -62,14 +61,11 @@ public interface IUserService extends IService<SysUser> {
     /** 注册和邮箱登录分别发送验证码，SMTP 接受后才返回成功。 */
     void sendEmailCode(EmailCodeDTO request);
 
-    /** 发送后台登录验证码，先锁住用户，检查用户名、密码、当前邮箱和后台权限。 */
+    /** 发送后台登录验证码，先按当前邮箱锁住用户，检查启用状态和后台权限。 */
     void sendAdminEmailCode(AdminEmailCodeDTO request);
 
-    /** 按当前绑定邮箱锁用户，消费邮件验证码后签发前台会话。 */
-    SessionVO loginEmail(EmailLoginDTO request);
-
-    /** 登录后台，在同一个用户锁内检查用户名、密码、当前邮箱、邮件验证码和后台权限。 */
-    SessionVO loginAdmin(AdminLoginDTO request);
+    /** 按当前绑定邮箱锁用户，消费对应登录端的邮件验证码，后台还检查入口权限。 */
+    SessionVO loginEmail(EmailLoginDTO request, int timeoutSeconds);
 
     /** 查询当前用户资料，在用户锁内读取资料和全部角色，并一起计算版本。 */
     UserProfileVO me();

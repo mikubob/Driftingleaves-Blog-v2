@@ -36,8 +36,6 @@ public interface ITagService extends IService<BlogTag> {
     /** 根据id更新标签，先锁住标签并检查版本，再替换名称和 slug。 */
     TagProfileVO update(long id, TagWriteDTO request, String revision);
 
-    /** 根据id删除标签，先检查版本，再删除标签和文章标签关联，保留文章；失败时一起回滚。 */
-    void delete(long id, String revision);
     /** 批量删除标签，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

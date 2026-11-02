@@ -17,7 +17,7 @@ public final class CommentVisibilityPolicy {
     private CommentVisibilityPolicy() {
     }
 
-    /** 判断评论是否可见，逐级检查并缓存结果；状态 0/2 隐藏全部下级回复，状态 3 保留展开位置，不受 SQL 递归深度限制。 */
+    /** 判断评论是否可见，逐级检查并缓存结果；仅审核通过的评论可见，未通过的上级隐藏全部下级回复，不受 SQL 递归深度限制。 */
     public static Set<Long> visible(List<CommentNode> nodes) {
         Map<Long, CommentNode> byId = new HashMap<>();
         nodes.forEach(node -> byId.put(node.getCommentId(), node));
@@ -32,7 +32,7 @@ public final class CommentVisibilityPolicy {
                     allowed = visible.get(node.getCommentId());
                     break;
                 }
-                if (!seen.add(node.getCommentId()) || (node.getStatus() != 1 && node.getStatus() != 3)) {
+                if (!seen.add(node.getCommentId()) || node.getStatus() != 1) {
                     allowed = false;
                     break;
                 }

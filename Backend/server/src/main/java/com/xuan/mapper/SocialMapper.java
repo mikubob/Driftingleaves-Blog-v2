@@ -25,4 +25,7 @@ public interface SocialMapper extends BaseMapper<HomeSocialLink> {
 
     /** 更新记录，可空字段传入 NULL 时也要写入，避免清空操作被默认更新策略忽略。 */
     int replace(@Param("row") HomeSocialLink row);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

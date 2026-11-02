@@ -19,6 +19,10 @@
 
     <update id="replace">
         UPDATE cv_skill SET name=#{row.name}, description=#{row.description}, icon=#{row.icon},
-        sort_order=#{row.sortOrder}, status=#{row.status} WHERE skill_id = #{row.skillId}
+        sort_order=#{row.sortOrder} WHERE skill_id = #{row.skillId}
+    </update>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE cv_skill SET status = #{status} WHERE skill_id = #{id}
     </update>
 </mapper>

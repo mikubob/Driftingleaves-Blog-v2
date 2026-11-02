@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
@@ -9,6 +10,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IPermissionService;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
 import jakarta.validation.Valid;
@@ -88,6 +90,13 @@ public class PermissionController {
             @Valid @RequestBody PermissionUpdateDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(permissions.update(id(permissionId), body, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("sys:permission:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(permissions.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除权限，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

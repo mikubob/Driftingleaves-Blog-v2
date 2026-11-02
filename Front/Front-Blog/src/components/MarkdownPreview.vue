@@ -2,13 +2,11 @@
 import { computed } from 'vue'
 import { MdPreview } from 'md-editor-v3'
 import { ElOption, ElSelect } from 'element-plus'
-import SafeHtml from './SafeHtml.vue'
 import { apiRoot } from '../api.js'
 import { useThemeStore } from '@/stores'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'
 const props = defineProps({
-  markdown: { type: String, default: undefined },
-  html: { type: String, default: '' },
+  markdown: { type: String, required: true },
 })
 const emit = defineEmits(['rendered'])
 const themeStore = useThemeStore()
@@ -50,7 +48,6 @@ async function contentRendered() {
       </ElSelect>
     </div>
     <MdPreview
-      v-if="typeof markdown === 'string'"
       ref="renderer"
       id="public-article-preview"
       :model-value="markdown"
@@ -63,15 +60,7 @@ async function contentRendered() {
       no-echarts
       @on-html-changed="contentRendered"
     />
-    <div
-      v-else
-      class="md-editor md-editor-previewOnly"
-      :class="{ 'md-editor-dark': themeStore.isDark }"
-    >
-      <div class="md-editor-preview-wrapper">
-        <SafeHtml :html="html" :preview-theme="previewTheme" @headings="emit('rendered')" />
-      </div>
-    </div>
+
   </div>
 </template>
 

@@ -1,15 +1,15 @@
 # DriftingLeavesV2 接口文档
 
-接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-02。
+接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-03。
 
-统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **193 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **207 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
 
-2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取后，当前 193 个 HTTP 路由（Admin 123 个），详情、创建、编辑及本人接口保留。旧客户端须与后端同步更新。
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态后，按当前 Controller 的多路径映射展开统计共 207 个 HTTP 路由（Admin 134 个），详情、创建、编辑及本人接口保留。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
-| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 123 |
-| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 58 |
+| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 134 |
+| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 61 |
 | [Home 主页端](#client-home) | `/api/v1/home` | 主人资料、社交、配置与统计 | 5 |
 | [Cv 简历端](#client-cv) | `/api/v1/cv` | 主人资料、社交、简历、配置与统计 | 7 |
 
@@ -30,7 +30,7 @@
 ### 路径与鉴权
 
 - 下文使用完整路径，统一前缀 `/api/v1`。JSON 请求使用 `application/json`，上传使用 `multipart/form-data`。
-- 登录后通过 `Authorization: Bearer <accessToken>` 传递本站 Sa-Token。Blog 的密码、邮箱验证码及已绑定第三方登录固定有效 259200 秒（3 天）；Admin 只有账密、绑定邮箱验证码和图形验证码同时通过才签发 604800 秒（7 天）会话。无 refreshToken、无滑动续期，不接受客户端指定有效期。前台及历史会话均不能访问受保护的后台接口，即使该用户拥有后台权限，也必须重新完成后台登录。
+- 登录后通过 `Authorization: Bearer <accessToken>` 传递本站 Sa-Token。Blog 的密码、邮箱验证码及已绑定第三方登录固定有效 259200 秒（3 天）；Admin 可选择账密或绑定邮箱验证码登录，两种方式都须通过图形验证码并拥有 admin:access，成功签发 604800 秒（7 天）会话。无 refreshToken、无滑动续期，不接受客户端指定有效期。前台及历史会话均不能访问受保护的后台接口，即使该用户拥有后台权限，也必须重新完成后台登录。
 - 浏览器以 localStorage 的 `dl-blog-session`、`dl-admin-session` 分别保存 `{accessToken, expiresAt}`，到期时间按登录响应的 expiresIn 换算。刷新或重新打开页面后先检查到期时间，再读取对应端 `/me`、`/me/capabilities` 核验身份和权限；Admin 还读取 `/me/menus`、确认 `admin:access` 后注册动态路由。资料、权限和菜单不持久化，恢复不续期。退出、核验失败或 401/UNAUTHENTICATED 清除本端持久凭据。浏览器禁用存储时仅本页有效；旧 Token 保留原到期时间，重新登录后采用新有效期。
 - **公开**：无需登录；**登录本人**：账号启用，身份只取当前会话；**后台：P**：账号启用，同时具备 `admin:access` 与权限 P。未认证 401，无权限 403。
 - 文章、文件、评论按本次权限的 ALL/SELF 范围检查；范围外资源返回 404。多个权限分别检查范围。分类、标签、用户、角色等全局资源不产生“本人版本”；标注 ALL 的操作必须具备 ALL 范围。
@@ -93,7 +93,7 @@
 - [完整接口索引](API_INDEX.md)：先按端，再按业务名称或完整路径查找。
 - [文章场景速查](#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
 - 当前 **192 个 HTTP 路由及 3 个 WebSocket 入口**，按下方四端分区查找。
-- [后台统一操作（29 个入口）](#admin-batch)：参数、响应、权限和整批失败规则集中在 1.22，单个目标也走同一协议。
+- [后台统一操作（38 个入口）](#admin-batch)：参数、响应、权限和整批失败规则集中在 1.22，单个目标也走同一协议。
 - 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，部署与历史验收见 [后端运行说明](后端运行说明.md)。
 
 <a id="request-protection"></a>
@@ -104,19 +104,20 @@
 
 - 公开注册（`/blog/auth/register` 及保留的 `/admin/auth/register`）必须提供 `email` 和 `emailCode`，仅消费 REGISTER 用途验证码；注册只授予 member，不创建后台身份。
 - 前台可以选择用户名密码、邮箱验证码或已绑定第三方登录，三种登录均需填写图形验证码。第三方 LOGIN 不再自动注册账号；历史已有绑定仍可登录。
-- 后台仅允许用户名、密码、账号当前邮箱、邮件验证码和图形验证码组合登录；第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记，前台会话及旧会话需重新登录后台。
+- 后台支持“用户名密码”和“邮箱验证码”两种登录，均需图形验证码和 admin:access；邮箱方式不要求本站密码。第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记，前台会话不能访问；原有后台组合认证会话在到期前继续有效。
 
 | 接口 | JSON 请求体 | 成功响应 |
 | --- | --- | --- |
 | `POST /api/v1/blog/auth/email-code` | `{"email":"leaf@example.test","purpose":"REGISTER"}`；purpose 仅 REGISTER / LOGIN | `Result<null>` |
 | `POST /api/v1/blog/auth/email-login` | `{"email":"leaf@example.test","emailCode":"012345"}` | `Result<Session>`，三天 |
-| `POST /api/v1/admin/auth/email-code` | `{"username":"leaf","password":"Example-password-2026","email":"leaf@example.test"}` | `Result<null>`；先核对账密、当前邮箱、启用状态和 admin:access |
+| `POST /api/v1/admin/auth/email-code` | `{"email":"leaf@example.test"}` | `Result<null>`；核对当前邮箱、启用状态和 admin:access |
+| `POST /api/v1/admin/auth/email-login` | `{"email":"leaf@example.test","emailCode":"012345"}` | `Result<Session>`，七天；消费后台验证码并检查 admin:access |
 
 以上接口均公开并要求 `X-Captcha-Id`、`X-Captcha-Code`，只接收声明字段、不接受查询参数。发送成功与失败都会消耗图形验证码；成功后前端刷新图片，注册或登录提交时填写新图片。邮件验证码六位纯数字、五分钟有效，按注册/前台登录/后台登录分开，任何一次邮件校验都会原子消费对应验证码；验证码不出现在 HTTP 响应或日志中。发送接口仅在 SMTP 接受后返回成功，未启用或发送失败返回 503，失败清理验证码。
 
 所有发送用途和端共享每邮箱每 60 秒一次、每可信 IP 每 60 秒五次的限额，超限 429 并带 Retry-After。发送接口在图形验证码通过后计数；后台发送还检查账号登录失败次数。前台密码/邮箱登录及后台登录/发送共用 login-total 每分钟 30 次的入口预算；邮箱或后台邮件验证码失败也计入已有登录失败预算。
 
-账号邮箱沿用 `sys_user.email` 唯一约束，不新增表或自动改写历史用户。邮箱验证码登录每次证明当前邮箱所有权，不把已有联系邮箱或订阅邮箱当作注册验证结果。旧管理员必须预先有可用的账号邮箱及密码；未配置时不能使用新后台登录，应由部署者通过既有账号管理或参数化运维操作补齐，禁止重建业务库。
+账号邮箱沿用 `sys_user.email` 唯一约束，不新增表或自动改写历史用户。邮箱验证码登录每次证明当前邮箱所有权，不把已有联系邮箱或订阅邮箱当作注册验证结果。账密方式要求已设置本站密码；邮箱方式要求已有可收信的账号邮箱。至少有一种可用即可登录后台，不要求同时配置两者，禁止重建业务库补齐资料。
 
 ### 图形验证码
 
@@ -145,17 +146,30 @@ GET /api/v1/blog/auth/captcha
 | 接口 | 验证范围 |
 | --- | --- |
 | `POST /api/v1/{admin,blog}/auth/register` | 注册 |
-| `POST /api/v1/{admin,blog}/auth/login` | 前台账密 / 后台账密与邮箱组合登录 |
+| `POST /api/v1/{admin,blog}/auth/login` | 账密登录 |
 | `POST /api/v1/{admin,blog}/auth/email-code` | 发送邮箱验证码 |
-| `POST /api/v1/blog/auth/email-login` | 邮箱验证码登录 |
+| `POST /api/v1/{admin,blog}/auth/email-login` | 邮箱验证码登录 |
 | `POST /api/v1/{admin,blog}/auth/oauth/{source}/authorize` | 仅 `operation=LOGIN`；BIND 沿用原会话、最近认证、Origin 与浏览器校验 |
+
+### 评论和留言的数字题目验证
+
+`GET /api/v1/blog/auth/math-captcha` 公开、无查询参数和请求体，返回 `Cache-Control: no-store`。与图形验证码共用每可信 IP 每分钟 30 次的生成预算，题目为两个 1–9 整数的加、减或乘法，减法不产生负数。
+
+```json
+{"code":"OK","msg":"成功","data":{"captchaId":"<43位URL安全随机字符串>","question":"9 × 9 = ?","expiresIn":120},"errors":[]}
+```
+
+客户端显示 question 并填写计算结果，答案只保存在 Redis，不在响应中返回。以下接口改用数字题目，Body 保持原有字段，Header 仍为 `X-Captcha-Id` 和 `X-Captcha-Code`，后者填写 0–81 的十进制整数（不补前导零）。
+
+| 接口 | 验证范围 |
+| --- | --- |
 | `POST /api/v1/blog/articles/{articleId}/comments` | 发表评论或回复 |
 | `POST /api/v1/blog/messages` | 发表留言或回复 |
 | `PUT /api/v1/blog/me/messages/{messageId}` | 编辑本人留言；仍须携带 If-Revision，修改后重新审核 |
 
-后台留言回复不要求图形验证码，仍执行后台登录、权限与限流；后台评论管理当前只有查询、审核和删除，没有独立回复接口，也不要求图形验证码。前台发表评论/回复、发表留言/回复及本人留言编辑仍按上表校验。
+题目和图形验证码使用不同 Redis 键，不能跨用途使用；有效期均为 120 秒。后台留言回复仍不要求验证码，保留后台登录、权限与限流；后台评论管理当前只有查询、审核和删除，没有独立回复接口。
 
-验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片，不自动重放写入，正文保留供用户重试。
+验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片或题目，不自动重放写入，正文保留供用户重试。
 
 跨域沿用明确 Origin 白名单，CORS 在鉴权前处理 OPTIONS，并允许 `X-Captcha-Id`、`X-Captcha-Code`、Authorization、Content-Type、If-Revision。验证码不依赖跨域 Cookie；OAuth authorize/exchange 仍带 credentials，回调和兑换不再次要求图形验证码，以免破坏 JustAuth state 与一次性票据流程。日志不得记录验证码答案或上述验证码请求头。
 
@@ -165,7 +179,7 @@ GET /api/v1/blog/auth/captcha
 
 | 业务及路径 | 操作窗口与默认阈值 | 实施状态 |
 | --- | --- | --- |
-| `GET /{admin,blog}/auth/captcha` | 两端共用60秒30次/可信IP | 已实现，生成图片前限流 |
+| `GET /{admin,blog}/auth/captcha`、`GET /blog/auth/math-captcha` | 三个入口共用60秒30次/可信IP | 已实现，生成图片或题目前限流 |
 | `POST /blog/auth/login` 凭据失败 | 60秒10次；IP、IP+归一用户名 | 已实现，可部署配置 |
 | `POST /blog/auth/login` 总请求 | 60秒30次/IP，成功和失败都计数，进入 BCrypt 前执行；独立于失败次数 | 已实现，进入 BCrypt 前累计独立 IP 总预算 |
 | `POST /blog/auth/register` | 60秒5次；IP、存在的浏览器标识；无标识按IP | 已实现，可部署配置 |
@@ -274,25 +288,25 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | 写接口 | 提交后必须删除或整体失效的缓存 |
 | --- | --- |
 | `POST /admin/articles`；`PUT /admin/articles/{articleId}` | 文章列表及全部组合筛选/搜索、文章详情域（含其他文章的上下篇/推荐）、归档、热门榜、分类/标签列表与详情计数、作者列表/详情、公开统计、RSS、全部地图索引/子页，以及该文章全部公开评论页；草稿写入也按此统一规则清理 |
-| `PUT /admin/articles/{articleId}/status` | 同上；下架不能等15分钟详情TTL或30分钟XML TTL；首次发布清理之前的空集合，重复发布不改变原有邮件发送规则 |
-| `DELETE /admin/articles/{articleId}`；`POST /admin/articles/{articleId}/restore` | 同文章元数据写入，并清理该文章的全部公开评论页；恢复保持下架，清缓存不代表恢复成PUBLIC |
-| `DELETE /admin/articles/{articleId}/permanent` | 同回收规则；成功后文章详情、评论、列表、导航、推荐和XML不得残留可访问条目；文件仍按原业务保留，不因清缓存删除存储对象 |
-| `POST /admin/categories`；`PUT/DELETE /admin/categories/{categoryId}` | 分类列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；覆盖改名、隐藏、排序、旧/新slug及删除后category_id置null |
-| `POST /admin/tags`；`PUT/DELETE /admin/tags/{tagId}` | 标签列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；删除还覆盖文章标签关联级联变化，不能只删标签详情 |
+| `PUT /admin/articles/batch-status` | 同上；下架不能等15分钟详情TTL或30分钟XML TTL；首次发布清理之前的空集合，重复发布不改变原有邮件发送规则 |
+| `POST /admin/articles/batch-recycle`；`POST /admin/articles/batch-restore` | 同文章元数据写入，并清理该文章的全部公开评论页；恢复保持下架，清缓存不代表恢复成PUBLIC |
+| `POST /admin/articles/batch-permanent-delete` | 同回收规则；成功后文章详情、评论、列表、导航、推荐和XML不得残留可访问条目；文件仍按原业务保留，不因清缓存删除存储对象 |
+| `POST /admin/categories`；`PUT /admin/categories/{categoryId}`；`PUT /admin/categories/batch-status`；`POST /admin/categories/batch-delete` | 分类列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；覆盖改名、隐藏、排序、旧/新slug及删除后category_id置null |
+| `POST /admin/tags`；`PUT /admin/tags/{tagId}`；`POST /admin/tags/batch-delete` | 标签列表/详情域；文章列表/搜索/详情域、归档、热门榜、作者列表/详情、公开统计、RSS及地图；删除还覆盖文章标签关联级联变化，不能只删标签详情 |
 | `PUT /admin/users/batch-enable`；`PUT /admin/users/batch-disable` | 作者、文章、搜索、文章详情和评论缓存整批成功后统一清理；只修改账号状态 |
 | `POST /admin/users/batch-delete` | 清理统计缓存；点赞按明细实时聚合，历史浏览及日志保留 |
 | `PATCH /blog/me/profile`；`PUT /admin/users/{userId}` 中公开字段变化 | 作者列表/详情、含作者资料的文章列表/搜索/详情、公开评论域；昵称/头像/简介变化不能继续使用缓存中的旧资料；邮箱等未公开字段不进入公共缓存 |
 | `POST /blog/articles/{articleId}/comments` | 该articleId下所有parentId、分页的公开评论缓存；待审新增也统一清理；文章列表/详情的评论数仍实时查库，不清空所有正文 |
-| `DELETE /blog/me/comments/{commentId}`；`PUT /admin/comments/{commentId}/review`；`DELETE /admin/comments/{commentId}` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或删除影响后代，不能只删commentId对应的一条结果 |
+| `DELETE /blog/me/comments/{commentId}`；`PUT /admin/comments/batch-review`；`POST /admin/comments/batch-delete` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或删除影响后代，不能只删commentId对应的一条结果 |
 | `PUT/DELETE /blog/articles/{articleId}/like`；成功文章详情GET | 不删正文缓存，不建立Redis计数副本；本次互动数按数据库读取，排行榜最多延迟60秒；这是0.7明确允许的计数例外 |
-| `POST /admin/links`；`PUT/DELETE /admin/links/{linkId}` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
+| `POST /admin/links`；`PUT /admin/links/batch-status`；`PUT /admin/links/{linkId}`；`POST /admin/links/batch-delete` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
 | `PUT /admin/configs/site` | 公开site配置、RSS及地图；从公开改为不公开也必须删旧缓存，RSS继续按原规则检查必需公开配置 |
 | `PUT /admin/configs/comment`、`PUT /admin/configs/message` | 不建立或清理不存在的策略缓存；继续原配置行锁与锁内实时读取，新开关/审核策略立即用于后续写请求 |
 | `PUT /admin/home/profile` | 整个主页公开资料域；不与sys_user作者资料混为同一业务 |
-| `POST /admin/home/social-links`；`PUT/DELETE /admin/home/social-links/{socialId}` | 整个公开社交链接域，含显示、隐藏、排序及空列表 |
-| `POST /admin/cv/experiences`；`PUT/DELETE /admin/cv/experiences/{experienceId}` | 整个公开经历域，含全部类型和分页；改变type时旧类型与新类型都必须失效 |
-| `POST /admin/cv/skills`；`PUT/DELETE /admin/cv/skills/{skillId}` | 整个公开技能域，含实际筛选及分页；更新/隐藏/排序/删除均清理 |
-| `POST /admin/music`；`PUT/DELETE /admin/music/{musicId}` | 整个公开播放列表域，含所有分页；显示、排序和地址变化一并生效 |
+| `POST /admin/home/social-links`；`PUT /admin/home/social-links/batch-status`；`PUT/DELETE /admin/home/social-links/{socialId}` | 整个公开社交链接域，含显示、隐藏、排序及空列表 |
+| `POST /admin/cv/experiences`；`PUT /admin/cv/experiences/batch-status`；`PUT/DELETE /admin/cv/experiences/{experienceId}` | 整个公开经历域，含全部类型和分页；改变type时旧类型与新类型都必须失效 |
+| `POST /admin/cv/skills`；`PUT /admin/cv/skills/batch-status`；`PUT/DELETE /admin/cv/skills/{skillId}` | 整个公开技能域，含实际筛选及分页；更新/隐藏/排序/删除均清理 |
+| `POST /admin/music`；`PUT /admin/music/batch-status`；`PUT/DELETE /admin/music/{musicId}` | 整个公开播放列表域，含所有分页；显示、排序和地址变化一并生效 |
 | `POST /blog/analytics/page-views` | 不缓存写入响应，不逐次清空公开统计；PV/UV按0.7允许的5分钟TTL更新；不改变文章累计阅读量 |
 | `DELETE /admin/visitors/{visitorId}`；`DELETE /admin/page-views/{viewId}` | 公开统计域主动失效；封禁/解封统计标识仍实时读库，不创建访客身份缓存 |
 | 文件上传/删除、留言创建/编辑/审核/删除/回复、邮件订阅各类写接口、日志清理及其余身份/授权写接口 | 对应业务响应没有公共查询缓存，不机械清空整站。文件删除先按原规则拒绝仍被引用的文件；留言私密可见性、订阅轮次及会话撤销照旧执行，不能借公共缓存清理删除安全状态 |
@@ -369,14 +383,14 @@ Content-Type: application/json
 
 <a id="admin-api-2"></a>
 
-#### 1.1.2 账密与邮箱组合登录
+#### 1.1.2 账密登录
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/login` |
-| 接口描述 | 账密与邮箱组合登录 |
+| 接口描述 | 使用用户名密码登录后台 |
 | Content-Type | application/json |
 | 访问要求 | 公开 |
 
@@ -388,8 +402,6 @@ Content-Type: application/json
 | `X-Captcha-Code` | string | 是 | Header；6 位数字，保留前导零 |
 | `username` | string | 是 | 3..64 位 ASCII 字母、数字或下划线；全库不区分大小写唯一 |
 | `password` | string | 是 | 8..64 个字符且 UTF-8 ≤72 字节；不 trim、不截断 |
-| `email` | string | 是 | 合法邮箱，≤254 字符，去首尾空白并转小写；必须匹配该账号当前邮箱 |
-| `emailCode` | string | 是 | 对应用途邮件中的六位数字；五分钟有效，校验一次即失效 |
 
 ##### 请求示例
 
@@ -399,7 +411,7 @@ X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
 
-{"username":"leaf","password":"Example-password-2026","email":"leaf@example.test","emailCode":"012345"}
+{"username":"leaf","password":"Example-password-2026"}
 ```
 
 ##### 响应参数
@@ -421,6 +433,8 @@ Content-Type: application/json
   "errors": []
 }
 ```
+
+邮箱登录另见[邮箱验证与登录方式](#captcha)，不提交用户名或密码。两种后台登录均在用户锁内核对启用状态与 admin:access。
 
 用户名不存在、密码错误、纯第三方账号无密码统一返回 401/AUTH_FAILED；验证凭据后再区分禁用账号。持有用户行锁确认身份和状态后创建会话、更新 lastLoginTime，提交后才返回；数据库提交失败撤销刚签发 Token，Redis 创建失败返回 503。
 
@@ -1262,7 +1276,6 @@ Location: /api/v1/admin/menus/10
 | `sortOrder` | integer | 是 | int32，默认 0，升序 |
 | `isVisible` | integer | 是 | 0/1，默认 1；B 默认且必须 0 |
 | `keepAlive` | integer | 是 | 默认 0；仅 M 可为 1 |
-| `status` | integer | 是 | 0/1，默认 1 |
 
 ##### 请求示例
 
@@ -1275,7 +1288,7 @@ Content-Type: application/json
 {
   "parentId": "100", "menuName": "文章扩展页", "menuType": "M", "routeName": "ArticleExtra",
   "path": "/content/articles-extra", "component": "content/article/index", "icon": "document",
-  "permissionId": "10", "sortOrder": 20, "isVisible": 1, "keepAlive": 0, "status": 1
+  "permissionId": "10", "sortOrder": 20, "isVisible": 1, "keepAlive": 0
 }
 ```
 
@@ -1304,6 +1317,9 @@ X-Revision: "<current-revision>"
 ```
 
 先锁固定菜单结构检查点，再按 ID 升序锁操作者及受影响分支关联用户，最后锁目标节点并复核身份、双权限与版本。检查自引用、移入后代、完整祖先链和类型变化对全部后代的约束，禁止并发移动产生环；menuCode 不可改。字段与门禁校验同创建，NULL 必须实际清空。停用、隐藏、移动及修改门禁均保留角色关联及会话；菜单实时读库，无旧菜单缓存。移动不自动授予新祖先，修改门禁不自动授予新权限；需显式重新保存角色 grants。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换菜单状态](#batch-menus-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -1498,7 +1514,7 @@ Location: /api/v1/admin/users/12
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/users/{userId}` |
-| 接口描述 | 修改用户资料及状态 |
+| 接口描述 | 修改用户资料 |
 | Content-Type | application/json |
 | 访问要求 | 后台：`sys:user:update` |
 | 并发校验 | 必填 If-Revision |
@@ -1513,7 +1529,6 @@ Location: /api/v1/admin/users/12
 | `email` | string&#124;null | 是，可 null | 合法邮箱，≤254 字符，唯一 |
 | `avatar` | string&#124;null | 是，可 null | 仅外部 http(s) URL |
 | `intro` | string&#124;null | 是，可 null | ≤500 字符 |
-| `status` | integer | 是 | 0/1；禁用撤销全部会话 |
 
 ##### 请求示例
 
@@ -1523,7 +1538,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"nickname":"落叶","email":null,"avatar":null,"intro":null,"status":1}
+{"nickname":"落叶","email":null,"avatar":null,"intro":null}
 ```
 
 ##### 响应参数
@@ -1551,6 +1566,9 @@ X-Revision: "<current-revision>"
 ```
 
 不能修改 username 或密码；禁用撤销全部会话，重启用不恢复旧 Token。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量启用/禁用用户](#batch-user-enable)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -1811,7 +1829,6 @@ Location: /api/v1/admin/roles/4
 | `roleName` | string | 是 | 1..64 字符 |
 | `description` | string&#124;null | 是，可 null | ≤255 字符，默认 null |
 | `dataScope` | string | 是 | ALL/SELF，默认 SELF |
-| `status` | integer | 是 | 0/1，默认 1 |
 
 ##### 请求示例
 
@@ -1821,7 +1838,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"roleName":"内容编辑","description":null,"dataScope":"SELF","status":1}
+{"roleName":"内容编辑","description":null,"dataScope":"SELF"}
 ```
 
 ##### 响应参数
@@ -1849,6 +1866,9 @@ X-Revision: "<current-revision>"
 ```
 
 roleCode 不可改；dataScope 或 status 实际变化时撤销全部关联用户的所有会话（包含禁用用户），角色禁用后保留权限与菜单关联，重新启用不恢复旧 Token。仅修改 roleName/description 不撤销会话。管理员角色仍须满足最后有效管理员保护，不能缩为 SELF 或停用。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换角色状态](#batch-roles-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -2112,7 +2132,6 @@ Location: /api/v1/admin/permissions/114
 | `permissionName` | string | 是 | 1..64 字符 |
 | `module` | string | 是 | [a-z][a-z0-9_]{0,31} |
 | `description` | string&#124;null | 是，可 null | ≤255 字符，默认 null |
-| `status` | integer | 是 | 0/1，默认 1 |
 
 ##### 请求示例
 
@@ -2122,7 +2141,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"permissionName":"导出文章","module":"blog","description":null,"status":1}
+{"permissionName":"导出文章","module":"blog","description":null}
 ```
 
 ##### 响应参数
@@ -2152,6 +2171,9 @@ X-Revision: "<current-revision>"
 permissionCode 创建后不可改，PUT 不接受该字段。仅名称、模块或说明变化不撤销会话；status 实际变化（停用或重新启用）撤销经任意角色关联该权限的全部用户的所有会话，包含禁用用户、禁用角色的关联，同一用户去重。停用保留 sys_role_permission 和菜单门禁引用；实时授权和菜单查询排除禁用权限，重新启用不恢复旧 Token。同值 PUT 仍须校验版本，业务值相同可保留版本和会话。
 
 写事务复用固定 sys_role(role_id=1) 保护锁，再按 ID 升序锁操作者及全部受影响用户，最后锁目标权限；锁内复核原 Token、当前启用身份及双权限，然后校验版本。固定管理员保护权限停用受 LAST_ADMIN 约束。会话撤销成功后才提交数据库，Redis 失败返回 503 并回滚资料、状态；授权和菜单每次实时读库，无旧授权缓存。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换权限状态](#batch-permissions-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -2232,9 +2254,9 @@ updateTime DESC,articleId DESC；trash 默认 0。SELF 强制本人，authorId �
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/articles/{articleId}` |
-| 接口描述 | 查询后台文章详情 |
+| 接口描述 | 查询后台文章完整详情，供文章列表的详情弹窗与编辑回填共用 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:article:query` |
+| 访问要求 | 有效后台登录 + `blog:article:query`，按该权限的 ALL/SELF 范围查询 |
 | 并发校验 | 返回 X-Revision |
 
 ##### 请求参数
@@ -2271,13 +2293,24 @@ X-Revision: "<current-revision>"
     "author": {
       "userId": "12", "nickname": "落叶"
     },
-    "category": null, "title": "第一片落叶", "slug": "first-leaf", "status": 0
+    "category": null, "categoryId": null, "tags": [], "tagIds": [],
+    "title": "第一片落叶", "slug": "first-leaf", "summary": "记录与分享",
+    "coverUrl": null, "articleType": 1, "originalUrl": null,
+    "status": 0, "visibility": 1, "isTop": 0, "allowComment": 1,
+    "viewCount": "0", "likeCount": "0", "commentCount": "0",
+    "publishTime": null, "deletedAt": null,
+    "createTime": "2026-10-30T02:00:00.000Z", "updateTime": "2026-10-30T02:00:00.000Z",
+    "markdownContent": "# 第一片落叶"
   },
   "errors": []
 }
 ```
 
-含回收站及 Markdown；关联与正文属于同一聚合版本。
+详情与编辑共用此接口，不另建公开预览路由。返回当前资料、分类、升序标签和 Markdown 原文；资料、关联、正文和 X-Revision 在同一个只读事务中读取。草稿、下架、私密及回收站文章均可按查询权限查看；回收站仍禁止编辑和发布。
+
+读取不增加文章阅读量，不修改状态、更新时间或版本。不存在及超出 SELF 范围统一返回 `404/NOT_FOUND`；无后台入口或查询权限返回 `403/FORBIDDEN`；未登录返回 `401/UNAUTHENTICATED`；ID 格式错误返回 `400/VALIDATION_ERROR`；正文缺失返回 `503/SERVICE_UNAVAILABLE`，不伪造空正文。
+
+管理端在文章标题和操作列提供“详情”入口，打开后独立展示加载、失败重试或完整详情，不将列表数据当作详情。详情只读，不能因查看而要求编辑/发布权限；列表和回收站共用此入口。网页正文复用现有 Markdown 预览组件及清理规则，受管图片通过后台文章附件接口携带 Bearer 读取，临时地址随组件销毁释放；公开详情的 PUBLIC 条件保持不变。
 
 ---
 
@@ -2694,7 +2727,6 @@ Location: /api/v1/admin/categories/1
 | `slug` | string | 是 | ASCII slug ≤100，区分大小写唯一 |
 | `description` | string&#124;null | 是，可 null | ≤255，默认 null |
 | `sortOrder` | integer | 是 | int32，默认 0 |
-| `status` | integer | 是 | 0/1，默认 1 |
 
 ##### 请求示例
 
@@ -2704,7 +2736,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"categoryName":"技术","slug":"tech","description":null,"sortOrder":0,"status":1}
+{"categoryName":"技术","slug":"tech","description":null,"sortOrder":0}
 ```
 
 ##### 响应参数
@@ -2730,7 +2762,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-后台(blog:category:update)
+后台(blog:category:update)。本接口只完整替换名称、slug、说明和排序，保留当前展示状态。展示/隐藏统一使用[批量切换分类状态](#batch-category-status)，单个分类也提交一项 items。
 
 ---
 
@@ -2986,7 +3018,7 @@ X-Revision: "<current-revision>"
 | `pageSize` | integer | 否 | 默认 10，范围 1..50 |
 | `articleId` | ID | 否 | 可选，文章筛选 |
 | `userId` | ID | 否 | 可选，评论者筛选，不扩大评论管理范围 |
-| `status` | integer | 否 | 可选，0/1/2/3；含义见该业务状态约定 |
+| `status` | integer | 否 | 可选，0/1/2；含义见该业务状态约定 |
 
 ##### 请求示例
 
@@ -3099,7 +3131,7 @@ X-Revision: "<current-revision>"
 | --- | --- | --- | --- |
 | `page` | integer | 否 | 默认1，1..100000 |
 | `pageSize` | integer | 否 | 默认10，1..100 |
-| `status` | integer | 否 | 0/1/2/3 |
+| `status` | integer | 否 | 0/1/2 |
 | `userId` | ID | 否 | 作者筛选 |
 | `isSecret` | integer | 否 | 0/1 |
 | `begin` | Time | 否 | createTime含下界 |
@@ -3456,7 +3488,6 @@ Location: /api/v1/admin/links/1
 | `avatar` | string&#124;null | 是，可 null | 仅外部 http(s)，默认 null |
 | `description` | string&#124;null | 是，可 null | ≤255，默认 null |
 | `sortOrder` | integer | 是 | int32，默认 0 |
-| `status` | integer | 是 | 0 待审、1 展示、2 驳回/下架，默认 0 |
 
 ##### 请求示例
 
@@ -3466,7 +3497,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0,"status":0}
+{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0}
 ```
 
 ##### 响应参数
@@ -3494,6 +3525,9 @@ X-Revision: "<current-revision>"
 ```
 
 status 同模型更新；仅保存 URL，不由服务器抓取。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换友链状态](#batch-links-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -4229,7 +4263,6 @@ Location: /api/v1/admin/home/social-links/21
 | `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML |
 | `url` | URL | 是 | 外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
-| `status` | integer | 是 | 0隐藏 1展示 |
 
 ##### 请求示例
 
@@ -4239,7 +4272,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"name":"GitHub","icon":"github","url":"https://github.com/example","sortOrder":0,"status":1}
+{"name":"GitHub","icon":"github","url":"https://github.com/example","sortOrder":0}
 ```
 
 ##### 响应参数
@@ -4267,6 +4300,9 @@ X-Revision: "<current-revision>"
 ```
 
 完整替换；隐藏后公开入口立即不返回。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换社交链接状态](#batch-home-social-links-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -4483,7 +4519,6 @@ endDate=null表示至今；非空不得早于startDate。内容使用CommonMark�
 | `startDate` | date | 是 | 合法YYYY-MM-DD，1000..9999年 |
 | `endDate` | date&#124;null | 是，可null | 结束日期不得早于开始；null表示至今 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
-| `status` | integer | 是 | 0隐藏 1展示 |
 
 ##### 请求示例
 
@@ -4495,7 +4530,7 @@ Content-Type: application/json
 
 {
   "experienceType": 0, "title": "示例大学", "subtitle": "计算机科学", "logoUrl": null, "content": "学习与项目实践",
-  "startDate": "2022-09-01", "endDate": null, "sortOrder": 0, "status": 1
+  "startDate": "2022-09-01", "endDate": null, "sortOrder": 0
 }
 ```
 
@@ -4524,6 +4559,9 @@ X-Revision: "<current-revision>"
 ```
 
 完整替换，允许切换经历类型；仅有SELF范围拒绝。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换简历经历状态](#batch-cv-experiences-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -4721,7 +4759,6 @@ Location: /api/v1/admin/cv/skills/41
 | `description` | S(500)? | 是，可null | 技能描述 |
 | `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)URL或注册图标键 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
-| `status` | integer | 是 | 0隐藏 1展示 |
 
 ##### 请求示例
 
@@ -4731,7 +4768,7 @@ Authorization: Bearer <site-token>
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"name":"Java","description":"后端开发","icon":null,"sortOrder":0,"status":1}
+{"name":"Java","description":"后端开发","icon":null,"sortOrder":0}
 ```
 
 ##### 响应参数
@@ -4758,6 +4795,9 @@ X-Revision: "<current-revision>"
 ```
 
 完整替换。图标仅白名单键或外部HTTP(S)资源，不接受任意SVG/HTML。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换技能状态](#batch-cv-skills-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -4974,7 +5014,6 @@ lyricUrl与lyricType同时为空或同时非空；durationSeconds可为null。�
 | `lyricUrl` | string? | 是，可null | 外部HTTP(S)歌词或规范音乐文件路径；无歌词时为null |
 | `lyricType` | string&#124;null | 是，可null | lrc/json/txt；必须与lyricUrl同时为空或同时非空 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
-| `status` | integer | 是 | 0隐藏 1展示 |
 
 ##### 请求示例
 
@@ -4986,8 +5025,7 @@ Content-Type: application/json
 
 {
   "title": "秋日", "artist": null, "durationSeconds": 180, "coverUrl": null,
-  "audioUrl": "https://example.test/audio.mp3", "lyricUrl": null, "lyricType": null, "sortOrder": 0,
-  "status": 1
+  "audioUrl": "https://example.test/audio.mp3", "lyricUrl": null, "lyricType": null, "sortOrder": 0
 }
 ```
 
@@ -5016,6 +5054,9 @@ X-Revision: "<current-revision>"
 ```
 
 完整替换；隐藏后立即从公开列表消失，不等于删除外部存储对象。
+
+
+本接口只修改资料，保留当前 status。状态统一使用[批量切换音乐状态](#batch-music-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
 
 ---
 
@@ -5677,7 +5718,7 @@ Authorization: Bearer <site-token>
 
 ### 1.22 后台统一操作（单条与批量）
 
-本节共 29 个统一入口：原有 26 项替换对应旧单条管理写路由，另新增用户批量启用、禁用和删除 3 项。一次提交 1 项即为单条操作，多项即为批量操作，使用相同的权限、版本、事务与结果协议；不保留旧路径别名。详情查询、创建、完整编辑、用户角色/角色 grants、本人设置及本人互动接口不在合并范围。源码依据与验收要求见[统一操作开发约定](API_CONTRACT.md#batch-contract)。
+本节共 38 个统一入口：原有 26 项替换对应旧单条管理写路由，另新增用户批量启用、禁用和删除 3 项，以及分类状态 1 项、其他资源状态 8 项。一次提交 1 项即为单条操作，多项即为批量操作，使用相同的权限、版本、事务与结果协议。详情查询、创建、完整编辑、用户角色/角色 grants、本人设置及本人互动接口不在合并范围。源码依据与验收要求见[统一操作开发约定](API_CONTRACT.md#batch-contract)。
 
 #### 公共请求与结果
 
@@ -5858,7 +5899,7 @@ Content-Type: application/json
 | 业务权限 | `blog:comment:review`；SELF 按每条评论所属文章的 authorId 检查 |
 | 请求 → 响应 | `BatchStatusRequest`（status=1 通过、2 驳回）→ `BatchVersions` |
 
-继承[既有业务规则](API_CONTRACT.md#model-12-6)，只改显式选中的节点，不递归审核后代。历史占位 status=3 不能审核。审核通过子节点不自动通过祖先，也不绕过公开父链条件；驳回父节点会隐藏整条分支，后代自身状态保持。
+继承[既有业务规则](API_CONTRACT.md#model-12-6)，只改显式选中的节点，不递归审核后代。审核通过子节点不自动通过祖先，也不绕过公开父链条件；驳回父节点会隐藏整条分支，后代自身状态保持。
 
 <a id="api-66"></a>
 
@@ -5900,7 +5941,7 @@ Content-Type: application/json
 | 业务权限 | `blog:message:moderate`（ALL） |
 | 请求 → 响应 | `BatchIdsRequest` → `BatchDeleted` |
 
-不要求版本，继承[既有业务规则](API_CONTRACT.md#model-12-10)，物理清理目标与全部后代，含悄悄话、其他作者回复和旧占位。全部显式 ID 先校验，再对重叠分支求并集并按子到父清理；任一原始目标不存在整批 404。关闭留言开关不阻止历史清理。
+不要求版本，继承[既有业务规则](API_CONTRACT.md#model-12-10)，物理清理目标与全部后代，含悄悄话、其他作者回复。全部显式 ID 先校验，再对重叠分支求并集并按子到父清理；任一原始目标不存在整批 404。关闭留言开关不阻止历史清理。
 
 <a id="api-75"></a>
 
@@ -6176,7 +6217,7 @@ Content-Type: application/json
 | 业务权限 | `sys:user:delete`；全局资源 |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted`；HTTP 200，data=null |
 
-物理删除用户；一个用户也提交只有一项的 items，不另设单条删除入口。先锁固定管理员保护行，再按数值升序锁操作者及全部目标，复核权限、存在性及每项版本后才能写入。任一目标仍被文章（含回收站）、评论（含占位）、上传文件、主页资料或留言（含占位）引用，返回 `409/RESOURCE_IN_USE`，整批保留；须先按各模块规则处理引用，不能以删除用户为由自动删除内容。删除后的整批结果必须保留最后有效管理员，否则 `409/LAST_ADMIN`。
+物理删除用户；一个用户也提交只有一项的 items，不另设单条删除入口。先锁固定管理员保护行，再按数值升序锁操作者及全部目标，复核权限、存在性及每项版本后才能写入。任一目标仍被文章（含回收站）、评论、上传文件、主页资料或留言引用，返回 `409/RESOURCE_IN_USE`，整批保留；须先按各模块规则处理引用，不能以删除用户为由自动删除内容。删除后的整批结果必须保留最后有效管理员，否则 `409/LAST_ADMIN`。
 
 数据库按既有外键级联清理角色关联、OAuth 绑定、点赞及邮件订阅；浏览记录和操作日志保留，userId 置 null。删除前持有用户锁，提交前撤销所有目标会话；撤销或成功审计失败则数据库整批回滚，已撤销会话不恢复。审计记录所选 ID 和数量，不记录密码、Token、OAuth 身份。删除成功清理统计缓存；文章点赞计数沿用明细实时统计规则。
 
@@ -6195,6 +6236,162 @@ Content-Type: application/json
 ```json
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
+
+
+<a id="batch-category-status"></a>
+
+#### 1.22.30 批量切换分类状态（支持单个分类）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/categories/batch-status` |
+| 业务权限 | `blog:category:update`；全局字典，SELF 也可操作全部分类 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+| `status` | 必填整数，0 隐藏、1 展示；全部目标采用同一目标状态 |
+
+单个分类也提交一项 items，不另设单条状态接口；不执行“取反”，同状态请求通过版本校验后返回成功且保持原版本。items 为 1..100 项且 ID 不重复，每项 revision 取自该分类详情的 X-Revision；不发送 If-Revision 或查询参数。版本缺失/格式错误/过期分别返回 428/400/412；状态缺失、null、超出 0/1 或选择数组非法返回 400；无权限 403，分类不存在 404。
+
+先锁住操作者，再按分类 ID 数值升序锁住所有目标，等待锁后复核原 Token、后台入口和更新权限；全部存在性和版本检查通过后，仅更新发生变化的 status。任一失败则整批数据库修改与成功审计回滚，不返回部分成功；新版本按请求顺序逐项返回。成功提交后清理分类及依赖分类资料的公开缓存，与分类资料编辑使用相同的缓存范围。
+
+隐藏分类不下架文章，不清空文章关联；前台分类列表和按 slug 查询详情不再返回该分类，公开文章仍可阅读且 category 为 null。创建时仍可指定初始 status（默认 1），编辑资料不再修改 status。管理端提供“批量展示/批量隐藏”和行内“展示/隐藏”，单条和批量按钮共用此接口。
+
+```http
+PUT /api/v1/admin/categories/batch-status
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"2","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""},{"id":"1","revision":"\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\""}],"status":0}
+```
+
+```json
+{"code":"OK","msg":"成功","data":{"items":[{"id":"2","revision":"\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\""},{"id":"1","revision":"\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\""}]},"errors":[]}
+```
+
+
+#### 状态入口补充约定
+
+以下 8 个入口与分类状态入口使用相同的 `BatchStatusRequest` → `BatchVersions` 协议，每次明确选择 1..100 项，各项携带自己详情的 X-Revision；不发送 If-Revision 或查询参数。请求必须有后台登录、admin:access 及表中业务权限，字段、逐条版本与整批事务错误沿用本节公共约定。
+
+先按既有锁顺序锁住操作者及全部目标，全部权限、存在性和版本检查通过后才写状态；同状态仍检查版本，不更新记录、不撤销会话并保留原版本。结果按请求顺序返回；数据库修改与成功审计在一个事务中提交，任一失败整批回滚。公开内容状态变化清理所属业务缓存。行内操作与多选操作共用请求，不再通过资料编辑修改 status。
+
+<a id="batch-links-status"></a>
+
+#### 1.22.31 批量切换友链状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/links/batch-status` |
+| 业务权限 | `blog:link:update`；全局资源，SELF 也可操作全部目标 |
+| `status` | 必填整数；0待审、1通过、2下架 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+保留原三态及初始待审核默认值。仅 status=1 对前台可见；状态变化不抓取友链网址或修改名称、地址等资料。
+
+<a id="batch-music-status"></a>
+
+#### 1.22.32 批量切换音乐状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/music/batch-status` |
+| 业务权限 | `blog:music:update`；须 ALL 范围 |
+| `status` | 必填整数；0隐藏、1展示 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+展示前先按数值升序锁全部引用文件，再升序锁曲目；锁后校验文件查询范围、类型、歌词后缀和存储可用性。文件权限不能由音乐 ALL 权限替代。隐藏不建立新的公开引用，不改文件或曲目资料。
+
+<a id="batch-home-social-links-status"></a>
+
+#### 1.22.33 批量切换社交链接状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/home/social-links/batch-status` |
+| 业务权限 | `home:social:update`；须 ALL 范围 |
+| `status` | 必填整数；0隐藏、1展示 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+保留其他资料及关联，只修改展示状态。
+
+<a id="batch-cv-experiences-status"></a>
+
+#### 1.22.34 批量切换简历经历状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/cv/experiences/batch-status` |
+| 业务权限 | `cv:experience:update`；须 ALL 范围 |
+| `status` | 必填整数；0隐藏、1展示 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+保留其他资料及关联，只修改展示状态。
+
+<a id="batch-cv-skills-status"></a>
+
+#### 1.22.35 批量切换技能状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/cv/skills/batch-status` |
+| 业务权限 | `cv:skill:update`；须 ALL 范围 |
+| `status` | 必填整数；0隐藏、1展示 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+保留其他资料及关联，只修改展示状态。
+
+<a id="batch-roles-status"></a>
+
+#### 1.22.36 批量切换角色状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/roles/batch-status` |
+| 业务权限 | `sys:role:update`；全局资源，SELF 也可操作全部目标 |
+| `status` | 必填整数；0禁用、1启用 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+先锁管理员保护行，再按用户 ID 升序锁操作者与所有关联用户，最后按角色 ID 升序锁目标。按整批最终结果保护最后管理员，违反返回409/LAST_ADMIN。只撤销状态确有变化的角色关联用户的全部会话，去重后执行；版本和校验须在撤销操作者会话前完成。角色权限、菜单关联及 dataScope 保留，撤销失败使数据库整批回滚，已撤销会话不恢复。
+
+<a id="batch-permissions-status"></a>
+
+#### 1.22.37 批量切换权限状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/permissions/batch-status` |
+| 业务权限 | `sys:permission:update`；全局资源，SELF 也可操作全部目标 |
+| `status` | 必填整数；0禁用、1启用 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+先锁管理员保护行，再升序锁操作者及全部关联用户，最后升序锁权限。管理员必需权限状态变化后按整批最终结果保护最后管理员，违反返回409/LAST_ADMIN；状态实际变化才去重撤销全部关联用户会话。角色授权及菜单门禁关联保留；不因停用权限放宽菜单限制，恢复启用不恢复旧 Token。撤销失败使数据库整批回滚，已撤销会话不恢复。
+
+<a id="batch-menus-status"></a>
+
+#### 1.22.38 批量切换菜单状态（支持单个目标）
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `PUT /api/v1/admin/menus/batch-status` |
+| 业务权限 | `sys:menu:update`；全局资源，SELF 也可操作全部目标 |
+| `status` | 必填整数；0禁用、1启用 |
+| 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
+
+在菜单结构保护锁下锁住操作者及全部选中分支的关联用户，再升序锁目标菜单并检查版本。只修改显式选中节点的 status，不级联改写后代状态；禁用父节点仍截断整支可见菜单。保留路由、isVisible、keepAlive、权限及角色关联，不撤销独立接口授权或会话。父节点可以参与状态批量操作，批量删除仍仅限叶子。
+
+请求示例（多条时向 items 添加其余目标及各自版本）：
+
+```http
+PUT /api/v1/admin/music/batch-status
+Authorization: Bearer <site-token>
+Content-Type: application/json
+
+{"items":[{"id":"10","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}],"status":0}
+```
+
+```json
+{"code":"OK","msg":"成功","data":{"items":[{"id":"10","revision":"\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\""}]},"errors":[]}
+```
+
 
 ---
 
@@ -7078,15 +7275,15 @@ GET /api/v1/blog/articles/first-leaf
     },
     "category": null, "title": "第一片落叶", "slug": "first-leaf", "summary": "记录与分享",
     "markdownContent": "# 第一片落叶\n\n记录与分享。",
-    "htmlContent": "<h1 id=\"第一片落叶\">第一片落叶</h1>\n<p>记录与分享。</p>"
+    "markdownContent": "# 第一片落叶\n\n记录与分享。"
   },
   "errors": []
 }
 ```
 
-每次成功原子增加 view_count；失败不计数，这是阅读次数而非独立访客。详情新增 `markdownContent` 原文供网页 MdPreview 渲染，保留 `htmlContent` 服务端清理 HTML 兼容原有消费者；列表不增加正文字段。两者都在锁定文章、再次确认 PUBLIC 并检查正文附件后返回。携带 Token 也不能读取私密、草稿、下架、回收站或未到发布时间的正文；不满足条件仍返回 404。字数/阅读时长、上下篇和相关推荐见 [文章导航与阅读统计](API_CONTRACT.md#model-12-15)，所有关联文章也必须PUBLIC。
+每次成功原子增加 view_count；失败不计数，这是阅读次数而非独立访客。详情返回 `markdownContent` 原文供网页 MdPreview 渲染；列表不增加正文字段。原文在锁定文章、再次确认 PUBLIC 并检查正文附件后返回。携带 Token 也不能读取私密、草稿、下架、回收站或未到发布时间的正文；不满足条件仍返回 404。字数/阅读时长、上下篇和相关推荐见 [文章导航与阅读统计](API_CONTRACT.md#model-12-15)，所有关联文章也必须PUBLIC。
 
-原文不是可信 HTML，网页仍需清理本地渲染结果；写入接口继续仅接收 Markdown，由后端 CommonMark + jsoup 生成 HTML，不接受前端生成的 `htmlContent`。作者/读者排版偏好仅保存在各自浏览器，不属于请求或响应模型；博客正文明暗仅跟随现有网站黑白天开关/系统主题，管理端编辑和预览固定亮色。旧后端缺少原文字段时，博客回退已有安全 HTML，仍显示阅读排版选择并应用同一组六种主题；空原文字符串是有效正文，不触发回退。解析差异见 [Markdown 阅读说明](Markdown阅读说明.md)。
+原文不是可信 HTML，网页仍需清理本地渲染结果；写入接口继续仅接收 Markdown，由后端 CommonMark + jsoup 生成 HTML，不接受前端生成的 `htmlContent`。作者/读者排版偏好仅保存在各自浏览器，不属于请求或响应模型；博客正文明暗仅跟随现有网站黑白天开关/系统主题，管理端编辑和预览固定亮色。正文必须包含字符串类型的 markdownContent，缺失或类型错误均拒绝响应；空字符串是有效正文。解析差异见 [Markdown 阅读说明](Markdown阅读说明.md)。
 
 已实现的[详情缓存](#public-cache)只复用公开内容片段，命中仍执行上述成功计数及当前PUBLIC校验；详情与[公开GET限流](#request-protection)同样适用于缓存命中，不引入访客去重口径。
 
@@ -7918,7 +8115,7 @@ GET /api/v1/blog/messages?page=1&pageSize=10
 }
 ```
 
-匿名只读取审核通过的公开节点和可见删除占位；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total只计当前层可见节点。createTime ASC,messageId ASC。不可见父节点404。
+匿名只读取审核通过的公开节点；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total只计当前层可见节点。createTime ASC,messageId ASC。不可见父节点404。
 
 ---
 
@@ -8011,7 +8208,7 @@ Content-Type: application/json
 | `page` | integer | 否 | 默认 1，范围 1..100000 |
 | `pageSize` | integer | 否 | 默认 10，范围 1..50 |
 | `articleId` | ID | 否 | 可选，文章筛选 |
-| `status` | integer | 否 | 可选，0/1/2/3；含义见该业务状态约定 |
+| `status` | integer | 否 | 可选，0/1/2；含义见该业务状态约定 |
 
 ##### 请求示例
 
@@ -8082,7 +8279,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-目标评论必须为本人，deleteOwn不受ALL扩大；核对归属后在同一事务中物理删除目标和全部层级子回复，子回复不按作者或审核状态过滤。祖先和兄弟分支保留，不生成删除占位；重复删除或目标不存在返回404。旧status=3占位可再次删除。
+目标评论必须为本人，deleteOwn不受ALL扩大；核对归属后在同一事务中物理删除目标和全部层级子回复，子回复不按作者或审核状态过滤。祖先和兄弟分支保留；重复删除或目标不存在返回404。
 
 ---
 
@@ -8109,7 +8306,7 @@ Authorization: Bearer <site-token>
 | --- | --- | --- | --- |
 | `page` | integer | 否 | 默认1，1..100000 |
 | `pageSize` | integer | 否 | 默认10，1..100 |
-| `status` | integer | 否 | 0/1/2/3 |
+| `status` | integer | 否 | 0/1/2 |
 
 ##### 请求示例
 
@@ -8144,7 +8341,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-仅user_id=当前用户，包括待审、驳回、私密与删除占位；createTime DESC,messageId DESC。无额外后台查询权限要求。
+仅user_id=当前用户，包括待审、驳回和私密记录；createTime DESC,messageId DESC。无额外后台查询权限要求。
 
 ---
 
@@ -8203,7 +8400,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-他人留言一律404；用于编辑前取得X-Revision。查询删除占位仅返回占位，不还原已清除内容。
+他人留言一律404；用于编辑前取得X-Revision。
 
 ---
 
@@ -8274,7 +8471,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-完整替换可编辑的content/contentFormat/notifyReply，不接受parentId、isSecret或status；私密范围和父关系创建后不可放宽。编辑写editedAt并重新审核；删除占位409。message.enabled=false时拒绝编辑，保留查询和删除。
+完整替换可编辑的content/contentFormat/notifyReply，不接受parentId、isSecret或status；私密范围和父关系创建后不可放宽。编辑写editedAt并重新审核。message.enabled=false时拒绝编辑，保留查询和删除。
 
 ---
 
@@ -8314,7 +8511,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-无If-Revision，与本人评论删除一致；核对目标归属后在同一事务中物理删除目标及全部层级子回复，包括其他作者、私密和各审核状态的后代，不保留占位。祖先和兄弟分支保留；他人、目标不存在或重复删除返回404。旧status=3占位可再次删除。
+无If-Revision，与本人评论删除一致；核对目标归属后在同一事务中物理删除目标及全部层级子回复，包括其他作者、私密和各审核状态的后代，不保留占位。祖先和兄弟分支保留；他人、目标不存在或重复删除返回404。
 
 ---
 
@@ -10177,7 +10374,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `articleId` | ID | 文章 ID |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
@@ -10205,7 +10402,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `articleId` | ID | 文章 ID |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
@@ -10226,7 +10423,6 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `updateTime` | Time | 修改 UTC 时间 |
 | `tags` | array | 标签对象数组，tagId 升序 |
 | `markdownContent` | string | PUBLIC 文章的 Markdown 原文；网页 MdPreview 渲染后仍需清理，列表不返回 |
-| `htmlContent` | string | 服务端 CommonMark 渲染并经 jsoup 清理的 HTML，保留兼容旧消费者 |
 | `wordCount` | string | 可见正文派生字数，见 [文章导航与阅读统计](API_CONTRACT.md#model-12-15) |
 | `readingMinutes` | integer | max(1,ceil(wordCount/300)) |
 | `prevArticle` / `nextArticle` | ArticleNavigation&#124;null | 更早/更晚的相邻PUBLIC文章 |
@@ -10252,7 +10448,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `articleId` | ID | 文章 ID |
 | `authorId` | ID | 文章作者 ID |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `category` | object&#124;null | 当前分类，未设置或前台隐藏时 null |
@@ -10283,7 +10479,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `articleId` | ID | 文章 ID |
 | `authorId` | ID | 文章作者 ID |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `category` | object&#124;null | 当前分类，未设置或前台隐藏时 null |
@@ -10308,7 +10504,6 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `categoryId` | ID&#124;null | 分类 ID，可 null |
 | `tagIds` | ID[] | 标签 ID 数组，升序 |
 | `markdownContent` | string | 后台可见范围内的 Markdown 原文，供编辑和预览使用 |
-| `htmlContent` | string | 服务端渲染并清理的 HTML |
 
 <a id="response-articleadmindetail-2"></a>
 
@@ -10318,7 +10513,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `articleId` | ID | 文章 ID |
 | `authorId` | ID | 文章作者 ID |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `category` | object&#124;null | 当前分类，未设置或前台隐藏时 null |
@@ -10343,7 +10538,6 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `categoryId` | ID&#124;null | 分类 ID，可 null |
 | `tagIds` | ID[] | 标签 ID 数组，升序 |
 | `markdownContent` | string | 后台可见范围内的 Markdown 原文，供编辑和预览使用 |
-| `htmlContent` | string | 服务端渲染并清理的 HTML |
 
 <a id="response-hotarticle"></a>
 
@@ -10419,14 +10613,14 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `commentId` | ID | 评论 ID |
 | `articleId` | ID | 文章 ID |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
-| `content` | string | 纯文本评论；占位固定“该评论已删除” |
-| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
-| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
-| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
+| `content` | string | 纯文本评论 |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，未知时可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
@@ -10442,10 +10636,10 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `articleId` | ID | 文章 ID |
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
-| `content` | string | 纯文本评论；占位固定“该评论已删除” |
-| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
-| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
-| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
+| `content` | string | 纯文本评论 |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，未知时可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
@@ -10460,14 +10654,14 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `articleId` | ID | 文章 ID |
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
-| `content` | string | 纯文本评论；占位固定“该评论已删除” |
-| `location` | string&#124;null | 发布时的省市或国家；回环为本地，旧记录或占位可 null |
-| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知或占位为 null |
-| `userAgentBrowser` | string&#124;null | 浏览器类型，未知或占位为 null；不公开原始 User-Agent/IP |
+| `content` | string | 纯文本评论 |
+| `location` | string&#124;null | 发布时的省市或国家；回环为本地，未知时可 null |
+| `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知为 null |
+| `userAgentBrowser` | string&#124;null | 浏览器类型，未知为 null；不公开原始 User-Agent/IP |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
-| `author` | object | 作者公开资料；删除占位评论为 null |
+| `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
@@ -10676,18 +10870,18 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `messageId` | ID | 留言ID |
 | `parentId` | ID&#124;null | 直接回复目标；根留言为null |
-| `author` | object&#124;null | 当前用户公开资料；删除占位时为null |
+| `author` | object&#124;null | 当前用户公开资料 |
 | `author.userId` | ID | 本站用户ID |
 | `author.nickname` | string | 当前昵称 |
 | `author.avatar` | URL&#124;null | 当前公开头像 |
-| `content` | string | 原文；删除占位固定为该留言已删除 |
-| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；历史记录和删除占位为 null，不公开完整 IP |
-| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、历史记录和删除占位为 null |
-| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、历史记录和删除占位为 null，不公开原始 User-Agent |
+| `content` | string | 原文 |
+| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；未知为 null，不公开完整 IP |
+| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、未知为 null |
+| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、未知为 null，不公开原始 User-Agent |
 | `htmlContent` | string | 安全渲染HTML；纯文本转义并保留换行 |
 | `contentFormat` | integer | 0纯文本 1Markdown |
 | `isSecret` | integer | 0公开 1悄悄话 |
-| `status` | integer | 0待审核 1通过 2驳回 3删除占位 |
+| `status` | integer | 0待审核 1通过 2驳回 |
 | `editedAt` | Time&#124;null | 最近作者编辑时间，未编辑为null |
 | `isOwn` | boolean | 按当前会话计算，匿名恒为false |
 | `createTime` | Time | 创建时间，UTC |
@@ -10701,18 +10895,18 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `messageId` | ID | 留言ID |
 | `parentId` | ID&#124;null | 直接回复目标；根留言为null |
-| `author` | object&#124;null | 当前用户公开资料；删除占位时为null |
+| `author` | object&#124;null | 当前用户公开资料 |
 | `author.userId` | ID | 本站用户ID |
 | `author.nickname` | string | 当前昵称 |
 | `author.avatar` | URL&#124;null | 当前公开头像 |
-| `content` | string | 原文；删除占位固定为该留言已删除 |
-| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；历史记录和删除占位为 null，不公开完整 IP |
-| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、历史记录和删除占位为 null |
-| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、历史记录和删除占位为 null，不公开原始 User-Agent |
+| `content` | string | 原文 |
+| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；未知为 null，不公开完整 IP |
+| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、未知为 null |
+| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、未知为 null，不公开原始 User-Agent |
 | `htmlContent` | string | 安全渲染HTML；纯文本转义并保留换行 |
 | `contentFormat` | integer | 0纯文本 1Markdown |
 | `isSecret` | integer | 0公开 1悄悄话 |
-| `status` | integer | 0待审核 1通过 2驳回 3删除占位 |
+| `status` | integer | 0待审核 1通过 2驳回 |
 | `editedAt` | Time&#124;null | 最近作者编辑时间，未编辑为null |
 | `isOwn` | boolean | 按当前会话计算，匿名恒为false |
 | `createTime` | Time | 创建时间，UTC |
@@ -10856,8 +11050,8 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `newVisitorCount` | string | firstVisitTime在日期区间且符合站点访问条件的访客数 |
 | `articleCount` | string | 当前未回收文章数，不受访问日期筛选 |
 | `publishedArticleCount` | string | 当前PUBLIC文章数 |
-| `commentCount` | string | 当前非删除占位评论数，含待审/驳回 |
-| `messageCount` | string | 当前非删除占位留言数，含私密/待审/驳回 |
+| `commentCount` | string | 当前评论数，含待审/驳回 |
+| `messageCount` | string | 当前留言数，含私密/待审/驳回 |
 | `pendingCommentCount` | string | 当前status=0的评论数 |
 | `pendingMessageCount` | string | 当前status=0的留言数 |
 
@@ -10985,7 +11179,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 ### 13.3 互动、订阅与统计
 
-评论为纯文本，有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取，编辑重新待审。评论与留言删除均在事务中物理移除目标及全部子回复，不生成占位；已有旧占位兼容读取，可通过本人或后台删除入口清除。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
+评论为纯文本，有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取，编辑重新待审。评论与留言删除均在事务中物理移除目标及全部子回复，不生成占位。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
 
 订阅邮箱独立确认，不把账号联系邮箱当作已验证邮箱。首次公开发布及留言实际审核通过后再通知；发送失败不回滚已提交业务，进程内通知不保证跨宕机投递。RSS/站点地图公开读取，不依赖邮件订阅。
 
@@ -11063,7 +11257,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 409 | OAUTH_BIND_CONFLICT | 身份已属他人或本站用户同平台已绑定其他身份 |
 | 409 | LAST_LOGIN_METHOD | 清除密码/解绑会失去最后一种可用登录方式 |
 | 409 | LAST_ADMIN | 会使最后一个有效管理员失效 |
-| 409 | STATE_CONFLICT | 当前状态不支持操作，如回收站编辑、审核占位评论、父评论已不可回复 |
+| 409 | STATE_CONFLICT | 当前状态不支持操作，如回收站编辑、父评论已不可回复 |
 | 409 | RESOURCE_IN_USE | 菜单有子节点、权限被菜单引用、文件仍有引用等 |
 | 412 | REVISION_CONFLICT | If-Revision 与当前资源不符，重新获取后合并 |
 | 413 | PAYLOAD_TOO_LARGE | 请求体/正文/文件超限 |

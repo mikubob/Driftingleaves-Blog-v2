@@ -45,9 +45,6 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 根据id查询后台留言及版本，需要 ALL 范围，详情和版本在同一个只读事务中读取。 */
     ResourceVersion<MessagePrivateVO> adminDetail(long id);
 
-    /** 审核留言，状态实际变为通过且事务提交后，向已确认的订阅发送提醒。 */
-    ResourceVersion<MessagePrivateVO> review(long id, int status, String revision);
-
     /** 在后台回复留言，作者取实际操作者，遵守全部上级留言的私密限制，记录本次请求的属地和设备类型。 */
     MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent);
     /** 批量审核留言，单条也走此入口，任一失败则整批回滚。 */

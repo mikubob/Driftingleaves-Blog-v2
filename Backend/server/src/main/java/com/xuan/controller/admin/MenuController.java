@@ -1,12 +1,14 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.result.Result;
 import com.xuan.service.IMenuService;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.MenuProfileVO;
 import com.xuan.vo.MenuVO;
@@ -85,6 +87,13 @@ public class MenuController {
             @Valid @RequestBody MenuUpdateDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(menus.update(id(menuId), body, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("sys:menu:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(menus.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除菜单，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

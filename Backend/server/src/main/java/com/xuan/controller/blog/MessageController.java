@@ -47,7 +47,7 @@ public class MessageController {
     @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResponseEntity<Result<MessagePrivateVO>> create(@Valid @RequestBody MessageCreateDTO request,
             HttpServletRequest httpRequest) {
-        captchas.verify(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
+        captchas.verifyArithmetic(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
         return ResponseEntity.status(201).body(Result.ok(messages.create(request,
                 IpUtils.clientIp(httpRequest, auth.getTrustedProxies()), httpRequest.getHeader("User-Agent"))));
     }

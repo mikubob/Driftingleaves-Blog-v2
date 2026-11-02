@@ -23,7 +23,11 @@
 
     <update id="updateLink">
         UPDATE blog_friend_link SET link_name=#{link.linkName}, url=#{link.url}, avatar=#{link.avatar},
-        description=#{link.description}, sort_order=#{link.sortOrder}, status=#{link.status}
+        description=#{link.description}, sort_order=#{link.sortOrder}
         WHERE link_id=#{link.linkId}
+    </update>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE blog_friend_link SET status = #{status} WHERE link_id = #{id}
     </update>
 </mapper>

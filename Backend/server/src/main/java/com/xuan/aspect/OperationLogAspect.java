@@ -9,19 +9,24 @@ import com.xuan.dto.ArticleWriteDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.dto.ConfigWriteDTO;
+import com.xuan.dto.ExperienceCreateDTO;
 import com.xuan.dto.ExperienceWriteDTO;
 import com.xuan.dto.HomeProfileWriteDTO;
+import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
 import com.xuan.dto.MessageEditDTO;
+import com.xuan.dto.MusicCreateDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionUpdateDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleUpdateDTO;
+import com.xuan.dto.SkillCreateDTO;
 import com.xuan.dto.SkillWriteDTO;
+import com.xuan.dto.SocialCreateDTO;
 import com.xuan.dto.SocialWriteDTO;
 import com.xuan.dto.TagWriteDTO;
 import com.xuan.dto.UserRolesDTO;
@@ -87,32 +92,39 @@ public class OperationLogAspect {
     // 明确列出业务字段，新增 DTO 或字段时需要同步登记，不能自动把凭据带进日志。
     private static final Map<Class<?>, Set<String>> DATA_FIELDS = Map.ofEntries(
             Map.entry(AdminUserCreateDTO.class, Set.of("username", "nickname", "email", "avatar", "intro", "status")),
-            Map.entry(AdminUserUpdateDTO.class, Set.of("nickname", "email", "avatar", "intro", "status")),
+            Map.entry(AdminUserUpdateDTO.class, Set.of("nickname", "email", "avatar", "intro")),
             Map.entry(UserRolesDTO.class, Set.of("roleIds")),
             Map.entry(ArticleWriteDTO.class, Set.of("title", "slug", "summary", "categoryId", "coverUrl", "articleType",
                     "originalUrl", "visibility", "isTop", "allowComment", "markdownContent", "tagIds")),
             Map.entry(CategoryCreateDTO.class, Set.of("categoryName", "slug", "description", "sortOrder", "status")),
-            Map.entry(CategoryUpdateDTO.class, Set.of("categoryName", "slug", "description", "sortOrder", "status")),
+            Map.entry(CategoryUpdateDTO.class, Set.of("categoryName", "slug", "description", "sortOrder")),
             Map.entry(TagWriteDTO.class, Set.of("tagName", "slug")),
             Map.entry(RoleCreateDTO.class, Set.of("roleCode", "roleName", "description", "dataScope", "status")),
-            Map.entry(RoleUpdateDTO.class, Set.of("roleName", "description", "dataScope", "status")),
+            Map.entry(RoleUpdateDTO.class, Set.of("roleName", "description", "dataScope")),
             Map.entry(RoleGrantDTO.class, Set.of("permissionIds", "menuIds")),
             Map.entry(PermissionCreateDTO.class, Set.of("permissionCode", "permissionName", "module", "description", "status")),
-            Map.entry(PermissionUpdateDTO.class, Set.of("permissionName", "module", "description", "status")),
+            Map.entry(PermissionUpdateDTO.class, Set.of("permissionName", "module", "description")),
             Map.entry(MenuCreateDTO.class, Set.of("parentId", "menuCode", "menuName", "menuType", "routeName", "path",
                     "component", "icon", "permissionId", "sortOrder", "isVisible", "keepAlive", "status")),
             Map.entry(MenuUpdateDTO.class, Set.of("parentId", "menuName", "menuType", "routeName", "path",
-                    "component", "icon", "permissionId", "sortOrder", "isVisible", "keepAlive", "status")),
-            Map.entry(LinkWriteDTO.class, Set.of("linkName", "url", "avatar", "description", "sortOrder", "status")),
+                    "component", "icon", "permissionId", "sortOrder", "isVisible", "keepAlive")),
+            Map.entry(LinkCreateDTO.class, Set.of("linkName", "url", "avatar", "description", "sortOrder", "status")),
+            Map.entry(LinkWriteDTO.class, Set.of("linkName", "url", "avatar", "description", "sortOrder")),
             Map.entry(ConfigWriteDTO.class, Set.of("configValue", "description", "isPublic")),
             Map.entry(HomeProfileWriteDTO.class, Set.of("userId", "nickname", "tagline", "description", "avatar",
                     "website", "publicEmail", "githubUrl", "location")),
-            Map.entry(SocialWriteDTO.class, Set.of("name", "icon", "url", "sortOrder", "status")),
-            Map.entry(ExperienceWriteDTO.class, Set.of("experienceType", "title", "subtitle", "logoUrl", "content",
+            Map.entry(SocialCreateDTO.class, Set.of("name", "icon", "url", "sortOrder", "status")),
+            Map.entry(SocialWriteDTO.class, Set.of("name", "icon", "url", "sortOrder")),
+            Map.entry(ExperienceCreateDTO.class, Set.of("experienceType", "title", "subtitle", "logoUrl", "content",
                     "startDate", "endDate", "sortOrder", "status")),
-            Map.entry(SkillWriteDTO.class, Set.of("name", "description", "icon", "sortOrder", "status")),
-            Map.entry(MusicWriteDTO.class, Set.of("title", "artist", "durationSeconds", "coverUrl", "audioUrl",
+            Map.entry(ExperienceWriteDTO.class, Set.of("experienceType", "title", "subtitle", "logoUrl", "content",
+                    "startDate", "endDate", "sortOrder")),
+            Map.entry(SkillCreateDTO.class, Set.of("name", "description", "icon", "sortOrder", "status")),
+            Map.entry(SkillWriteDTO.class, Set.of("name", "description", "icon", "sortOrder")),
+            Map.entry(MusicCreateDTO.class, Set.of("title", "artist", "durationSeconds", "coverUrl", "audioUrl",
                     "lyricUrl", "lyricType", "sortOrder", "status")),
+            Map.entry(MusicWriteDTO.class, Set.of("title", "artist", "durationSeconds", "coverUrl", "audioUrl",
+                    "lyricUrl", "lyricType", "sortOrder")),
             Map.entry(MessageEditDTO.class, Set.of("content", "contentFormat", "notifyReply")));
     private static final Set<String> SCALAR_FIELDS = Set.of("id", "userId", "roleId", "permissionId", "menuId",
             "status", "key", "until", "revision", "expected");

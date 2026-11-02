@@ -8,6 +8,7 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import RowStatusActions from '../components/RowStatusActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
@@ -68,17 +69,20 @@ async function save() {
 
   saving.value = true
   try {
+    const body = {
+      linkName: form.linkName,
+      url: form.url,
+      avatar: nullable(form.avatar),
+      description: nullable(form.description),
+      sortOrder: form.sortOrder,
+    }
+    if (!id.value) {
+      body.status = form.status
+    }
     await request(id.value ? `/admin/links/${id.value}` : '/admin/links', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
-      body: {
-        linkName: form.linkName,
-        url: form.url,
-        avatar: nullable(form.avatar),
-        description: nullable(form.description),
-        sortOrder: form.sortOrder,
-        status: form.status,
-      },
+      body,
     })
     dialog.value = false
     ElMessage.success('友链已保存')
@@ -115,6 +119,13 @@ const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
+  if (can('blog:link:update')) {
+    actions.push(
+      { label: '批量通过', type: 'success', path: 'batch-status', method: 'PUT', body: { status: 1 } },
+      { label: '批量下架', type: 'warning', path: 'batch-status', method: 'PUT', body: { status: 2 } },
+      { label: '批量设为待审', path: 'batch-status', method: 'PUT', body: { status: 0 } },
+    )
+  }
   if (can('blog:link:delete', true)) {
     actions.push({
       label: '批量删除',
@@ -132,7 +143,7 @@ const batchActions = computed(() => {
       <div>
         <p class="eyebrow">LINKS</p>
         <h1>友链管理</h1>
-        <p class="muted-text">SUB友链</p>
+        <p class="muted-text">维护友链资料和审核状态。</p>
       </div>
       <el-button v-if="can('blog:link:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />
@@ -150,7 +161,7 @@ const batchActions = computed(() => {
         />
         <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <el-option label="展示中" :value="1" />
-          <el-option label="IN展示中" :value="0" />
+          <el-option label="待审核" :value="0" />
           <el-option label="已下架" :value="2" />
         </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
@@ -191,8 +202,9 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="290" fixed="right">
           <template #default="{ row }">
+            <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('blog:link:update')" link @click="edit(row)">编辑</el-button>
             <el-button type="danger" v-if="can('blog:link:delete')" link @click="remove(row)">删除</el-button>
           </template>
@@ -242,7 +254,7 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label>
+        <label v-if="!id">
           审核状态
           <el-select v-model="form.status">
             <el-option label="待审核" :value="0" />

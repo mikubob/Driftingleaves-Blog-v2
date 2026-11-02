@@ -19,6 +19,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.MenuProfileVO;
 import com.xuan.vo.MenuVO;
@@ -154,7 +155,6 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         menu.setSortOrder(request.getSortOrder());
         menu.setIsVisible(request.getIsVisible());
         menu.setKeepAlive(request.getKeepAlive());
-        menu.setStatus(request.getStatus());
 
         // 2. 把候选菜单放回整棵树里检查，不能引用自己、移到后代或因改类型破坏整个分支。
         validateFields(menu);
@@ -166,20 +166,6 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         // 3. 角色关联都保留，下次查询本人菜单时按新结构和访问权限实时计算。
         menus.updateMenu(menu);
         return profile(menus.selectById(menuId));
-    }
-
-    /**
-     * 结构锁事务里先查权限、锁用户和菜单、查版本，确认没有子节点后再删。
-     *
-     * @param menuId 目标菜单
-     * @param revision 当前详情版本，先于资源引用检查
-     * @throws BusinessException 子节点存在返回 RESOURCE_IN_USE；叶子仅级联 role_menu，失败回滚
-     */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "sys:menu", permission = "sys:menu:delete", targetIdArgument = 0)
-    public void delete(long menuId, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(menuId), revision)));
     }
 
     /**
@@ -428,6 +414,45 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         for (long id : ids) {
             menus.deleteById(id);
         }
+    }
+
+    /** 批量切换菜单状态，持有结构保护锁，保留树结构、访问权限及角色关联。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "sys:menu", permission = "sys:menu:update")
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "菜单结构检查点未初始化");
+        }
+        requireAdmin("sys:menu:update");
+        Map<Long, SysMenu> nodes = new LinkedHashMap<>();
+        menus.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));
+        Set<Long> branchIds = new TreeSet<>();
+        for (BatchItemDTO item : items) {
+            branchIds.addAll(descendants(IdUtils.parse(item.id()), nodes));
+        }
+        Set<Long> affected = new TreeSet<>(menus.userIds(List.copyOf(branchIds)));
+        affected.add(sessions.currentUserId());
+        for (long userId : affected) {
+            users.lockById(userId);
+        }
+        List<SysMenu> rows = new ArrayList<>();
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
+            SysMenu row = menus.lockById(IdUtils.parse(item.id()));
+            requireAdmin("sys:menu:update");
+            row = requireMenu(row);
+            checkRevision(row, item.revision());
+            rows.add(row);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (SysMenu row : rows) {
+            if (row.getStatus() != status) {
+                menus.updateStatus(row.getMenuId(), status);
+                row.setStatus(status);
+            }
+            versions.put(row.getMenuId(), profile(row).revision());
+        }
+        return BatchUtils.versions(items, versions);
     }
 
 }

@@ -10,6 +10,7 @@ import { User, Lock, ArrowRight } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const form = reactive({ username: '', password: '', email: '', emailCode: '' })
+const emailLogin = ref(false)
 const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
@@ -21,20 +22,27 @@ async function login() {
   }
   error.value = ''
   feedback.value = ''
-  if (!/^[A-Za-z0-9_]{3,64}$/.test(form.username) || !validatePassword(form.password)) {
+  if (!emailLogin.value
+    && (!/^[A-Za-z0-9_]{3,64}$/.test(form.username.trim()) || !validatePassword(form.password))) {
     error.value =
       '用户名须为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。'
     return
   }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || !/^[0-9]{6}$/.test(form.emailCode)) {
+  if (emailLogin.value
+    && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254
+      || !/^[0-9]{6}$/.test(form.emailCode))) {
     error.value = '请输入账号绑定的邮箱和邮件中的六位验证码。'
     return
   }
   busy.value = true
   try {
-    const { data } = await request('/admin/auth/login', {
+    const path = emailLogin.value ? '/admin/auth/email-login' : '/admin/auth/login'
+    const credentials = emailLogin.value
+      ? { email: form.email.trim(), emailCode: form.emailCode }
+      : { username: form.username.trim(), password: form.password }
+    const { data } = await request(path, {
       method: 'POST',
-      body: { username: form.username, password: form.password, email: form.email.trim(), emailCode: form.emailCode },
+      body: credentials,
       captcha: captcha.value.getValue(),
     })
     form.password = ''
@@ -50,13 +58,15 @@ async function login() {
   }
 }
 
-/** 先核对账密与账号邮箱，发送成功后仍需填写新图形验证码完成登录。 */
+/** 发送邮箱登录验证码，发送成功后仍需填写新图形验证码完成登录。 */
 async function sendEmailCode() {
+  if (busy.value) {
+    return
+  }
   error.value = ''
   feedback.value = ''
-  if (!/^[A-Za-z0-9_]{3,64}$/.test(form.username) || !validatePassword(form.password)
-    || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
-    error.value = '请先填写正确的用户名、密码和账号绑定的邮箱。'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
+    error.value = '请输入账号绑定的有效邮箱。'
     return
   }
   busy.value = true
@@ -64,7 +74,7 @@ async function sendEmailCode() {
   try {
     await request('/admin/auth/email-code', {
       method: 'POST',
-      body: { username: form.username, password: form.password, email: form.email.trim() },
+      body: { email: form.email.trim() },
       captcha: captcha.value.getValue(),
     })
     feedback.value = '验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。'
@@ -92,40 +102,48 @@ async function sendEmailCode() {
         </div>
         <p class="eyebrow">DRIFTING LEAVES / ADMIN</p>
         <h1>管理控制台</h1>
-        <p class="login-subtitle">使用账号密码、邮箱验证码和图形验证码登录。</p>
+        <p class="login-subtitle">选择账号密码或邮箱验证码登录，并完成图形验证。</p>
+        <el-radio-group v-model="emailLogin" class="login-methods" size="large" :disabled="busy" aria-label="登录方式">
+          <el-radio-button :value="false">账号密码</el-radio-button>
+          <el-radio-button :value="true">邮箱验证码</el-radio-button>
+        </el-radio-group>
         <form class="login-form" @submit.prevent="login">
-          <label for="username">用户名</label>
-          <el-input
-            id="username"
-            v-model="form.username"
-            size="large"
-            autocomplete="username"
-            placeholder="请输入用户名"
-            :disabled="busy"
-          >
-            <template #prefix><el-icon aria-hidden="true"><User /></el-icon></template>
-          </el-input>
-          <label for="password">登录密码</label>
-          <el-input
-            id="password"
-            v-model="form.password"
-            size="large"
-            type="password"
-            show-password
-            autocomplete="current-password"
-            placeholder="请输入登录密码"
-            :disabled="busy"
-          >
-            <template #prefix><el-icon aria-hidden="true"><Lock /></el-icon></template>
-          </el-input>
-          <label for="email">绑定邮箱</label>
-          <el-input id="email" v-model="form.email" type="email" size="large" autocomplete="email"
-            maxlength="254" placeholder="请输入账号绑定的邮箱" :disabled="busy" />
-          <label for="email-code">邮箱验证码</label>
-          <el-input id="email-code" v-model="form.emailCode" size="large" inputmode="numeric"
-            autocomplete="one-time-code" maxlength="6" placeholder="邮件中的六位数字" :disabled="busy" />
+          <template v-if="!emailLogin">
+            <label for="username">用户名</label>
+            <el-input
+              id="username"
+              v-model="form.username"
+              size="large"
+              autocomplete="username"
+              placeholder="请输入用户名"
+              :disabled="busy"
+            >
+              <template #prefix><el-icon aria-hidden="true"><User /></el-icon></template>
+            </el-input>
+            <label for="password">登录密码</label>
+            <el-input
+              id="password"
+              v-model="form.password"
+              size="large"
+              type="password"
+              show-password
+              autocomplete="current-password"
+              placeholder="请输入登录密码"
+              :disabled="busy"
+            >
+              <template #prefix><el-icon aria-hidden="true"><Lock /></el-icon></template>
+            </el-input>
+          </template>
+          <template v-else>
+            <label for="email">绑定邮箱</label>
+            <el-input id="email" v-model="form.email" type="email" size="large" autocomplete="email"
+              maxlength="254" placeholder="请输入账号绑定的邮箱" :disabled="busy" />
+            <label for="email-code">邮箱验证码</label>
+            <el-input id="email-code" v-model="form.emailCode" size="large" inputmode="numeric"
+              autocomplete="one-time-code" maxlength="6" placeholder="邮件中的六位数字" :disabled="busy" />
+          </template>
           <CaptchaField ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
-          <el-button :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</el-button>
+          <el-button v-if="emailLogin" :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</el-button>
           <p v-if="error" class="error-text" role="alert">{{ error }}</p>
           <p v-if="feedback" class="success-text" role="status">{{ feedback }}</p>
           <el-button
@@ -142,7 +160,7 @@ async function sendEmailCode() {
         </form>
         <p class="login-note">
           <el-icon aria-hidden="true"><Lock /></el-icon>
-          安全会话仅在当前页面有效
+          登录后可保持七天，刷新时核验身份和权限
         </p>
       </div>
       <footer>© {{ new Date().getFullYear() }} Drifting Leaves</footer>

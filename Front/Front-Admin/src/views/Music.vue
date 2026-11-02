@@ -9,6 +9,7 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import RowStatusActions from '../components/RowStatusActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
@@ -109,20 +110,23 @@ async function save() {
   }
   saving.value = true
   try {
+    const body = {
+      title: form.title,
+      artist: nullable(form.artist),
+      durationSeconds: form.durationSeconds ?? null,
+      coverUrl: nullable(form.coverUrl),
+      audioUrl: form.audioUrl,
+      lyricUrl: nullable(form.lyricUrl),
+      lyricType: nullable(form.lyricType),
+      sortOrder: form.sortOrder,
+    }
+    if (!id.value) {
+      body.status = form.status
+    }
     await request(id.value ? `/admin/music/${id.value}` : '/admin/music', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
-      body: {
-        title: form.title,
-        artist: nullable(form.artist),
-        durationSeconds: form.durationSeconds ?? null,
-        coverUrl: nullable(form.coverUrl),
-        audioUrl: form.audioUrl,
-        lyricUrl: nullable(form.lyricUrl),
-        lyricType: nullable(form.lyricType),
-        sortOrder: form.sortOrder,
-        status: form.status,
-      },
+      body,
     })
     dialog.value = false
     ElMessage.success('音乐已保存')
@@ -159,6 +163,12 @@ const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
+  if (can('blog:music:update', true)) {
+    actions.push(
+      { label: '批量展示', type: 'success', path: 'batch-status', method: 'PUT', body: { status: 1 } },
+      { label: '批量隐藏', type: 'warning', path: 'batch-status', method: 'PUT', body: { status: 0 } },
+    )
+  }
   if (can('blog:music:delete', true)) {
     actions.push({
       label: '批量删除',
@@ -235,8 +245,9 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
+            <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('blog:music:update', true)" link @click="edit(row)">
               编辑
             </el-button>
@@ -324,7 +335,7 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label>
+        <label v-if="!id">
           展示状态
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
         </label>

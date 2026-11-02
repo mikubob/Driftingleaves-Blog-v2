@@ -2,6 +2,8 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.BatchRevisionDTO;
+import com.xuan.dto.LinkBatchStatusDTO;
+import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.entity.BlogFriendLink;
@@ -9,6 +11,7 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IFriendLinkService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.LinkProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -53,7 +56,7 @@ public class FriendLinkController {
     /** 创建友链，成功返回 201 和新记录的详情地址。 */
     @PostMapping
     @SaCheckPermission("blog:link:create")
-    public ResponseEntity<Result<BlogFriendLink>> create(@Valid @RequestBody LinkWriteDTO body) {
+    public ResponseEntity<Result<BlogFriendLink>> create(@Valid @RequestBody LinkCreateDTO body) {
         BlogFriendLink value = links.create(body);
         return ResponseEntity.created(URI.create("/api/v1/admin/links/" + value.getLinkId()))
                 .body(Result.ok(value));
@@ -66,6 +69,13 @@ public class FriendLinkController {
             @Validated(LinkWriteDTO.Replace.class) @RequestBody LinkWriteDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(links.update(IdUtils.parse(linkId), body, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("blog:link:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody LinkBatchStatusDTO body) {
+        return Result.ok(links.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除友情链接，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

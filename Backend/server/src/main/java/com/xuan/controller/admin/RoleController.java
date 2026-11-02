@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
@@ -10,6 +11,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IRoleService;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import jakarta.validation.Valid;
@@ -83,6 +85,13 @@ public class RoleController {
             @Valid @RequestBody RoleUpdateDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(roles.update(id(roleId), body, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("sys:role:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(roles.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除角色，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

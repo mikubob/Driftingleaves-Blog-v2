@@ -2,8 +2,6 @@ package com.xuan.dto;
 
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
@@ -11,7 +9,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 /**
- * 修改分类要把资料填全，description 可以清空，但不能漏传。
+ * 修改分类要把资料填全，description 可以清空但不能漏传，展示状态单独批量修改。
  */
 @Getter
 public class CategoryUpdateDTO {
@@ -31,12 +29,6 @@ public class CategoryUpdateDTO {
     @NotNull
     @Setter
     private Integer sortOrder;
-
-    @NotNull
-    @Min(0)
-    @Max(1)
-    @Setter
-    private Integer status;
 
     @Getter(AccessLevel.NONE)
     private boolean descriptionPresent;

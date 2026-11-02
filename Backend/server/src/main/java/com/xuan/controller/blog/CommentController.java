@@ -50,7 +50,7 @@ public class CommentController {
     @RateLimit(value = "comment:create", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResponseEntity<Result<CommentOwnVO>> create(@PathVariable String articleId,
             @Valid @RequestBody CommentCreateDTO body, HttpServletRequest request) {
-        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        captchas.verifyArithmetic(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
         return ResponseEntity.status(201).body(Result.ok(comments.create(IdUtils.parse(articleId), body,
                 IpUtils.clientIp(request, auth.getTrustedProxies()), request.getHeader("User-Agent"))));
     }

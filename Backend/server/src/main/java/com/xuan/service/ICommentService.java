@@ -42,11 +42,6 @@ public interface ICommentService extends IService<BlogComment> {
     /** 根据id查询评论详情及版本，按评论查询权限限定范围。 */
     CommentProfileVO detail(long id);
 
-    /** 根据id审核评论，先检查审核权限范围和版本，再设置 0/1/2 状态；已删除的占位评论不能再改。 */
-    CommentProfileVO review(long id, int status, String revision);
-
-    /** 根据id删除评论及全部子回复，单独检查管理删除权限范围；非公开文章的评论也能处理，不要求版本。 */
-    void moderate(long id);
     /** 批量审核评论，单条也走此入口，任一失败则整批回滚。 */
     BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status);
     /** 批量删除评论及全部子回复，单条也走此入口，任一失败则整批回滚。 */

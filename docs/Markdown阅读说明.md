@@ -1,6 +1,6 @@
 # Markdown 正文与阅读展示
 
-后台文章编写使用 MdEditor 6.3.1；博客正式文章、后台已保存内容预览和文章列表详情预览使用 MdPreview 6.3.1。保存只提交 `markdownContent` 和既有版本信息，不提交前端生成的 HTML 或主题。后端继续使用 CommonMark 0.31.0 + jsoup 1.23.2 生成并清理 HTML，供 RSS 和原有 HTML 消费者使用；不信任数据库旧 HTML 或客户端生成的 HTML。
+后台文章编写使用 MdEditor 6.3.1；博客正式文章、后台已保存内容预览和文章列表详情预览使用 MdPreview 6.3.1。保存只提交 `markdownContent` 和既有版本信息，不提交前端生成的 HTML 或主题。后端继续使用 CommonMark 0.31.0 + jsoup 1.23.2 生成并清理 HTML，供 RSS 使用；不信任数据库旧 HTML 或客户端生成的 HTML。
 
 ## 排版与明暗
 
@@ -20,13 +20,11 @@
 
 正文和封面的受管附件继续经过后端 `ArticleAttachmentPolicy` 检查，不使用 OSS 直链。博客受管附件指向配置的 API 来源。后台编辑实时预览及已保存预览将受管图片转为后台文章附件路径，通过 Bearer API 读取 PNG/JPEG 并生成临时对象 URL；切换原文和卸载时取消请求、释放 URL，已取消请求的迟到结果同样释放。图片读取失败显示错误，不回退到公开直链。
 
-评论、留言、经历等已有 SafeHtml 消费者继续展示后端安全 HTML。`enhanceHtml.mjs` 与 `reading-content.css` 保留给这些消费者。文章 HTML 回退单独复用编辑器的代码块结构、三色标记、语言、行号、复制和折叠，配色与 Markdown 路径共用 `markdown-code.css`；普通留言仍使用原有展示。
+评论、留言、经历等已有 SafeHtml 消费者继续展示后端安全 HTML。`enhanceHtml.mjs` 与 `reading-content.css` 保留给这些消费者。文章统一使用 MdPreview，普通留言使用后端安全 HTML。
 
-## 接口与兼容
+## 接口
 
-`GET /api/v1/blog/articles/{slug}` 新增 `markdownContent:string`，保留 `htmlContent:string`。列表不增加正文。原文在文章锁定、两次 PUBLIC 检查及附件检查之后返回；旧详情缓存也由本次请求补充原文。私密、草稿、下架、回收站及未到发布时间的文章仍返回 404，Token 不放宽公开条件。成功阅读仍只增加一次计数，读取 RSS 不增加计数。
-
-博客遇到旧后端缺少 `markdownContent` 时回退现有安全 HTML；阅读排版选择始终位于正文上方，HTML 回退也能应用六种主题，不会因缺少原文而隐藏入口。空字符串是有效原文，不回退。字段存在但类型错误会在请求边界拒绝。公开详情响应更大，包含 Markdown 和 HTML 两份表示。真实字段和示例见 [API](API.md#response-articlepublicdetail)，数据模型约定同时更新于 [API_CONTRACT](API_CONTRACT.md)。
+文章详情统一返回 `markdownContent:string`，不返回 HTML 正文。列表不返回正文。Markdown 在文章锁定、PUBLIC 检查及附件检查之后返回；网页请求边界要求该字段存在且类型正确，空字符串是有效原文。公开条件、阅读计数和目录交互保留。RSS 独立生成并清理 HTML。真实字段见 [API](API.md#response-articlepublicdetail) 和 [API_CONTRACT](API_CONTRACT.md)。
 
 ## 语法对齐与差异
 
@@ -36,7 +34,7 @@
 
 - 自动链接分别使用 markdown-it linkify 与 CommonMark autolink 扩展，边界输入的识别结果可能不同。
 - 网页保留排版类、工具栏静态 SVG 和 details；后端 jsoup 使用更严格的正文白名单，会去掉这些展示标记，RSS 不包含网页控件。
-- 文章的 Markdown 和 HTML 回退都按声明语言高亮，未知或未声明语言由本地 highlighter 自动识别；其他 SafeHtml 消费者仍只高亮声明且已支持的语言。文章代码展示会裁掉首尾空行，但复制保留原有代码空白。
+- 文章 Markdown 按声明语言高亮，未知或未声明语言由本地 highlighter 自动识别；其他 SafeHtml 消费者仍只高亮声明且已支持的语言。文章代码展示会裁掉首尾空行，但复制保留原有代码空白。
 - 原始 HTML、复杂嵌套、标题内 HTML/实体及表格边界可能产生不同的结构或标题文本；相同可见标题使用同一去重规则，不承诺不同解析结构下的锚点完全相同。
 - 字数和阅读分钟始终由后端安全正文计算，不按前端显示内容重新入库。
 

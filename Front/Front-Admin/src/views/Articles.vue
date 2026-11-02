@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, request } from '../api.js'
@@ -33,6 +33,10 @@ const categories = ref([])
 const tags = ref([])
 const detail = ref(null)
 const detailVisible = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
+const selectedArticle = ref(null)
+let detailController
 const busy = ref(false)
 const trash = computed(() => filters.trash === 1)
 
@@ -41,14 +45,40 @@ function switchTrash(value) {
   load(true)
 }
 
+/** 查询文章完整详情，切换文章时取消上次请求，避免显示旧正文。 */
 async function view(row) {
+  detailController?.abort()
+  const controller = new AbortController()
+  detailController = controller
+  selectedArticle.value = row
+  detail.value = null
+  detailError.value = ''
+  detailLoading.value = true
+  detailVisible.value = true
   try {
-    detail.value = (await request(`/admin/articles/${row.articleId}`)).data
-    detailVisible.value = true
+    const result = await request(`/admin/articles/${row.articleId}`, { signal: controller.signal })
+    if (!controller.signal.aborted) {
+      detail.value = result.data
+    }
   } catch (failure) {
-    ElMessage.error(failure.message)
+    if (!controller.signal.aborted) {
+      detailError.value = failure.message
+    }
+  } finally {
+    if (detailController === controller) {
+      detailLoading.value = false
+    }
   }
 }
+
+/** 关闭详情并取消未完成的查询。 */
+function closeDetail() {
+  detailController?.abort()
+  detailVisible.value = false
+}
+
+onBeforeUnmount(closeDetail)
+onDeactivated(closeDetail)
 
 async function action(row, operation) {
   const titles = {
@@ -305,6 +335,9 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" min-width="235" fixed="right">
           <template #default="{ row }">
+            <el-button v-if="can('blog:article:query')" type="primary" link @click="view(row)">
+              详情
+            </el-button>
             <el-button
               type="primary"
               v-if="!trash && can('blog:article:update')"
@@ -359,14 +392,74 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
-    <el-dialog v-model="detailVisible" title="文章预览" width="850px" destroy-on-close>
-      <template v-if="detail">
-        <h1>{{ detail.title }}</h1>
-        <p class="muted-text">
-          {{ detail.author?.nickname }} · {{ formatTime(detail.updateTime) }}
-        </p>
-        <MarkdownPreview :markdown="detail.markdownContent" />
+    <el-dialog
+      v-model="detailVisible"
+      title="文章详情"
+      width="min(960px, 94vw)"
+      destroy-on-close
+      @close="closeDetail"
+    >
+      <div v-loading="detailLoading" class="article-detail" :aria-busy="detailLoading">
+        <p v-if="detailLoading" role="status">正在加载文章详情…</p>
+        <RequestError :message="detailError" @retry="view(selectedArticle)" />
+        <template v-if="detail">
+          <h2>{{ detail.title }}</h2>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="文章 ID">{{ detail.articleId }}</el-descriptions-item>
+            <el-descriptions-item label="作者">
+              {{ detail.author?.nickname }}（ID：{{ detail.authorId }}）
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <StatusTag :value="detail.status" kind="article" />
+              <el-tag v-if="detail.deletedAt" type="danger">回收站</el-tag>
+              <el-tag v-if="detail.isTop">置顶</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="可见性">{{ detail.visibility === 1 ? '公开' : '私密' }}</el-descriptions-item>
+            <el-descriptions-item label="分类">{{ detail.category?.categoryName || '未分类' }}</el-descriptions-item>
+            <el-descriptions-item label="标签">
+              <template v-if="detail.tags.length">
+                <el-tag v-for="tag in detail.tags" :key="tag.tagId">{{ tag.tagName }}</el-tag>
+              </template>
+              <span v-else>无标签</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="URL 标识">{{ detail.slug }}</el-descriptions-item>
+            <el-descriptions-item label="文章类型">{{ { 1: '原创', 2: '转载', 3: '翻译' }[detail.articleType] }}</el-descriptions-item>
+            <el-descriptions-item v-if="detail.originalUrl" label="原文地址">{{ detail.originalUrl }}</el-descriptions-item>
+            <el-descriptions-item v-if="detail.coverUrl" label="封面地址">{{ detail.coverUrl }}</el-descriptions-item>
+            <el-descriptions-item label="摘要"><span class="article-summary">{{ detail.summary || '暂无摘要' }}</span></el-descriptions-item>
+            <el-descriptions-item label="允许评论">{{ detail.allowComment ? '是' : '否' }}</el-descriptions-item>
+            <el-descriptions-item label="阅读 / 点赞 / 评论">
+              {{ formatCount(detail.viewCount) }} / {{ formatCount(detail.likeCount) }} / {{ formatCount(detail.commentCount) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
+            <el-descriptions-item label="首次发布时间">{{ formatTime(detail.publishTime) }}</el-descriptions-item>
+            <el-descriptions-item v-if="detail.deletedAt" label="回收时间">{{ formatTime(detail.deletedAt) }}</el-descriptions-item>
+          </el-descriptions>
+          <h3>文章正文</h3>
+          <MarkdownPreview v-if="detail.markdownContent" :markdown="detail.markdownContent" />
+          <el-empty v-else description="暂无正文" :image-size="60" />
+        </template>
+      </div>
+      <template #footer>
+        <el-button @click="closeDetail">关闭</el-button>
       </template>
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.article-detail {
+  min-height: 120px;
+  overflow-wrap: anywhere;
+}
+.article-detail :deep(.el-descriptions__label) {
+  width: 145px;
+}
+.article-detail .el-tag + .el-tag {
+  margin-left: 6px;
+}
+.article-summary {
+  white-space: pre-wrap;
+}
+</style>

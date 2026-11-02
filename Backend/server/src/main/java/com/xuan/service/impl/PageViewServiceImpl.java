@@ -55,15 +55,6 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
                         IdUtils.parse(query.userId()), IdUtils.parse(query.articleId()), begin, end));
     }
 
-    /** 根据id删除浏览记录。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:view", permission = "blog:view:delete", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "statistics", allEntries = true)
-    public void delete(long id) {
-        deleteBatch(List.of(Long.toString(id)));
-    }
-
     /** 查询与清理分别使用自己的ALL，不能借另一项权限扩大范围。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();

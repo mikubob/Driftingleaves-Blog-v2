@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime, nullable } from '../format.js'
 import { useList } from '../composables/useList.js'
@@ -19,6 +20,7 @@ const {
 )
 const dialog = ref(false)
 const saving = ref(false)
+const changingStatus = ref(false)
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -36,7 +38,6 @@ async function edit(row) {
         slug: result.data.slug,
         description: result.data.description || '',
         sortOrder: result.data.sortOrder,
-        status: result.data.status,
       })
     } else {
       id.value = ''
@@ -52,16 +53,19 @@ async function save() {
   saving.value = true
   formError.value = ''
   try {
+    const body = {
+      categoryName: form.categoryName,
+      slug: form.slug,
+      description: nullable(form.description),
+      sortOrder: form.sortOrder,
+    }
+    if (!id.value) {
+      body.status = form.status
+    }
     await request(id.value ? `/admin/categories/${id.value}` : '/admin/categories', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
-      body: {
-        categoryName: form.categoryName,
-        slug: form.slug,
-        description: nullable(form.description),
-        sortOrder: form.sortOrder,
-        status: form.status,
-      },
+      body,
     })
     dialog.value = false
     ElMessage.success('分类已保存')
@@ -70,6 +74,33 @@ async function save() {
     formError.value = failure.message
   } finally {
     saving.value = false
+  }
+}
+
+/** 单个分类也使用批量状态接口，不随资料编辑提交。 */
+async function changeStatus(row) {
+  const status = row.status === 1 ? 0 : 1
+  const title = status === 1 ? '展示分类' : '隐藏分类'
+  try {
+    await ElMessageBox.confirm(`确认${title}「${row.categoryName}」？`, title, {
+      confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning',
+    })
+  } catch {
+    return
+  }
+  changingStatus.value = true
+  try {
+    const payload = await prepareBatch('/admin/categories', 'categoryId', [row])
+    await request('/admin/categories/batch-status', {
+      method: 'PUT',
+      body: { ...payload, status },
+    })
+    ElMessage.success(`${title}成功`)
+    load()
+  } catch (failure) {
+    ElMessage.error(failure.message)
+  } finally {
+    changingStatus.value = false
   }
 }
 
@@ -99,6 +130,12 @@ const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
+  if (can('blog:category:update')) {
+    actions.push(
+      { label: '批量展示', type: 'success', path: 'batch-status', method: 'PUT', body: { status: 1 } },
+      { label: '批量隐藏', type: 'warning', path: 'batch-status', method: 'PUT', body: { status: 0 } },
+    )
+  }
   if (can('blog:category:delete')) {
     actions.push({
       label: '批量删除',
@@ -152,13 +189,13 @@ const batchActions = computed(() => {
             <BatchActions
         ref="batch" resource="/admin/categories" id-key="categoryId"
         :rows="rows" :table="batchTable" :actions="batchActions"
-        :disabled="loading || !!error" @completed="load()"
+        :disabled="loading || changingStatus || !!error" @completed="load()"
       />
       <el-table
         ref="batchTable"
         @selection-change="batch?.select"
         v-if="!error"
-        v-loading="loading || batch?.busy"
+        v-loading="loading || changingStatus || batch?.busy"
         :data="rows"
         row-key="categoryId"
         border
@@ -176,9 +213,18 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" v-if="can('blog:category:update')" link @click="edit(row)">编辑</el-button>
+            <el-button
+              v-if="can('blog:category:update')"
+              :type="row.status === 1 ? 'warning' : 'success'"
+              :disabled="changingStatus || batch?.busy"
+              link
+              @click="changeStatus(row)"
+            >
+              {{ row.status === 1 ? '隐藏' : '展示' }}
+            </el-button>
             <el-button type="danger" v-if="can('blog:category:delete')" link @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -230,8 +276,8 @@ const batchActions = computed(() => {
               :max="2147483647"
             />
           </label>
-          <label>
-            展示状态
+          <label v-if="!id">
+            初始展示状态
             <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
           </label>
         </div>

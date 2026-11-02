@@ -2,8 +2,6 @@ package com.xuan.dto;
 
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import lombok.AccessLevel;
@@ -42,11 +40,6 @@ public class LinkWriteDTO {
     @NotNull
     private Integer sortOrder = 0;
 
-    @NotNull
-    @Min(0)
-    @Max(2)
-    private Integer status = 0;
-
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
@@ -73,15 +66,10 @@ public class LinkWriteDTO {
         sortOrder = value;
     }
 
-    public void setStatus(Integer value) {
-        present.add("status");
-        status = value;
-    }
-
     /** 可空字段也得显式传入，防止漏传时把现有资料覆盖掉。 */
     @AssertTrue(groups = Replace.class, message = "PUT必须提供全部可写字段，可空字段可为null")
     public boolean isCompleteReplace() {
-        return present.size() == 4;
+        return present.size() == 3;
     }
 
     /** 可空文本去掉首尾空白，空串按清空处理。 */

@@ -7,7 +7,6 @@ import '../../../shared/reading-content.css'
 const props = defineProps({
   html: { type: String, required: true },
   outline: Boolean,
-  previewTheme: { type: String, default: '' },
 })
 const emit = defineEmits(['headings'])
 const container = ref(null)
@@ -38,7 +37,7 @@ watch(() => [props.html, container.value], () => {
       headings.push({ id: heading.id, text: heading.textContent, level: Number(heading.tagName[1]) })
     })
   }
-  enhanceHtml(content.body, highlighter, !!props.previewTheme)
+  enhanceHtml(content.body, highlighter)
   container.value.replaceChildren(...content.body.childNodes)
   emit('headings', headings)
 }, { flush: 'post', immediate: true })
@@ -47,6 +46,6 @@ watch(() => [props.html, container.value], () => {
 <template>
   <div
     ref="container"
-    :class="previewTheme ? ['article-html-preview', 'md-editor-preview', 'md-editor-scrn', `${previewTheme}-theme`] : 'rendered-content'"
+    class="rendered-content"
   ></div>
 </template>

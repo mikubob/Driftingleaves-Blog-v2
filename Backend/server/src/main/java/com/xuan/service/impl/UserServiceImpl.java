@@ -6,7 +6,6 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminEmailCodeDTO;
-import com.xuan.dto.AdminLoginDTO;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
@@ -153,12 +152,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * 保护锁和用户锁内完整替换资料、状态；禁用管理员后也要留下有效管理入口。
+     * 保护锁和用户锁内完整替换资料，状态统一走批量启用或禁用入口。
      *
      * @param userId 目标用户 ID
      * @param request 已校验的完整资料，不含密码、用户名和角色
      * @param revision 详情整体版本，缺失、格式错误和过期分别返回 428、400、412
-     * @return 更新后的资料及版本；撤销失败时数据库整笔回滚
+     * @return 更新后的资料及版本；写入失败时整笔回滚
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -175,28 +174,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         SysUser user = lockAdminTarget(userId, "sys:user:update");
         checkRevision(user, revision);
         UrlPolicy.requireValid(request.getAvatar());
-        boolean disabling = user.getStatus() == 1 && request.getStatus() == 0;
-        boolean admin = authorization.roleIds(userId).contains(1L);
 
-        // 2. 只替换资料和状态，用户名、密码和已有角色关联都不改。
+        // 2. 只替换资料，保留当前状态，用户名、密码和已有角色关联都不改。
         user.setNickname(request.getNickname());
         user.setEmail(request.getEmail());
         user.setAvatar(request.getAvatar());
         user.setIntro(request.getIntro());
-        user.setStatus(request.getStatus());
         try {
             users.updateAdmin(user);
         } catch (DuplicateKeyException exception) {
             throw identityConflict(user, exception);
         }
 
-        // 3. 先确认修改后仍有有效管理员，再撤销会话；Redis 失败就不提交数据库。
-        if (disabling) {
-            if (admin) {
-                requireRemainingAdmin();
-            }
-            sessions.revokeAll(userId);
-        }
         return adminProfile(users.selectById(userId));
     }
 
@@ -459,9 +448,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO login(LoginDTO request, int timeoutSeconds) {
-        if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-            throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
-        }
         // 1. 先锁用户再验凭据，避免旧密码验证通过后越过并发退出登录的时点又发 Token。
         SysUser user = users.lockByUsername(request.username());
 
@@ -473,7 +459,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
         // 3. 凭据确认后再查账号启用状态，然后发会话、更新登录时间。
         enabled(user);
-        return createSession(user, clock.millis(), "PASSWORD", timeoutSeconds);
+        String method = "PASSWORD";
+        if (timeoutSeconds == SessionManager.ADMIN_TIMEOUT_SECONDS) {
+            permissions.requireScope(user.getUserId(), "admin:access");
+            method = "ADMIN_PASSWORD";
+        }
+        return createSession(user, clock.millis(), method, timeoutSeconds);
     }
 
     /** 发送注册或前台登录验证码，发送不创建账号，验证码只能用于请求指定的操作。 */
@@ -488,42 +479,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void sendAdminEmailCode(AdminEmailCodeDTO request) {
-        requireAdminCredentials(request.username(), request.password(), request.email());
-        emailCodes.send(request.email(), EmailCodeStore.ADMIN_LOGIN);
-    }
-
-    /** 使用邮箱验证码登录前台，邮件验证码每次尝试都消费，失败不能重复猜测。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO loginEmail(EmailLoginDTO request) {
         SysUser user = users.lockByEmail(request.email());
-        emailCodes.verify(request.email(), EmailCodeStore.LOGIN, request.emailCode());
         if (user == null) {
             throw new BusinessException(401, "AUTH_FAILED", "邮箱或验证码错误");
         }
         enabled(user);
-        return createSession(user, clock.millis(), "EMAIL", SessionManager.BLOG_TIMEOUT_SECONDS);
+        permissions.requireScope(user.getUserId(), "admin:access");
+        emailCodes.send(user.getEmail(), EmailCodeStore.ADMIN_LOGIN);
     }
 
-    /** 验证密码和邮件验证码后登录后台，只有完整后台认证才能创建带后台认证标记的会话。 */
+    /** 使用邮箱验证码登录，按登录端隔离验证码，后台必须拥有入口权限。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO loginAdmin(AdminLoginDTO request) {
-        SysUser user = requireAdminCredentials(request.username(), request.password(), request.email());
-        emailCodes.verify(request.email(), EmailCodeStore.ADMIN_LOGIN, request.emailCode());
-        return createSession(user, clock.millis(), "PASSWORD_EMAIL", SessionManager.ADMIN_TIMEOUT_SECONDS);
-    }
-
-    /** 用户锁内核对密码和当前邮箱，普通前台账号不能借此取得后台会话。 */
-    private SysUser requireAdminCredentials(String username, String password, String email) {
-        SysUser user = users.lockByUsername(username);
-        if (user == null || user.getPasswordHash() == null || !encoder.matches(password, user.getPasswordHash())
-                || user.getEmail() == null || !user.getEmail().equalsIgnoreCase(email)) {
-            throw new BusinessException(401, "AUTH_FAILED", "账号、密码或邮箱错误");
+    public SessionVO loginEmail(EmailLoginDTO request, int timeoutSeconds) {
+        SysUser user = users.lockByEmail(request.email());
+        boolean admin = timeoutSeconds == SessionManager.ADMIN_TIMEOUT_SECONDS;
+        String purpose = admin ? EmailCodeStore.ADMIN_LOGIN : EmailCodeStore.LOGIN;
+        emailCodes.verify(request.email(), purpose, request.emailCode());
+        if (user == null) {
+            throw new BusinessException(401, "AUTH_FAILED", "邮箱或验证码错误");
         }
         enabled(user);
-        permissions.requireScope(user.getUserId(), "admin:access");
-        return user;
+        if (admin) {
+            permissions.requireScope(user.getUserId(), "admin:access");
+        }
+        return createSession(user, clock.millis(), admin ? "ADMIN_EMAIL" : "EMAIL", timeoutSeconds);
     }
 
     /**
@@ -771,7 +751,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
         if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-            throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+            throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
         }
         // 1. 兑换时重新锁用户并查状态，不能只信回调时查到的结果。
         SysUser user = users.lockById(userId);
@@ -914,7 +894,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      *
      * @param user 已锁定且确认启用的用户实体
      * @param authenticatedAt 本次凭据验证成功的毫秒时间戳
-     * @param method Token 级认证方式，PASSWORD 或 OAUTH
+     * @param method 当前 Token 的密码、邮箱或第三方认证方式，后台使用独立标记
      * @param timeoutSeconds 当前登录端的固定有效秒数
      * @return 事务成功提交后可返回客户端的独立会话与脱敏资料
      */

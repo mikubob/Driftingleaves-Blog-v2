@@ -21,6 +21,7 @@ import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Category;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CategoryProfileVO;
 import com.xuan.vo.CategoryPublicDetailVO;
 import lombok.RequiredArgsConstructor;
@@ -34,8 +35,11 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 分类和成功日志一起提交，删分类时由外键把文章的分类置空。
@@ -118,7 +122,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
         return categories.selectById(row.getCategoryId());
     }
 
-    /** 先锁操作者，再锁分类；等待结束后重新检查权限和版本，不能覆盖别人的修改。 */
+    /** 先锁操作者，再锁分类；等待结束后重新检查权限和版本，只替换资料，保留展示状态。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:category", permission = "blog:category:update", targetIdArgument = 0)
@@ -141,15 +145,14 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
         row.setSlug(request.getSlug());
         row.setDescription(request.getDescription());
         row.setSortOrder(request.getSortOrder());
-        row.setStatus(request.getStatus());
         categories.updateCategory(row);
         return profile(categories.selectById(id));
     }
 
-    /** 删分类和文章分类置空在同一事务完成，任何一步或成功日志失败都会回滚。 */
+    /** 批量切换展示状态，先锁住并检查全部目标，避免检查到后续冲突时已写入前面的分类。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:category", permission = "blog:category:delete", targetIdArgument = 0)
+    @OperationLog(type = "batch-status", target = "blog:category", permission = "blog:category:update")
     @Caching(evict = {
             @CacheEvict(cacheNames = "articles", allEntries = true),
             @CacheEvict(cacheNames = "search", allEntries = true),
@@ -162,8 +165,23 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
             @CacheEvict(cacheNames = "rss", allEntries = true),
             @CacheEvict(cacheNames = "sitemap", allEntries = true)
     })
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        List<BlogCategory> rows = new ArrayList<>();
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
+            BlogCategory row = lockCategory(IdUtils.parse(item.id()), "update");
+            checkRevision(row, item.revision());
+            rows.add(row);
+        }
+
+        Map<Long, String> versions = new HashMap<>();
+        for (BlogCategory row : rows) {
+            if (row.getStatus() != status) {
+                categories.updateStatus(row.getCategoryId(), status);
+                row.setStatus(status);
+            }
+            versions.put(row.getCategoryId(), profile(row).revision());
+        }
+        return BatchUtils.versions(items, versions);
     }
 
     /** 权限先于分类存在性检查，等待分类锁后再查一次，不能沿用旧授权。 */

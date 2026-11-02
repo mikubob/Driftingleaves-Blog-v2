@@ -1,6 +1,6 @@
 # 博客端 Front-Blog
 
-文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录；缺少原文字段时回退后端安全 HTML。网页与 RSS 的解析职责、兼容及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
+文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
 
 直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [API.md](../../docs/API.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
 
@@ -59,7 +59,7 @@ pnpm preview
 
 ## V2 适配边界
 
-- 文章正式地址为 `/articles/:slug`，与后端 RSS、站点地图和统计一致；原 `/article/:slug` 保留跳转。原搜索入口为 `/?search=`，兼容上一版 `/search?keyword=`。
+- 文章正式地址为 `/articles/:slug`，与后端 RSS、站点地图和统计一致。搜索入口为 `/?search=`。
 - 文章、分类、标签、作者、归档、友链和回复均使用 V2 分页。字典和播放列表继续读取全部页。ID、外键、BIGINT 计数及分页总数保持字符串，不用浮点数转换；原 Element Plus 数字总数分页改为保留字符串的 `ListPager`。
 - 卡片字段通过 `articleView` 映射：`articleId → id`、`coverUrl → coverImage`、分类/标签对象转为原组件属性，正文优先使用 `markdownContent`，缺少原文时回退 `htmlContent`。不伪造缺失的地理位置、设备信息、分类计数或在线人数。
 - 原站访客会话、匿名昵称/邮箱输入和验证码不适用于 V2，已移除。密码与 OAuth 登录均固定有效 3 天（259200 秒）；localStorage 的 `dl-blog-session` 仅保存 Token 和固定到期时间，经 Bearer 发送给配置的 API。刷新或重新打开页面后先核验 `/blog/me`、`/blog/me/capabilities`，再恢复身份和权限，不续期；退出或核验失败清除持久凭据。浏览器禁用存储时仅本页有效。

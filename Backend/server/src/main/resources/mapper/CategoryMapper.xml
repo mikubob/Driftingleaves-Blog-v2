@@ -30,10 +30,15 @@
         SELECT * FROM blog_category WHERE category_id = #{id} FOR UPDATE
     </select>
 
-    <!-- description 为 null 就清空，不改数据库维护的时间。 -->
+    <!-- 批量目标已全部加锁并通过版本检查，只修改展示状态。 -->
+    <update id="updateStatus">
+        UPDATE blog_category SET status = #{status} WHERE category_id = #{id}
+    </update>
+
+    <!-- description 为 null 就清空，保留展示状态，不改数据库维护的时间。 -->
     <update id="updateCategory">
         UPDATE blog_category SET category_name = #{category.categoryName}, slug = #{category.slug},
-        description = #{category.description}, sort_order = #{category.sortOrder}, status = #{category.status}
+        description = #{category.description}, sort_order = #{category.sortOrder}
         WHERE category_id = #{category.categoryId}
     </update>
 </mapper>

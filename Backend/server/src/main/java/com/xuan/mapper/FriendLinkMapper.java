@@ -20,4 +20,7 @@ public interface FriendLinkMapper extends BaseMapper<BlogFriendLink> {
 
     /** 显式写可空字段，清空头像或说明不能被默认更新策略跳过。 */
     int updateLink(@Param("link") BlogFriendLink link);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

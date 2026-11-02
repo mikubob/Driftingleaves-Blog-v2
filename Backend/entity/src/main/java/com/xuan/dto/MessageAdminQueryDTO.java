@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Min;
  * 后台私密留言仅在本次query具有ALL时可筛选。
  */
 public record MessageAdminQueryDTO(@Min(1) @Max(100000) Integer page, @Min(1) @Max(100) Integer pageSize,
-                                   @Min(0) @Max(3) Integer status, String userId, @Min(0) @Max(1) Integer isSecret,
+                                   @Min(0) @Max(2) Integer status, String userId, @Min(0) @Max(1) Integer isSecret,
                                    String begin, String end) {
 
     public MessageAdminQueryDTO {

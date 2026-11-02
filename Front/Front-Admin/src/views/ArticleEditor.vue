@@ -346,12 +346,10 @@ onBeforeUnmount(() => {
     <div v-if="!error" class="edit-body">
       <div class="editor-panel">
         <div class="markdown-preferences">
-          <label>
-            作者排版
-            <select v-model="previewTheme" aria-label="作者排版">
-              <option v-for="item in previewThemes" :key="item" :value="item">{{ item }}</option>
-            </select>
-          </label>
+          <label for="editor-preview-theme">作者排版</label>
+          <el-select id="editor-preview-theme" v-model="previewTheme" aria-label="作者排版" size="small">
+            <el-option v-for="item in previewThemes" :key="item" :label="item" :value="item" />
+          </el-select>
         </div>
         <p v-if="imageError" role="alert" class="error-text">{{ imageError }}</p>
         <MdEditor

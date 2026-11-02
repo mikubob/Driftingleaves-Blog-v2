@@ -7,6 +7,7 @@ import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.dto.PermissionUpdateDTO;
 import com.xuan.entity.SysPermission;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
 
@@ -29,8 +30,9 @@ public interface IPermissionService extends IService<SysPermission> {
     /** 根据id更新权限，加锁并检查版本后完整替换资料；状态改变时撤销全部关联用户的会话，Redis 操作失败就回滚。 */
     PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision);
 
-    /** 根据id删除权限，加锁并检查版本后删除记录和角色关联；固定权限或仍被菜单引用的权限不能删除，撤销会话失败就回滚。 */
-    void delete(long permissionId, String revision);
     /** 批量删除权限，单条也走此入口，任一失败则整批回滚。 */
     void deleteBatch(List<BatchItemDTO> items);
+    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
 }

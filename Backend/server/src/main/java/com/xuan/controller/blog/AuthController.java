@@ -118,7 +118,7 @@ public class AuthController {
         limiter.checkLogin(request, body.email());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
         try {
-            return Result.ok(users.loginEmail(body));
+            return Result.ok(users.loginEmail(body, SessionManager.BLOG_TIMEOUT_SECONDS));
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.email());

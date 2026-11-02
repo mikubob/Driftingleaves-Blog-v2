@@ -28,8 +28,11 @@
         UPDATE sys_menu SET parent_id = #{menu.parentId}, menu_name = #{menu.menuName},
         menu_type = #{menu.menuType}, route_name = #{menu.routeName}, path = #{menu.path},
         component = #{menu.component}, icon = #{menu.icon}, permission_id = #{menu.permissionId},
-        sort_order = #{menu.sortOrder}, is_visible = #{menu.isVisible}, keep_alive = #{menu.keepAlive},
-        status = #{menu.status}
+        sort_order = #{menu.sortOrder}, is_visible = #{menu.isVisible}, keep_alive = #{menu.keepAlive}
         WHERE menu_id = #{menu.menuId}
+    </update>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE sys_menu SET status = #{status} WHERE menu_id = #{id}
     </update>
 </mapper>

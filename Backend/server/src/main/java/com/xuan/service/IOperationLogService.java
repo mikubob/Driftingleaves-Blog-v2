@@ -20,8 +20,6 @@ public interface IOperationLogService extends IService<SysOperationLog> {
     /** 根据id查询操作日志详情，需要 ALL 范围，返回操作基本信息及已记录的完整业务参数。 */
     OperationLogDetailVO detail(long id);
 
-    /** 根据id删除操作日志，删除和本次清理的成功日志一起提交；记录不存在时返回 404。 */
-    void delete(long id);
     /** 批量删除操作日志，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<String> ids);
 }

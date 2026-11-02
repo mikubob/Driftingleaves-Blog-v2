@@ -82,22 +82,6 @@ public class ArticleAttachmentPolicy {
         return new References(normalizedCover, document.body().html(), Set.copyOf(ids));
     }
 
-    /** 将本站附件地址转为后台地址，不修改 Markdown 原文或外部链接。 */
-    public String adminUrl(String value) {
-        return value != null && CONTEXT.matcher(value).matches()
-                ? value.replace("/api/v1/blog/articles/", "/api/v1/admin/articles/") : value;
-    }
-
-    /** 转换 HTML 中的本站附件地址，只改链接属性，不修改正文、外部链接或代码示例。 */
-    public String adminHtml(String html) {
-        Document document = Jsoup.parseBodyFragment(html);
-        for (Element element : document.select("a[href], img[src]")) {
-            String attribute = element.normalName().equals("a") ? "href" : "src";
-            element.attr(attribute, adminUrl(element.attr(attribute)));
-        }
-        return document.body().html();
-    }
-
     /** 检查并整理文章附件地址，本站附件必须属于当前文章，外部地址保持原样。 */
     private String canonical(String value, Long articleId, Set<Long> ids) {
         String path = urls.attachmentPath(value);

@@ -73,10 +73,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     }
 
     /** 根据id限制访客访问。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "block", target = "blog:visitor", permission = "blog:visitor:block", targetIdArgument = 0)
-    public ResourceVersion<BlogVisitor> block(long id, String until, String revision) {
+    private ResourceVersion<BlogVisitor> block(long id, String until, String revision) {
         BlogVisitor row = lock(id, "block");
         RevisionUtils.check(profile(row).revision(), revision);
         LocalDateTime end = QueryTimeUtils.parse(until);
@@ -90,10 +87,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     }
 
     /** 根据id解除访客限制。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "unblock", target = "blog:visitor", permission = "blog:visitor:unblock", targetIdArgument = 0)
-    public ResourceVersion<BlogVisitor> unblock(long id, String revision) {
+    private ResourceVersion<BlogVisitor> unblock(long id, String revision) {
         BlogVisitor row = lock(id, "unblock");
         RevisionUtils.check(profile(row).revision(), revision);
         if (row.getIsBlocked() != 0 || row.getBlockedUntil() != null) {
@@ -102,15 +96,6 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             visitors.restriction(row);
         }
         return profile(visitors.selectById(id));
-    }
-
-    /** 根据id删除访客。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:visitor", permission = "blog:visitor:delete", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "statistics", allEntries = true)
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 操作者和目标锁各自等待后重新检查原会话和独立ALL。 */

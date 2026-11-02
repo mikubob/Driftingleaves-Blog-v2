@@ -47,4 +47,7 @@ public interface PermissionMapper extends BaseMapper<SysPermission> {
      * @return 引用菜单数，非零时禁止删除
      */
     long menuReferences(@Param("permissionId") long permissionId);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

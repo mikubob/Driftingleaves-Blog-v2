@@ -105,9 +105,9 @@ async function save() {
       email: nullable(form.email),
       avatar: nullable(form.avatar),
       intro: nullable(form.intro),
-      status: form.status,
     }
     if (!id.value) {
+      body.status = form.status
       body.username = form.username
       body.password = form.password
     }
@@ -387,7 +387,7 @@ onMounted(async () => {
           个人简介
           <el-input v-model="form.intro" type="textarea" :rows="3" maxlength="500" />
         </label>
-        <label>
+        <label v-if="!id">
           账号状态
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
         </label>

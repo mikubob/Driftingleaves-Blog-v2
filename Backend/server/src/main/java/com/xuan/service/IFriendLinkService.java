@@ -2,11 +2,13 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogFriendLink;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
 
@@ -27,13 +29,14 @@ public interface IFriendLinkService extends IService<BlogFriendLink> {
     LinkProfileVO detail(long id);
 
     /** 新增友情链接，默认待审核，不抓取链接内容，名称和 URL 可以重复。 */
-    BlogFriendLink create(LinkWriteDTO request);
+    BlogFriendLink create(LinkCreateDTO request);
 
     /** 根据id更新友情链接，锁住操作者和友情链接后，重新检查原身份、权限及版本，再完整替换资料。 */
     LinkProfileVO update(long id, LinkWriteDTO request, String revision);
 
-    /** 根据id删除友情链接，先检查版本再删除记录；成功日志写入失败时，删除一起回滚。 */
-    void delete(long id, String revision);
     /** 批量删除友情链接，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
+    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
 }

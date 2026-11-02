@@ -9,7 +9,7 @@ import jakarta.validation.constraints.Min;
  */
 public record CommentOwnQueryDTO(@Min(1) @Max(100000) Integer page,
                                  @Min(1) @Max(50) Integer pageSize,
-                                 String articleId, @Min(0) @Max(3) Integer status) {
+                                 String articleId, @Min(0) @Max(2) Integer status) {
 
     public CommentOwnQueryDTO {
         page = ObjectUtil.defaultIfNull(page, 1);

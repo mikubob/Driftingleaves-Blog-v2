@@ -1,8 +1,10 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.MusicCreateDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.entity.BlogMusic;
 import com.xuan.model.ResourceVersion;
@@ -10,6 +12,7 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IMusicService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +55,7 @@ public class MusicController {
     /** 新增音乐，成功后返回 201 和新版本。 */
     @PostMapping
     @SaCheckPermission("blog:music:create")
-    public ResponseEntity<Result<BlogMusic>> create(@Valid @RequestBody MusicWriteDTO request) {
+    public ResponseEntity<Result<BlogMusic>> create(@Valid @RequestBody MusicCreateDTO request) {
         ResourceVersion<BlogMusic> result = items.create(request);
         return ResponseEntity.created(URI.create("/api/v1/admin/music/" + result.value().getMusicId()))
                 .header("X-Revision", result.revision()).body(Result.ok(result.value()));
@@ -64,6 +67,13 @@ public class MusicController {
     public ResponseEntity<Result<BlogMusic>> update(@PathVariable String id, @Valid @RequestBody MusicWriteDTO request,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(items.update(IdUtils.parse(id), request, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("blog:music:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(items.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除音乐，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

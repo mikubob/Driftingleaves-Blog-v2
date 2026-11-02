@@ -4,7 +4,7 @@ const labels = {
   display: { 0: '已隐藏', 1: '展示中' },
   enabled: { 0: '已禁用', 1: '已启用' },
   article: { 0: '草稿', 1: '已发布', 2: '已下架' },
-  review: { 0: '待审核', 1: '已通过', 2: '已驳回', 3: '已删除' },
+  review: { 0: '待审核', 1: '已通过', 2: '已驳回' },
   link: { 0: '待审核', 1: '展示中', 2: '已下架' },
   subscription: { 0: '待验证', 1: '已订阅', 2: '已退订' },
 }
@@ -12,7 +12,7 @@ const tones = {
   display: { 0: 'muted', 1: 'success' },
   enabled: { 0: 'danger', 1: 'success' },
   article: { 0: 'warning', 1: 'success', 2: 'muted' },
-  review: { 0: 'warning', 1: 'success', 2: 'danger', 3: 'muted' },
+  review: { 0: 'warning', 1: 'success', 2: 'danger' },
   link: { 0: 'warning', 1: 'success', 2: 'muted' },
   subscription: { 0: 'warning', 1: 'success', 2: 'muted' },
 }

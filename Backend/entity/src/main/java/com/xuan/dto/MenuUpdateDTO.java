@@ -58,12 +58,6 @@ public class MenuUpdateDTO {
     @Setter
     private Integer keepAlive;
 
-    @NotNull
-    @Min(0)
-    @Max(1)
-    @Setter
-    private Integer status;
-
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 

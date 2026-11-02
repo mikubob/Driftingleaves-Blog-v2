@@ -21,4 +21,7 @@ public interface MusicMapper extends BaseMapper<BlogMusic> {
 
     /** 文件锁后锁定一个当前公开引用，状态变化与读取按同一音乐行锁排序。 */
     BlogMusic lockPublicFileReference(@Param("url") String url);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

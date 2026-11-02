@@ -22,14 +22,6 @@ public interface IVisitorService extends IService<BlogVisitor> {
     /** 根据id查询访客详情，版本只包含访问限制字段，最近访问变化不会导致版本过期。 */
     ResourceVersion<VisitorVO> detail(long id);
 
-    /** 根据id限制访客访问，可以指定 UTC 结束时间或永久限制，加锁后检查版本。 */
-    ResourceVersion<BlogVisitor> block(long id, String until, String revision);
-
-    /** 根据id解除访客限制，同时清空限制结束时间；已解除限制时也要检查版本。 */
-    ResourceVersion<BlogVisitor> unblock(long id, String revision);
-
-    /** 根据id删除访客，历史浏览记录保留，由外键把其中的 visitor_id 设为 NULL。 */
-    void delete(long id, String revision);
     /** 批量删除访客，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
     /** 批量限制访客访问，单条也走此入口，任一失败则整批回滚。 */

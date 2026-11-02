@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.MusicCreateDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.entity.BlogMusic;
 import com.xuan.exception.BusinessException;
@@ -23,6 +24,7 @@ import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MusicPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -32,8 +34,11 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.TreeSet;
 
 /**
@@ -85,16 +90,17 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:music", permission = "blog:music:create")
     @CacheEvict(cacheNames = "music", allEntries = true)
-    public ResourceVersion<BlogMusic> create(MusicWriteDTO request) {
+    public ResourceVersion<BlogMusic> create(MusicCreateDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
         lockFiles(request);
         requireAdmin("create");
-        validateFiles(request);
+        validateFiles(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl(), request.getLyricType());
         requireAdmin("create");
         BlogMusic row = new BlogMusic();
         assign(row, request);
+        row.setStatus(request.getStatus());
         items.insert(row);
         return profile(items.selectById(row.getMusicId()));
     }
@@ -113,20 +119,11 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         requireAdmin("update");
         requireItem(row);
         RevisionUtils.check(profile(row).revision(), revision);
-        validateFiles(request);
+        validateFiles(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl(), request.getLyricType());
         requireAdmin("update");
         assign(row, request);
         items.replace(row);
         return profile(items.selectById(id));
-    }
-
-    /** 根据id删除音乐。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:music", permission = "blog:music:delete", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "music", allEntries = true)
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 整理音乐文件地址，外部链接只校验和保存，不下载内容。 */
@@ -151,8 +148,8 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     }
 
     /** 检查音乐附件，加锁后重新检查文件查询范围、类型和可用性，音乐的 ALL 权限不能扩大文件权限。 */
-    private void validateFiles(MusicWriteDTO request) {
-        List<String> urls = Arrays.asList(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl());
+    private void validateFiles(String coverUrl, String audioUrl, String lyricUrl, String lyricType) {
+        List<String> urls = Arrays.asList(coverUrl, audioUrl, lyricUrl);
         for (int index = 0; index < urls.size(); index++) {
             Long id = resources.fileId(urls.get(index));
             if (id == null) {
@@ -171,7 +168,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
             } else if (index == 1) {
                 typeMatches = file.getMimeType().startsWith("audio/");
             } else {
-                typeMatches = file.getObjectKey().endsWith("." + request.getLyricType());
+                typeMatches = file.getObjectKey().endsWith("." + lyricType);
             }
             if (!typeMatches) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "引用文件类型与音乐字段或歌词格式不一致");
@@ -190,7 +187,6 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         row.setLyricUrl(request.getLyricUrl());
         row.setLyricType(request.getLyricType());
         row.setSortOrder(request.getSortOrder());
-        row.setStatus(request.getStatus());
     }
 
     /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
@@ -245,6 +241,51 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
             long id = IdUtils.parse(item.id());
             this.items.deleteById(id);
         }
+    }
+
+    /** 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "blog:music", permission = "blog:music:update")
+    @CacheEvict(cacheNames = "music", allEntries = true)
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        // 启用前先锁文件，再锁音乐；不能在音乐行锁之后补文件锁。
+        users.lockById(sessions.currentUserId());
+        requireAdmin("update");
+        if (status == 1) {
+            var fileIds = new TreeSet<Long>();
+            for (BatchItemDTO item : BatchUtils.sorted(items)) {
+                BlogMusic row = requireItem(this.items.selectById(IdUtils.parse(item.id())));
+                for (String url : Arrays.asList(row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl())) {
+                    Long fileId = resources.fileId(url);
+                    if (fileId != null) {
+                        fileIds.add(fileId);
+                    }
+                }
+            }
+            for (long fileId : fileIds) {
+                articles.lockFile(fileId);
+            }
+        }
+        List<BlogMusic> rows = new ArrayList<>();
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
+            BlogMusic row = lock(IdUtils.parse(item.id()), "update");
+            RevisionUtils.check(profile(row).revision(), item.revision());
+            if (status == 1) {
+                validateFiles(row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType());
+                requireAdmin("update");
+            }
+            rows.add(row);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (BlogMusic row : rows) {
+            if (row.getStatus() != status) {
+                this.items.updateStatus(row.getMusicId(), status);
+                row.setStatus(status);
+            }
+            versions.put(row.getMusicId(), profile(row).revision());
+        }
+        return BatchUtils.versions(items, versions);
     }
 
 }

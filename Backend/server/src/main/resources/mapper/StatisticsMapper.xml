@@ -39,8 +39,8 @@
         CAST((SELECT COUNT(*) FROM blog_article WHERE deleted_at IS NULL) AS CHAR) AS article_count,
         CAST((SELECT COUNT(*) FROM blog_article a WHERE<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
         AS CHAR) AS published_article_count,
-        CAST((SELECT COUNT(*) FROM blog_comment WHERE status != 3) AS CHAR) AS comment_count,
-        CAST((SELECT COUNT(*) FROM blog_message WHERE status != 3) AS CHAR) AS message_count,
+        CAST((SELECT COUNT(*) FROM blog_comment) AS CHAR) AS comment_count,
+        CAST((SELECT COUNT(*) FROM blog_message) AS CHAR) AS message_count,
         CAST((SELECT COUNT(*) FROM blog_comment WHERE status=0) AS CHAR) AS pending_comment_count,
         CAST((SELECT COUNT(*) FROM blog_message WHERE status=0) AS CHAR) AS pending_message_count
     </select>

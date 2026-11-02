@@ -35,7 +35,7 @@ public class MyMessageController {
     private final IMessageService messages;
     private final CaptchaStore captchas;
 
-    /** 分页查询本人留言，包括待审、驳回、私密和删除占位记录。 */
+    /** 分页查询本人留言，包括待审、驳回和私密记录。 */
     @GetMapping
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageOwnQueryDTO query) {
         return Result.ok(messages.ownMessages(query));
@@ -54,7 +54,7 @@ public class MyMessageController {
             @Valid @RequestBody MessageEditDTO request,
             @RequestHeader(value = "If-Revision", required = false) String revision,
             HttpServletRequest httpRequest) {
-        captchas.verify(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
+        captchas.verifyArithmetic(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
         return response(messages.edit(IdUtils.parse(id), request, revision));
     }
 

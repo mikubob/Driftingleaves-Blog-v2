@@ -1,8 +1,10 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.SocialCreateDTO;
 import com.xuan.dto.SocialWriteDTO;
 import com.xuan.entity.HomeSocialLink;
 import com.xuan.model.ResourceVersion;
@@ -10,6 +12,7 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ISocialService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -52,7 +55,7 @@ public class SocialController {
     /** 新增社交链接，成功后返回 201 和新版本。 */
     @PostMapping
     @SaCheckPermission("home:social:create")
-    public ResponseEntity<Result<HomeSocialLink>> create(@Valid @RequestBody SocialWriteDTO request) {
+    public ResponseEntity<Result<HomeSocialLink>> create(@Valid @RequestBody SocialCreateDTO request) {
         ResourceVersion<HomeSocialLink> result = items.create(request);
         return ResponseEntity.created(URI.create("/api/v1/admin/home/social-links/" + result.value().getSocialId()))
                 .header("X-Revision", result.revision()).body(Result.ok(result.value()));
@@ -65,6 +68,13 @@ public class SocialController {
             @Valid @RequestBody SocialWriteDTO request,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(items.update(IdUtils.parse(id), request, revision));
+    }
+
+    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("home:social:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(items.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除社交链接，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

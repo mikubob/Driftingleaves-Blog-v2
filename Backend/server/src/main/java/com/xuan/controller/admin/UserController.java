@@ -76,7 +76,7 @@ public class UserController {
     }
 
     /**
-     * 根据id更新用户资料和状态，传入完整资料，由业务层加锁并检查版本；禁用时撤销全部会话。
+     * 根据id更新用户资料并保留状态，由业务层加锁并检查版本。
      *
      * @param userId 目标用户 ID
      * @param body 含可空字段的完整资料

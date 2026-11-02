@@ -37,7 +37,7 @@
     <!-- 只替换允许修改的字段，不改角色码和关联集合。 -->
     <update id="updateRole">
         UPDATE sys_role SET role_name = #{role.roleName}, description = #{role.description},
-        data_scope = #{role.dataScope}, status = #{role.status} WHERE role_id = #{role.roleId}
+        data_scope = #{role.dataScope} WHERE role_id = #{role.roleId}
     </update>
 
     <!-- 角色锁后按 ID 升序锁权限，缺失或禁用都要让整个请求失败。 -->
@@ -73,4 +73,8 @@
         INSERT INTO sys_role_menu(role_id, menu_id) VALUES
         <foreach collection="ids" item="id" separator=",">(#{roleId}, #{id})</foreach>
     </insert>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE sys_role SET status = #{status} WHERE role_id = #{id}
+    </update>
 </mapper>

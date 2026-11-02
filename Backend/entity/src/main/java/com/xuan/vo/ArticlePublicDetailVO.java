@@ -13,7 +13,6 @@ import java.util.List;
 public class ArticlePublicDetailVO extends ArticlePublicVO {
 
     private String markdownContent;
-    private String htmlContent;
     private Long wordCount;
     private Integer readingMinutes;
     private Navigation prevArticle;

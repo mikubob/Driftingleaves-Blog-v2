@@ -15,5 +15,4 @@ public class ArticleAdminDetailVO extends ArticleAdminVO {
     private Long categoryId;
     private List<Long> tagIds;
     private String markdownContent;
-    private String htmlContent;
 }

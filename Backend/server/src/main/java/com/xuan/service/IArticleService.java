@@ -33,7 +33,7 @@ public interface IArticleService extends IService<BlogArticle> {
     PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query);
 
     /** 缓存公开文章详情，只能由 publicDetail 先锁住文章、检查正文和附件后，通过 Spring 代理调用。 */
-    ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown, String html);
+    ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown);
 
     /** 分页查询有公开文章的作者，先按公开文章数降序，再按作者id升序排列。 */
     PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query);
@@ -44,7 +44,7 @@ public interface IArticleService extends IService<BlogArticle> {
     /** 分页查询本人点赞的文章，当前用户必须启用，按点赞时间降序排列，不返回隐藏文章。 */
     PageResult<LikedArticleVO> likedArticles(PageQueryDTO query);
 
-    /** 根据slug查询公开文章详情，只返回清理后的 HTML；成功增加一次阅读量，失败时阅读量也回滚。 */
+    /** 根据slug查询公开文章详情，返回Markdown及阅读信息；成功增加一次阅读量，失败时阅读量也回滚。 */
     ArticlePublicDetailVO publicDetail(String slug);
 
     /** 按 UTC 月份查询公开文章归档，月份降序排列，total 表示月份数量。 */
@@ -61,18 +61,6 @@ public interface IArticleService extends IService<BlogArticle> {
 
     /** 根据id更新文章，加锁后完整替换内容；已发布文章还要检查发布权限及范围。 */
     ArticleProfileVO update(long id, ArticleWriteDTO request, String revision);
-
-    /** 根据id发布或下架文章，首次发布时间只写一次，状态不变时也要检查版本。 */
-    ArticleProfileVO changeStatus(long id, int status, String revision);
-
-    /** 根据id将文章移入回收站，只更新 deletedAt，保留正文、slug、标签和互动记录；使用同一版本重复操作仍返回成功。 */
-    void recycle(long id, String revision);
-
-    /** 根据id恢复回收站文章，恢复后设为下架，保留首次发布时间；文章不在回收站时返回 409。 */
-    ArticleProfileVO restore(long id, String revision);
-
-    /** 根据id永久删除回收站文章及相关记录，保留文件和浏览历史；删除和彻底删除的权限范围、版本都要检查。 */
-    void purge(long id, String revision);
 
     /** 按累计阅读或点赞排全站、本月榜，本月用 UTC 首次发布时间筛选，不增加阅读量。 */
     List<HotArticleVO> rankings(String period, String metric, int limit);

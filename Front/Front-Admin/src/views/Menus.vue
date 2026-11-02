@@ -7,6 +7,7 @@ import { flattenMenus, pageRegistry } from '../navigation.js'
 import { nullable } from '../format.js'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import RowStatusActions from '../components/RowStatusActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
@@ -165,9 +166,9 @@ async function save() {
       sortOrder: form.sortOrder,
       isVisible: form.menuType === 'B' ? 0 : form.isVisible,
       keepAlive: form.menuType === 'M' ? form.keepAlive : 0,
-      status: form.status,
     }
     if (!id.value) {
+      body.status = form.status
       body.menuCode = form.menuCode
     }
     await request(id.value ? `/admin/menus/${id.value}` : '/admin/menus', {
@@ -211,9 +212,17 @@ const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
+  if (can('sys:menu:update')) {
+    actions.push(
+      { label: '批量启用', type: 'success', path: 'batch-status', method: 'PUT', body: { status: 1 } },
+      { label: '批量禁用', type: 'warning', path: 'batch-status', method: 'PUT', body: { status: 0 } },
+    )
+  }
   if (can('sys:menu:delete')) {
     actions.push({
       label: '批量删除',
+      accept: (row) => !row.children?.length,
+      invalidMessage: '只能删除叶子菜单，请移除仍有子节点的选择。',
       path: 'batch-delete',
       danger: true,
       warning: '仅可删除叶子节点，同时清理角色菜单关联，不删除接口权限。',
@@ -246,7 +255,6 @@ const batchActions = computed(() => {
         ref="batch" resource="/admin/menus" id-key="menuId"
         :rows="rows" :table="batchTable" :actions="batchActions"
         :disabled="loading || !!error" @completed="load()"
-        :selectable="row => !row.children?.length"
       />
       <el-table
         ref="batchTable"
@@ -285,8 +293,9 @@ const batchActions = computed(() => {
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="enabled" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" width="240">
           <template #default="{ row }">
+            <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('sys:menu:update')" link @click="edit(row)">编辑</el-button>
             <el-button type="danger" v-if="can('sys:menu:delete')" link @click="remove(row)">删除</el-button>
           </template>
@@ -418,7 +427,7 @@ const batchActions = computed(() => {
             缓存页面
             <el-switch v-model="form.keepAlive" :active-value="1" :inactive-value="0" />
           </label>
-          <label>
+          <label v-if="!id">
             启用状态
             <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
           </label>

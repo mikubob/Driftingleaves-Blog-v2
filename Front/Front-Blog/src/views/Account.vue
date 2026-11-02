@@ -270,7 +270,7 @@ async function saveMessage() {
             <p class="muted">
               {{ formatDate(item.createTime) }}
               ·
-              {{ ['待审核', '已通过', '未通过', '已删除'][item.status] }}
+              {{ ['待审核', '已通过', '未通过'][item.status] }}
               <span v-if="item.isSecret === 1">· 悄悄话</span>
             </p>
             <div class="row">
@@ -282,7 +282,7 @@ async function saveMessage() {
                 删除
               </button>
               <button
-                v-if="tab === 'messages' && item.status !== 3 && can('blog:message:updateOwn')"
+                v-if="tab === 'messages' && can('blog:message:updateOwn')"
                 class="text-button"
                 :disabled="busy"
                 @click="editMessage(item)"
@@ -302,7 +302,7 @@ async function saveMessage() {
               <CaptchaField
                 :ref="field => messageCaptcha = field"
                 :request="request"
-                endpoint="/blog/auth/captcha"
+                endpoint="/blog/auth/math-captcha" arithmetic
                 :disabled="busy"
               />
               <div class="message-options">

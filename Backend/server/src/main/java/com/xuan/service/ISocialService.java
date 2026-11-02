@@ -3,10 +3,12 @@ package com.xuan.service;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.SocialCreateDTO;
 import com.xuan.dto.SocialWriteDTO;
 import com.xuan.entity.HomeSocialLink;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.SocialPublicVO;
 
 import java.util.List;
@@ -26,13 +28,14 @@ public interface ISocialService extends IService<HomeSocialLink> {
     ResourceVersion<HomeSocialLink> detail(long id);
 
     /** 新增社交链接，先锁住操作者，资料和成功日志一起提交。 */
-    ResourceVersion<HomeSocialLink> create(SocialWriteDTO request);
+    ResourceVersion<HomeSocialLink> create(SocialCreateDTO request);
 
     /** 根据id更新社交链接，加锁后重新检查原会话、ALL 范围和版本，再完整替换资料。 */
     ResourceVersion<HomeSocialLink> update(long id, SocialWriteDTO request, String revision);
 
-    /** 根据id删除社交链接，加锁并检查版本后，从数据库删除记录。 */
-    void delete(long id, String revision);
     /** 批量删除社交链接，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
+    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
 }

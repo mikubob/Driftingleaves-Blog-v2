@@ -5,7 +5,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 公开评论只有通过和占位两种，不含评论者邮箱或待审内容。
+ * 公开评论只返回审核通过的记录，不含评论者邮箱或待审内容。
  */
 @Data
 public class CommentPublicVO {

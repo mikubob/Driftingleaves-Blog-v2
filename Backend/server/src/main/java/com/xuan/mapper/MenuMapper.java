@@ -42,4 +42,7 @@ public interface MenuMapper extends BaseMapper<SysMenu> {
      * @return 更新数；关联和独立权限保持，由调用方事务提交
      */
     int updateMenu(@Param("menu") SysMenu menu);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

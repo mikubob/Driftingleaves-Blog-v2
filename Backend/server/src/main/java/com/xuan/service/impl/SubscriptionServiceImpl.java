@@ -216,10 +216,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     }
 
     /** 根据id修改订阅状态。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "status", target = "blog:rss", permission = "blog:rss:update", targetIdArgument = 0)
-    public ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
+    private ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
         BlogRssSubscription row = lockAdmin(id, "update");
         RevisionUtils.check(profile(row).revision(), revision);
         if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
@@ -237,14 +234,6 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             }
         }
         return profile(subscriptions.selectById(id));
-    }
-
-    /** 根据id删除订阅。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:rss", permission = "blog:rss:delete", targetIdArgument = 0)
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 后台先查权限，再按ID锁操作者和所属用户，每个等待阶段都重查身份和ALL。 */

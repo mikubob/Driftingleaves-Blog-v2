@@ -189,7 +189,7 @@ public class OAuthServiceImpl implements IOAuthService {
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
             if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-                throw new BusinessException(403, "FORBIDDEN", "后台登录须同时验证密码和邮箱");
+                throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
             }
             return new OAuthLoginResultVO("LOGIN",
                     users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),

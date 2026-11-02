@@ -111,4 +111,7 @@ public interface RoleMapper extends BaseMapper<SysRole> {
      * @return 插入数
      */
     int insertMenus(@Param("roleId") long roleId, @Param("ids") List<Long> ids);
+    /** 全部目标加锁并通过版本检查后，只更新状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
 }

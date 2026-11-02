@@ -70,12 +70,13 @@ public class SessionManager {
         return StpUtil.getTokenValue();
     }
 
-    /** 检查后台登录，必须已通过密码和邮箱验证，前台及旧会话不能代替。 */
+    /** 检查后台登录，只接受后台账密或邮箱认证，前台会话不能代替。 */
     public void requireAdminAuthentication() {
         String token = currentToken();
         SaSession session = token == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
-        if (session == null || !"PASSWORD_EMAIL".equals(session.get("method"))) {
-            throw new BusinessException(403, "FORBIDDEN", "请使用账号密码、邮箱验证码和图形验证码登录后台");
+        Object method = session == null ? null : session.get("method");
+        if (!"ADMIN_PASSWORD".equals(method) && !"ADMIN_EMAIL".equals(method)) {
+            throw new BusinessException(403, "FORBIDDEN", "请使用账号密码或邮箱验证码登录后台");
         }
     }
 

@@ -1,5 +1,5 @@
 import { validateOnlineTicket } from '../../shared/online.mjs'
-import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from '../../shared/captcha.mjs'
+import { isCaptchaId, setCaptchaHeaders, validateCaptcha, validateArithmeticCaptcha } from '../../shared/captcha.mjs'
 import { reportRequestFailure } from '../../shared/requestFailure.mjs'
 
 export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
@@ -100,13 +100,13 @@ const message = (value) => model(value, {
   messageId: isId, content: text, htmlContent: text, contentFormat: flag,
   location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
   isSecret: flag, isOwn: (item) => typeof item === 'boolean',
-  status: (item) => [0, 1, 2, 3].includes(item), createTime: time,
+  status: (item) => [0, 1, 2].includes(item), createTime: time,
   author: (item) => item === null || author(item),
 })
 const comment = (value) => model(value, {
   commentId: isId, articleId: isId, content: text, createTime: time,
   location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
-  status: (item) => [0, 1, 2, 3].includes(item),
+  status: (item) => [0, 1, 2].includes(item),
 })
 const session = (value) => model(value, {
   tokenType: (item) => item === 'Bearer', accessToken: (item) => text(item) && !!item, user: me,
@@ -142,9 +142,8 @@ function validateData(path, data, method) {
     })
   } else if (read && /^\/blog\/articles\/[^/]+$/.test(route)) {
     check = (value) => article(value)
-      && (!Object.hasOwn(value, 'markdownContent') || text(value.markdownContent))
       && model(value, {
-        htmlContent: text, wordCount: count, readingMinutes: (item) => Number.isInteger(item) && item >= 1,
+        markdownContent: text, wordCount: count, readingMinutes: (item) => Number.isInteger(item) && item >= 1,
         prevArticle: (item) => item === null || navigation(item),
         nextArticle: (item) => item === null || navigation(item),
         relatedArticles: (items) => Array.isArray(items) && items.every(navigation),
@@ -283,6 +282,9 @@ export async function request(path, { body, revision, captcha, ...options } = {}
   }
   if (path === '/blog/auth/captcha') {
     validateCaptcha(result.data)
+  }
+  if (path === '/blog/auth/math-captcha') {
+    validateArithmeticCaptcha(result.data)
   }
   validateFields(result.data)
   validateData(path, result.data, options.method || 'GET')

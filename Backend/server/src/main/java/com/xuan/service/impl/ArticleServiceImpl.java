@@ -194,8 +194,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         row = requireArticle(articles.publicBySlug(slug, at, false));
         // 先锁定文章并确认公开状态，再读正文、关联和互动；查推荐不会增加阅读量。
         String markdown = content(row.getArticleId()).getMarkdownContent();
-        References references = resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
-        ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown, references.html());
+        resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
+        ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown);
         ArticlePublicDetailVO value = BeanUtil.copyProperties(cached, ArticlePublicDetailVO.class);
         value.setMarkdownContent(markdown);
         value.setViewCount(row.getViewCount());
@@ -209,11 +209,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /** 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态、正文和附件，并查询当前互动数。 */
     @Override
     @Cacheable(cacheNames = "articleDetail", key = "T(com.xuan.utils.TokenUtils).digest(#row.slug + ':' + #row.articleId + ':' + #markdown + ':' + #row.coverUrl)")
-    public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown, String html) {
+    public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown) {
         LocalDateTime at = now();
         ArticleContent parsed = MarkdownUtils.article(markdown);
         ArticlePublicDetailVO value = publicView(row, new ArticlePublicDetailVO());
-        value.setHtmlContent(html);
         value.setWordCount(parsed.wordCount());
         value.setReadingMinutes(parsed.readingMinutes());
         value.setPrevArticle(articles.adjacent(row, true, at));
@@ -364,24 +363,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @param revision 当前业务版本
      * @return 新详情及版本；首次发布写当前UTC，后续保留，回收站拒绝变更
      */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "status", target = "blog:article", permission = "blog:article:publish", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
-    public ArticleProfileVO changeStatus(long id, int status, String revision) {
+    private ArticleProfileVO changeStatus(long id, int status, String revision) {
         LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
         ArticleRow article = locked.article();
         requireNormal(article);
@@ -413,24 +395,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @param id 目标文章
      * @param revision 当前版本；已回收仍先检查该版本
      */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:article", permission = "blog:article:delete", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
-    public void recycle(long id, String revision) {
+    private void recycle(long id, String revision) {
         ArticleRow article = lockArticle(id, "delete", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
             article.setDeletedAt(now());
@@ -445,24 +410,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @param revision 当前回收站版本
      * @return 清空deletedAt后的详情，首次发布时间保留，非回收站409
      */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "restore", target = "blog:article", permission = "blog:article:restore", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
-    public ArticleProfileVO restore(long id, String revision) {
+    private ArticleProfileVO restore(long id, String revision) {
         ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
             throw new BusinessException(409, "STATE_CONFLICT", "文章不在回收站");
@@ -474,24 +422,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /** 永久删除文章前，先锁住全部评论，再从子回复到父评论依次删除；保留文件，成功日志和文章相关记录一起提交。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "purge", target = "blog:article", permission = "blog:article:purge", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
-    public void purge(long id, String revision) {
+    private void purge(long id, String revision) {
         ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
             throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
@@ -741,7 +672,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * 同一个只读事务或加锁事务中取后台详情并计算版本，Markdown 和升序 tagIds 都要算进去。
      *
      * @param row 最新文章资料
-     * @return 安全后台HTML及带引号版本，不包含计数、审计时间和根据正文计算的阅读信息
+     * @return 后台Markdown及带引号版本，不包含计数、审计时间和根据正文计算的阅读信息
      */
     private ArticleProfileVO profile(ArticleRow row) {
         ArticleAdminDetailVO value = adminView(row, new ArticleAdminDetailVO());
@@ -749,8 +680,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setCategoryId(row.getCategoryId());
         value.setTagIds(value.getTags().stream().map(BlogTag::getTagId).toList());
         value.setMarkdownContent(markdown);
-        value.setHtmlContent(
-                resources.adminHtml(resources.inspect(row.getArticleId(), markdown, row.getCoverUrl()).html()));
+        resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         return new ArticleProfileVO(value, revision(row, markdown, value.getTagIds()));
     }
 
@@ -857,10 +787,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 统计可见评论，评论自身必须审核通过，全部上级评论也必须已通过或为删除占位。
+     * 统计可见评论，评论自身必须审核通过，全部上级评论也必须已通过。
      *
      * @param id 当前文章
-     * @return 不含待审、驳回、占位及隐藏后代的真实明细数量，无额外缓存或SQL计数列
+     * @return 不含待审、驳回及隐藏后代的真实明细数量，无额外缓存或SQL计数列
      */
     private long commentCount(long id) {
         List<CommentNode> nodes = articles.commentNodes(id);

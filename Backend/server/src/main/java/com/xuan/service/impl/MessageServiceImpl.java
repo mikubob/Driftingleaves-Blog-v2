@@ -69,7 +69,6 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> implements IMessageService {
 
-    private static final String DELETED = "该留言已删除";
     private final MessageMapper messages;
     private final SiteConfigMapper configs;
     private final UserMapper users;
@@ -173,14 +172,11 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireMember("updateOwn");
         requireEnabled(policy);
 
-        // 2. 锁住全部上级留言后，重新检查本人范围和版本，删除占位不能恢复原文。
+        // 2. 锁住全部上级留言后，重新检查本人范围和版本。
         required(messages.scoped(id, actor));
         lockPath(id, "updateOwn", false);
         MessageRow row = required(messages.scoped(id, requireMember("updateOwn")));
         RevisionUtils.check(revision(row), revision);
-        if (row.getStatus() == 3) {
-            throw conflict();
-        }
 
         // 3. 只修改可编辑内容，保留父关系和私密性，并重新进入待审状态。
         row.setContent(request.getContent());
@@ -227,35 +223,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     public ResourceVersion<MessagePrivateVO> adminDetail(long id) {
         long actor = requireAdmin("query");
         return profile(required(messages.scoped(id, null)), actor);
-    }
-
-    /** 根据id审核留言。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "review", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
-    public ResourceVersion<MessagePrivateVO> review(long id, int status, String expected) {
-        // 1. 锁住配置和全部上级留言后检查版本，上级隐藏留言未通过时，不能单独让下级回复通过。
-        List<BlogMessage> path = lockAdmin(id, "review");
-        MessageRow row = required(messages.scoped(id, null));
-        RevisionUtils.check(revision(row), expected);
-        if (row.getStatus() == 3) {
-            throw conflict();
-        }
-        if (status == 1 && path.subList(0, path.size() - 1).stream()
-                .anyMatch(parent -> parent.getStatus() != 1 && parent.getStatus() != 3)) {
-            throw conflict();
-        }
-
-        // 2. 状态实际变化时才写入，只有本次转为通过才登记提交后的通知。
-        boolean approved = row.getStatus() != 1 && status == 1;
-        if (row.getStatus() != status) {
-            row.setStatus(status);
-            messages.change(row, null);
-        }
-        if (approved) {
-            notifications.afterMessageApproved(id);
-        }
-        return profile(required(messages.scoped(id, null)), sessions.currentUserId());
     }
 
     /** 在后台回复留言。 */
@@ -339,7 +306,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return path;
     }
 
-    /** 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审、驳回或删除占位的目标。 */
+    /** 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审或驳回的目标。 */
     private void requireReplyable(List<BlogMessage> path, long actor, boolean admin) {
         if (CollUtil.isEmpty(path)) {
             return;
@@ -349,7 +316,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 actor)) {
             throw missing();
         }
-        if (target.getStatus() != 1 || path.stream().anyMatch(row -> row.getStatus() != 1 && row.getStatus() != 3)) {
+        if (target.getStatus() != 1 || path.stream().anyMatch(row -> row.getStatus() != 1)) {
             throw conflict();
         }
     }
@@ -449,24 +416,23 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
                 value.htmlContent(), value.contentFormat(),
                 value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
-                value.updateTime(), row.getStatus() == 3 ? 0 : row.getNotifyReply(), value.location(),
+                value.updateTime(), row.getNotifyReply(), value.location(),
                 value.userAgentOs(), value.userAgentBrowser());
     }
 
-    /** 删除占位永不返回旧原文，纯文本转义并保留换行。 */
+    /** 组装留言展示内容，纯文本转义并保留换行。 */
     private MessagePublicVO publicView(MessageRow row, Long viewer) {
-        boolean deleted = row.getStatus() == 3;
-        String content = deleted ? DELETED : row.getContent();
-        int format = deleted ? 0 : row.getContentFormat();
+        String content = row.getContent();
+        int format = row.getContentFormat();
         String html = format == 1 ? MarkdownUtils.toHtml(content) : "<p>" + content.replace("&", "&amp;")
                 .replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>\n") + "</p>";
         return new MessagePublicVO(row.getMessageId(), row.getParentId(),
-                deleted ? null : new ArticlePublicVO.Author(row.getUserId(), row.getAuthorNickname(),
+                new ArticlePublicVO.Author(row.getUserId(), row.getAuthorNickname(),
                         row.getAuthorAvatar()),
                 content, html, format, row.getIsSecret(), row.getStatus(), row.getEditedAt(),
                 Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime(),
-                deleted ? null : row.getLocation(), deleted ? null : row.getUserAgentOs(),
-                deleted ? null : row.getUserAgentBrowser());
+                row.getLocation(), row.getUserAgentOs(),
+                row.getUserAgentBrowser());
     }
 
     /** 返回当前留言资料及对应版本。 */
@@ -518,12 +484,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             List<BlogMessage> path = lockAdmin(id, "review");
             MessageRow row = required(messages.scoped(id, null));
             RevisionUtils.check(revision(row), item.revision());
-            if (row.getStatus() == 3) {
-                throw conflict();
-            }
             if (status == 1) {
                 for (BlogMessage parent : path.subList(0, path.size() - 1)) {
-                    if (parent.getStatus() != 1 && parent.getStatus() != 3 && !selected.contains(parent.getMessageId())) {
+                    if (parent.getStatus() != 1 && !selected.contains(parent.getMessageId())) {
                         throw conflict();
                     }
                 }

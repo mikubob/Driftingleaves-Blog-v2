@@ -24,6 +24,9 @@ public interface CategoryMapper extends BaseMapper<BlogCategory> {
     /** 先锁住分类再检查版本，调用方要在写事务里使用。 */
     BlogCategory lockById(@Param("id") long id);
 
+    /** 持有分类锁并通过版本检查后，只修改展示状态。 */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
+
     /** 把可空说明也写进去，避免清空说明时被默认更新策略忽略。 */
     int updateCategory(@Param("category") BlogCategory category);
 }

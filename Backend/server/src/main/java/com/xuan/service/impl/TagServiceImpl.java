@@ -138,26 +138,6 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return profile(tags.selectById(id));
     }
 
-    /** 删除标签时由外键一起清掉关联，文章下次计算版本就会发现标签集合已变。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:tag", permission = "blog:tag:delete", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true)
-    })
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
-    }
-
     /** 先锁操作者、检查权限，再锁标签；等待结束后还要重新检查权限。 */
     private BlogTag lockTag(long id, String operation) {
         users.lockById(sessions.currentUserId());

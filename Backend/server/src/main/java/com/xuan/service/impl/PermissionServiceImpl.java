@@ -19,6 +19,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.PermissionProfileVO;
 import com.xuan.vo.PermissionVO;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +30,9 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
@@ -101,7 +104,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      * @param permissionId 目标权限
      * @param request 全部允许字段，不接受权限码
      * @param revision 详情业务版本；缺失、格式错误、过期分别返回 428、400、412
-     * @return 新资料和版本；状态变化撤销全部关联用户会话，保护或 Redis 失败整笔回滚
+     * @return 新资料和版本；不修改状态或授权关联，写入失败整笔回滚
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -109,43 +112,18 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
             = 0)
     public PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision) {
         // 1. 锁内重查原会话、启用身份、后台和业务权限、版本，不能拿等待前的授权继续写。
-        List<Long> affected = lockUsers(permissionId, "sys:permission:update");
+        lockUsers(permissionId, "sys:permission:update");
         SysPermission permission = permissions.lockById(permissionId);
         requireAdmin("sys:permission:update");
         permission = requirePermission(permission);
         checkRevision(permission, revision);
-        boolean changed = !permission.getStatus().equals(request.getStatus());
 
-        // 2. 禁用只让授权暂时无效，不删除角色关联或菜单访问限制。
+        // 2. 只修改资料，保留状态、角色关联和菜单访问限制。
         permission.setPermissionName(request.getPermissionName());
         permission.setModule(request.getModule());
         permission.setDescription(request.getDescription());
-        permission.setStatus(request.getStatus());
         permissions.updatePermission(permission);
-        if (changed) {
-            // 3. 先确认修改后仍有有效管理员，再撤销所有关联用户的会话，成功后才允许提交。
-            if (AuthorizationProvider.ADMIN_PERMISSIONS.contains(permission.getPermissionCode())
-                    && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
-                throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
-            }
-            revoke(affected);
-        }
         return profile(permissions.selectById(permissionId));
-    }
-
-    /**
-     * 同一锁事务里查版本和删除限制，再物理删除，角色权限关联由数据库级联清理。
-     *
-     * @param permissionId 目标权限
-     * @param revision 当前版本；状态限制不能绕过版本检查
-     * @throws BusinessException 固定后端权限禁止删除，任意菜单引用返回 RESOURCE_IN_USE；撤销失败回滚全部删除
-     */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "sys:permission", permission = "sys:permission:delete", targetIdArgument
-            = 0)
-    public void delete(long permissionId, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(permissionId), revision)));
     }
 
     /**
@@ -296,6 +274,58 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
         revoke(new ArrayList<>(affected));
+    }
+
+    /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "sys:permission", permission = "sys:permission:update")
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        requireAdmin("sys:permission:update");
+        var sorted = BatchUtils.sorted(items);
+        Map<Long, List<Long>> related = new HashMap<>();
+        Set<Long> lockedUsers = new TreeSet<>();
+        lockedUsers.add(sessions.currentUserId());
+        for (BatchItemDTO item : sorted) {
+            long id = IdUtils.parse(item.id());
+            List<Long> userIds = permissions.userIds(id);
+            related.put(id, userIds);
+            lockedUsers.addAll(userIds);
+        }
+        for (long userId : lockedUsers) {
+            users.lockById(userId);
+        }
+        List<SysPermission> rows = new ArrayList<>();
+        for (BatchItemDTO item : sorted) {
+            SysPermission row = permissions.lockById(IdUtils.parse(item.id()));
+            requireAdmin("sys:permission:update");
+            row = requirePermission(row);
+            checkRevision(row, item.revision());
+            rows.add(row);
+        }
+
+        Set<Long> revoked = new TreeSet<>();
+        Map<Long, String> versions = new HashMap<>();
+        boolean protect = false;
+        for (SysPermission row : rows) {
+            long id = row.getPermissionId();
+            if (row.getStatus() != status) {
+                permissions.updateStatus(id, status);
+                row.setStatus(status);
+                revoked.addAll(related.get(id));
+                protect |= AuthorizationProvider.ADMIN_PERMISSIONS.contains(row.getPermissionCode());
+            }
+            versions.put(id, profile(row).revision());
+        }
+        if (protect && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
+            throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
+        }
+        // 版本和整批校验已完成，撤销本人的会话后不再重查当前 Token。
+        revoke(new ArrayList<>(revoked));
+        return BatchUtils.versions(items, versions);
     }
 
 }

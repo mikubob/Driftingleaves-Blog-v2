@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryQueryDTO;
@@ -10,6 +11,7 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICategoryService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CategoryProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -59,13 +61,20 @@ public class CategoryController {
                 .body(Result.ok(value));
     }
 
-    /** 根据id更新分类，完整替换资料，加锁后检查版本，未传版本时返回 428。 */
+    /** 根据id更新分类，完整替换资料但不修改展示状态，加锁后检查版本，未传版本时返回 428。 */
     @PutMapping("/{categoryId}")
     @SaCheckPermission("blog:category:update")
     public ResponseEntity<Result<BlogCategory>> update(@PathVariable String categoryId,
             @Valid @RequestBody CategoryUpdateDTO body,
             @RequestHeader(value = "If-Revision", required = false) String revision) {
         return profile(categories.update(IdUtils.parse(categoryId), body, revision));
+    }
+
+    /** 批量展示或隐藏分类，单条也走此接口，任一失败则整批回滚。 */
+    @PutMapping("/batch-status")
+    @SaCheckPermission("blog:category:update")
+    public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
+        return Result.ok(categories.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
     /** 批量删除分类，单条也走此接口，业务层统一检查权限、版本并处理失败。 */

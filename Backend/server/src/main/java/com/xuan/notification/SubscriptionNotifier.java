@@ -127,7 +127,7 @@ public class SubscriptionNotifier {
             return;
         }
         MessageRow parent = messages.scoped(reply.getParentId(), null);
-        if (parent == null || parent.getStatus() == 3 || parent.getNotifyReply() != 1 || parent.getUserId()
+        if (parent == null || parent.getNotifyReply() != 1 || parent.getUserId()
                 .equals(reply.getUserId())) {
             return;
         }

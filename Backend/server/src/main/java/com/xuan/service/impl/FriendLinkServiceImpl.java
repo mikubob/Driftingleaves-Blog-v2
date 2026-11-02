@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
@@ -20,6 +21,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
 import lombok.RequiredArgsConstructor;
@@ -30,8 +32,11 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 友链维护结果直接用于公开展示，写入和成功审计一起提交。
@@ -78,7 +83,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:link", permission = "blog:link:create")
     @CacheEvict(cacheNames = "links", allEntries = true)
-    public BlogFriendLink create(LinkWriteDTO request) {
+    public BlogFriendLink create(LinkCreateDTO request) {
         validateUrls(request);
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
@@ -107,18 +112,8 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         row.setAvatar(request.getAvatar());
         row.setDescription(request.getDescription());
         row.setSortOrder(request.getSortOrder());
-        row.setStatus(request.getStatus());
         links.updateLink(row);
         return profile(links.selectById(id));
-    }
-
-    /** 版本通过后物理删除，成功日志失败时删除也会回滚。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:link", permission = "blog:link:delete", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "links", allEntries = true)
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
     /** 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。 */
@@ -190,6 +185,29 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
             long id = IdUtils.parse(item.id());
             links.deleteById(id);
         }
+    }
+
+    /** 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "blog:link", permission = "blog:link:update")
+    @CacheEvict(cacheNames = "links", allEntries = true)
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        List<BlogFriendLink> rows = new ArrayList<>();
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
+            BlogFriendLink row = lockLink(IdUtils.parse(item.id()), "update");
+            checkRevision(row, item.revision());
+            rows.add(row);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (BlogFriendLink row : rows) {
+            if (row.getStatus() != status) {
+                links.updateStatus(row.getLinkId(), status);
+                row.setStatus(status);
+            }
+            versions.put(row.getLinkId(), profile(row).revision());
+        }
+        return BatchUtils.versions(items, versions);
     }
 
 }

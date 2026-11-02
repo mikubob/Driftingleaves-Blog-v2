@@ -1005,13 +1005,29 @@ h2 {
   margin-top: 12px;
   color: #909399;
   font-size: 13px;
+  line-height: 1.7;
+}
+
+.login-methods {
+  display: flex;
+  width: 100%;
+  margin-top: 24px;
+}
+
+.login-methods .el-radio-button {
+  flex: 1;
+}
+
+.login-methods .el-radio-button__inner {
+  display: block;
+  width: 100%;
 }
 
 .login-form {
   display: flex;
   flex-direction: column;
   gap: 11px;
-  margin-top: 37px;
+  margin-top: 24px;
 }
 
 .login-form > label {
@@ -1020,12 +1036,73 @@ h2 {
   font-size: 12px;
 }
 
+.login-form > label:first-child {
+  margin-top: 0;
+}
+
 .login-form .el-input__wrapper {
   min-height: 44px;
 }
 
+.login-page .login-form .captcha-field {
+  gap: 10px;
+  margin: 10px 0 0;
+  color: #606266;
+  font-size: 12px;
+}
+
+.login-page .login-form .captcha-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 128px;
+  align-items: stretch;
+}
+
+.login-page .login-form .captcha-controls input {
+  width: 100%;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border-color: #e4e7ed;
+  color: #606266;
+  font-size: 14px;
+}
+
+.login-page .login-form .captcha-controls input::placeholder {
+  color: #a8abb2;
+}
+
+.login-page .login-form .captcha-controls input:focus-visible {
+  border-color: #18181b;
+  outline: 2px solid #d1d1d5;
+  outline-offset: 2px;
+}
+
+.login-page .login-form .captcha-controls button {
+  min-width: 0;
+  min-height: 0;
+  height: 44px;
+  border-color: #e4e7ed;
+}
+
+.login-page .login-form .captcha-controls img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.login-page .login-form .captcha-field small {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.login-form > .el-button {
+  margin-left: 0;
+}
+
 .login-submit {
   width: 100%;
+  height: 44px;
   margin-top: 15px;
 }
 
@@ -1043,6 +1120,8 @@ h2 {
   margin-top: 29px;
   color: #a1a1aa;
   font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
 }
 
 .login-panel > footer {

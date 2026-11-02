@@ -1,4 +1,4 @@
-/** 把 V2 接口字段转换成老组件需要的属性，id和计数保持字符串。 */
+/** 整理文章和互动组件使用的展示字段，id和计数保持字符串。 */
 export function articleView(article) {
   return {
     ...article,
@@ -6,7 +6,6 @@ export function articleView(article) {
     coverImage: article.coverUrl,
     categoryName: article.category?.categoryName,
     tagNames: article.tags?.map((tag) => tag.tagName) || [],
-    contentHtml: article.htmlContent,
     readingTime: article.readingMinutes,
   }
 }

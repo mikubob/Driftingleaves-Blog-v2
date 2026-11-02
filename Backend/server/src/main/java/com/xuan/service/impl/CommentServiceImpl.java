@@ -62,7 +62,6 @@ import java.util.TreeSet;
 @RequiredArgsConstructor
 public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> implements ICommentService {
 
-    private static final String DELETED = "该评论已删除";
     private final CommentMapper comments;
     private final ObjectProvider<ICommentService> self;
     private final ArticleMapper articles;
@@ -180,30 +179,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /** 审核评论，即使状态不变也先检查版本；驳回父评论后不用逐条修改下级回复，查询时会重新判断是否可见。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "review", target = "blog:comment", permission = "blog:comment:review", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "comments", allEntries = true)
-    public CommentProfileVO review(long id, int status, String expected) {
+    private CommentProfileVO review(long id, int status, String expected) {
         CommentRow row = lockComment(id, "review", false);
         checkRevision(row, expected);
-        if (row.getStatus() == 3) {
-            throw conflict("已删除评论不能重新审核");
-        }
         if (row.getStatus() != status) {
             row.setStatus(status);
             comments.change(row, requireAdmin("review"), null);
         }
         return profile(comments.scoped(id, requireAdmin("review"), null, false));
-    }
-
-    /** 删除评论及全部子回复，只使用管理删除权限的范围，不能借用查询或审核权限的 ALL 范围。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "blog:comment", permission = "blog:comment:moderate", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "comments", allEntries = true)
-    public void moderate(long id) {
-        moderateBatch(List.of(Long.toString(id)));
     }
 
     /** 锁前仅定位文章，锁后重新执行本次操作的身份和 SQL 范围检查。 */
@@ -337,19 +320,17 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 组装本人可读的评论资料，删除记录只返回占位内容。
+     * 组装本人可读的评论资料。
      */
     private <T extends CommentOwnVO> T ownView(CommentRow row, T value) {
         value.setCommentId(row.getCommentId());
         value.setArticleId(row.getArticleId());
         value.setUserId(row.getUserId());
         value.setParentId(row.getParentId());
-        value.setContent(row.getStatus() == 3 ? DELETED : row.getContent());
-        if (row.getStatus() != 3) {
-            value.setLocation(row.getLocation());
-            value.setUserAgentOs(row.getUserAgentOs());
-            value.setUserAgentBrowser(row.getUserAgentBrowser());
-        }
+        value.setContent(row.getContent());
+        value.setLocation(row.getLocation());
+        value.setUserAgentOs(row.getUserAgentOs());
+        value.setUserAgentBrowser(row.getUserAgentBrowser());
         value.setStatus(row.getStatus());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
@@ -367,19 +348,17 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 只返回前台评论字段及可见回复数，删除占位不还原原文。
+     * 只返回前台评论字段及可见回复数。
      */
     private CommentPublicVO publicView(CommentRow row) {
         CommentPublicVO value = new CommentPublicVO();
         value.setCommentId(row.getCommentId());
         value.setArticleId(row.getArticleId());
         value.setParentId(row.getParentId());
-        value.setContent(row.getStatus() == 3 ? DELETED : row.getContent());
-        if (row.getStatus() != 3) {
-            value.setLocation(row.getLocation());
-            value.setUserAgentOs(row.getUserAgentOs());
-            value.setUserAgentBrowser(row.getUserAgentBrowser());
-        }
+        value.setContent(row.getContent());
+        value.setLocation(row.getLocation());
+        value.setUserAgentOs(row.getUserAgentOs());
+        value.setUserAgentBrowser(row.getUserAgentBrowser());
         value.setStatus(row.getStatus());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
@@ -389,10 +368,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 删除占位不返回作者，其余只返回公开昵称和头像。
+     * 返回作者的公开昵称和头像。
      */
     private Author author(CommentRow row) {
-        return row.getStatus() == 3 ? null : new Author(row.getUserId(), row.getAuthorNickname(),
+        return new Author(row.getUserId(), row.getAuthorNickname(),
                 row.getAuthorAvatar());
     }
 
@@ -423,9 +402,6 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             String expected = item.revision();
             CommentRow row = lockComment(id, "review", false);
             checkRevision(row, expected);
-            if (row.getStatus() == 3) {
-                throw conflict("已删除评论不能重新审核");
-            }
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {

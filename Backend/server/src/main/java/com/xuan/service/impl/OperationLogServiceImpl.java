@@ -69,14 +69,6 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
                 row.getOperationTime(), data);
     }
 
-    /** 根据id删除操作日志。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "sys:log", permission = "sys:log:delete", targetIdArgument = 0)
-    public void delete(long id) {
-        deleteBatch(List.of(Long.toString(id)));
-    }
-
     /** 检查本次日志操作权限，查询范围不能代替删除范围，SELF 不能当作 ALL。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();

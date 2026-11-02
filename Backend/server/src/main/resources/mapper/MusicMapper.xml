@@ -22,7 +22,7 @@
     <update id="replace">
         UPDATE blog_music SET title=#{row.title}, artist=#{row.artist}, duration_seconds=#{row.durationSeconds},
         cover_url=#{row.coverUrl}, audio_url=#{row.audioUrl}, lyric_url=#{row.lyricUrl}, lyric_type=#{row.lyricType},
-        sort_order=#{row.sortOrder}, status=#{row.status} WHERE music_id = #{row.musicId}
+        sort_order=#{row.sortOrder} WHERE music_id = #{row.musicId}
     </update>
 
     <select id="hasFileReference" resultType="boolean">
@@ -35,4 +35,8 @@
         AND (cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
         ORDER BY music_id LIMIT 1 FOR UPDATE
     </select>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE blog_music SET status = #{status} WHERE music_id = #{id}
+    </update>
 </mapper>

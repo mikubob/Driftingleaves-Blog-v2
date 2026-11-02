@@ -8,6 +8,7 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import RowStatusActions from '../components/RowStatusActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
 
@@ -65,16 +66,19 @@ async function save() {
 
   saving.value = true
   try {
+    const body = {
+      permissionName: form.permissionName,
+      module: form.module,
+      description: nullable(form.description),
+    }
+    if (!id.value) {
+      body.status = form.status
+      body.permissionCode = form.permissionCode
+    }
     await request(id.value ? `/admin/permissions/${id.value}` : '/admin/permissions', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
-      body: {
-        ...(id.value ? {} : { permissionCode: form.permissionCode }),
-        permissionName: form.permissionName,
-        module: form.module,
-        description: nullable(form.description),
-        status: form.status,
-      },
+      body,
     })
     dialog.value = false
     ElMessage.success('权限已保存')
@@ -111,6 +115,12 @@ const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
+  if (can('sys:permission:update')) {
+    actions.push(
+      { label: '批量启用', type: 'success', path: 'batch-status', method: 'PUT', body: { status: 1 } },
+      { label: '批量禁用', type: 'warning', path: 'batch-status', method: 'PUT', body: { status: 0 }, warning: '状态变化，相关用户的会话将被撤销，必须保留至少一个有效管理员。' },
+    )
+  }
   if (can('sys:permission:delete')) {
     actions.push({
       label: '批量删除',
@@ -205,8 +215,9 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="240" fixed="right">
           <template #default="{ row }">
+            <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('sys:permission:update')" link @click="edit(row)">编辑</el-button>
             <el-button type="danger" v-if="can('sys:permission:delete')" link @click="remove(row)">
               删除
@@ -255,7 +266,7 @@ const batchActions = computed(() => {
           说明
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="255" />
         </label>
-        <label>
+        <label v-if="!id">
           展示状态
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
         </label>

@@ -2,8 +2,6 @@ package com.xuan.dto;
 
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -12,7 +10,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * 创建和PUT均须显式提供全部字段，可空字段用null清空。
+ * 创建和修改共用资料字段，可空字段用null清空；状态不随资料修改。
  */
 @Getter
 public class SkillWriteDTO {
@@ -29,11 +27,6 @@ public class SkillWriteDTO {
 
     @NotNull
     private Integer sortOrder;
-
-    @NotNull
-    @Min(0)
-    @Max(1)
-    private Integer status;
 
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
@@ -58,14 +51,9 @@ public class SkillWriteDTO {
         sortOrder = value;
     }
 
-    public void setStatus(Integer value) {
-        present.add("status");
-        status = value;
-    }
-
     /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
     @AssertTrue(message = "必须提供全部可写字段，可空字段可为null")
     public boolean isComplete() {
-        return present.size() == 5;
+        return present.size() == 4;
     }
 }

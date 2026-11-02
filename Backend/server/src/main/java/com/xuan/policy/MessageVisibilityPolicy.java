@@ -52,7 +52,7 @@ public final class MessageVisibilityPolicy {
         Long recipient = null;
         for (MessageNode node : path) {
             boolean own = Objects.equals(viewer, node.getUserId());
-            if (node.getStatus() != 1 && node.getStatus() != 3 && !own) {
+            if (node.getStatus() != 1 && !own) {
                 return false;
             }
             if (recipient == null && node.getIsSecret() == 1) {

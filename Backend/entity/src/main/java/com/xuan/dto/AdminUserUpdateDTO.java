@@ -3,12 +3,9 @@ package com.xuan.dto;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
 import lombok.Getter;
-import lombok.Setter;
 
 /**
  * 修改资料要填全，可空字段也不能漏；用户名、密码和角色不在这里修改。
@@ -29,12 +26,6 @@ public class AdminUserUpdateDTO {
 
     @TextLength(max = 500)
     private String intro;
-
-    @NotNull
-    @Min(0)
-    @Max(1)
-    @Setter
-    private Integer status;
 
     @Getter(AccessLevel.NONE)
     private boolean emailPresent;

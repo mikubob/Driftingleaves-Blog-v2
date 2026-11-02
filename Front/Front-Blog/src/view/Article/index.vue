@@ -130,7 +130,7 @@ function updateReadingProgress() {
     readingProgress.value = Math.min(100, Math.max(0, (window.scrollY - start) / Math.max(1, end - start) * 100))
   })
 }
-watch(() => article.value?.contentHtml, async () => {
+watch(() => article.value?.markdownContent, async () => {
   await nextTick()
   onContentRendered()
   updateReadingProgress()
@@ -172,7 +172,6 @@ onUnmounted(() => {
             <div ref="articleContentRef" class="article-content" @click.capture="onAnchorClick">
               <MarkdownPreview
                 :markdown="article.markdownContent"
-                :html="article.contentHtml"
                 class="article-body"
                 @rendered="onContentRendered"
               />
@@ -290,7 +289,7 @@ onUnmounted(() => {
                   /2000
                 </div>
               </div>
-              <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
+              <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/math-captcha" arithmetic :disabled="submitting" />
               <div class="form-options">
                 <div class="form-actions">
                   <EmojiPicker @select="insertCommentEmoji" />
@@ -313,7 +312,7 @@ onUnmounted(() => {
         </div>
         <!-- 右侧: 目录 -->
         <aside class="article-sidebar">
-          <TableOfContents :content-html="article.contentHtml" :progress="readingProgress" />
+          <TableOfContents :markdown="article.markdownContent" :progress="readingProgress" />
         </aside>
       </div>
     </template>

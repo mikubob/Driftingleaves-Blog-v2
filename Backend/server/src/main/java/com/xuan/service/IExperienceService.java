@@ -2,11 +2,13 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.ExperienceCreateDTO;
 import com.xuan.dto.ExperienceQueryDTO;
 import com.xuan.dto.ExperienceWriteDTO;
 import com.xuan.entity.CvExperience;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.ExperiencePublicVO;
 
 import java.util.List;
@@ -26,13 +28,14 @@ public interface IExperienceService extends IService<CvExperience> {
     ResourceVersion<CvExperience> detail(long id);
 
     /** 新增经历，先锁住操作者，资料和成功日志一起提交。 */
-    ResourceVersion<CvExperience> create(ExperienceWriteDTO request);
+    ResourceVersion<CvExperience> create(ExperienceCreateDTO request);
 
     /** 根据id更新经历，加锁后重新检查原会话、ALL 范围和版本，再完整替换资料。 */
     ResourceVersion<CvExperience> update(long id, ExperienceWriteDTO request, String revision);
 
-    /** 根据id删除经历，加锁并检查版本后，从数据库删除记录。 */
-    void delete(long id, String revision);
     /** 批量删除经历，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
+    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
 }

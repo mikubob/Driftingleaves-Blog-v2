@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.SkillCreateDTO;
 import com.xuan.dto.SkillWriteDTO;
 import com.xuan.entity.CvSkill;
 import com.xuan.exception.BusinessException;
@@ -21,6 +22,7 @@ import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.SkillPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -30,8 +32,11 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 技能业务实现，公开展示和后台管理读同一张表，成功日志写入失败时资料一起回滚。
@@ -76,12 +81,13 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "cv:skill", permission = "cv:skill:create")
     @CacheEvict(cacheNames = "skills", allEntries = true)
-    public ResourceVersion<CvSkill> create(SkillWriteDTO request) {
+    public ResourceVersion<CvSkill> create(SkillCreateDTO request) {
         validate(request);
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
         CvSkill row = new CvSkill();
         assign(row, request);
+        row.setStatus(request.getStatus());
         items.insert(row);
         return profile(items.selectById(row.getSkillId()));
     }
@@ -100,15 +106,6 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return profile(items.selectById(id));
     }
 
-    /** 根据id删除技能。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "cv:skill", permission = "cv:skill:delete", targetIdArgument = 0)
-    @CacheEvict(cacheNames = "skills", allEntries = true)
-    public void delete(long id, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
-    }
-
     /** 地址只检查和保存，不下载媒体或删除外部对象。 */
     private void validate(SkillWriteDTO request) {
 
@@ -123,7 +120,6 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         row.setDescription(request.getDescription());
         row.setIcon(request.getIcon());
         row.setSortOrder(request.getSortOrder());
-        row.setStatus(request.getStatus());
     }
 
     /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
@@ -175,6 +171,29 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
             long id = IdUtils.parse(item.id());
             this.items.deleteById(id);
         }
+    }
+
+    /** 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "cv:skill", permission = "cv:skill:update")
+    @CacheEvict(cacheNames = "skills", allEntries = true)
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        List<CvSkill> rows = new ArrayList<>();
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
+            CvSkill row = lock(IdUtils.parse(item.id()), "update");
+            RevisionUtils.check(profile(row).revision(), item.revision());
+            rows.add(row);
+        }
+        Map<Long, String> versions = new HashMap<>();
+        for (CvSkill row : rows) {
+            if (row.getStatus() != status) {
+                this.items.updateStatus(row.getSkillId(), status);
+                row.setStatus(status);
+            }
+            versions.put(row.getSkillId(), profile(row).revision());
+        }
+        return BatchUtils.versions(items, versions);
     }
 
 }

@@ -2,9 +2,9 @@
 
 先选择端，再按业务或完整路径查找。参数、响应、示例和特殊规则见 [接口文档](API.md)。
 
-当前共 193 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
+当前共 207 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
 
-**29 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项；另增未知路由上报2项及音乐文件读取1项，当前共 193 个路由（Admin 123 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
+**38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项；另增未知路由上报2项及音乐文件读取1项，当前共 207 个路由（Admin 134 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
@@ -47,6 +47,7 @@
 | [查询菜单详情](API.md#api-33) | `GET /api/v1/admin/menus/{menuId}` |
 | [创建菜单节点](API.md#api-34) | `POST /api/v1/admin/menus` |
 | [修改菜单节点](API.md#api-35) | `PUT /api/v1/admin/menus/{menuId}` |
+| [批量切换菜单状态](API.md#batch-menus-status) | `PUT /api/v1/admin/menus/batch-status` |
 | [批量删除菜单叶子节点](API.md#batch-menu-delete) | `POST /api/v1/admin/menus/batch-delete` |
 
 ### 1.4 用户管理
@@ -56,7 +57,7 @@
 | [分页查询用户](API.md#api-16) | `GET /api/v1/admin/users` |
 | [查询用户详情](API.md#api-17) | `GET /api/v1/admin/users/{userId}` |
 | [创建用户](API.md#api-18) | `POST /api/v1/admin/users` |
-| [修改用户资料及状态](API.md#api-19) | `PUT /api/v1/admin/users/{userId}` |
+| [修改用户资料](API.md#api-19) | `PUT /api/v1/admin/users/{userId}` |
 | [分配用户角色](API.md#api-20) | `PUT /api/v1/admin/users/{userId}/roles` |
 | [批量启用用户](API.md#batch-user-enable) | `PUT /api/v1/admin/users/batch-enable` |
 | [批量禁用用户](API.md#batch-user-disable) | `PUT /api/v1/admin/users/batch-disable` |
@@ -70,6 +71,7 @@
 | [查询角色详情](API.md#api-22) | `GET /api/v1/admin/roles/{roleId}` |
 | [创建角色](API.md#api-23) | `POST /api/v1/admin/roles` |
 | [修改角色](API.md#api-24) | `PUT /api/v1/admin/roles/{roleId}` |
+| [批量切换角色状态](API.md#batch-roles-status) | `PUT /api/v1/admin/roles/batch-status` |
 | [配置角色权限与菜单](API.md#api-26) | `PUT /api/v1/admin/roles/{roleId}/grants` |
 | [批量删除角色](API.md#batch-role-delete) | `POST /api/v1/admin/roles/batch-delete` |
 
@@ -81,6 +83,7 @@
 | [查询权限详情](API.md#api-28) | `GET /api/v1/admin/permissions/{permissionId}` |
 | [创建权限字典项](API.md#api-29) | `POST /api/v1/admin/permissions` |
 | [修改权限字典项](API.md#api-30) | `PUT /api/v1/admin/permissions/{permissionId}` |
+| [批量切换权限状态](API.md#batch-permissions-status) | `PUT /api/v1/admin/permissions/batch-status` |
 | [批量删除权限字典项](API.md#batch-permission-delete) | `POST /api/v1/admin/permissions/batch-delete` |
 
 ### 1.7 文章与附件
@@ -105,6 +108,7 @@
 | [查询分类详情](API.md#api-49) | `GET /api/v1/admin/categories/{categoryId}` |
 | [创建分类](API.md#api-50) | `POST /api/v1/admin/categories` |
 | [修改分类](API.md#api-51) | `PUT /api/v1/admin/categories/{categoryId}` |
+| [批量切换分类状态（支持单个分类）](API.md#batch-category-status) | `PUT /api/v1/admin/categories/batch-status` |
 | [批量删除分类](API.md#batch-category-delete) | `POST /api/v1/admin/categories/batch-delete` |
 | [分页查询后台标签](API.md#api-54) | `GET /api/v1/admin/tags` |
 | [查询标签详情](API.md#api-55) | `GET /api/v1/admin/tags/{tagId}` |
@@ -139,6 +143,7 @@
 | [查询友链详情](API.md#api-72) | `GET /api/v1/admin/links/{linkId}` |
 | [创建友链](API.md#api-73) | `POST /api/v1/admin/links` |
 | [修改或审核友链](API.md#api-74) | `PUT /api/v1/admin/links/{linkId}` |
+| [批量切换友链状态](API.md#batch-links-status) | `PUT /api/v1/admin/links/batch-status` |
 | [批量删除友链](API.md#batch-link-delete) | `POST /api/v1/admin/links/batch-delete` |
 
 ### 1.12 站点配置
@@ -169,6 +174,7 @@
 | [查询社交链接详情](API.md#api-93) | `GET /api/v1/admin/home/social-links/{socialId}` |
 | [创建社交链接](API.md#api-94) | `POST /api/v1/admin/home/social-links` |
 | [修改社交链接](API.md#api-95) | `PUT /api/v1/admin/home/social-links/{socialId}` |
+| [批量切换社交链接状态](API.md#batch-home-social-links-status) | `PUT /api/v1/admin/home/social-links/batch-status` |
 | [批量删除社交链接](API.md#batch-social-delete) | `POST /api/v1/admin/home/social-links/batch-delete` |
 
 ### 1.15 简历经历与技能
@@ -179,11 +185,13 @@
 | [查询简历经历详情](API.md#api-99) | `GET /api/v1/admin/cv/experiences/{experienceId}` |
 | [创建简历经历](API.md#api-100) | `POST /api/v1/admin/cv/experiences` |
 | [修改简历经历](API.md#api-101) | `PUT /api/v1/admin/cv/experiences/{experienceId}` |
+| [批量切换简历经历状态](API.md#batch-cv-experiences-status) | `PUT /api/v1/admin/cv/experiences/batch-status` |
 | [批量删除简历经历](API.md#batch-experience-delete) | `POST /api/v1/admin/cv/experiences/batch-delete` |
 | [查询后台简历技能](API.md#api-104) | `GET /api/v1/admin/cv/skills` |
 | [查询技能详情](API.md#api-105) | `GET /api/v1/admin/cv/skills/{skillId}` |
 | [创建简历技能](API.md#api-106) | `POST /api/v1/admin/cv/skills` |
 | [修改简历技能](API.md#api-107) | `PUT /api/v1/admin/cv/skills/{skillId}` |
+| [批量切换技能状态](API.md#batch-cv-skills-status) | `PUT /api/v1/admin/cv/skills/batch-status` |
 | [批量删除简历技能](API.md#batch-skill-delete) | `POST /api/v1/admin/cv/skills/batch-delete` |
 
 ### 1.16 背景音乐
@@ -194,6 +202,7 @@
 | [查询音乐详情](API.md#api-122) | `GET /api/v1/admin/music/{musicId}` |
 | [创建音乐](API.md#api-123) | `POST /api/v1/admin/music` |
 | [修改音乐](API.md#api-124) | `PUT /api/v1/admin/music/{musicId}` |
+| [批量切换音乐状态](API.md#batch-music-status) | `PUT /api/v1/admin/music/batch-status` |
 | [批量删除音乐](API.md#batch-music-delete) | `POST /api/v1/admin/music/batch-delete` |
 
 ### 1.17 邮件订阅管理

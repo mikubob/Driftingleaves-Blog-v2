@@ -120,7 +120,7 @@ async function handleSubmit() {
               /2000
             </div>
           </div>
-          <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="submitting" />
+          <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/math-captcha" arithmetic :disabled="submitting" />
           <div class="form-options">
             <label class="option-check">
               <input

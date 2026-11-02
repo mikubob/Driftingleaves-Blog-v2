@@ -22,6 +22,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import lombok.RequiredArgsConstructor;
@@ -118,14 +119,12 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         requireAdmin("sys:role:update");
         role = requireRole(role);
         checkRevision(role, revision);
-        boolean changed = !role.getDataScope().equals(request.getDataScope())
-                || !role.getStatus().equals(request.getStatus());
+        boolean changed = !role.getDataScope().equals(request.getDataScope());
 
         // 2. 完整替换允许修改的字段，角色码和全部授权关联保留。
         role.setRoleName(request.getRoleName());
         role.setDescription(request.getDescription());
         role.setDataScope(request.getDataScope());
-        role.setStatus(request.getStatus());
         roles.updateRole(role);
         if (changed) {
             // 3. 先确认修改后仍有有效管理员，再撤销所有关联用户会话，失败就不能提交。
@@ -133,20 +132,6 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
             revoke(affected);
         }
         return profile(roles.selectById(roleId));
-    }
-
-    /**
-     * 同一锁事务里删自定义角色，用户、权限、菜单三种关联由数据库级联清理。
-     *
-     * @param roleId 目标角色
-     * @param revision 当前角色整体版本，先检查版本再检查内置角色状态约束
-     * @throws BusinessException 内置角色禁止删除；撤销失败使角色及全部关联恢复
-     */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "delete", target = "sys:role", permission = "sys:role:delete", targetIdArgument = 0)
-    public void delete(long roleId, String revision) {
-        deleteBatch(List.of(new BatchItemDTO(Long.toString(roleId), revision)));
     }
 
     /**
@@ -382,6 +367,58 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
         revoke(new ArrayList<>(affected));
+    }
+
+    /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @OperationLog(type = "batch-status", target = "sys:role", permission = "sys:role:update")
+    public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        if (users.lockAdminGuard() == null) {
+            throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
+        }
+        requireAdmin("sys:role:update");
+        var sorted = BatchUtils.sorted(items);
+        Map<Long, List<Long>> related = new HashMap<>();
+        Set<Long> lockedUsers = new TreeSet<>();
+        lockedUsers.add(sessions.currentUserId());
+        for (BatchItemDTO item : sorted) {
+            long id = IdUtils.parse(item.id());
+            List<Long> userIds = roles.userIds(id);
+            related.put(id, userIds);
+            lockedUsers.addAll(userIds);
+        }
+        for (long userId : lockedUsers) {
+            users.lockById(userId);
+        }
+        List<SysRole> rows = new ArrayList<>();
+        for (BatchItemDTO item : sorted) {
+            SysRole row = roles.lockById(IdUtils.parse(item.id()));
+            requireAdmin("sys:role:update");
+            row = requireRole(row);
+            checkRevision(row, item.revision());
+            rows.add(row);
+        }
+
+        Set<Long> changed = new TreeSet<>();
+        Set<Long> revoked = new TreeSet<>();
+        Map<Long, String> versions = new HashMap<>();
+        for (SysRole row : rows) {
+            long id = row.getRoleId();
+            if (row.getStatus() != status) {
+                roles.updateStatus(id, status);
+                row.setStatus(status);
+                changed.add(id);
+                revoked.addAll(related.get(id));
+            }
+            versions.put(id, profile(row).revision());
+        }
+        if (changed.contains(1L) && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
+            throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
+        }
+        // 版本和整批校验已完成，撤销本人的会话后不再重查当前 Token。
+        revoke(new ArrayList<>(revoked));
+        return BatchUtils.versions(items, versions);
     }
 
 }

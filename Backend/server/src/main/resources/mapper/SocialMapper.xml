@@ -18,11 +18,14 @@
     </select>
 
     <update id="replace">
-        UPDATE home_social_link SET name=#{row.name}, icon=#{row.icon}, url=#{row.url}, sort_order=#{row.sortOrder},
-        status=#{row.status} WHERE social_id = #{row.socialId}
+        UPDATE home_social_link SET name=#{row.name}, icon=#{row.icon}, url=#{row.url}, sort_order=#{row.sortOrder} WHERE social_id = #{row.socialId}
     </update>
 
     <select id="publicItems" resultType="com.xuan.entity.HomeSocialLink">SELECT * FROM home_social_link WHERE status=1
         ORDER BY sort_order, social_id
     </select>
+    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+    <update id="updateStatus">
+        UPDATE home_social_link SET status = #{status} WHERE social_id = #{id}
+    </update>
 </mapper>

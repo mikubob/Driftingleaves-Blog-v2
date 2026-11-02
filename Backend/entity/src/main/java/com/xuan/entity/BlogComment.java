@@ -44,7 +44,7 @@ public class BlogComment {
     @TableField("user_agent_browser")
     private String userAgentBrowser;
 
-    /** 0待审核 1通过 2驳回 3作者删除占位。 */
+    /** 0待审核 1通过 2驳回。 */
     @TableField("status")
     private Integer status;
 

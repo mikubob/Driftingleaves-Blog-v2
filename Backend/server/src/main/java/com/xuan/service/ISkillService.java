@@ -3,10 +3,12 @@ package com.xuan.service;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
+import com.xuan.dto.SkillCreateDTO;
 import com.xuan.dto.SkillWriteDTO;
 import com.xuan.entity.CvSkill;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.SkillPublicVO;
 
 import java.util.List;
@@ -26,13 +28,14 @@ public interface ISkillService extends IService<CvSkill> {
     ResourceVersion<CvSkill> detail(long id);
 
     /** 新增技能，先锁住操作者，资料和成功日志一起提交。 */
-    ResourceVersion<CvSkill> create(SkillWriteDTO request);
+    ResourceVersion<CvSkill> create(SkillCreateDTO request);
 
     /** 根据id更新技能，加锁后重新检查原会话、ALL 范围和版本，再完整替换资料。 */
     ResourceVersion<CvSkill> update(long id, SkillWriteDTO request, String revision);
 
-    /** 根据id删除技能，加锁并检查版本后，从数据库删除记录。 */
-    void delete(long id, String revision);
     /** 批量删除技能，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
+    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
 }

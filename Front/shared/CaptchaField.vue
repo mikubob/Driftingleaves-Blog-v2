@@ -5,28 +5,30 @@ const props = defineProps({
   request: { type: Function, required: true },
   endpoint: { type: String, required: true },
   disabled: Boolean,
+  arithmetic: Boolean,
 })
 const inputId = useId()
-const image = ref(null)
+const challenge = ref(null)
 const code = ref('')
 const loading = ref(false)
 const error = ref('')
-const ready = computed(() => !!image.value && /^[0-9]{6}$/.test(code.value) && !loading.value)
+const answerPattern = computed(() => props.arithmetic ? '[0-9]{1,2}' : '[0-9]{6}')
+const ready = computed(() => !!challenge.value && new RegExp(`^${answerPattern.value}$`).test(code.value) && !loading.value)
 let controller
 
-/** 刷新立即丢弃旧输入，请求结束后只能提交新图片对应的答案。 */
+/** 刷新立即丢弃旧输入，请求结束后只能提交新验证码对应的答案。 */
 async function refresh() {
   if (loading.value) {
     return
   }
-  image.value = null
+  challenge.value = null
   code.value = ''
   error.value = ''
   loading.value = true
   controller = new AbortController()
   try {
     const { data } = await props.request(props.endpoint, { signal: controller.signal })
-    image.value = data
+    challenge.value = data
   } catch (failure) {
     if (failure.name !== 'AbortError') {
       error.value = failure.message
@@ -38,7 +40,7 @@ async function refresh() {
 
 /** 父表单只在提交时读取验证码，格式由统一请求入口检查。 */
 function getValue() {
-  return { captchaId: image.value?.captchaId, code: code.value }
+  return { captchaId: challenge.value?.captchaId, code: code.value }
 }
 
 defineExpose({ refresh, getValue, ready })
@@ -48,27 +50,28 @@ onBeforeUnmount(() => controller?.abort())
 
 <template>
   <div class="captcha-field" :aria-busy="loading">
-    <label :for="inputId">图形验证码</label>
+    <label :for="inputId">{{ arithmetic ? '数字题目验证' : '图形验证码' }}</label>
     <div class="captcha-controls">
       <input
         :id="inputId"
         v-model="code"
-        aria-label="六位数字验证码"
+        :aria-label="arithmetic ? '算术题答案' : '六位数字验证码'"
         inputmode="numeric"
         autocomplete="off"
-        pattern="[0-9]{6}"
-        maxlength="6"
+        :pattern="answerPattern"
+        :maxlength="arithmetic ? 2 : 6"
         required
-        placeholder="六位数字"
-        :disabled="disabled || loading || !image"
+        :placeholder="arithmetic ? '输入计算结果' : '六位数字'"
+        :disabled="disabled || loading || !challenge"
       />
       <button type="button" :disabled="disabled || loading" aria-label="刷新验证码" @click="refresh">
-        <img v-if="image" :src="image.imageBase64" alt="六位数字图形验证码，点击刷新" width="200" height="80" />
+        <span v-if="challenge && arithmetic" class="captcha-question">{{ challenge.question }}</span>
+        <img v-else-if="challenge" :src="challenge.imageBase64" alt="六位数字图形验证码，点击刷新" width="200" height="80" />
         <span v-else>{{ loading ? '加载中…' : '重新获取' }}</span>
       </button>
     </div>
     <p v-if="error" class="captcha-error" role="alert">{{ error }}</p>
-    <small>两分钟内有效，点击图片可换一张。</small>
+    <small>{{ arithmetic ? '两分钟内有效，点击题目可换一题。' : '两分钟内有效，点击图片可换一张。' }}</small>
   </div>
 </template>
 
@@ -109,6 +112,10 @@ onBeforeUnmount(() => controller?.abort())
   background: #fff;
   cursor: pointer;
   overflow: hidden;
+}
+.captcha-question {
+  padding: 10px;
+  font-size: 18px;
 }
 .captcha-controls img {
   display: block;

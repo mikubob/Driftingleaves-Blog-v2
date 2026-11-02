@@ -9,6 +9,7 @@ import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogCategory;
 import com.xuan.result.PageResult;
 import com.xuan.vo.ArticlePublicVO.Category;
+import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CategoryProfileVO;
 import com.xuan.vo.CategoryPublicDetailVO;
 
@@ -34,11 +35,12 @@ public interface ICategoryService extends IService<BlogCategory> {
     /** 创建分类，不自动修改文章。 */
     BlogCategory create(CategoryCreateDTO request);
 
-    /** 根据id更新分类，先锁住分类并检查版本，再完整替换资料。 */
+    /** 根据id更新分类，先锁住分类并检查版本，再完整替换资料，保留展示状态。 */
     CategoryProfileVO update(long id, CategoryUpdateDTO request, String revision);
 
-    /** 根据id删除分类，先检查版本；保留文章并清空文章分类，失败时一起回滚。 */
-    void delete(long id, String revision);
+    /** 批量展示或隐藏分类，全部目标检查通过后写入，版本按原选择顺序返回。 */
+    BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
+
     /** 批量删除分类，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

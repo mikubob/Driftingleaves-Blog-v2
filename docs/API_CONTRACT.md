@@ -49,13 +49,13 @@
 
 X-Revision 是本站自定义业务版本，不承担HTTP缓存校验；If-Revision也是自定义请求头。在服务端由当前业务可写字段及所属关联集合按固定顺序生成SHA-256摘要，不是新增 SQL 版本列。文章包括元数据（含status、publishTime、deletedAt）、Markdown 和排序后的 tagIds；用户包括资料/状态/roleIds；角色包括资料/permissionIds/menuIds；其他为对应详情的持久化业务字段。排除阅读/点赞/评论计数、lastLoginTime、createTime/updateTime、临时下载地址和会话信息；密码哈希不参与公开 X-Revision 或响应。先验证权限/范围，再在同一行锁事务内进行If-Revision、状态校验和写入；仅正文/关联集合变化也必须改变相应聚合 X-Revision。幂等无变化可保留 X-Revision。时间戳单独作版本可能同毫秒碰撞，不能替代此规则。
 
-不支持通用幂等键。POST 创建重复可能 409；前端请求超时先查询确认，勿盲目重发。点赞 PUT/DELETE、注销、评论占位删除幂等；OAuth state/ticket 一次性。状态转换即使同目标也须先检查权限和当前 X-Revision；旧 X-Revision 返回 412。
+不支持通用幂等键。POST 创建重复可能 409；前端请求超时先查询确认，勿盲目重发。点赞 PUT/DELETE 和注销幂等；评论、留言物理删除后重复操作返回404；OAuth state/ticket 一次性。状态转换即使同目标也须先检查权限和当前 X-Revision；旧 X-Revision 返回 412。
 
 <a id="auth-rules"></a>
 
 ### 0.4 Sa-Token 会话与最近认证
 
-Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorization: Bearer <token>` 传递；后续实现配置相同 tokenName/tokenPrefix，关闭从请求体、URL、普通登录 Cookie 读取 Token。前台密码、邮箱验证码与已绑定第三方登录返回相同 `Session`；后台只接受账密、绑定邮箱邮件验证码和图形验证码组合登录，前台及历史会话不能访问受保护后台接口。多端可同时登录，每次登录签发独立 Token，不复用上次 Token。
+Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorization: Bearer <token>` 传递；后续实现配置相同 tokenName/tokenPrefix，关闭从请求体、URL、普通登录 Cookie 读取 Token。前台密码、邮箱验证码与已绑定第三方登录返回相同 `Session`；后台支持账密或绑定邮箱验证码两种方式，均需图形验证码和 admin:access；前台会话不能访问受保护后台接口，已有后台组合认证会话继续有效至到期。多端可同时登录，每次登录签发独立 Token，不复用上次 Token。
 
 | Session 字段 | 类型 | 含义 |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 | author | 后台入口、本人文章创建/查询/编辑/发布/回收/恢复、分类/标签只读、本人文件管理、前台评论/点赞、本人留言与邮件订阅，SELF；无评论审核或系统授权管理权限 |
 | member | 前台评论、删除本人评论、点赞/取消点赞、发表/编辑/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
 
-图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起、前台评论/留言及本人留言编辑必须校验；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
+图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言及本人留言编辑改用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
 
 ### 0.7 鉴权组件落地要求
 
@@ -225,7 +225,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 3. 数据库提交后，使受影响业务旧代次失效，再移除本次保护标记；在这两个步骤确认完成后返回写入成功。数据库回滚则清除本次标记，不把未提交结果放入缓存；缓存操作失败不能吞掉原业务异常。旧代次条目按原TTL自然回收。
 4. 保护标记不能仅因短TTL到期就恢复旧缓存。进程中断或事务完成后的Redis清理失败时，保留保护、继续绕过该业务缓存；待确认数据库事务已结束并轮换该业务代次后清理遗留标记。Redis恢复后也不得直接放行旧条目；从备份恢复Redis时，应在启用查询缓存前统一轮换公共业务代次。这里允许暂时降低命中率，不允许恢复已下架内容。
 5. 提交后的缓存失效失败返回503时，数据库及同事务成功审计可能已经提交，不能声称已回滚，也不能自动重放业务写入；客户端先查询最新状态/版本再决定重试。MySQL与Redis没有共同事务，本节不引入跨存储事务或后台可靠消息系统。
-6. 纯缓存读取/回填失败且本次限流、会话和其他必要校验已经通过时，可直接返回数据库查询结果且不使用旧缓存。Redis限流、会话或一次性票据校验失败依旧返回503；不得降级为匿名、成功空页或已记录采集。读取缓存结构不兼容时视为未命中并按当前规则回源，不返回未验证对象。
+6. 纯缓存读取/回填失败且本次限流、会话和其他必要校验已经通过时，可直接返回数据库查询结果且不使用旧缓存。Redis限流、会话或一次性票据校验失败依旧返回503；不得降级为匿名、成功空页或已记录采集。读取到格式无效的缓存内容时视为未命中并按当前规则回源，不返回未验证对象。
 
 #### 0.8.5 实现验收清单
 
@@ -236,7 +236,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 命中、TTL与查询键 | 首次回源、再次命中、到期重新读取；数据键均有限TTL且命中不续期；默认参数等价，作者/分类/标签/关键词/月/parentId/分页/大小写slug互不串值；空结果新增后失效；深页及超出缓存pageSize正常查询 |
 | Spring Cache注解接入 | 经容器代理调用真实Service，验证Cacheable第二次不重复查询、CacheEvict在增删改提交后清理、Caching覆盖全部关联域；回滚不发布未提交值，同类内部调用不能冒充注解命中；验证Redis中实际条目和TTL，不只检查源码存在注解 |
 | 当前鉴权 | 过期/撤销Token和禁用账号仍按原入口规则拒绝；ALL/SELF及锁后权限不从缓存读取；管理员Token不扩大PUBLIC；本人点赞、私密留言、订阅、后台详情及文件响应不进入公共缓存 |
-| 关联失效 | 各类写事务后验证上表所有受影响业务，包含旧/新slug、字典级联、修改作者昵称、评论祖先审核/占位、RSS/地图所有子页与total；统计清理及UTC日/月边界不复用旧结果 |
+| 关联失效 | 各类写事务后验证上表所有受影响业务，包含旧/新slug、字典级联、修改作者昵称、评论祖先审核、RSS/地图所有子页与total；统计清理及UTC日/月边界不复用旧结果 |
 | 写接口逐项覆盖 | 对照接口0.8.2逐行验证POST新增、PUT/PATCH更新、DELETE及状态写入后的清理；先预热所有受影响查询再执行写入，确认无旧值、错误total或旧slug，下一次读取回源重建，随后才命中；未发生变化的幂等写不跳过遗留保护恢复 |
 | 副作用与计数 | 详情冷/热缓存都只在成功时加一次阅读，失败不计；采集POST不重复加文章阅读；列表/详情实时互动数不被缓存覆盖；热门榜和公开PV/UV仅在规定时间内延迟，排名与分数快照一致 |
 | 并发及故障 | 旧快照回填遇到代次变化被拒；写保护期间旁路；并发写不误清标记；回滚、提交后Redis故障、进程中断遗留标记、Redis恢复不暴露旧PUBLIC数据；缓存降级不能绕过安全Redis失败 |
@@ -250,7 +250,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ### 0.9 后台统一操作实现与验收要求
 
-2026-11-01 已将 [API 1.22](API.md#admin-batch) 的 26 个管理动作落实为支持 1..100 项的统一入口，并移除对应的 26 个旧单条管理写路由。现有前端单条按钮以一项数组提交；创建、完整编辑、详情、本人设置和本人互动不变。新增用户批量启用、禁用、删除后统一入口共 29 个，HTTP 路由总数为 190（Admin 122），WebSocket 仍为 3 个。旧路径不保留兼容别名，前后端须同步部署；实际验证范围见运行说明。
+2026-11-01 已将 [API 1.22](API.md#admin-batch) 的 26 个管理动作落实为支持 1..100 项的统一入口，并移除对应的 26 个旧单条管理写路由。现有前端单条按钮以一项数组提交；创建、完整编辑、详情、本人设置和本人互动不变。新增用户批量启用、禁用、删除后统一入口共 38 个（含分类及其余 8 类资源状态切换），当前 HTTP 路由总数及多端独立路径见[接口索引](API_INDEX.md)，WebSocket 仍为 3 个。实际验证范围见运行说明。
 
 #### 0.9.1 来源与范围
 
@@ -288,8 +288,8 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 文章状态/回收/恢复/永久删除 | 逐篇校验，不以第一篇的作者、权限、版本、回收状态或发布条件代替其余目标；恢复不公开，正常文章不能混入永久删除；清理的评论树和标签/点赞关联同事务，文件和历史浏览按原规则保留 |
 | 分类/标签删除 | 关联 SET NULL/CASCADE 同事务；关联变化影响文章聚合版本与依赖缓存，不能只删除字典域缓存 |
 | 评论批量审核 | 不递归改写未选节点；与单条一致，子节点通过不自动通过隐藏祖先；公开读取继续按完整父链过滤，不能靠批量审核绕过隐藏分支 |
-| 留言批量审核 | 持有 message 配置与完整父链，先计算所选节点的目标状态，按整批最终状态检查所有待通过节点的祖先；所选祖先也通过可共同提交，未选隐藏祖先仍阻止通过，不依赖数组或主键顺序；私密性和占位终态不变 |
-| 评论/留言批量分支删除 | 先验证全部显式 ID 在写入前均存在且有权限，再收集目标子树并求并集；父子混选不会因内部先后删除而出现伪 404；锁定并按子到父清理全部后代，保留祖先和兄弟，不改挂、不写新占位 |
+| 留言批量审核 | 持有 message 配置与完整父链，先计算所选节点的目标状态，按整批最终状态检查所有待通过节点的祖先；所选祖先也通过可共同提交，未选隐藏祖先仍阻止通过，不依赖数组或主键顺序；私密性不变 |
+| 评论/留言批量分支删除 | 先验证全部显式 ID 在写入前均存在且有权限，再收集目标子树并求并集；父子混选不会因内部先后删除而出现伪 404；锁定并按子到父清理全部后代，保留祖先和兄弟，不改挂回复 |
 | 订阅批量状态 | 先按用户 ID 升序锁操作者和全部所属用户，再锁订阅；激活逐项检查当前邮箱 verifiedAt 及账号启用；不批量确认邮箱、不写验证时间、不发送确认邮件，实际再激活才更换投递轮次 |
 | 访客与浏览明细清理 | 访客删除保留明细并将 visitorId 置 null；浏览明细删除影响其 PV/UV，不反向扣文章累计阅读；封禁仅限制采集，不扩大为账号封禁 |
 | 用户批量启停/删除 | 先锁固定管理员保护行，再升序锁操作者及全部目标，整批校验存在性和用户整体版本；启停仅改 status，实际禁用和删除撤销目标会话；按最终结果保护最后管理员。删除遇文章/评论/文件/主页/留言引用整批 409/RESOURCE_IN_USE，按既有外键清理关联及保留历史；单个删除也使用一项 items |
@@ -320,7 +320,7 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | Controller、DTO、请求白名单及权限准入 | 逐项落实 29 个精确方法/路径；只收声明的模型，数组 1/100/101 边界、重复/null/数字 ID、未知字段/Query、错误 status/blockedUntil、单一 If-Revision 误用都需验证；无匿名或其他端旁路 |
 | Service 接口/实现、Mapper/XML、事务 | 复用现有分层及业务校验；验证后半批不存在/越权/旧版本/状态冲突时前半批回滚、关联和成功审计共同回滚；多资源锁顺序、锁等待后会话/权限变化使用隔离设施验证，不连接业务库 |
 | 身份、范围与授权 | 401/403/404 区分；ALL/SELF 混合、delete/purge 各自范围、query 与写权限独立；内置对象、菜单叶子、固定权限、整批最终管理员保护和会话撤销失败均覆盖 |
-| 审核和分支清理 | 父子混选与输入逆序、跨文章、多层/重叠分支、旧占位、隐藏祖先、私密留言；留言共同通过按最终状态检查，评论与留言保持各自单条差异；验证全部子回复和 RESTRICT 删除顺序 |
+| 审核和分支清理 | 父子混选与输入逆序、跨文章、多层/重叠分支、隐藏祖先、私密留言；留言共同通过按最终状态检查，评论与留言保持各自单条差异；验证全部子回复和 RESTRICT 删除顺序 |
 | 文件逐项结果 | 已引用/越权/不存在/存储故障混合输入，响应顺序和逐项状态、成功项保留、失败项元数据恢复、处理中撤权、对象已删而数据库失败；用真实本地存储和隔离数据库验证本地边界，OSS 真实联调另行标明 |
 | 通知、缓存、审计及 Redis | 预热单条写影响域后验证整批提交失效、失败不发布未提交值；真实状态转换才提交后通知；批次 ID 记录完整且脱敏，日志清理审计保留；Redis 已产生的副作用不伪装成随数据库回滚 |
 | 管理端调用和文档 | 调用时收集选中 ID、逐条读取版本、展示操作及后代影响、永久删除不可恢复提示；冲突重新查询并让用户确认，文件展示逐项结果；不能在批次失败后自动降级逐条写入造成部分成功。同步维护路由实施标记和统计 |
@@ -343,9 +343,9 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | Register.password | 必填 string，8..64 字符且 UTF-8 最多 72 字节，不 trim/截断；BCrypt 随机盐，成本上线前校准 |
 | Register.nickname | 必填 S(64) |
 | Register.email / emailCode | 邮箱必填、≤254字符、去首尾空白并转小写；REGISTER 邮件验证码必填六位数字，五分钟有效，校验一次即消费 |
-| Login | 前台账密登录：username:S(64)、password:string 均必填；密码同长度/字节边界 |
-| EmailLogin | 前台邮箱登录：email、六位 emailCode 均必填，仅消费 LOGIN 用途验证码 |
-| AdminLogin | username、password、账号当前 email、六位 emailCode 均必填；仅消费后台登录用途验证码并检查 admin:access |
+| Login | 前后台账密登录：username:S(64)、password:string 均必填；密码同长度/字节边界 |
+| EmailLogin | 前后台邮箱登录：email、六位 emailCode 均必填，分别消费 LOGIN / ADMIN_LOGIN 用途验证码；后台还检查 admin:access |
+| AdminEmailCode | 仅必填 email，检查账号当前邮箱、启用状态和 admin:access 后发送后台验证码 |
 | ProfilePatch | nickname?:S(64)（若给不能 null）；email?:S(254)?（格式校验、空串转 null、唯一）；avatar?:URL?；intro?:S(500)?；至少一个字段。这里 `?` 在字段名表示可省略 |
 | Me | userId:ID、username:string、nickname:string、email:string?、avatar:URL?、intro:string?、status:0或1、hasPassword:boolean、lastLoginTime:Time?、createTime:Time、updateTime:Time |
 | OAuthBinding | source:S(32)、createTime:Time；只返回平台和绑定时间，不返回 uuid、oauthId、平台 Token |
@@ -370,14 +370,14 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | UserCreate | username、password、nickname 必填，同 Register；其余可选 email:string?、avatar:URL?、intro:string?（约束同 ProfilePatch）、status:0或1（默认1）；不接收 roleIds |
-| UserUpdate | nickname:S(64)、email:string?、avatar:URL?、intro:S(500)?、status:0或1 均必填；username/密码不可改 |
+| UserUpdate | nickname:S(64)、email:string?、avatar:URL?、intro:S(500)? 均必填；username/密码/status不可改，状态仅走批量启用/禁用 |
 | UserAdmin | Me 全部字段 + roleIds:ID[]（包含已分配但禁用的角色）+ lastLoginIp:string?、lastLoginLocation:string?（最近成功登录的完整 IP 和省市，仅后台用户管理返回，历史可空）；不含 OAuth uuid 或 Token |
 | UserBatch | 启用、禁用、删除均复用 BatchRevisionRequest；各项使用用户详情版本。启停为 sys:user:update，删除为新增固定权限 sys:user:delete，不扩大 ADMIN_PERMISSIONS；内置 admin 显式授予，其他角色须另行授权 |
 | UserRoles | roleIds:ID[] 必填，0..100 个、不重复、角色必须存在且启用；[] 清空；只能经此专用接口分配 |
-| RoleWrite | roleCode:S(64)，`[a-z][a-z0-9_]{0,63}`；roleName:S(64)；description:S(255)?；dataScope:ALL或SELF；status:0或1。POST roleCode/roleName 必填，其余默认 null/SELF/1；PUT 除 roleCode 外均必填，roleCode 创建后不可修改 |
+| RoleWrite | roleCode:S(64)，`[a-z][a-z0-9_]{0,63}`；roleName:S(64)；description:S(255)?；dataScope:ALL或SELF；status:0或1。POST roleCode/roleName 必填，其余默认 null/SELF/1；PUT 除 roleCode/status 外均必填，roleCode 创建后不可修改，status仅走批量状态入口 |
 | Role | roleId:ID、roleCode/roleName/description/dataScope/status（同上）、createTime:Time、updateTime:Time、permissionIds:ID[]、menuIds:ID[]；关联 ID 升序，含已授权但禁用项 |
 | RoleGrant | permissionIds:ID[]、menuIds:ID[] 均必填，不重复，各最多1000；完整替换，不是增量 |
-| PermissionWrite | permissionCode:S(100)，除 `admin:access` 外匹配 `[a-z][a-z0-9]*:[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9]*`（允许 deleteOwn）；permissionName:S(64)；module:S(32)，`[a-z][a-z0-9_]{0,31}`；description:S(255)?；status:0或1。POST 前三项必填，其余默认 null/1；PUT 除 permissionCode 外均必填，编码不可改 |
+| PermissionWrite | permissionCode:S(100)，除 `admin:access` 外匹配 `[a-z][a-z0-9]*:[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9]*`（允许 deleteOwn）；permissionName:S(64)；module:S(32)，`[a-z][a-z0-9_]{0,31}`；description:S(255)?；status:0或1。POST 前三项必填，其余默认 null/1；PUT 除 permissionCode/status 外均必填，编码不可改，status仅走批量状态入口 |
 | Permission | permissionId:ID + PermissionWrite 全字段 + createTime:Time、updateTime:Time |
 
 UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 assignRole 权限。公开注册分配 member 不受此后台流程影响。禁用用户即时撤销会话，重新启用不恢复旧 Token。roleCode、permissionCode、菜单编码、slug 等 ASCII 字段按区分大小写唯一键处理；同名 roleName 不唯一，不能作为授权依据。
@@ -386,7 +386,7 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 
 ### 12.3 菜单模型
 
-`MenuWrite` 字段如下；POST 必填 parentId/menuCode/menuName/menuType，类型决定的字段也必填；其余默认见表。PUT 除 menuCode 外所有字段均必须出现；menuCode 创建后不可修改。
+`MenuWrite` 字段如下；POST 必填 parentId/menuCode/menuName/menuType，类型决定的字段也必填；其余默认见表。PUT 除 menuCode/status 外所有字段均必须出现；menuCode 创建后不可修改，status仅走批量状态入口。
 
 | 字段 | 类型/默认 | 约束 |
 | --- | --- | --- |
@@ -429,19 +429,29 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 | ArticleWrite.markdownContent | string 必填，可空串用于草稿；设计决定 UTF-8 最多1MiB，发布必须非空白 |
 | ArticleWrite.tagIds | ID[]，POST默认[]；PUT必填；最多20个、不重复、全部存在 |
 | ArticleAdminSummary | articleId/authorId:ID、author:{userId:ID,nickname:string}、category:Category?、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、status:0/1/2、visibility:1/2、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/deletedAt:Time?、createTime/updateTime:Time、tags:Tag[] |
-| ArticleAdminDetail | ArticleAdminSummary + categoryId:ID?、tagIds:ID[]、markdownContent:string、htmlContent:string（每次按当前规则从Markdown重渲染清理，不信历史HTML缓存） |
+| ArticleAdminDetail | ArticleAdminSummary + categoryId:ID?、tagIds:ID[]、markdownContent:string |
 | ArticlePublic | articleId:ID、author:{userId:ID,nickname:string,avatar:URL?}、category:CategoryPublic?、tags:TagPublic[]、title/slug/summary、coverUrl:URL?、articleType、originalUrl:URL?、isTop/allowComment:0/1、viewCount/likeCount/commentCount:string、publishTime/createTime/updateTime:Time |
-| ArticlePublicDetail | ArticlePublic + markdownContent:string、htmlContent:string、wordCount:string、readingMinutes:integer、prevArticle/nextArticle:ArticleNavigation?、relatedArticles:ArticleNavigation[]；派生规则见12.15，仅在PUBLIC复核及附件检查后返回Markdown源，保留安全HTML兼容旧消费者；不返回作者邮箱、后台状态或deletedAt |
+| ArticlePublicDetail | ArticlePublic + markdownContent:string、wordCount:string、readingMinutes:integer、prevArticle/nextArticle:ArticleNavigation?、relatedArticles:ArticleNavigation[]；派生规则见12.15，仅在PUBLIC复核及附件检查后返回Markdown源；不返回作者邮箱、后台状态或deletedAt |
 | ArticleState | `{status:1或2}`，必填；不接收publishTime |
 | Archive | month:string（UTC的YYYY-MM）、articleCount:string（该月PUBLIC文章数）；分页total为月份数，不是文章数 |
 
-tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1/3的节点，排除待审/驳回/占位及被隐藏的后代；likeCount 按明细 COUNT，不维护表中不存在的副本。所有资源关联名称为当前资料，非历史快照。ArticlePublic 的 status 隐含已发布，不额外重复字段。
+tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1的节点，排除待审/驳回及被隐藏的后代；likeCount 按明细 COUNT，不维护表中不存在的副本。所有资源关联名称为当前资料，非历史快照。ArticlePublic 的 status 隐含已发布，不额外重复字段。
 
-正文仅接收 Markdown，拒绝客户端 htmlContent。CommonMark 渲染后由 jsoup 白名单清理，存可选 html_content 缓存；输出时保证符合当前清理规则，缓存不可信时重新清理。保留基本段落/标题/表格/代码/任务列表，禁止脚本、事件属性、iframe、任意 style 和危险 URL；外链加 noopener/noreferrer。评论为纯文本。本站资源引用规则见[文件与附件](API.md#group-11)；网页文章明确使用MdPreview解析原文并清理结果，原始Markdown/raw HTML不得绕过清理及附件权限；服务端继续独立生成安全HTML供RSS和旧消费者使用，不信任客户端生成的HTML。前后端解析差异见[Markdown阅读说明](Markdown阅读说明.md)。
+正文仅接收 Markdown，拒绝客户端 htmlContent。CommonMark 渲染后由 jsoup 白名单清理，存可选 html_content 缓存；输出时保证符合当前清理规则，缓存不可信时重新清理。保留基本段落/标题/表格/代码/任务列表，禁止脚本、事件属性、iframe、任意 style 和危险 URL；外链加 noopener/noreferrer。评论为纯文本。本站资源引用规则见[文件与附件](API.md#group-11)；网页文章明确使用MdPreview解析原文并清理结果，原始Markdown/raw HTML不得绕过清理及附件权限；服务端独立生成安全HTML供RSS使用，不信任客户端生成的HTML。前后端解析差异见[Markdown阅读说明](Markdown阅读说明.md)。
 
 设计决定：POST 固定创建 `status=0` 草稿，作者由登录用户设置；PUT 不收 status/publishTime/deletedAt/计数/authorId。状态只经专用接口变更：草稿0→发布1、发布1→下架2、下架2→发布1；重复目标幂等，无“重新变草稿”。首次发布写当前UTC publishTime，后续发布/编辑不覆盖，禁止未来发布时间/客户端定时发布。发布校验正文、转载来源、关联和可公开资源。修改当前已发布文章的正文/标题/可见性等内容，还须 `blog:article:publish` 并满足其范围，防止利用编辑绕过发布控制。
 
 回收只设 deletedAt，保留原状态/正文/标签/slug/互动；回收站禁止编辑和发布。恢复固定为 `status=2` 下架、deletedAt=null，保留首次publishTime（从未发布过仍null），不会因恢复自动公开；之后显式发布。只读后台详情可查看回收站。
+
+后台文章列表的详情弹窗与编辑回填共用 `GET /api/v1/admin/articles/{articleId}`，需要后台入口和 `blog:article:query`，按此权限的 ALL/SELF 范围查询。详情不依赖编辑或发布权限；不存在与超出 SELF 范围统一 404。在同一个只读事务中返回完整资料、正文、关联和 X-Revision，不增加阅读量、不修改文章。详情弹窗提供显式入口、加载及失败重试，关闭后取消未完成请求；正文与私密附件复用现有预览和鉴权读取规则。
+
+### 状态操作的统一入口
+
+分类之外，友链、音乐、社交链接、经历、技能、角色、权限和菜单统一使用各自 `/batch-status`；用户仅使用已有 `/batch-enable`、`/batch-disable`。单条操作提交一项，与批量操作共用版本、权限和失败规则。九类资料编辑 DTO 均不接受 status（含null），创建 DTO 保留原初始状态及校验。二值状态共用 BatchBinaryStatusDTO，友链独立使用0/1/2状态模型，不放宽文章、审核和订阅的1/2状态限制。
+
+批量入口先检查全部目标，按数值升序加锁，状态 SQL 只写 status；同状态仍校验版本，没有实际变化不写入、不主动撤销会话。结果按请求顺序返回。角色/权限按整批最终状态保护最后管理员，先算完版本再去重撤销受影响会话；菜单保留结构保护锁和分支用户锁，不级联修改后代或改变独立接口权限；音乐展示前按全部文件→曲目加锁并复核文件权限、类型和可用性。详细路径、权限范围、事务与缓存见[新增状态入口](API.md#batch-links-status)。
+
+菜单多选允许父节点参与状态修改，只有批量删除要求全部选择都是叶子。isVisible、keepAlive、文章置顶/评论开关及授权集合属于原资料或独立业务设置，本轮不新增批量变更。
 
 <a id="model-12-5"></a>
 
@@ -449,12 +459,15 @@ tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1/
 
 | 模型 | 字段与默认值 |
 | --- | --- |
-| CategoryWrite | categoryName:S(64)、slug:S(100) 必填；description:S(255)? 默认null，sortOrder:int32 默认0，status:0/1 默认1；PUT所有字段必填 |
-| Category | categoryId:ID + CategoryWrite全字段 + createTime/updateTime:Time |
+| CategoryCreate | categoryName:S(64)、slug:S(100) 必填；description:S(255)? 默认null，sortOrder:int32 默认0，status:0/1 默认1 |
+| CategoryUpdate | categoryName:S(64)、slug:S(100)、description:S(255)?、sortOrder:int32 均必传；description可null，不接收status |
+| Category | categoryId:ID + CategoryCreate全字段 + createTime/updateTime:Time |
 | CategoryPublic | categoryId:ID、categoryName:string、slug:string、description:string?、sortOrder:int32 |
 | TagWrite | tagName:S(64)、slug:S(100) 均必填；POST/PUT相同 |
 | Tag | tagId:ID + TagWrite全字段 + createTime/updateTime:Time |
 | TagPublic | tagId:ID、tagName:string、slug:string |
+
+分类展示状态只通过 `PUT /admin/categories/batch-status` 修改，使用 1..100 项逐条版本和统一目标 status（0隐藏/1展示）；单条也是一项 items。沿用更新权限、用户锁→升序分类锁、锁后权限复核、整批事务审计和分类依赖缓存失效；同状态也须检查版本，无变化不写入。编辑资料不修改 status，
 
 categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写唯一。分类展示不等于文章授权。标签无status，不凭空增加启停接口。
 
@@ -467,21 +480,20 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | 模型 | 字段与约束 |
 | --- | --- |
 | CommentCreate | content:string 必填，trim 后1..2000字符纯文本；parentId:ID? 可选默认null；articleId仅取路径，userId取会话 |
-| CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；旧记录和占位可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1或3、replyCount:string、createTime/updateTime:Time |
-| CommentOwn | location:string?、userAgentOs:string?、userAgentBrowser:string?（同公开评论）；commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2/3、createTime/updateTime:Time；不含其他用户私人信息 |
-| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string；占位 author=null，用户不物理清除，作者关联仍存在 |
+| CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；未知时可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1、replyCount:string、createTime/updateTime:Time |
+| CommentOwn | location:string?、userAgentOs:string?、userAgentBrowser:string?（同公开评论）；commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2、createTime/updateTime:Time；不含其他用户私人信息 |
+| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string；作者关联保留 |
 | CommentReview | `{status:1或2}` 必填；1通过，2驳回，无审核备注字段 |
 | LikeState | `{liked:boolean,likeCount:string}` |
 
-兼容说明：评论和留言的status=3及占位响应字段仅供读取历史记录；新删除不会生成占位，旧记录可再次删除并连同其后代清除。
 
 前台评论只读取 PUBLIC 文章。节点自身及所有祖先须为 status=1 或3；祖先0/2时整个分支不可见。status=3 时 content 固定为“该评论已删除”、author=null，不泄露原内容和作者，replyCount只算当前可见直接子节点。status=0/2 的内容仅本人列表和有相应范围的后台可见；前台公开列表即使带 Token 也不混入自己的待审评论。
 
 设计决定：采用**逐层分页**，不一次返回无限回复树。GET comments 不传parentId时仅根节点；传parentId时仅其直接回复，返回相同 Page。parentId 必须是该文章的可见节点，其他情况404。前端逐层加载；回复任意已通过节点，保留真实parentId，不把深层回复扁平重挂。replyCount用于展开按钮。
 
-创建须同时满足：账号/权限有效、文章 PUBLIC、站点comment.enabled=true、文章allowComment=1；关闭评论返回409/STATE_CONFLICT，非PUBLIC文章返回404。parentId非null时要求同篇文章、节点status=1且祖先可见；跨文章/不存在父节点404，已变成占位或不可回复状态409。占位节点可展示已有回复但不再接受新回复。已关闭评论仅禁止新增，不隐藏已有可见评论。待审或驳回评论无公开回复入口。parentId/articleId/userId创建后不可修改，故不能移动评论或构造环。
+创建须同时满足：账号/权限有效、文章 PUBLIC、站点comment.enabled=true、文章allowComment=1；关闭评论返回409/STATE_CONFLICT，非PUBLIC文章返回404。parentId非null时要求同篇文章、节点status=1且祖先可见；跨文章/不存在父节点404，已变成不可回复状态409。已关闭评论仅禁止新增，不隐藏已有可见评论。待审或驳回评论无公开回复入口。parentId/articleId/userId创建后不可修改，故不能移动评论或构造环。
 
-状态：创建由服务端读取 reviewRequired 决定0待审或1通过；管理员/作者回复同样走评论创建，不默认免审。后台可将0/1/2审核为1或2，同目标幂等；3为终态，不能审核复活。本人删除仅能选择自己的目标，后台管理删除按moderate独立范围检查；两者均在同一事务内物理删除目标及全部层级子回复，包括其他作者和任意审核状态的后代。按子到父顺序删除以满足现有RESTRICT外键，不生成占位、不改挂回复；祖先和兄弟分支保留。成功200，目标不存在或重复删除404；已有status=3占位也可再次删除。审核驳回已通过父评论时隐藏整分支；恢复通过后重新计算可见回复。status=3仅兼容历史占位的读取和清除，新删除不再写入此状态。
+状态：创建由服务端读取 reviewRequired 决定0待审或1通过；管理员/作者回复同样走评论创建，不默认免审。后台可将0/1/2审核为1或2，同目标幂等。本人删除仅能选择自己的目标，后台管理删除按moderate独立范围检查；两者均在同一事务内物理删除目标及全部层级子回复，包括其他作者和任意审核状态的后代。按子到父顺序删除以满足现有RESTRICT外键，不改挂回复；祖先和兄弟分支保留。成功200，目标不存在或重复删除404。审核驳回已通过父评论时隐藏整分支；恢复通过后重新计算可见回复。
 
 <a id="model-12-7"></a>
 
@@ -489,7 +501,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 | 模型 | 字段与校验 |
 | --- | --- |
-| LinkWrite | linkName:S(100)、url:URL 必填；avatar:URL? 默认null、description:S(255)? 默认null、sortOrder:int32 默认0、status:0待审核/1展示/2驳回或下架默认0；PUT全部必填 |
+| LinkWrite | linkName:S(100)、url:URL 必填；avatar:URL? 默认null、description:S(255)? 默认null、sortOrder:int32 默认0、status:0待审核/1展示/2驳回或下架默认0；PUT不接收status，其余字段全部必填 |
 | Link | linkId:ID + LinkWrite全字段 + createTime/updateTime:Time |
 | LinkPublic | linkId:ID、linkName:string、url:URL、avatar:URL?、description:string?、sortOrder:int32 |
 | Config | configKey:string、configValue:object、description:string?、isPublic:0或1、updateTime:Time |
@@ -535,13 +547,13 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 | `HomeProfileWrite` | `userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
 | `HomeProfile` | `profileId`:ID（固定为1）；`userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `HomeProfilePublic` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
-| `SocialWrite` | `name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示） |
+| `SocialWrite` | `name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
 | `Social` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `SocialPublic` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前） |
-| `ExperienceWrite` | `experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示） |
+| `ExperienceWrite` | `experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
 | `Experience` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `ExperiencePublic` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`htmlContent`:string（安全渲染HTML） |
-| `SkillWrite` | `name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示） |
+| `SkillWrite` | `name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
 | `Skill` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `SkillPublic` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前） |
 
@@ -559,14 +571,14 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 | --- | --- |
 | `MessageCreate` | `parentId`:ID&#124;null（直接回复目标；根留言为null，回复创建后不可改）；`content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话；私密回复必须继承完整父链限制）；`notifyReply`:integer（0/1；见留言通知边界） |
 | `MessageEdit` | `content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`notifyReply`:integer（0/1；见留言通知边界） |
-| `MessagePublic` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料；删除占位时为null）；`content`:string（原文；删除占位固定为该留言已删除）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回 3删除占位）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；历史记录和删除占位为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、历史记录和删除占位为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、历史记录和删除占位为null；不公开原始UA/IP） |
-| `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料；删除占位时为null）；`content`:string（原文；删除占位固定为该留言已删除）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回 3删除占位）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；历史记录和删除占位为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、历史记录和删除占位为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、历史记录和删除占位为null；不公开原始UA/IP） |
+| `MessagePublic` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
+| `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
 
-留言状态0待审核、1通过、2驳回、3删除占位，与评论一致。公开查询使用parentId逐层分页，每页1..50；默认根节点，不自动展开整棵树。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA；删除占位author=null，content固定“该留言已删除”，htmlContent只含转义后的占位。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
+留言状态0待审核、1通过、2驳回，与评论一致。公开查询使用parentId逐层分页，每页1..50；默认根节点，不自动展开整棵树。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
 
 悄悄话归属从父链推导：根私密留言的线程接收者是该根user_id；在公开线程新建私密分支时，接收者是最早私密节点的user_id。前台读取私密节点及其后代仅允许该接收者与节点作者本人，父链仍需逐层可见；管理者必须通过后台入口，满足admin:access及当前query/review/moderate权限的ALL范围后读取或操作，不因携带管理员Token放宽前台过滤。后台回复的user_id始终是实际操作人，不冒用原作者；原私密发起者可以沿同一私密祖先读取审核通过的后台回复。回复不能借isSecret=0放宽祖先私密限制；前台发起的回复统一继承私密祖先标记。本人待审/驳回记录可从本人列表读取，不代表匿名可见，不能借可见后代泄露隐藏祖先原文。
 
-编辑只允许content/contentFormat/notifyReply，保留私密性和父关系，写editedAt并重新审核。本人删除先核对目标归属，后台删除要求moderate的ALL；均在同一事务内按子到父顺序物理删除目标及全部层级子回复，包括其他作者、私密和任意审核状态的后代。祖先和兄弟分支保留，不生成占位或改挂父节点；成功200，目标不存在或重复删除404。历史status=3占位保留读取兼容，也可再次删除清除。审核不能复活删除占位，通过私密节点不将其改成公开。
+编辑只允许content/contentFormat/notifyReply，保留私密性和父关系，写editedAt并重新审核。本人删除先核对目标归属，后台删除要求moderate的ALL；均在同一事务内按子到父顺序物理删除目标及全部层级子回复，包括其他作者、私密和任意审核状态的后代。祖先和兄弟分支保留，不改挂父节点；成功200，目标不存在或重复删除404。通过私密节点不将其改成公开。
 
 notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前账号体系没有登录邮箱验证状态；只有该用户存在status=1且verifiedAt非空的邮件订阅时，才能使用其已确认邮箱发送不含私密原文的回复提醒，否则跳过，不把登录邮箱当收件地址。审核实际转为通过并提交后再发送；发送失败不回滚已发布留言，不声称邮件与MySQL同事务。新文章邮件仅向启用用户的已激活订阅发送，首次发布提交后触发；下架后重发、普通编辑不重复推送。
 
@@ -580,7 +592,7 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
-| `MusicWrite` | `title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示） |
+| `MusicWrite` | `title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
 | `Music` | `musicId`:ID（音乐ID）；`title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `MusicPublic` | `musicId`:ID（音乐ID）；`title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前） |
 
@@ -629,7 +641,7 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 | `Visitor` | `visitorId`:ID（统计访客ID，不是登录身份）；`fingerprint`:string（ASCII统计标识，不可作为鉴权凭据）；`ipAddress`:string&#124;null（最近完整 IP，仅后台可见；旧脱敏值不能还原）；`userAgent`:string&#124;null（≤1024，最近User-Agent）；`country`:string&#124;null（国家）；`province`:string&#124;null（省份）；`city`:string&#124;null（城市）；`totalViews`:string（当前保留的关联浏览明细条数，所有站点合计，无明细为"0"；清理明细后减少，不参与X-Revision）；`isBlocked`:integer（数据库封禁标记0/1；实际生效还需检查blockedUntil）；`blockedUntil`:Time&#124;null（封禁结束，已封禁且null表示永久）；`firstVisitTime`:Time（首次访问时间）；`lastVisitTime`:Time（最近访问时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `PageView` | `viewId`:ID（浏览记录ID）；`visitorId`:ID&#124;null（统计访客，清理后可空）；`userId`:ID&#124;null（采集时服务端确认的本站用户，匿名或清理后为空）；`articleId`:ID&#124;null（通过公开文章与规范路径核验的文章ID）；`siteCode`:string（home/blog/cv）；`pagePath`:S(2048)（不含敏感查询参数的规范路径）；`pageTitle`:S(200)?（页面标题）；`referer`:URL?（已脱敏的来源URL）；`ipAddress`:string&#124;null（完整 IP，仅后台可见；旧脱敏值不能还原）；`userAgent`:string&#124;null（≤1024）；`viewTime`:Time（采集时间） |
 | `PublicStatistics` | `articleCount`:string（PUBLIC文章数量）；`categoryCount`:string（可展示且至少含一篇PUBLIC文章的分类数）；`tagCount`:string（至少关联一篇PUBLIC文章的标签数）；`pageViewCount`:string（blog站点保留浏览明细条数；不等于累计文章阅读数）；`todayPageViewCount`:string（UTC当日blog浏览明细数）；`visitorCount`:string（blog浏览明细中不同非NULL visitorId数量） |
-| `AdminStatistics` | `pageViewCount`:string（筛选日期内保留浏览明细条数）；`visitorCount`:string（筛选日期内不同非NULL visitorId；不按IP或账号去重）；`newVisitorCount`:string（firstVisitTime在日期区间且符合站点访问条件的访客数）；`articleCount`:string（当前未回收文章数，不受访问日期筛选）；`publishedArticleCount`:string（当前PUBLIC文章数）；`commentCount`:string（当前非删除占位评论数，含待审/驳回）；`messageCount`:string（当前非删除占位留言数，含私密/待审/驳回）；`pendingCommentCount`:string（当前status=0的评论数）；`pendingMessageCount`:string（当前status=0的留言数） |
+| `AdminStatistics` | `pageViewCount`:string（筛选日期内保留浏览明细条数）；`visitorCount`:string（筛选日期内不同非NULL visitorId；不按IP或账号去重）；`newVisitorCount`:string（firstVisitTime在日期区间且符合站点访问条件的访客数）；`articleCount`:string（当前未回收文章数，不受访问日期筛选）；`publishedArticleCount`:string（当前PUBLIC文章数）；`commentCount`:string（当前评论数，含待审/驳回）；`messageCount`:string（当前留言数，含私密/待审/驳回）；`pendingCommentCount`:string（当前status=0的评论数）；`pendingMessageCount`:string（当前status=0的留言数） |
 | `ViewTrend` | `date`:date（UTC自然日，区间内逐日补零）；`pageViewCount`:string（该日浏览明细条数）；`visitorCount`:string（该日不同非NULL visitorId数） |
 | `VisitorTrend` | `date`:date（UTC自然日）；`newVisitorCount`:string（当天首次访问的访客数）；`cumulativeNewVisitorCount`:string（仅所选区间内从begin累计的新访客数；不是全历史总量） |
 | `ProvinceMetric` | `province`:string&#124;null（最新访客省份；null表示未知）；`visitorCount`:string（区间内访问的不同非NULL visitorId数） |
@@ -819,7 +831,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | 数据 | 永久删除的处理规则 |
 | --- | --- |
 | 文章元数据、正文、安全 HTML、标签关联、点赞明细 | 同一数据库事务内删除；正文/标签关联/点赞可利用现有 ON DELETE CASCADE，不删除分类或标签字典 |
-| 该文章全部评论及回复 | 包括待审、通过、驳回与占位，均不可恢复；现有评论外键为 RESTRICT，须在持有文章及相关评论锁后按子节点到父节点顺序删除，再删文章，不能直接假设级联或关闭外键校验 |
+| 该文章全部评论及回复 | 包括待审、通过和驳回，均不可恢复；现有评论外键为 RESTRICT，须在持有文章及相关评论锁后按子节点到父节点顺序删除，再删文章，不能直接假设级联或关闭外键校验 |
 | 文件元数据与 OSS/本地对象 | 保留，不把引用文件当作文章私有对象自动删除；仍由既有文件删除入口检查全部引用与自身权限 |
 | 浏览明细 | 保留已有历史采集，articleId 按现有外键 SET NULL；pagePath/pageTitle 历史快照保留，按文章 ID 的排行不再关联该文章，站点 PV 趋势仍含原浏览 |
 | 操作日志 | 保留历史审计，新增 purge 成功审计与数据库清理同事务提交；失败回滚，沿用既有失败审计，不记录已删正文 |

@@ -56,7 +56,7 @@ public interface UserMapper extends BaseMapper<SysUser> {
      */
     int updateAdmin(@Param("user") SysUser user);
 
-    /** 持有用户行锁时检查所有 RESTRICT 内容引用，不过滤回收站或占位记录。 */
+    /** 持有用户行锁时检查所有 RESTRICT 内容引用，不忽略回收站中的文章。 */
     boolean hasContentReferences(@Param("userId") long userId);
 
     /**

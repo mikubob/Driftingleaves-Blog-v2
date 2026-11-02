@@ -38,11 +38,6 @@ public interface ISubscriptionService extends IService<BlogRssSubscription> {
     /** 根据id查询订阅详情及版本，资料和版本在同一个只读事务中读取。 */
     ResourceVersion<BlogRssSubscription> detail(long id);
 
-    /** 根据id修改订阅状态，重新激活时要求当前邮箱已验证、用户已启用。 */
-    ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision);
-
-    /** 根据id删除订阅记录，删除后原有票据全部失效。 */
-    void delete(long id, String revision);
     /** 批量删除订阅，单条也走此入口，任一失败则整批回滚。 */
     void deleteBatch(List<BatchItemDTO> items);
     /** 批量修改订阅状态，单条也走此入口，任一失败则整批回滚。 */
