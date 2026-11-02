@@ -33,7 +33,7 @@ public class OnlineServiceImpl implements IOnlineService {
     private final JsonMapper json;
     private final Clock clock;
 
-    /** {@inheritDoc} */
+    /** 生成一次性在线统计票据。 */
     @Override
     public OnlineTicketVO issue(OnlineTicketCreateDTO request, String origin, String ip) {
         if (origin == null || !auth.getAllowedOrigins().contains(origin)) {

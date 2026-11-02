@@ -24,7 +24,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * 只支持名单里的普通 GET 回调平台，默认都关闭；配置不全的平台不算可用登录方式。
+ * 第三方登录客户端，只支持名单中的 GET 回调平台，默认关闭，配置不完整时不可用。
  */
 @Component
 @RequiredArgsConstructor
@@ -35,7 +35,7 @@ public class JustAuthClient implements OAuthProviderClient {
     private final RedisOAuthStore states;
 
     /**
-     * {@inheritDoc}
+     * 查询已启用且配置完整的第三方平台。
      */
     @Override
     public List<Provider> providers() {
@@ -43,7 +43,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * {@inheritDoc}
+     * 获取当前可用的第三方平台代码。
      */
     @Override
     public Set<String> enabledSources() {
@@ -51,7 +51,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * {@inheritDoc}
+     * 检查第三方平台是否可用，不可用时返回 404。
      */
     @Override
     public void requireEnabled(String source) {
@@ -61,7 +61,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * {@inheritDoc}
+     * 生成指定平台的授权地址。
      */
     @Override
     public String authorize(String source, String state) {
@@ -70,7 +70,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * {@inheritDoc}
+     * 校验授权码和 state，获取平台确认的用户身份。
      */
     @Override
     public Identity verify(String source, String state, String code) {
@@ -89,7 +89,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * 只创建白名单中的平台客户端，使用服务端配置并保留 state 检查。
+     * 创建指定平台的客户端，只使用服务端名单和配置，保留 state 校验。
      */
     private AuthRequest request(String source) {
         // 1. 先按服务端配置准备授权参数，JustAuth 的 state 检查不能关。
@@ -108,7 +108,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * 检查开关、凭据及固定回调地址，缺少任一项就不开放该平台。
+     * 检查第三方平台配置，开关、凭据和固定回调地址都有效时才可用。
      */
     private boolean configured(String source) {
         // 1. 先看开关、凭据和地址是否齐全，缺配置的平台不能算可用登录方式。
@@ -134,7 +134,7 @@ public class JustAuthClient implements OAuthProviderClient {
     }
 
     /**
-     * null 或空白都视为配置缺失。
+     * 判断配置是否为空，null 和空白都算缺失。
      */
     private boolean blank(String value) {
         return StrUtil.nullToEmpty(value).isBlank();

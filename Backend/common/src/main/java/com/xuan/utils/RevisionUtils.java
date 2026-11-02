@@ -4,14 +4,14 @@ import cn.hutool.core.util.ObjectUtil;
 import com.xuan.exception.BusinessException;
 
 /**
- * 新业务沿用带引号的 SHA-256 业务版本，校验必须在资源锁内调用。
+ * 版本校验工具，版本为带引号的 SHA-256 值，必须先锁住记录再检查。
  */
 public final class RevisionUtils {
 
     private RevisionUtils() {
     }
 
-    /** 区分缺版本、格式错误和版本过期，不把审计时间放进业务值。 */
+    /** 检查版本，分别处理未传、格式错误和版本过期，不用审计时间充当版本。 */
     public static void check(String expected, String supplied) {
         if (ObjectUtil.isNull(supplied)) {
             throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");

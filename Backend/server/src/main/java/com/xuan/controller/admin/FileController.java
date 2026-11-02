@@ -31,7 +31,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 后台文件元数据、上传和内容入口，私密文件通过 Bearer fetch 后再预览。
+ * 后台文件管理接口，提供文件资料、上传和读取，私密文件携带 Bearer 获取后预览。
  */
 @RestController
 @RequiredArgsConstructor
@@ -39,21 +39,21 @@ public class FileController {
 
     private final IFileService files;
 
-    /** 元数据分页不附每条业务版本，上传者筛选不能扩大当前 query 范围。 */
+    /** 分页查询文件资料，不返回每条记录的版本，筛选上传者不能扩大查询权限范围。 */
     @GetMapping("/admin/files")
     @SaCheckPermission("blog:file:query")
     public Result<PageResult<FileVO>> list(@Valid @ModelAttribute FileQueryDTO query) {
         return Result.ok(files.listFiles(query));
     }
 
-    /** 元数据不可编辑，不返回 X-Revision。 */
+    /** 根据id查询文件详情，文件资料不能编辑，不返回 X-Revision。 */
     @GetMapping("/admin/files/{fileId}")
     @SaCheckPermission("blog:file:query")
     public Result<FileVO> detail(@PathVariable String fileId) {
         return Result.ok(files.detail(IdUtils.parse(fileId)));
     }
 
-    /** 每用户及可信 IP 每分钟最多上传十次，请求只计一次；成功给元数据 Location。 */
+    /** 上传文件，每用户和可信 IP 每分钟最多十次，每个请求计一次，成功返回文件资料的 Location。 */
     @PostMapping(value = "/admin/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("blog:file:upload")
     @RateLimit(value = "file-upload", limit = 10, dimension = RateLimit.Dimension.USER)
@@ -62,28 +62,28 @@ public class FileController {
         return ResponseEntity.created(URI.create("/api/v1/admin/files/" + value.fileId())).body(Result.ok(value));
     }
 
-    /** 本人原文件预览与文章公开无关，内容响应不包 Result。 */
+    /** 读取原文件供预览，与文章是否公开无关，文件内容不放进 Result。 */
     @GetMapping("/admin/files/{fileId}/content")
     @SaCheckPermission("blog:file:query")
     public ResponseEntity<Resource> original(@PathVariable String fileId) {
         return content(files.original(IdUtils.parse(fileId)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除文件，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/admin/files/batch-delete")
     @SaCheckPermission("blog:file:delete")
     public Result<BatchFileResultsVO> delete(@Valid @RequestBody BatchIdsDTO body) {
         return Result.ok(files.deleteBatch(body.ids()));
     }
 
-    /** 两项 query 权限及各自范围都要满足，文章还必须真正引用该文件。 */
+    /** 读取后台文章附件，分别检查文章和文件的查询权限及范围，文章必须引用该文件。 */
     @GetMapping("/admin/articles/{articleId}/files/{fileId}/content")
     @SaCheckPermission({"blog:article:query", "blog:file:query"})
     public ResponseEntity<Resource> attachment(@PathVariable String articleId, @PathVariable String fileId) {
         return content(files.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), true));
     }
 
-    /** Resource 由 Spring MVC 处理 Range/206/416，字节已在权限和业务锁内读取完成。 */
+    /** 返回文件内容，读取时已检查权限并加锁，Range、206 和 416 由 Spring MVC 处理。 */
     private ResponseEntity<Resource> content(FileContent value) {
         MediaType type = MediaType.parseMediaType(value.mimeType());
         if (value.mimeType().startsWith("text/")) {

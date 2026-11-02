@@ -8,7 +8,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
-/** 图片压缩只影响新上传，保留 PNG/JPEG 格式，目标大小不作为上传拒绝条件。 */
+/** 图片压缩配置，只影响新上传，保留 PNG/JPEG 格式，未达到目标大小时不拒绝上传。 */
 @Data
 @Validated
 @ConfigurationProperties("app.image.compress")

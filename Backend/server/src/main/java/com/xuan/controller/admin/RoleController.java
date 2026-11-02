@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台角色接口先检查身份和入口权限，各项操作还要检查对应业务权限。
+ * 后台角色管理接口，检查登录、后台入口和角色操作权限。
  */
 @RestController
 @RequestMapping("/admin/roles")
@@ -37,7 +37,7 @@ public class RoleController {
     private final IRoleService roles;
 
     /**
-     * 检查后台入口和查询权限后分页取全站角色，SELF 不缩小这个字典范围。
+     * 分页查询角色，先检查后台入口和查询权限，SELF 不缩小全站角色范围。
      * @param query 已校验的分页、关键词及状态
      * @return 含完整授权关联的分页；无逐条 X-Revision
      */
@@ -48,7 +48,7 @@ public class RoleController {
     }
 
     /**
-     * 检查后台入口和查询权限后取角色详情及整体版本，禁用角色也能查。
+     * 根据id查询角色详情及版本，先检查后台入口和查询权限，禁用角色也能查。
      * @param roleId 正十进制角色 ID
      * @return 详情及 X-Revision；不存在返回 404
      */
@@ -59,7 +59,7 @@ public class RoleController {
     }
 
     /**
-     * 检查后台入口和创建权限后建空授权角色，不收关联集合和时间字段。
+     * 新增角色，先检查后台入口和创建权限，初始不分配权限，不接受关联集合和时间字段。
      * @param body 已校验的创建字段
      * @return 201 角色及详情 Location，无 X-Revision
      */
@@ -71,7 +71,7 @@ public class RoleController {
     }
 
     /**
-     * 检查后台入口和更新权限后完整替换资料、状态，版本和最后管理员在锁事务里检查。
+     * 根据id更新角色，先检查后台入口和更新权限，再完整替换资料及状态；加锁后检查版本和最后一个有效管理员。
      * @param roleId 角色 ID
      * @param body 全部允许字段，说明可为 null 但不可省略
      * @param revision 单个详情版本，缺失交由 Service 返回 428
@@ -85,7 +85,7 @@ public class RoleController {
         return profile(roles.update(id(roleId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除角色，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:role:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -94,7 +94,7 @@ public class RoleController {
     }
 
     /**
-     * 检查后台入口和授权权限后一起替换权限、菜单，补齐祖先，但不能自动增加接口权限。
+     * 根据id更新角色权限和菜单，先检查后台入口和授权权限，补齐上级菜单，不自动增加接口权限。
      * @param roleId 目标角色
      * @param body 两个必填且不重复的集合，空数组允许清空
      * @param revision 资料和授权共用的详情版本

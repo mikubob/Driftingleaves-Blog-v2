@@ -21,7 +21,7 @@ import org.springframework.web.servlet.HandlerMapping;
 
 import java.util.Set;
 
-/** 展示业务不接受额外查询字段，GET和DELETE没有请求体。 */
+/** 检查展示类接口的请求，拒绝多余查询参数以及 GET、DELETE 请求体。 */
 @ControllerAdvice(assignableTypes = {HomeProfileController.class,
         SocialController.class,
         ExperienceController.class,
@@ -43,7 +43,7 @@ import java.util.Set;
         StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
 public class DisplayRequestAdvice {
 
-    /** JSON字段由DTO处理，这里先拒绝重复参数、未知参数及无请求体违规。 */
+    /** 检查查询参数和请求体，拒绝重复参数、未知参数和不允许的请求体；JSON 字段由 DTO 校验。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         if (("GET".equals(request.getMethod()) || "DELETE".equals(request.getMethod()))

@@ -64,7 +64,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return configs.configs(false).stream().map(this::view).toList();
     }
 
-    /** 先确认权限再确认键，版本和对象在同一快照里读取。 */
+    /** 根据配置键查询站点配置及版本，先检查权限再检查配置键，资料和版本在同一个只读事务中读取。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ConfigProfileVO detail(String key) {
@@ -99,7 +99,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return profile(configs.selectById(key));
     }
 
-    /** 配置权限彼此独立，不借 query 的权限放开 update。 */
+    /** 检查本次配置操作权限，查询权限不能代替更新权限。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -122,7 +122,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return row;
     }
 
-    /** 固定顺序重建对象，MySQL JSON 属性重排也不会让业务版本无故变化。 */
+    /** 整理配置字段，按固定顺序生成对象，避免 MySQL 调整 JSON 属性顺序后版本无故改变。 */
     private Map<String, Object> policy(String key, Map<String, Object> value, int isPublic) {
         if (json.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length > 16 * 1024) {
             throw invalid();
@@ -187,7 +187,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         }
     }
 
-    /** 只把持久化业务资料计入版本，不计数据库更新时间或 JSON 属性顺序。 */
+    /** 计算配置版本，只包含已保存的业务字段，不受数据库更新时间或 JSON 属性顺序影响。 */
     private ConfigProfileVO profile(BlogSiteConfig row) {
         ConfigVO value = view(row);
         String digest = json.writeValueAsString(Arrays.asList(value.configKey(), value.configValue(),

@@ -52,7 +52,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     private final JsonMapper json;
     private final Clock clock;
 
-    /** {@inheritDoc} */
+    /** 分页查询访客。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<VisitorVO> listVisitors(VisitorQueryDTO query) {
@@ -60,7 +60,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return PageResult.from(visitors.visitorPage(new Page<>(query.page(), query.pageSize()), query));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询访客详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<VisitorVO> detail(long id) {
@@ -72,7 +72,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return new ResourceVersion<>(row, restrictionRevision(row.isBlocked(), row.blockedUntil()));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id限制访客访问。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "block", target = "blog:visitor", permission = "blog:visitor:block", targetIdArgument = 0)
@@ -89,7 +89,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return profile(visitors.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id解除访客限制。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "unblock", target = "blog:visitor", permission = "blog:visitor:unblock", targetIdArgument = 0)
@@ -104,7 +104,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return profile(visitors.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除访客。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:visitor", permission = "blog:visitor:delete", targetIdArgument = 0)
@@ -150,7 +150,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return row;
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除访客，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:visitor", permission = "blog:visitor:delete")
@@ -170,7 +170,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     }
 
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量限制访客访问，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-block", target = "blog:visitor", permission = "blog:visitor:block")
@@ -194,7 +194,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量解除访客限制，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-unblock", target = "blog:visitor", permission = "blog:visitor:unblock")

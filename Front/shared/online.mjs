@@ -14,7 +14,7 @@ export function onlineSocketUrl(apiRoot, location) {
   return url.href
 }
 
-/** 只有完整快照进入页面状态，计数始终保留十进制字符串。 */
+/** 检查在线统计数据，字段完整后才更新页面，人数始终保留十进制字符串。 */
 function snapshot(data) {
   const count = (value) => typeof value === 'string' && /^(0|[1-9]\d*)$/.test(value)
   if (!data || !count(data.onlineCount) || !count(data.userCount) || !count(data.guestCount)
@@ -26,7 +26,7 @@ function snapshot(data) {
   return data
 }
 
-/** 每个挂载布局只创建一个实例；身份切换、离线和卸载都会隔离旧异步回调。 */
+/** 创建在线统计连接，每个布局只创建一次；切换身份、离线或卸载后忽略旧异步结果。 */
 export function createOnlineConnection({ apiRoot, requestTicket, payload, onState = () => {},
   onSessionInvalid = () => {}, browser = window }) {
   let active = false

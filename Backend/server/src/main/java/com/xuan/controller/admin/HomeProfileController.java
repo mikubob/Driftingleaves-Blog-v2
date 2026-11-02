@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 全站主人资料维护，空资源GET也提供首次设置版本。
+ * 后台站点主人资料接口，尚未设置时 GET 也返回版本，供首次保存使用。
  */
 @RestController("adminHomeProfileController")
 @RequestMapping("/admin/home/profile")
@@ -33,7 +33,7 @@ public class HomeProfileController {
         return response(profiles.detail());
     }
 
-    /** 首次设置与完整替换都返回200。 */
+    /** 设置或更新站点主人资料，首次设置和完整替换都返回 200。 */
     @PutMapping
     @SaCheckPermission("home:profile:update")
     public ResponseEntity<Result<HomeProfile>> replace(@Valid @RequestBody HomeProfileWriteDTO request,
@@ -41,7 +41,7 @@ public class HomeProfileController {
         return response(profiles.replace(request, revision));
     }
 
-    /** 版本不写进业务JSON。 */
+    /** 返回站点主人资料，版本只放在响应头。 */
     private ResponseEntity<Result<HomeProfile>> response(ResourceVersion<HomeProfile> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }

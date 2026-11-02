@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 用户锁早于订阅锁，所有可空状态时间显式写入。
+ * 邮件订阅数据接口，先锁用户再锁订阅，可空的状态时间也要写入数据库。
  */
 public interface SubscriptionMapper extends BaseMapper<BlogRssSubscription> {
 

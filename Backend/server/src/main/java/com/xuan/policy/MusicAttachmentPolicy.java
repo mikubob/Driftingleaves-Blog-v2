@@ -12,7 +12,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 规范音乐封面、音频和歌词地址，只从受管路径提取文件引用。
+ * 音乐附件工具，整理封面、音频和歌词地址，只从本站文件路径提取引用。
  */
 @Component
 @RequiredArgsConstructor
@@ -23,7 +23,7 @@ public class MusicAttachmentPolicy {
 
     private final FileUrlPolicy urls;
 
-    /** 音乐只保存规范的受管读取路径或外部 HTTP(S) 地址，不把私有存储直链公开。 */
+    /** 整理音乐文件地址，只保存本站读取路径或外部 HTTP(S) 地址，不公开私有存储直链。 */
     public String normalizeUrl(String value) {
         if (value == null) {
             return null;
@@ -48,7 +48,7 @@ public class MusicAttachmentPolicy {
         throw invalid();
     }
 
-    /** 只解析已规范化的音乐文件路径，外部地址不形成本站文件引用。 */
+    /** 从音乐文件路径获取文件id，外部地址不算本站文件引用。 */
     public Long fileId(String value) {
         if (value == null) {
             return null;
@@ -57,12 +57,12 @@ public class MusicAttachmentPolicy {
         return match.matches() ? IdUtils.parse(match.group(1)) : null;
     }
 
-    /** 上传后即可组成音乐地址，匿名读取仍由当前展示状态和真实引用决定。 */
+    /** 生成音乐文件读取地址，匿名读取时仍要检查曲目是否展示及是否引用该文件。 */
     public String fileUrl(long id) {
         return "/api/v1/blog/music/files/" + id + "/content";
     }
 
-    /** 输入有问题只报固定错误，不透露 URL、存储键或私密文件是否存在。 */
+    /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束");
     }

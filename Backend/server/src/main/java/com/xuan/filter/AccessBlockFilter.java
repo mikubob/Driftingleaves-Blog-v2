@@ -18,7 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 
-/** CORS 之后、读取请求体和执行业务之前检查临时 IP 封禁。 */
+/** 过滤被临时封禁的 IP，在跨域检查后、读取请求体和执行业务前执行。 */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 15)
 @RequiredArgsConstructor
@@ -28,13 +28,13 @@ public class AccessBlockFilter extends OncePerRequestFilter {
     private final AuthProperties properties;
     private final JsonMapper json;
 
-    /** 预检不消耗预算，其他请求包含公开读取和新的 WebSocket 握手。 */
+    /** 跳过 OPTIONS 预检，其他请求都检查封禁，包括公开查询和 WebSocket 握手。 */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return "OPTIONS".equals(request.getMethod());
     }
 
-    /** 封禁和依赖故障直接返回统一 JSON，不进入后续业务。 */
+    /** 检查 IP 封禁，被封禁或封禁检查失败时返回统一错误，不继续执行业务。 */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

@@ -14,27 +14,27 @@ import com.xuan.vo.RoleVO;
 import java.util.List;
 
 /**
- * 后台角色操作每次都要查当前身份、后台入口和具体业务权限。
+ * 角色业务接口，每次操作检查登录、后台入口和角色操作权限。
  */
 public interface IRoleService extends IService<SysRole> {
 
-    /** 检查后台及业务权限后，在同一快照里分页，关联中的禁用项也保留。 */
+    /** 分页查询角色，先检查后台入口和查询权限，再在同一个只读事务中读取，保留关联中的禁用项。 */
     PageResult<RoleVO> listRoles(RoleQueryDTO query);
 
-    /** 同一快照里取角色详情，用资料、权限和菜单一起计算整体版本。 */
+    /** 根据id查询角色详情，资料、权限和菜单在同一个只读事务中读取，并一起计算版本。 */
     RoleProfileVO detail(long roleId);
 
-    /** 新角色没有权限和菜单，唯一键冲突就整笔回滚。 */
+    /** 新增角色，初始不分配权限和菜单，唯一键冲突时全部回滚。 */
     RoleVO create(RoleCreateDTO request);
 
-    /** 资料和状态完整替换，锁内重查版本，影响授权时撤销全部关联用户会话。 */
+    /** 根据id更新角色，加锁后重新检查版本，再完整替换资料和状态；影响授权时撤销全部关联用户的会话。 */
     RoleProfileVO update(long roleId, RoleUpdateDTO request, String revision);
 
     /** 删除自定义角色及三类关联，内置角色不能删，撤销会话失败就全部回滚。 */
     void delete(long roleId, String revision);
 
-    /** 权限和菜单一起替换，补齐祖先并检查明确授予的权限，必须保留最后管理员。 */
+    /** 根据id更新角色权限和菜单，两者一起替换；补齐上级菜单并检查实际授予的权限，保留最后一个有效管理员。 */
     RoleProfileVO grants(long roleId, RoleGrantDTO request, String revision);
-    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    /** 批量删除角色，单条也走此入口，任一失败则整批回滚。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

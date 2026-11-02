@@ -24,7 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * MVC 检查权限后再执行注解限流，已有认证限流的入口不重复计数。
+ * 按注解限制请求频率，在 MVC 权限检查后执行，已有认证限流的接口不重复计数。
  */
 @Aspect
 @Component
@@ -36,7 +36,7 @@ public class RateLimitAspect {
     private final AuthProperties properties;
     private final SessionManager sessions;
 
-    /** 公开 GET 共享预算在 Controller 完成类型转换后、缓存和副作用前执行。 */
+    /** 检查公开 GET 请求频率，在参数转换后、读取缓存或修改数据前执行。 */
     @Around("execution(public * com.xuan.service.impl.*.public*(..)) || " +
             "execution(* com.xuan.service.impl.ArticleServiceImpl.archives(..)) || " +
             "execution(* com.xuan.service.impl.ArticleServiceImpl.rankings(..)) || " +
@@ -52,7 +52,7 @@ public class RateLimitAspect {
         if (!"GET".equals(request.getMethod())) {
             return point.proceed();
         }
-        // 查询 ID 保留字符串以严格拒绝前导零，在消耗预算前复用同一解析规则；Service 仍用它完成类型转换。
+        // 查询id保留字符串，计入限流次数前先检查格式，拒绝前导零；Service 使用同一规则转换类型。
         for (Object argument : point.getArgs()) {
             if (argument instanceof ArticleQueryDTO query) {
                 IdUtils.parse(query.categoryId());
@@ -87,7 +87,7 @@ public class RateLimitAspect {
                 TokenUtils.digest(String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies())))), 60, limit);
     }
 
-    /** 用操作名、可信 IP 和本站会话生成摘要键，超限就不执行目标方法。 */
+    /** 检查请求频率，按操作名、可信 IP 和登录会话计数，超限时不执行方法。 */
     @Around("@annotation(rule)")
     public Object around(ProceedingJoinPoint point, RateLimit rule) throws Throwable {
         if (!rule.value().matches("[a-zA-Z0-9:._-]{1,100}") || rule.limit() < 1 || rule.windowSeconds() < 1) {

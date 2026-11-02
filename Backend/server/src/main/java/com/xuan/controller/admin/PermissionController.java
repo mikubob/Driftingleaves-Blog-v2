@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 权限字典接口先检查身份和后台入口，再检查各项业务权限。
+ * 后台权限管理接口，检查登录、后台入口和操作权限。
  */
 @RestController
 @RequestMapping("/admin/permissions")
@@ -37,7 +37,7 @@ public class PermissionController {
     private final IPermissionService permissions;
 
     /**
-     * 检查后台入口和查询权限后分页取字典，禁用项也能查。
+     * 分页查询权限，先检查后台入口和查询权限，禁用项也能查。
      *
      * @param query 已校验的分页和过滤条件
      * @return ID 升序分页，不提供逐条 X-Revision
@@ -49,7 +49,7 @@ public class PermissionController {
     }
 
     /**
-     * 检查后台入口和查询权限后取详情及版本。
+     * 根据id查询权限详情及版本，先检查后台入口和查询权限。
      *
      * @param permissionId 正十进制权限 ID
      * @return 200 详情及 X-Revision，不存在返回 404
@@ -61,7 +61,7 @@ public class PermissionController {
     }
 
     /**
-     * 检查后台入口和创建权限后建字典项，不自动给角色授权，也不会凭空增加后端功能。
+     * 新增权限，先检查后台入口和创建权限，不自动给角色授权，也不会新增后端功能。
      *
      * @param body 已校验的创建字段，不接受审计或授权字段
      * @return 201 资料及详情 Location，无 X-Revision
@@ -75,7 +75,7 @@ public class PermissionController {
     }
 
     /**
-     * 检查后台入口和更新权限后完整替换资料、状态，编码不能改。
+     * 根据id更新权限，先检查后台入口和更新权限，再完整替换资料及状态，权限编码不可修改。
      *
      * @param permissionId 目标权限 ID
      * @param body 完整资料，说明可为 null 但不可省略
@@ -90,7 +90,7 @@ public class PermissionController {
         return profile(permissions.update(id(permissionId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除权限，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:permission:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {

@@ -93,7 +93,7 @@ function assertResponse(valid) {
   }
 }
 
-/** 公开请求统一解析 Result；失败保留为错误，不伪装成空数据。 */
+/** 发送公开请求并解析 Result，失败时抛出错误，不返回空数据充当成功。 */
 async function request(path, signal, options = {}) {
   let response
   try {

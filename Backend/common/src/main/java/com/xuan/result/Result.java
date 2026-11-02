@@ -3,7 +3,7 @@ package com.xuan.result;
 import java.util.List;
 
 /**
- * 成功或失败都带上 data 和 errors，前端不用猜字段有没有。
+ * 统一接口响应，成功和失败都返回 data、errors 字段。
  */
 public record Result<T>(String code, String msg, T data, List<FieldError> errors) {
 
@@ -18,7 +18,7 @@ public record Result<T>(String code, String msg, T data, List<FieldError> errors
     }
 
     /**
-     * 这里只写哪个字段不合要求，不回显用户输入。
+     * 字段错误说明，只返回字段名和原因，不返回用户输入。
      */
     public record FieldError(String field, String message) {
 

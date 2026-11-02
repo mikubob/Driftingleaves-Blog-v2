@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 评论范围落到 SQL，所有写入都先拿配置锁、文章锁，再锁评论。
+ * 评论数据接口，SQL 限制操作范围，写入时依次锁住配置、文章和评论。
  */
 @Mapper
 public interface CommentMapper extends BaseMapper<BlogComment> {
@@ -17,7 +17,7 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
     /** 只锁 comment 配置，不顺带实现站点配置管理；锁保持到事务结束。 */
     BlogSiteConfig lockConfig();
 
-    /** 父节点已经确认完整祖先链可见，这里只分页它的直接回复；null 查根节点。 */
+    /** 分页查询直接回复，调用前先确认父评论及全部上级评论可见；父评论为 null 时查询根评论。 */
     IPage<CommentRow> publicPage(IPage<CommentRow> page, @Param("article") long article,
             @Param("parent") Long parent);
 

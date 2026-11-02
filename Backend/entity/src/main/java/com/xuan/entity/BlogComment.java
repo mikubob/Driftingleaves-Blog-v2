@@ -9,7 +9,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 删除评论时清空原内容、改成占位文案并设 status=3，回复链要保留。
+ * 评论记录，删除时连同全部子回复一起删除。
  */
 @Data
 @TableName("blog_comment")

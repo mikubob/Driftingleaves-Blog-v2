@@ -5,7 +5,7 @@ import com.xuan.entity.HomeProfile;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 单例资料写入先持有既有管理保护锁，首次创建也能串行比较空资源版本。
+ * 站点主人资料接口，写入前先拿管理保护锁，保证首次创建时也能依次检查版本。
  */
 public interface HomeProfileMapper extends BaseMapper<HomeProfile> {
 

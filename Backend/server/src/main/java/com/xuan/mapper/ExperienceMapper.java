@@ -7,17 +7,17 @@ import com.xuan.entity.CvExperience;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 查询与总数使用同样条件，写事务先锁操作者再锁资源。
+ * 经历数据接口，列表和总数使用相同条件，写入时先锁操作者再锁记录。
  */
 public interface ExperienceMapper extends BaseMapper<CvExperience> {
 
-    /** 公开查询只取展示状态，关键词按字面包含。 */
+    /** 分页查询经历，公开查询只取展示中的记录，关键词按普通文字匹配。 */
     IPage<CvExperience> resourcePage(IPage<CvExperience> page, @Param("query") ExperienceQueryDTO query,
             @Param("publicOnly") boolean publicOnly);
 
-    /** 持有资源锁后，调用方重新检查原会话、ALL范围和版本。 */
+    /** 根据id锁住记录，拿到锁后由调用方重新检查原会话、ALL 范围和版本。 */
     CvExperience lockById(@Param("id") long id);
 
-    /** 显式覆盖可空字段，不能让NULL被默认更新策略跳过。 */
+    /** 更新记录，可空字段传入 NULL 时也要写入，避免清空操作被默认更新策略忽略。 */
     int replace(@Param("row") CvExperience row);
 }

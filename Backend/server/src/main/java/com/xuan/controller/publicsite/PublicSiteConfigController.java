@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 公开站点共用允许公开的 site 配置，不返回审核策略。
+ * 公开站点配置接口，各站点共用，只返回允许公开的 site 配置，不返回审核设置。
  */
 @RestController("publicSiteConfigController")
 @RequestMapping({"/blog/configs", "/home/configs", "/cv/configs"})
@@ -20,7 +20,7 @@ public class PublicSiteConfigController {
 
     private final ISiteConfigService configs;
 
-    /** 配置值返回对象，私有 site 或没有公开配置时返回空数组。 */
+    /** 查询公开站点配置，配置值返回对象，site 不公开或无公开配置时返回空数组。 */
     @GetMapping
     public Result<List<ConfigVO>> list() {
         return Result.ok(configs.publicConfigs());

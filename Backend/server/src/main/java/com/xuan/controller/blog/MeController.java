@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 这里操作当前用户的资料和安全设置，不收客户端目标用户 ID。
+ * 本人资料和安全设置接口，用户取当前会话，不接受目标用户id。
  */
 @RestController("blogMeController")
 @RequestMapping("/blog/me")
@@ -39,7 +39,7 @@ public class MeController {
     private final AuthorizationProvider authorization;
 
     /**
-     * 从会话确定当前用户，返回资料和 X-Revision；修改时要原样带回这个版本。
+     * 查询当前用户资料，版本放在 X-Revision，修改时需原样传回。
      *
      * @return 本人资料及 X-Revision 响应头
      */
@@ -49,7 +49,7 @@ public class MeController {
     }
 
     /**
-     * 只改实际传来的字段，没传就保持，null 只能清空可空字段；版本没传返回 428，过期返回 412。
+     * 修改当前用户资料，未传字段保持不变，null 只清空可空字段；未传版本返回 428，版本过期返回 412。
      *
      * @param body 已校验的允许修改的资料字段，以及客户端有没有传
      * @param revision 原样携带的带引号 If-Revision；可缺失以交由业务层区分错误
@@ -100,7 +100,7 @@ public class MeController {
     /**
      * 查询本人能访问的菜单；没有 admin:access 就返回空列表，已授权的隐藏项和按钮保留，按钮不能生成页面路由。
      *
-     * @return 完成权限交集和祖先链过滤的菜单树
+     * @return 已检查权限和全部上级菜单的菜单树
      */
     @GetMapping("/menus")
     public Result<List<MenuNodeVO>> menus() {
@@ -108,7 +108,7 @@ public class MeController {
     }
 
     /**
-     * 只列当前配置可用的平台和绑定时间，不返回绑定 ID、uuid 或平台 Token。
+     * 查询本人第三方绑定，只返回当前可用的平台及绑定时间，不返回绑定id、uuid 或平台 Token。
      *
      * @return 按平台升序排列的绑定列表，无绑定时为空列表
      */
@@ -130,7 +130,7 @@ public class MeController {
     }
 
     /**
-     * 把本人资料转成 HTTP 响应，版本只放 X-Revision，响应体只给已去掉敏感信息的资料。
+     * 返回本人资料，版本只放在 X-Revision，响应体不含敏感信息。
      *
      * @param result 用户服务生成的返回资料与带引号版本
      * @return 统一成功响应及原样保留的版本响应头

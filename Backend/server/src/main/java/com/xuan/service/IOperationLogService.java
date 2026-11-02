@@ -10,18 +10,18 @@ import com.xuan.vo.OperationLogVO;
 import java.util.List;
 
 /**
- * 后台日志只读或显式清理，不能创建或编辑。
+ * 操作日志业务接口，后台只能查询和清理，不能创建或编辑。
  */
 public interface IOperationLogService extends IService<SysOperationLog> {
 
-    /** ALL范围内按明确字段分页。 */
+    /** 分页查询后台操作日志，需要 ALL 范围，按指定字段筛选。 */
     PageResult<OperationLogVO> listLogs(OperationLogQueryDTO query);
 
-    /** ALL 管理员读取操作基本信息与已记录的完整业务参数。 */
+    /** 根据id查询操作日志详情，需要 ALL 范围，返回操作基本信息及已记录的完整业务参数。 */
     OperationLogDetailVO detail(long id);
 
-    /** 清理和清理成功审计一起提交，不存在404。 */
+    /** 根据id删除操作日志，删除和本次清理的成功日志一起提交；记录不存在时返回 404。 */
     void delete(long id);
-    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    /** 批量删除操作日志，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<String> ids);
 }

@@ -16,12 +16,12 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * 用Boot邮件连接实际发送，默认关闭时请求明确503，不安装空发送器。
+ * 配置邮件发送，使用 Boot 邮件连接；关闭时请求返回 503。
  */
 @Configuration
 public class MailConfig {
 
-    /** SMTP凭据只从外部配置读取，错误消息不包含收件地址、票据或服务器响应。 */
+    /** 创建邮件客户端，SMTP 凭据从外部配置读取，报错时不返回收件地址、票据或服务器响应。 */
     @Bean
     public MailClient mailClient(MailProperties properties, ObjectProvider<JavaMailSender> senders) {
         if (properties.isEnabled() && (!UrlPolicy.valid(
@@ -52,13 +52,13 @@ public class MailConfig {
         };
     }
 
-    /** 网络发送不在业务事务或请求线程等待中执行，容器关闭时等已接收任务。 */
+    /** 配置邮件线程池，异步发送邮件，关闭时等待已接收的任务完成。 */
     @Bean(name = "mailExecutor", destroyMethod = "close", defaultCandidate = false)
     public ExecutorService mailExecutor() {
         return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("mail-", 0).factory());
     }
 
-    /** 不回显传输异常。 */
+    /** 返回邮件服务不可用错误，不带发送异常详情。 */
     private static BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "邮件服务暂不可用");
     }

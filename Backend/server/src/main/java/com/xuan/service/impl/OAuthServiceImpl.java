@@ -27,7 +27,7 @@ import java.time.Duration;
 import java.util.Objects;
 
 /**
- * 平台验证和本站会话分开处理，先一次性消费流程再换码或写库，失败不把票据放回去。
+ * 第三方授权实现，平台身份验证和本站登录分别处理，授权流程只能用一次，失败后不恢复票据。
  */
 @Service
 @RequiredArgsConstructor
@@ -42,7 +42,8 @@ public class OAuthServiceImpl implements IOAuthService {
     private final Clock clock;
 
     /**
-     * 创建 300 秒有效的一次性流程，关联浏览器、平台和操作；绑定还要存当前用户、原 Token 摘要和认证时间，不能自选目标用户。
+     * 生成第三方授权地址，创建 300 秒有效的一次性流程，记录浏览器、平台和操作。
+     * 绑定时还要保存当前用户、原 Token 摘要和认证时间，不能自行指定目标用户。
      *
      * @param source 服务端启用的平台标识
      * @param operation 登录或绑定操作
@@ -76,7 +77,9 @@ public class OAuthServiceImpl implements IOAuthService {
     }
 
     /**
-     * 核对并一次性消费流程后再取平台身份，识别已有绑定或绑定当前用户；可信流程成功发 60 秒 ticket，失败跳固定错误页，不可信关系直接报错，最后清理 JustAuth state，不能恢复流程。
+     * 处理第三方回调，核对并一次性使用流程后，获取平台身份，查询已有绑定或绑定当前用户。
+     * 流程可信时，成功生成 60 秒 ticket，失败跳固定错误页；流程不可信时直接报错。
+     * 最后清理 JustAuth state，不恢复已使用的流程。
      *
      * @param source 回调路径中的平台标识
      * @param state 平台返回的流程随机值
@@ -155,7 +158,9 @@ public class OAuthServiceImpl implements IOAuthService {
     }
 
     /**
-     * 核对浏览器后一次性消费结果票据；绑定必须带发起时同一枚有效 Token，登录在用户锁内重查绑定再发会话，失败或响应丢失都不恢复票据。
+     * 兑换第三方授权结果，核对浏览器后一次性使用票据。
+     * 绑定必须携带发起时的同一枚有效 Token；登录时在用户锁内重新检查绑定再创建会话。
+     * 失败或响应丢失时都不恢复票据。
      *
      * @param ticket 固定完成页交回的一次性结果票据
      * @param browser 当前浏览器 Cookie 中的随机标识
@@ -197,7 +202,7 @@ public class OAuthServiceImpl implements IOAuthService {
     }
 
     /**
-     * 这里只查浏览器标识的格式及其与服务端流程摘要是否对应，不消费流程。
+     * 检查浏览器标识格式及是否匹配服务端流程，此时不删除流程。
      *
      * @param expected 流程或票据保存的浏览器摘要
      * @param browser 当前请求的浏览器随机标识

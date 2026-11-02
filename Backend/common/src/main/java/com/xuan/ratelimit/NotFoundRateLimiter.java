@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/** 反复访问不存在地址时临时封禁可信 IP，不使用客户端自报的统计指纹。 */
+/** 404 限流，反复访问不存在的地址时临时封禁客户端 IP，不使用客户端自报的统计标识。 */
 @Component
 @RequiredArgsConstructor
 public class NotFoundRateLimiter {
@@ -33,17 +33,17 @@ public class NotFoundRateLimiter {
     private final StringRedisTemplate redis;
     private final AuthProperties properties;
 
-    /** 业务执行前检查封禁；访问不会延长原来的封禁时间。 */
+    /** 检查 IP 是否被封禁，访问不延长原封禁时间。 */
     public void check(String ip) {
         execute(ip, "check");
     }
 
-    /** 后端 404 与前端未知路由共享计数，第 21 次原子写入一天的封禁。 */
+    /** 记录 404 次数，前后端共用计数，第 21 次通过脚本一次性设置一天封禁。 */
     public void record(String ip) {
         execute(ip, "record");
     }
 
-    /** 不保存完整 IP，Redis 故障时拒绝请求，不能跳过访问保护。 */
+    /** 执行封禁检查脚本，不保存完整 IP，Redis 故障时拒绝请求。 */
     private void execute(String ip, String operation) {
         if (ip == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "无法确认访问地址");

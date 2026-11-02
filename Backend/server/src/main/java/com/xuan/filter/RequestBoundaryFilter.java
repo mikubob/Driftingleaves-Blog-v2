@@ -23,7 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 
 /**
- * JSON 解析前先限制为 8MiB，认证响应和错误响应都不能缓存。
+ * 限制 JSON 请求体不超过 8MiB，并禁止缓存登录和错误响应。
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 20)
@@ -34,7 +34,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
     private final JsonMapper json;
 
     /**
-     * 在进入业务前设置响应策略并限制 JSON 大小，再把已读请求体交回 MVC。
+     * 检查请求体大小并设置响应头，再把已读取的内容交给 MVC。
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -63,14 +63,14 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
         // 4. 检查过的字节还要交回 MVC，不能因为这里读过就让业务收到空请求体。
         chain.doFilter(new HttpServletRequestWrapper(request) {
             /**
-             * {@inheritDoc}
+             * 返回已检查大小的请求体输入流。
              */
             @Override
             public ServletInputStream getInputStream() {
                 ByteArrayInputStream input = new ByteArrayInputStream(body);
                 return new ServletInputStream() {
                     /**
-                     * {@inheritDoc}
+                     * 读取下一个请求体字节。
                      */
                     @Override
                     public int read() {
@@ -78,7 +78,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
                     }
 
                     /**
-                     * {@inheritDoc}
+                     * 判断请求体是否已读完。
                      */
                     @Override
                     public boolean isFinished() {
@@ -86,7 +86,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
                     }
 
                     /**
-                     * {@inheritDoc}
+                     * 内存中的请求体可以立即读取。
                      */
                     @Override
                     public boolean isReady() {
@@ -94,7 +94,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
                     }
 
                     /**
-                     * {@inheritDoc}
+                     * 拒绝异步读取，同步 MVC 请求体不支持读取监听。
                      */
                     @Override
                     public void setReadListener(ReadListener listener) {
@@ -104,7 +104,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
             }
 
             /**
-             * {@inheritDoc}
+             * 以 UTF-8 文本读取已检查的请求体。
              */
             @Override
             public BufferedReader getReader() {

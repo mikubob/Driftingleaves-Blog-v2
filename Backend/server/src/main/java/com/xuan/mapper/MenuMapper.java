@@ -8,12 +8,12 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 菜单写入先锁固定结构检查点，再锁用户和目标菜单，顺序由业务层统一控制。
+ * 菜单数据接口，业务层依次拿结构保护锁、用户锁和菜单锁。
  */
 public interface MenuMapper extends BaseMapper<SysMenu> {
 
     /**
-     * 取全部状态的菜单和权限码；后台读用同一快照，写入检查前要先锁住菜单结构。
+     * 取全部状态的菜单和权限码；后台读用同一个只读事务，写入检查前要先锁住菜单结构。
      *
      * @return sortOrder、menuId 升序的节点，不按可见性或权限状态过滤
      */

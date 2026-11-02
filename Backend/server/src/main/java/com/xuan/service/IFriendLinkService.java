@@ -13,27 +13,27 @@ import com.xuan.vo.LinkPublicVO;
 import java.util.List;
 
 /**
- * 友链维护与公开展示直接连通，写入和成功审计共同提交。
+ * 友情链接业务接口，管理结果直接用于公开展示，写入和成功日志一起提交。
  */
 public interface IFriendLinkService extends IService<BlogFriendLink> {
 
-    /** 只分页展示中的友链，不返回后台状态。 */
+    /** 查询公开友情链接列表，只查询展示中的友情链接，不返回后台状态。 */
     PageResult<LinkPublicVO> publicLinks(PageQueryDTO query);
 
-    /** 后台按名称字面包含和状态过滤，SELF 对全局资源也有效。 */
+    /** 分页查询后台友情链接，按名称和状态筛选，名称按普通文字匹配，SELF 也能操作全站友情链接。 */
     PageResult<BlogFriendLink> listLinks(LinkQueryDTO query);
 
-    /** 同一快照返回详情和版本。 */
+    /** 根据id查询友情链接详情及版本，详情和版本在同一个只读事务中读取。 */
     LinkProfileVO detail(long id);
 
-    /** 新建默认待审，不抓取 URL，也不限制名称和 URL 重复。 */
+    /** 新增友情链接，默认待审核，不抓取链接内容，名称和 URL 可以重复。 */
     BlogFriendLink create(LinkWriteDTO request);
 
-    /** 操作者和友链锁内复查原身份、权限及版本后完整替换。 */
+    /** 根据id更新友情链接，锁住操作者和友情链接后，重新检查原身份、权限及版本，再完整替换资料。 */
     LinkProfileVO update(long id, LinkWriteDTO request, String revision);
 
-    /** 校验版本后物理删除，成功日志失败时删除一起回滚。 */
+    /** 根据id删除友情链接，先检查版本再删除记录；成功日志写入失败时，删除一起回滚。 */
     void delete(long id, String revision);
-    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    /** 批量删除友情链接，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

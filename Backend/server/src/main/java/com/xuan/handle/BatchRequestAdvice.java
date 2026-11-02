@@ -6,10 +6,10 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.servlet.HandlerMapping;
 
-/** 多目标版本只能来自请求中的各自版本，不能误用一个请求头覆盖整批。 */
+/** 检查批量操作参数，每条记录单独传版本，不能用一个请求头代替整批版本。 */
 @ControllerAdvice(basePackages = "com.xuan.controller.admin")
 public class BatchRequestAdvice {
-    /** 批量动作不接受查询参数或单一版本头，模型字段由JSON边界校验。 */
+    /** 检查批量请求，不接受查询参数或单条记录的版本头，请求字段由 JSON 解析时校验。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         String pattern = String.valueOf(request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE));

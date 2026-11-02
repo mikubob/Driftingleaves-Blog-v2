@@ -12,7 +12,7 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 
 /**
- * 只允许服务端写日志，后台提供独立查询与清理，不开放编辑。
+ * 操作日志数据接口，只允许服务端新增，后台可以查询和清理，不能编辑。
  */
 @Mapper
 public interface OperationLogMapper extends BaseMapper<SysOperationLog> {
@@ -26,7 +26,7 @@ public interface OperationLogMapper extends BaseMapper<SysOperationLog> {
      * 日志不提供编辑；成功日志随业务事务写，失败日志等回滚后在新事务写。
      * 操作者已被物理删除时保存 NULL，与历史日志的外键清理规则一致。
      *
-     * @param log 服务端元数据、业务参数快照和固定错误码
+     * @param log 服务端记录的操作信息、执行时的业务参数和固定错误码
      * @return 插入行数
      */
     @Insert("""

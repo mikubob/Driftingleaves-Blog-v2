@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开分页只展示已通过友链，后台下架或删除后下次读取立即生效。
+ * 公开友情链接接口，只展示审核通过的链接，下架或删除后下次读取生效。
  */
 @RestController("publicFriendLinkController")
 @RequestMapping("/blog/links")
@@ -22,7 +22,7 @@ public class FriendLinkController {
 
     private final IFriendLinkService links;
 
-    /** 只接受标准分页，不允许客户端传 status 放宽公开条件。 */
+    /** 分页查询友情链接，只接受分页参数，不允许用 status 查询非公开记录。 */
     @GetMapping
     public Result<PageResult<LinkPublicVO>> list(@Valid @ModelAttribute PageQueryDTO query) {
         return Result.ok(links.publicLinks(query));

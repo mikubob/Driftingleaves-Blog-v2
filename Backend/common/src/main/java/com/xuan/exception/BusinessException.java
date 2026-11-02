@@ -6,7 +6,7 @@ import lombok.Getter;
 import java.util.List;
 
 /**
- * 这里的错误文案可以给用户看，转成 HTTP 响应由应用负责。
+ * 业务异常，文案可以展示给用户，HTTP 响应由应用层转换。
  */
 @Getter
 public class BusinessException extends RuntimeException {
@@ -24,7 +24,7 @@ public class BusinessException extends RuntimeException {
         this(status, code, message, retryAfter, List.of());
     }
 
-    /** 字段冲突只带字段名和说明，不回显用户输入或数据库信息。 */
+    /** 创建字段冲突异常，只保存字段名和说明，不带用户输入或数据库信息。 */
     public BusinessException(int status, String code, String message, Integer retryAfter,
             List<Result.FieldError> errors) {
         super(message);

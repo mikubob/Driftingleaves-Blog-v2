@@ -31,19 +31,19 @@ import java.util.List;
 import java.sql.SQLException;
 
 /**
- * 把错误转成 HTTP 响应，只给用户能看的文案，不带输入、SQL、平台响应或堆栈。
+ * 统一处理接口异常，不返回用户输入、SQL、第三方响应或堆栈。
  */
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
 
-    /** 容器 multipart 上限也转换为统一 413，不回显内部临时目录。 */
+    /** 处理上传文件过大，返回 413，不返回临时目录。 */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public ResponseEntity<Result<Void>> uploadTooLarge() {
         return error(413, "PAYLOAD_TOO_LARGE", "文件或multipart请求超限");
     }
 
-    /** 部件不完整等 multipart 格式错误不应变成内部错误。 */
+    /** 处理上传格式错误，缺少文件等问题按请求错误返回。 */
     @ExceptionHandler(MultipartException.class)
     public ResponseEntity<Result<Void>> multipart() {
         return error(400, "VALIDATION_ERROR", "multipart请求格式不符合要求");

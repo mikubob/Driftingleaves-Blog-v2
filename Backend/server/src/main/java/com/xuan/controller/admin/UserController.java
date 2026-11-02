@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台用户接口先检查后台入口，各项操作还得有明确的业务权限。
+ * 后台用户管理接口，检查后台入口和对应操作权限。
  */
 @RestController
 @RequestMapping("/admin/users")
@@ -39,7 +39,7 @@ public class UserController {
     private final IUserService users;
 
     /**
-     * 分页查全站用户，SELF 不缩小范围，关键词和角色筛选由同一套 SQL 条件完成。
+     * 分页查询用户，SELF 不缩小范围，关键词和角色筛选使用同一套 SQL 条件。
      *
      * @param query 已校验的分页及过滤参数
      * @return 无逐条版本的脱敏分页结果
@@ -51,7 +51,7 @@ public class UserController {
     }
 
     /**
-     * 获取全站用户详情及整体版本，禁用用户也能查看。
+     * 根据id查询用户详情及版本，禁用用户也能查看。
      *
      * @param userId 正十进制用户 ID
      * @return 资料、完整角色集合和 X-Revision；不存在返回 404
@@ -76,7 +76,7 @@ public class UserController {
     }
 
     /**
-     * 资料和状态要完整替换，业务层锁内核对版本，禁用时撤销全部会话。
+     * 根据id更新用户资料和状态，传入完整资料，由业务层加锁并检查版本；禁用时撤销全部会话。
      *
      * @param userId 目标用户 ID
      * @param body 含可空字段的完整资料
@@ -92,7 +92,7 @@ public class UserController {
     }
 
     /**
-     * 完整替换用户角色，业务层保证保留最后管理员，提交前撤销目标用户的全部会话。
+     * 根据id更新用户角色，完整替换角色列表；保留最后一个有效管理员，提交前撤销该用户的全部会话。
      *
      * @param userId 目标用户 ID
      * @param body 去重且最多一百项的角色集合，空集合清空
@@ -107,21 +107,21 @@ public class UserController {
         return profile(users.adminAssignRoles(id(userId), body, revision));
     }
 
-    /** 单条和批量启用共用逐项版本，不恢复旧会话。 */
+    /** 批量启用用户，单条也走此接口，每个用户都要检查版本，不恢复旧会话。 */
     @PutMapping("/batch-enable")
     @SaCheckPermission("sys:user:update")
     public Result<BatchVersionsVO> enable(@Valid @RequestBody BatchRevisionDTO body) {
         return Result.ok(users.adminSetStatusBatch(body.getItems(), 1));
     }
 
-    /** 按整批最终状态保护最后管理员，实际禁用时撤销全部会话。 */
+    /** 批量禁用用户，确保整批修改后仍有有效管理员，实际禁用时撤销全部会话。 */
     @PutMapping("/batch-disable")
     @SaCheckPermission("sys:user:update")
     public Result<BatchVersionsVO> disable(@Valid @RequestBody BatchRevisionDTO body) {
         return Result.ok(users.adminSetStatusBatch(body.getItems(), 0));
     }
 
-    /** 一个用户也提交一项 items，引用和版本检查失败时整批保留。 */
+    /** 批量删除用户，单条也要放进 items；内容引用或版本检查失败时，整批用户都保留。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:user:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {

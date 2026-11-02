@@ -12,12 +12,12 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.io.IOException;
 import java.util.Set;
 
-/** 文件入口拒绝额外查询、重复文件和伪造上传者，不能让 MVC 静默忽略 multipart 字段。 */
+/** 检查文件接口参数，拒绝多余参数、重复文件和客户端指定的上传者。 */
 @ControllerAdvice(assignableTypes = {FileController.class,
         com.xuan.controller.blog.FileController.class})
 public class FileRequestAdvice {
 
-    /** 上传只收一个file部件，统一删除收JSON目标，读取仍拒绝请求体和额外参数。 */
+    /** 检查文件请求，上传只收一个 file，删除使用 JSON 参数，读取不收请求体和多余参数。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) throws ServletException, IOException {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
@@ -52,7 +52,7 @@ public class FileRequestAdvice {
         });
     }
 
-    /** 参数错误只返回固定消息，不带文件名、存储路径或额外字段内容。 */
+    /** 返回文件参数错误，不带文件名、存储路径或多余字段的内容。 */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "请求含未声明、重复的字段或不支持的请求体");
     }

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 本人点赞不收 userId；PUT 和 DELETE 共用用户、IP 的一分钟六十次窗口。
+ * 文章点赞接口，用户取当前会话，点赞和取消共用每用户、IP 每分钟六十次限制。
  */
 @RestController
 @RequestMapping("/blog/articles/{articleId}/like")
@@ -26,13 +26,13 @@ public class ArticleLikeController {
 
     private final IArticleLikeService likes;
 
-    /** 查询只需登录，不额外要求 like 权限，文章仍必须公开。 */
+    /** 查询本人点赞状态，只要求登录和文章公开，不额外检查点赞权限。 */
     @GetMapping
     public Result<LikeStateVO> state(@PathVariable String articleId) {
         return Result.ok(likes.state(IdUtils.parse(articleId)));
     }
 
-    /** 重复 PUT 保持 true，不做 toggle。 */
+    /** 为文章点赞，重复提交仍返回 true，不切换为取消。 */
     @PutMapping
     @SaCheckPermission("blog:article:like")
     @RateLimit(value = "article:like", limit = 60, dimension = RateLimit.Dimension.USER)
@@ -41,7 +41,7 @@ public class ArticleLikeController {
         return Result.ok(likes.like(IdUtils.parse(articleId)));
     }
 
-    /** 不存在也返回 false，非公开文章在业务层拒绝且保留原明细。 */
+    /** 取消文章点赞，原本未点赞时也返回 false；非公开文章拒绝操作并保留原记录。 */
     @DeleteMapping
     @SaCheckPermission("blog:article:like")
     @RateLimit(value = "article:like", limit = 60, dimension = RateLimit.Dimension.USER)

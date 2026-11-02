@@ -1,4 +1,4 @@
-/** 数据库组件键只解析本地白名单，不能直接作为模块路径导入。 */
+/** 根据数据库中的组件名称查找本地已注册组件，不能直接把名称当作模块路径导入。 */
 export const pageRegistry = {
   'content/article/index': {
     icon: 'document',

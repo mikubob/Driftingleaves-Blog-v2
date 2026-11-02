@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 后台报表需要本次query权限的ALL，日期统一使用UTC自然日。
+ * 后台统计报表接口，要求查询权限的 ALL 范围，日期使用 UTC 自然日。
  */
 @RestController("adminStatisticsController")
 @RequestMapping("/admin/statistics")
@@ -29,31 +29,31 @@ public class StatisticsController {
 
     private final IStatisticsService statistics;
 
-    /** 日期仅限制访问指标，内容与待审核数量为当前快照。 */
+    /** 查询统计总览，日期只限制访问指标，内容和待审核数量按当前数据统计。 */
     @GetMapping("/overview")
     public Result<AdminStatisticsVO> overview(@Valid @ModelAttribute StatisticsQueryDTO query) {
         return Result.ok(statistics.overview(query));
     }
 
-    /** 无数据日期补0。 */
+    /** 查询每日浏览量，没有数据的日期补零。 */
     @GetMapping("/page-views")
     public Result<List<ViewTrendVO>> views(@Valid @ModelAttribute StatisticsQueryDTO query) {
         return Result.ok(statistics.viewTrend(query));
     }
 
-    /** 按首访日期并从当前区间begin累计。 */
+    /** 查询每日新增及累计访客数，按首次访问日期统计，从当前时间段的 begin 开始累计。 */
     @GetMapping("/visitors")
     public Result<List<VisitorTrendVO>> visitors(@Valid @ModelAttribute StatisticsQueryDTO query) {
         return Result.ok(statistics.visitorTrend(query));
     }
 
-    /** 按最新省份对访客去重。 */
+    /** 查询访客省份分布，按当前省份统计，同一访客只算一次。 */
     @GetMapping("/provinces")
     public Result<List<ProvinceMetricVO>> provinces(@Valid @ModelAttribute StatisticsQueryDTO query) {
         return Result.ok(statistics.provinces(query));
     }
 
-    /** 按blog区间浏览数排名，区别于累计文章热度。 */
+    /** 查询文章访问排行，按指定时间段内的 blog 浏览量排名，不使用文章累计热度。 */
     @GetMapping("/articles")
     public Result<List<ArticleViewMetricVO>> articles(@Valid @ModelAttribute StatisticsQueryDTO query) {
         return Result.ok(statistics.articles(query));

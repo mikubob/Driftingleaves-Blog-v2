@@ -1,6 +1,6 @@
 import { isId, request } from './api.js'
 
-/** 仅收集用户显式选择的目标；详情读取失败时整批停止，不退回逐条写入。 */
+/** 准备批量操作，只处理用户选中的记录；任一详情读取失败就停止整批操作，不改为逐条提交。 */
 export async function prepareBatch(resource, idKey, rows, needsRevision = true) {
   const ids = rows.map((row) => row[idKey])
   if (!ids.length || ids.length > 100 || !ids.every(isId) || new Set(ids).size !== ids.length) {

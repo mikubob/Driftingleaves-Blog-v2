@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 浏览明细只有分页与清理入口，不允许修改历史归属。
+ * 后台浏览记录接口，只提供分页查询和清理，不修改历史归属。
  */
 @RestController
 @RequestMapping("/admin/page-views")
@@ -26,14 +26,14 @@ public class PageViewController {
 
     private final IPageViewService views;
 
-    /** ALL后台按声明字段筛选。 */
+    /** 分页查询浏览记录，需要 ALL 范围，只接受已声明的筛选字段。 */
     @GetMapping
     @SaCheckPermission("blog:view:query")
     public Result<PageResult<BlogPageView>> list(@Valid @ModelAttribute PageViewQueryDTO query) {
         return Result.ok(views.listViews(query));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除浏览记录，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:view:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {

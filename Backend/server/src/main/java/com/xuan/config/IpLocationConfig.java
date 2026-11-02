@@ -17,13 +17,13 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 
 /**
- * IPv4 和 IPv6 离线库随应用打包，启动时检查格式，退出时释放查询器。
+ * 配置 IP 属地查询，随应用加载 IPv4 和 IPv6 离线库，启动时检查格式，关闭时释放资源。
  */
 @Configuration(proxyBeanMethods = false)
 public class IpLocationConfig {
 
     /**
-     * 从资源流加载数据库，这样打成可执行 jar 也能读取，不能硬转成磁盘文件。
+     * 加载 IP 属地库，使用资源流，保证打包成 jar 后也能读取。
      *
      * @param ipv4Database 与 3.3.7 客户端匹配的 IPv4 xdb
      * @param ipv6Database 与 3.3.7 客户端匹配的 IPv6 xdb
@@ -47,7 +47,7 @@ public class IpLocationConfig {
         }
     }
 
-    /** 3.3.7 遇到流资源协议不符时会引用空文件，先查文件头，才能报出明确的格式错误。 */
+    /** 检查属地库文件头，避免 3.3.7 遇到错误格式时因空文件引用而报错。 */
     private void verifyVersion(BufferedInputStream input, Version expected) throws IOException, XdbException {
         input.mark(Searcher.HeaderInfoLength);
         byte[] bytes = input.readNBytes(Searcher.HeaderInfoLength);

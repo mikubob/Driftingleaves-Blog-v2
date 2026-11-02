@@ -39,7 +39,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
 
-    /** {@inheritDoc} */
+    /** 分页查询后台浏览记录。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogPageView> listViews(PageViewQueryDTO query) {
@@ -55,7 +55,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
                         IdUtils.parse(query.userId()), IdUtils.parse(query.articleId()), begin, end));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除浏览记录。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:view", permission = "blog:view:delete", targetIdArgument = 0)
@@ -74,7 +74,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
         }
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除浏览记录，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:view", permission = "blog:view:delete")

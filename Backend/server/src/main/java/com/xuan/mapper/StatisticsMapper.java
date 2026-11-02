@@ -12,7 +12,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 报表按保留明细统计，UTC边界由业务传入，内容计数是当前快照。
+ * 统计查询接口，按保留明细汇总，UTC 起止时间由业务层传入，内容数量按当前数据统计。
  */
 public interface StatisticsMapper {
 
@@ -24,7 +24,7 @@ public interface StatisticsMapper {
     AdminStatisticsVO overview(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
             @Param("site") String site, @Param("now") LocalDateTime now);
 
-    /** 有数据日期由SQL聚合，无数据日期由Service补零。 */
+    /** 按日期统计浏览量，有数据的日期由 SQL 汇总，没有数据的日期由 Service 补零。 */
     List<ViewTrendVO> viewTrend(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
             @Param("site") String site);
 
@@ -32,7 +32,7 @@ public interface StatisticsMapper {
     List<VisitorTrendVO> visitorTrend(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
             @Param("site") String site);
 
-    /** 访客先去重再按当前province分组，不是历史地域快照。 */
+    /** 访客先去重再按当前province分组，不是访问当时的地域记录。 */
     List<ProvinceMetricVO> provinces(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
             @Param("site") String site);
 

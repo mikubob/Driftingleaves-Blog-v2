@@ -9,7 +9,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开汇总只包含PUBLIC内容和blog访问统计。
+ * 博客公开统计接口，只包含公开内容和 blog 访问数据。
  */
 @RestController("blogStatisticsController")
 @RequestMapping("/blog/statistics")
@@ -18,7 +18,7 @@ public class StatisticsController {
 
     private final IStatisticsService statistics;
 
-    /** 不提供任意日期、用户或后台内容探索。 */
+    /** 查询博客公开统计，不支持指定日期、用户或后台内容。 */
     @GetMapping
     public Result<PublicStatisticsVO> statistics() {
         return Result.ok(statistics.publicStatistics());

@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
 
-/** SPA 兜底路由只上报一次当前 IP 的不存在访问，不接受目标身份或完整 URL。 */
+/** 前端 404 上报接口，只记录当前 IP 的本次访问，不接受目标身份或完整 URL。 */
 @RestController
 @RequiredArgsConstructor
 public class NotFoundController {
@@ -20,7 +20,7 @@ public class NotFoundController {
     private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
 
-    /** 来源和无参数约定通过后，和后端真实 404 共用同一个窗口。 */
+    /** 上报前端 404，先检查来源和请求参数，再与后端 404 共用计数窗口。 */
     @PostMapping({"/blog/security/not-found", "/admin/security/not-found"})
     public Result<Void> report(HttpServletRequest request) throws IOException {
         if (!properties.getAllowedOrigins().contains(request.getHeader("Origin"))) {

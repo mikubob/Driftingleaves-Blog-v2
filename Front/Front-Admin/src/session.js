@@ -10,7 +10,7 @@ export const session = reactive({
   ready: false,
 })
 
-/** 清除内存身份及持久凭据，用户授权每次从后端读取。 */
+/** 清除登录信息和保存的 Token，用户权限每次都从后端读取。 */
 export function clearSession() {
   setAuthorization('')
   removeStoredSession(storageKey)

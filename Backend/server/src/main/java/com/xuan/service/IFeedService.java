@@ -1,7 +1,7 @@
 package com.xuan.service;
 
 /**
- * XML公开输出不依赖邮箱订阅，不包Result。
+ * RSS 和站点地图业务接口，公开返回 XML，不放进 Result，也不依赖邮件订阅。
  */
 public interface IFeedService {
 

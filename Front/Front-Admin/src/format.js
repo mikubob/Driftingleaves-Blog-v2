@@ -1,4 +1,4 @@
-/** 审计时间只在显示时转换，不把本地字符串写回接口。 */
+/** 显示时间时转为本地时间，不把本地时间字符串写回接口。 */
 export function formatTime(value) {
   if (!value) {
     return '—'
@@ -24,7 +24,7 @@ export function validatePassword(value) {
   return length >= 8 && length <= 64 && new TextEncoder().encode(value).length <= 72
 }
 
-/** 只将计算后的有限比例转换为数字，计数本身保留 BIGINT 精度。 */
+/** 计算展示比例，只把最终有限比例转为数字，原始计数保留 BIGINT 精度。 */
 export function ratio(value, maximum) {
   const max = BigInt(maximum || '0')
   return max === 0n ? 0 : Number((BigInt(value) * 10000n) / max) / 100

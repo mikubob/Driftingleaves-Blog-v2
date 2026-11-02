@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 邮件链接只携带作用域受限的退订票据，GET不改变状态。
+ * 邮件退订接口，票据仅用于对应订阅，GET 不修改订阅状态。
  */
 @RestController("blogSubscriptionController")
 @RequestMapping("/blog/rss-subscriptions")
@@ -21,7 +21,7 @@ public class SubscriptionController {
 
     private final ISubscriptionService subscriptions;
 
-    /** 只允许退订票据绑定的同一条订阅及轮次。 */
+    /** 根据邮件票据取消订阅，只能取消票据对应的订阅和轮次。 */
     @PostMapping("/unsubscribe")
     @RateLimit(value = "subscription-unsubscribe", limit = 30)
     public Result<Void> cancel(@Valid @RequestBody SubscriptionTicketDTO request) {

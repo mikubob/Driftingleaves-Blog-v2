@@ -43,7 +43,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** {@inheritDoc} */
+    /** 查询站点主人公开资料。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "home", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -53,7 +53,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
                 row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(), row.getLocation());
     }
 
-    /** {@inheritDoc} */
+    /** 查询站点主人资料及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<HomeProfile> detail() {
@@ -61,7 +61,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         return profile(profiles.selectById(1L));
     }
 
-    /** {@inheritDoc} */
+    /** 设置或更新站点主人资料。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "home:profile", permission = "home:profile:update")
@@ -125,7 +125,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         }
     }
 
-    /** NULL有独立版本，不把数据库时间或账号资料放进版本。 */
+    /** 计算站点主人资料版本，未设置时也有版本，不包含数据库时间或账号资料。 */
     private ResourceVersion<HomeProfile> profile(HomeProfile row) {
         Object value = row == null ? null : Arrays.asList(row.getUserId(), row.getNickname(), row.getTagline(),
                 row.getDescription(), row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(),

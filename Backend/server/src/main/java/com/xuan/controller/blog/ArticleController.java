@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 前台始终只看符合公开条件的文章，带后台 Token 也不能多看。
+ * 博客文章接口，只查询公开文章，后台 Token 也不能扩大范围。
  */
 @RestController("publicArticleController")
 @RequestMapping("/blog")
@@ -34,7 +34,7 @@ public class ArticleController {
     private final IArticleService articles;
 
     /**
-     * 筛选条件要同时满足，隐藏分类返回空页；匿名和已登录都只查公开文章。
+     * 分页查询公开文章，所有筛选条件都要满足，分类隐藏时返回空页，登录后也不扩大范围。
      *
      * @param query 已校验的分页、字面关键词、分类、标签及UTC月份
      * @return 200公开列表，不增加阅读
@@ -45,7 +45,7 @@ public class ArticleController {
     }
 
     /**
-     * slug 按大小写查公开详情，成功才加一次阅读量，失败不计数。
+     * 根据slug查询公开文章详情，区分大小写，成功后增加一次阅读量，失败不计数。
      *
      * @param slug 已校验的ASCII分词标识，最长200
      * @return 200安全公开详情，非PUBLIC统一404
@@ -57,7 +57,7 @@ public class ArticleController {
     }
 
     /**
-     * 归档按 UTC 月份倒序返回，分页越界就报 400，不自动修正。
+     * 分页查询文章归档，按 UTC 月份降序排列，页码超出允许范围时返回 400。
      *
      * @param page 默认1，范围1..100000
      * @param pageSize 默认10，范围1..100
@@ -70,7 +70,7 @@ public class ArticleController {
     }
 
     /**
-     * 四种榜单都只取公开文章，不增加阅读量，参数不对返回 400。
+     * 查询热门文章排行，只返回公开文章，不增加阅读量，参数错误时返回 400。
      *
      * @param period site全站或month本月首次发布候选，默认site
      * @param metric view累计阅读或like当前点赞，默认view

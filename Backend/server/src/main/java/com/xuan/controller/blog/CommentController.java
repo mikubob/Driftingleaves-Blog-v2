@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开查询不混入待审评论，创建仍要求当前用户和评论权限。
+ * 文章评论接口，公开查询不返回待审评论，发表时检查登录和评论权限。
  */
 @RestController("publicCommentController")
 @RequestMapping("/blog/articles/{articleId}/comments")
@@ -37,14 +37,14 @@ public class CommentController {
     private final CaptchaStore captchas;
     private final AuthProperties auth;
 
-    /** 每次只展开一层，父链不可见和文章非公开都返回 404。 */
+    /** 分页查询文章评论，每次只展开直接回复，上级评论不可见或文章非公开时返回 404。 */
     @GetMapping
     public Result<PageResult<CommentPublicVO>> list(@PathVariable String articleId,
             @Valid @ModelAttribute CommentPublicQueryDTO query) {
         return Result.ok(comments.publicComments(IdUtils.parse(articleId), query));
     }
 
-    /** 用户和 IP 共用一分钟十次窗口；只在这里计数，业务层不重复限流。 */
+    /** 发表评论，按用户和 IP 限制为每分钟十次，只在接口计数，业务层不重复计数。 */
     @PostMapping
     @SaCheckPermission("blog:comment:create")
     @RateLimit(value = "comment:create", limit = 10, dimension = RateLimit.Dimension.USER)

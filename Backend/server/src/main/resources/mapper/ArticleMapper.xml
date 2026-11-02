@@ -60,7 +60,7 @@
         </choose>
     </select>
 
-    <!-- 只枚举公开文章的作者，字段投影不包含账号和安全资料。 -->
+    <!-- 查询有公开文章的作者，只返回公开资料，不返回账号和安全资料。 -->
     <sql id="authorSummary">
         SELECT u.user_id,u.nickname,u.avatar,u.intro,CAST(COUNT(*) AS CHAR) AS article_count,
         MAX(a.publish_time) AS last_publish_time
@@ -136,7 +136,7 @@
         <include refid="publicCondition"/>
     </select>
 
-    <!-- 正文和文章资料要在同一快照或锁事务里读取。 -->
+    <!-- 正文和文章资料要在同一个只读事务或加锁事务中读取。 -->
     <select id="content" resultType="com.xuan.entity.BlogArticleContent">
         SELECT * FROM blog_article_content WHERE article_id = #{id}
     </select>

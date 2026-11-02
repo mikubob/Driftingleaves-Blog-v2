@@ -12,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * 登录入口同时按 IP 和身份限流，客户端 IP 只从明确配置的直连代理读取。
+ * 登录限流，同时检查 IP 和身份，客户端 IP 按可信代理配置获取。
  */
 @Component
 @RequiredArgsConstructor
@@ -22,7 +22,7 @@ public class AuthRateLimiter {
     private final AuthProperties properties;
 
     /**
-     * 登录校验前检查 IP 与用户名的失败次数，此处不增加计数。
+     * 检查登录失败次数，按 IP 和用户名限制，此处不增加次数。
      */
     public void checkLogin(HttpServletRequest request, String username) {
         limiter.check(keys("login", request, username.toLowerCase(Locale.ROOT)),
@@ -30,32 +30,32 @@ public class AuthRateLimiter {
     }
 
     /**
-     * 凭据校验失败后，累计 IP 与用户名的登录失败次数。
+     * 记录登录失败，分别增加 IP 和用户名的失败次数。
      */
     public void loginFailed(HttpServletRequest request, String username) {
         hit("login", request, username.toLowerCase(Locale.ROOT), properties.getRate().getLoginFailures());
     }
 
     /**
-     * 注册请求按 IP 和浏览器标识累计限流次数。
+     * 检查注册请求频率，按 IP 和浏览器标识计数。
      */
     public void register(HttpServletRequest request, String browser) {
         hit("register", request, browser, properties.getRate().getRegister());
     }
 
     /**
-     * OAuth 发起及兑换按 IP 和浏览器标识累计限流次数。
+     * 检查第三方授权和兑换频率，按 IP 和浏览器标识计数。
      */
     public void oauth(HttpServletRequest request, String browser) {
         hit("oauth", request, browser, properties.getRate().getOauth());
     }
 
-    /** 所有用途共享发送预算：同一 IP 每分钟五次，同一邮箱每分钟一次。 */
+    /** 检查邮件发送频率，所有用途共用限制：同一 IP 每分钟五次，同一邮箱每分钟一次。 */
     public void email(HttpServletRequest request, String email) {
         limiter.hit(keys("email", request, email.strip().toLowerCase(Locale.ROOT)), 60, List.of(5, 1));
     }
 
-    /** 采集在任何行锁、地域解析和写入前原子累计全部独立维度。 */
+    /** 检查访问采集频率，在加锁、查询属地和写入前，用一次脚本完成各项计数。 */
     public void analytics(String ip, String fingerprint, Long actor) {
         String prefix = properties.getRedisPrefix() + "rate:analytics:";
         List<String> keys = new ArrayList<>();
@@ -71,20 +71,20 @@ public class AuthRateLimiter {
         limiter.hit(keys, 60, limits);
     }
 
-    /** 五类后台报表共用可信 IP 与本站用户预算。 */
+    /** 检查后台报表请求频率，五类报表共用 IP 和用户次数限制。 */
     public void report(HttpServletRequest request, long actor) {
         limiter.hit(keys("report", request, Long.toString(actor)), 60, 30);
     }
 
     /**
-     * 使用配置的窗口，同时累计 IP 与身份两个维度的次数。
+     * 按配置的时间窗口计数，同时检查 IP 和身份。
      */
     private void hit(String operation, HttpServletRequest request, String identity, int limit) {
         limiter.hit(keys(operation, request, identity), properties.getRate().getWindowSeconds(), limit);
     }
 
     /**
-     * 只从可信代理读取客户端 IP，身份先摘要再放入 Redis 键。
+     * 生成限流缓存键，IP 按可信代理规则获取，身份先计算摘要。
      */
     private List<String> keys(String operation, HttpServletRequest request, String identity) {
         // 1. 默认取直连地址，只有直连方是可信代理时才读取转发的客户端 IP。

@@ -81,7 +81,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
         return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** 资料和版本在同一个快照里读取，避免两者对不上。 */
+    /** 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CategoryProfileVO detail(long id) {
@@ -211,7 +211,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
         return new CategoryProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除分类，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:category", permission = "blog:category:delete")

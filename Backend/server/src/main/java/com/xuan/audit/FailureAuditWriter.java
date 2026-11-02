@@ -13,7 +13,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 
 /**
- * 原事务回滚后，用单独的虚拟线程和新事务写失败日志，不带入请求、Sa-Token 或原业务事务。
+ * 异步保存失败日志，在原事务回滚后使用新事务，不传递请求、Sa-Token 或原事务信息。
  */
 @Component
 public class FailureAuditWriter {
@@ -23,7 +23,7 @@ public class FailureAuditWriter {
     private final OperationLogMapper logs;
     private final TransactionTemplate transaction;
 
-    /** 明确使用审计执行器，新事务只收已经去掉敏感信息的操作记录。 */
+    /** 初始化失败日志写入器，使用专用线程池，只接收已去掉敏感信息的记录。 */
     public FailureAuditWriter(@Qualifier("auditExecutor") ExecutorService executor,
             OperationLogMapper logs, PlatformTransactionManager manager) {
         this.executor = executor;
@@ -33,7 +33,7 @@ public class FailureAuditWriter {
     }
 
     /**
-     * 原事务结束后才能提交日志任务；业务错误已经返回，日志再出错就另报固定消息。
+     * 提交失败日志任务，必须等原事务结束；日志写入失败时单独记录固定错误。
      *
      * @param log 不含请求对象、凭据、原始异常或其他可变业务对象的审计记录
      * @return 可观察的写入完成结果；失败仍以固定消息报告，不改变原业务错误

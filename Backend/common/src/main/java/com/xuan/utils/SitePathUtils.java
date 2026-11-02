@@ -8,14 +8,14 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 /**
- * 访问统计只保存站内规范路径与去掉查询/fragment的来源URL。
+ * 访问路径工具，统计只保存站内路径，来源地址去掉查询参数和 # 片段。
  */
 public final class SitePathUtils {
 
     private SitePathUtils() {
     }
 
-    /** 先剔除query和fragment，再拒绝外部地址、反斜杠、控制字符与绕过路径。 */
+    /** 检查站内路径，先去掉查询参数和 # 片段，再拒绝外部地址、反斜杠、控制字符和非法跳转路径。 */
     public static String path(String value) {
         try {
             URI uri = new URI(value);
@@ -33,7 +33,7 @@ public final class SitePathUtils {
         }
     }
 
-    /** 来源只保留协议、主机、端口与路径，不把登录票据或访问参数落库。 */
+    /** 保存访问来源时只保留协议、主机、端口和路径，不把登录票据或查询参数写入数据库。 */
     public static String referer(String value) {
         if (ObjectUtil.isNull(value)) {
             return null;
@@ -50,7 +50,7 @@ public final class SitePathUtils {
         }
     }
 
-    /** 不回显可能含凭据的输入。 */
+    /** 返回路径错误，不带可能含凭据的原始输入。 */
     private static BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "访问路径或来源地址不符合要求");
     }

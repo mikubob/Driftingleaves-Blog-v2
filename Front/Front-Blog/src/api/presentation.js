@@ -1,4 +1,4 @@
-/** 将 V2 字段映射到直接复用的老组件属性；ID 和计数保持字符串。 */
+/** 把 V2 接口字段转换成老组件需要的属性，id和计数保持字符串。 */
 export function articleView(article) {
   return {
     ...article,

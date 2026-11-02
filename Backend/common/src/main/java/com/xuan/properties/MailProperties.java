@@ -4,7 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
- * 邮件能力默认关闭，启用后必须提供SMTP和固定前端完成页。
+ * 邮件配置，默认关闭，启用时必须配置 SMTP 和固定的前端完成页。
  */
 @Data
 @ConfigurationProperties("app.mail")

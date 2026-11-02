@@ -27,7 +27,7 @@ export function getFingerprint(browser) {
   return fingerprint
 }
 
-/** 采集只包含站内路径与脱敏来源，不发送查询参数、fragment 或用户身份。 */
+/** 整理访问统计数据，只包含站内路径和去掉敏感参数的来源，不发送查询参数、# 片段或用户身份。 */
 export function createPageView(fingerprint, pagePath, pageTitle, referer) {
   let cleanReferer = null
   try {

@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 
 /**
- * 指纹只作统计唯一键，不能拿它授权或封禁本站账号。
+ * 访客数据接口，统计标识只用于去重，不能据此授权或封禁用户账号。
  */
 public interface VisitorMapper extends BaseMapper<BlogVisitor> {
 
@@ -32,6 +32,6 @@ public interface VisitorMapper extends BaseMapper<BlogVisitor> {
     /** 列表按最近访问和ID倒序，查询条件与total一致。 */
     IPage<VisitorVO> visitorPage(IPage<VisitorVO> page, @Param("query") VisitorQueryDTO query);
 
-    /** 详情与列表按同一口径统计浏览次数，不存在时返回null。 */
+    /** 根据id查询访客详情，浏览次数与列表使用相同的统计规则，访客不存在时返回 null。 */
     VisitorVO visitorDetail(@Param("id") long id);
 }

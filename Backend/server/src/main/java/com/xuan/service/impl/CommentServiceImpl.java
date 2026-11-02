@@ -73,7 +73,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private final JsonMapper json;
     private final IpLocationResolver locations;
 
-    /** 同一快照里确认文章和完整父链，再分页直接回复，关闭评论不隐藏历史记录。 */
+    /** 分页查询评论及直接回复，在同一个只读事务中检查文章和全部上级评论；关闭评论不隐藏历史记录。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query) {
@@ -85,7 +85,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return self.getObject().cachedPublicComments(article, query);
     }
 
-    /** 外层已在当前快照校验 PUBLIC 与祖先链，缓存只保存共同公开结果。 */
+    /** 缓存公开评论，外层已检查文章公开状态和全部上级评论，缓存只保存所有人都能看到的结果。 */
     @Override
     @Cacheable(cacheNames = "comments", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
@@ -162,7 +162,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         deleteTree(row, true);
     }
 
-    /** 每次 query 单独计算文章作者范围，评论者筛选只会缩小结果。 */
+    /** 分页查询后台评论，按本次查询权限计算文章作者范围，评论者筛选只能缩小结果。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query) {
@@ -172,14 +172,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 .convert(this::adminView));
     }
 
-    /** 详情和版本取同一快照，可以读取非公开文章下的评论。 */
+    /** 根据id查询评论详情及版本，在同一个只读事务中读取，非公开文章的评论也能查询。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CommentProfileVO detail(long id) {
         return profile(requireComment(comments.scoped(id, requireAdmin("query"), null, false)));
     }
 
-    /** 幂等目标也先查版本；父评论驳回后无需改后代，公开链会即时重新计算。 */
+    /** 审核评论，即使状态不变也先检查版本；驳回父评论后不用逐条修改下级回复，查询时会重新判断是否可见。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "review", target = "blog:comment", permission = "blog:comment:review", targetIdArgument = 0)
@@ -197,7 +197,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return profile(comments.scoped(id, requireAdmin("review"), null, false));
     }
 
-    /** 管理删除整条分支只查 moderate 的范围，不借 query 或 review 的 ALL 扩大权限。 */
+    /** 删除评论及全部子回复，只使用管理删除权限的范围，不能借用查询或审核权限的 ALL 范围。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:comment", permission = "blog:comment:moderate", targetIdArgument = 0)
@@ -287,7 +287,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return row;
     }
 
-    /** 配置和文章锁阻止分支继续写入，先锁评论并复核权限，再按子到父删除。 */
+    /** 删除评论及全部子回复，配置和文章锁阻止新增回复；锁住评论并重新检查权限后，从子回复向父评论依次删除。 */
     private void deleteTree(CommentRow row, boolean own) {
         var nodes = articles.lockComments(row.getArticleId());
         Long author = own ? null : requireAdmin("moderate");
@@ -410,7 +410,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return new BusinessException(409, "STATE_CONFLICT", message);
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量审核评论，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:comment", permission = "blog:comment:review")
@@ -436,7 +436,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
 
-    /** 父子混选先全部核验，再清理分支并集；子回复数量不受选择上限截断。 */
+    /** 父子混选先全部核验，再一起删除选中的评论和全部子回复；子回复数量不受选择上限截断。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:comment", permission = "blog:comment:moderate")

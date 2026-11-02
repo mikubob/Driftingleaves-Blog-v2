@@ -37,7 +37,7 @@ import java.util.List;
 import java.util.TreeSet;
 
 /**
- * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ * 音乐业务实现，公开展示和后台管理读同一张表，成功日志写入失败时资料一起回滚。
  */
 @Service
 @RequiredArgsConstructor
@@ -53,7 +53,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     private final FileStore storage;
     private final ArticleMapper articles;
 
-    /** {@inheritDoc} */
+    /** 查询公开音乐列表。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "music", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -64,7 +64,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
                         row.getLyricType(), row.getSortOrder())));
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询后台音乐。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogMusic> listItems(DisplayQueryDTO query) {
@@ -72,7 +72,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询音乐详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<BlogMusic> detail(long id) {
@@ -80,7 +80,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return profile(requireItem(items.selectById(id)));
     }
 
-    /** {@inheritDoc} */
+    /** 新增音乐。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:music", permission = "blog:music:create")
@@ -99,7 +99,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return profile(items.selectById(row.getMusicId()));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id更新音乐。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:music", permission = "blog:music:update", targetIdArgument = 0)
@@ -120,7 +120,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return profile(items.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除音乐。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:music", permission = "blog:music:delete", targetIdArgument = 0)
@@ -129,7 +129,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
-    /** 受管文件地址规范化；外部地址只检查和保存，不下载媒体。 */
+    /** 整理音乐文件地址，外部链接只校验和保存，不下载内容。 */
     private void validate(MusicWriteDTO request) {
         request.setCoverUrl(resources.normalizeUrl(request.getCoverUrl()));
         request.setAudioUrl(resources.normalizeUrl(request.getAudioUrl()));
@@ -150,7 +150,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         }
     }
 
-    /** 锁后独立复核文件 query 范围、媒体类型和对象可用性，不能借音乐 ALL 扩大文件权限。 */
+    /** 检查音乐附件，加锁后重新检查文件查询范围、类型和可用性，音乐的 ALL 权限不能扩大文件权限。 */
     private void validateFiles(MusicWriteDTO request) {
         List<String> urls = Arrays.asList(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl());
         for (int index = 0; index < urls.size(); index++) {
@@ -180,7 +180,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         }
     }
 
-    /** 白名单逐项赋值，NULL也写入数据库。 */
+    /** 填入允许修改的字段，NULL 也要写入数据库。 */
     private void assign(BlogMusic row, MusicWriteDTO request) {
         row.setTitle(request.getTitle());
         row.setArtist(request.getArtist());
@@ -193,7 +193,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         row.setStatus(request.getStatus());
     }
 
-    /** 先锁操作者再锁资源，每次等待后重查原Token、启用身份和独立权限。 */
+    /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
     private BlogMusic lock(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -202,7 +202,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return requireItem(row);
     }
 
-    /** 全站资源没有SELF版本，必须由授予本次权限的角色提供ALL。 */
+    /** 检查本次操作的 ALL 权限，此类资料全站共用，不支持只操作本人的范围。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -212,7 +212,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         }
     }
 
-    /** 先检查权限，再报告不存在。 */
+    /** 检查记录是否存在，调用前必须先通过权限校验。 */
     private BlogMusic requireItem(BlogMusic row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "资料不存在");
@@ -220,7 +220,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         return row;
     }
 
-    /** 业务版本排除审计时间和公开渲染结果。 */
+    /** 计算资料版本，不包含审计时间和前台生成的展示内容。 */
     private ResourceVersion<BlogMusic> profile(BlogMusic row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(
                 Arrays.asList(row.getMusicId(), row.getTitle(), row.getArtist(), row.getDurationSeconds(),
@@ -228,7 +228,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
                         row.getStatus()))) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除音乐，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:music", permission = "blog:music:delete")

@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 公开可选 Bearer 入口，票据用途仅限在线统计。 */
+/** 在线统计票据接口，可以不登录，票据只用于在线统计。 */
 @RestController("homeOnlineController")
 @RequestMapping("/home/analytics/online/tickets")
 @RequiredArgsConstructor
@@ -25,7 +25,7 @@ public class OnlineController {
     private final IOnlineService online;
     private final AuthProperties auth;
 
-    /** 签票成功返回 201；可选 Bearer 必须有效，响应禁止缓存。 */
+    /** 生成在线统计票据，成功返回 201，传入 Bearer 时必须有效，响应禁止缓存。 */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body, HttpServletRequest request) {

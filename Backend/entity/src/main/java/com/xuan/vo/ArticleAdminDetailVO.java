@@ -6,7 +6,7 @@ import lombok.EqualsAndHashCode;
 import java.util.List;
 
 /**
- * 后台详情把正文和关联一起取出，要用同一快照或文章锁事务。
+ * 后台文章详情，同时返回正文和关联资料，必须在同一个只读事务或文章加锁事务中读取。
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

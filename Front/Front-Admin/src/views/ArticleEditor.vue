@@ -106,7 +106,7 @@ async function load() {
   }
 }
 
-/** 保存提交快照；发布成功且没有新输入时返回列表，草稿沿用创建后的 ID。 */
+/** 保存文章提交时的内容；发布成功且没有新输入时返回列表，草稿继续使用创建时的id。 */
 async function save(publish = false, { navigate = true } = {}) {
   if (saving.value || uploading.value || !editable.value) {
     return false
@@ -129,7 +129,7 @@ async function save(publish = false, { navigate = true } = {}) {
     return false
   }
 
-  // 1. 只提交可编辑字段，记录提交快照，不覆盖请求期间的新输入。
+  // 1. 只提交可编辑字段，记下提交时的内容，不覆盖请求期间的新输入。
   const snapshot = JSON.stringify(form)
   const body = {
     ...JSON.parse(snapshot),

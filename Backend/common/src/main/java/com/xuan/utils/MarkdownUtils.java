@@ -20,7 +20,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Markdown 先渲染再清理 HTML，标题锚点、字数和阅读时间也在这里生成。
+ * Markdown 工具，生成并清理 HTML，同时计算标题锚点、字数和阅读时间。
  */
 public final class MarkdownUtils {
 
@@ -37,7 +37,7 @@ public final class MarkdownUtils {
     }
 
     /**
-     * Markdown 转成 HTML 后还要清理，开头有标签也不能当成可信 HTML。
+     * 将 Markdown 转为 HTML 并清理危险内容，不能因开头有标签就跳过检查。
      *
      * @param markdown 原始 Markdown；null 和空文本输出空字符串
      * @return 可输出的安全 HTML，含表格、代码、任务列表及标题锚点
@@ -51,7 +51,7 @@ public final class MarkdownUtils {
     }
 
     /**
-     * 旧 HTML 缓存也要重新清理，去掉脚本、事件、样式和危险 URL，再生成不重复的标题 ID。
+     * 清理 HTML，去掉脚本、事件、样式和危险链接，再生成不重复的标题id；旧缓存也要清理。
      *
      * @param html 原始 HTML，不可信
      * @return 清理后的正文；允许规范相对 URL 和同页锚点
@@ -105,7 +105,7 @@ public final class MarkdownUtils {
     }
 
     /**
-     * 正文结果不依赖业务模型；ID 和计数如何转成字符串由应用负责。
+     * 文章正文处理结果，id和计数的字符串转换由应用负责。
      */
     public record ArticleContent(String htmlContent, long wordCount, int readingMinutes) {
 

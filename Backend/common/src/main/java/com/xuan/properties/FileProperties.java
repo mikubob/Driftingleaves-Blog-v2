@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 这里配置附件存储根目录和本站公开 origin，不自动建目录或开放静态资源。
+ * 文件存储配置，设置根目录和本站公开来源，不自动创建目录或开放静态资源。
  */
 @Data
 @Validated
@@ -25,7 +25,7 @@ public class FileProperties {
     @NotNull
     private List<String> publicOrigins = new ArrayList<>();
 
-    /** 启动时检查每项都是具体的 HTTP(S) origin，不能带路径或凭据。 */
+    /** 检查公开来源配置，必须是明确的 HTTP(S) 来源，不能带路径或凭据。 */
     @AssertTrue(message = "files.public-origins必须是具体HTTP(S) origin")
     public boolean isOriginsValid() {
         if (publicOrigins == null) {

@@ -11,7 +11,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 文件查询和删除都在 SQL 里限制上传者；文章引用只按批读取，不另建引用表。
+ * 文件数据接口，SQL 限制上传者范围，文章引用分批读取，不另建引用表。
  */
 @Mapper
 public interface FileMapper extends BaseMapper<BlogFile> {

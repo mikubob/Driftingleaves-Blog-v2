@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台入口之外，查询、审核、管理删除还要分别检查自己的权限和文章范围。
+ * 后台评论管理接口，查询、审核和删除分别检查操作权限及文章范围。
  */
 @RestController
 @RequestMapping("/admin/comments")
@@ -33,28 +33,28 @@ public class CommentController {
 
     private final ICommentService comments;
 
-    /** 列表不带逐条版本，编辑前先取详情。 */
+    /** 分页查询评论，列表不带每条记录的版本，编辑前先查询详情。 */
     @GetMapping
     @SaCheckPermission("blog:comment:query")
     public Result<PageResult<CommentAdminVO>> list(@Valid @ModelAttribute CommentAdminQueryDTO query) {
         return Result.ok(comments.adminComments(query));
     }
 
-    /** 待审、驳回和非公开文章评论也按 query 的独立范围查询。 */
+    /** 根据id查询评论详情，按查询权限限定范围，支持待审、驳回和非公开文章的评论。 */
     @GetMapping("/{commentId}")
     @SaCheckPermission("blog:comment:query")
     public ResponseEntity<Result<CommentAdminVO>> detail(@PathVariable String commentId) {
         return profile(comments.detail(IdUtils.parse(commentId)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量审核评论，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-review")
     @SaCheckPermission("blog:comment:review")
     public Result<BatchVersionsVO> review(@Valid @RequestBody BatchStatusDTO body) {
         return Result.ok(comments.reviewBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除评论及全部子回复，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:comment:moderate")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
@@ -63,7 +63,7 @@ public class CommentController {
     }
 
     /**
-     * 把业务版本写入 X-Revision，响应体保留后台评论资料。
+     * 返回后台评论资料，版本放在 X-Revision 响应头。
      */
     private ResponseEntity<Result<CommentAdminVO>> profile(CommentProfileVO value) {
         return ResponseEntity.ok().header("X-Revision", value.revision()).body(Result.ok(value.comment()));

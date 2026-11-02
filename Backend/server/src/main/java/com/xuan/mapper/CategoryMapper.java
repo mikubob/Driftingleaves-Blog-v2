@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 
 /**
- * 分类查询和维护放在这里，删除后的文章关联交给外键处理。
+ * 分类数据接口，删除分类时由外键处理文章关联。
  */
 public interface CategoryMapper extends BaseMapper<BlogCategory> {
 

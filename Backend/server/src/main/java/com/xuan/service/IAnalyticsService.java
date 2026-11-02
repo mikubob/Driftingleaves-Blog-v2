@@ -4,10 +4,10 @@ import com.xuan.dto.PageViewCreateDTO;
 import com.xuan.vo.TrackingResultVO;
 
 /**
- * 公开采集不颁发身份，只负责核验来源与同事务写入访客/PV。
+ * 访问采集业务接口，检查来源后，在同一事务中保存访客和浏览记录，不创建登录身份。
  */
 public interface IAnalyticsService {
 
-    /** 原始IP只在内存用于地域查询，持久化前脱敏；userId只来自有效会话。 */
+    /** 记录站点访问，原始 IP 只在内存中查询属地，写入数据库前先隐藏部分地址；userId 只取有效会话。 */
     TrackingResultVO track(PageViewCreateDTO request, String origin, String ip, String userAgent);
 }

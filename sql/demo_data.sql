@@ -306,7 +306,7 @@ JOIN dl_demo_article_seed a ON a.seed_key = s.article_seed
 JOIN blog_comment c ON c.article_id = a.article_id AND c.user_id = u.user_id AND c.content = s.content
 WHERE s.kind = 'C' AND s.depth = 0;
 
--- 私密回复使用与父链相同的标记，展示时仍由应用检查完整父链。
+-- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
   content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
@@ -338,7 +338,7 @@ JOIN dl_demo_article_seed a ON a.seed_key = s.article_seed
 JOIN blog_comment c ON c.article_id = a.article_id AND c.user_id = u.user_id AND c.content = s.content
 WHERE s.kind = 'C' AND s.depth = 1;
 
--- 私密回复使用与父链相同的标记，展示时仍由应用检查完整父链。
+-- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
   content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
@@ -370,7 +370,7 @@ JOIN dl_demo_article_seed a ON a.seed_key = s.article_seed
 JOIN blog_comment c ON c.article_id = a.article_id AND c.user_id = u.user_id AND c.content = s.content
 WHERE s.kind = 'C' AND s.depth = 2;
 
--- 私密回复使用与父链相同的标记，展示时仍由应用检查完整父链。
+-- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
   content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,

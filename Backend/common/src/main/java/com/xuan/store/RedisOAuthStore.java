@@ -13,7 +13,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 本站一次性流程和 JustAuth state 分开存，用一次 Redis Lua 完成比较和删除。
+ * 第三方授权流程存储，与 JustAuth state 分开保存，用一段 Lua 比较并删除。
  */
 @Component
 @RequiredArgsConstructor
@@ -24,14 +24,14 @@ public class RedisOAuthStore implements AuthStateCache {
     private final AuthProperties properties;
 
     /**
-     * 按用途保存流程或票据，并设置调用方指定的有效期。
+     * 保存授权流程或票据，按用途区分，并设置指定的有效期。
      */
     public void save(String kind, String secret, String value, Duration ttl) {
         redis.opsForValue().set(key(kind, secret), value, ttl);
     }
 
     /**
-     * 读取未过期票据，格式错误或记录不存在时统一报流程失效。
+     * 读取授权流程或票据，格式错误、不存在或已过期时返回流程失效。
      */
     public String read(String kind, String secret) {
         // 1. 先检查票据格式，再访问 Redis，不能让外部输入随意拼接键。
@@ -47,7 +47,7 @@ public class RedisOAuthStore implements AuthStateCache {
         return value;
     }
 
-    /** 调用方先核对浏览器、操作和原会话，关联不对时不能删掉别人的合法流程。 */
+    /** 一次性使用授权流程，调用方先核对浏览器、操作和原会话，不匹配时不能删除。 */
     public void consume(String kind, String secret, String expected) {
         // 1. 在同一次 Lua 里比较完整记录并删除，并发请求只能有一个成功。
         Long consumed = redis.execute(CONSUME, List.of(key(kind, secret)), expected);
@@ -59,14 +59,14 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     /**
-     * 流程结束后清理 JustAuth 使用的 state 缓存，不恢复已消费流程。
+     * 删除 JustAuth state 缓存，流程结束后清理，不恢复已使用的授权流程。
      */
     public void deleteState(String state) {
         redis.delete(key("justauth", state));
     }
 
     /**
-     * 为 JustAuth 保存 state；指定有效期时单位是毫秒，省略时默认五分钟。
+     * 保存 JustAuth state，有效期单位为毫秒，未指定时使用五分钟。
      */
     @Override
     public void cache(String key, String value) {
@@ -74,7 +74,7 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     /**
-     * 为 JustAuth 保存 state；指定有效期时单位是毫秒，省略时默认五分钟。
+     * 保存 JustAuth state，有效期单位为毫秒，未指定时使用五分钟。
      */
     @Override
     public void cache(String key, String value, long timeout) {
@@ -83,7 +83,7 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     /**
-     * 读取 JustAuth 的 state 缓存；本站流程的一次性消费另外检查。
+     * 读取 JustAuth state，本站授权流程是否已使用另行检查。
      */
     @Override
     public String get(String key) {
@@ -91,7 +91,7 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     /**
-     * 只检查 JustAuth 缓存是否存在，不能代替本站流程的一次性消费。
+     * 检查 JustAuth state 是否存在，不能代替本站授权流程的一次性使用检查。
      */
     @Override
     public boolean containsKey(String key) {
@@ -99,14 +99,14 @@ public class RedisOAuthStore implements AuthStateCache {
     }
 
     /**
-     * 按用途隔离 Redis 键，随机票据只以摘要形式出现在键中。
+     * 生成授权缓存键，按用途区分，只使用随机票据的摘要。
      */
     private String key(String kind, String secret) {
         return properties.getRedisPrefix() + "oauth:" + kind + ":" + TokenUtils.digest(secret);
     }
 
     /**
-     * 格式、过期或重放统一报流程失效，不暴露具体失败原因。
+     * 返回授权流程失效错误，不区分格式错误、过期或重复使用。
      */
     public static BusinessException invalid() {
         return new BusinessException(400, "OAUTH_STATE_INVALID", "授权流程已失效，请重新发起");

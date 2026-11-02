@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 只通过当前 PUBLIC 文章或展示音乐的真实引用读取文件，不开放任意 fileId。
+ * 公开附件接口，只读取公开文章或展示曲目实际引用的文件，不开放任意 fileId。
  */
 @RestController("publicFileController")
 @RequiredArgsConstructor
@@ -24,19 +24,19 @@ public class FileController {
 
     private final IFileService files;
 
-    /** 即使带管理员 Token 也不放宽 PUBLIC；错误仍由统一处理器返回 Result。 */
+    /** 读取公开文章附件，管理员 Token 也不能放宽文章公开条件，失败时返回统一 Result。 */
     @GetMapping("/blog/articles/{articleId}/files/{fileId}/content")
     public ResponseEntity<Resource> attachment(@PathVariable String articleId, @PathVariable String fileId) {
         return content(files.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), false));
     }
 
-    /** 受管音乐文件只按当前展示状态开放，不能仅凭 fileId 读取任意文件。 */
+    /** 读取音乐附件，要求曲目当前展示且引用该文件，不能只凭 fileId 读取。 */
     @GetMapping("/blog/music/files/{fileId}/content")
     public ResponseEntity<Resource> music(@PathVariable String fileId) {
         return content(files.musicAttachment(IdUtils.parse(fileId)));
     }
 
-    /** 原生播放器会请求 Range，交给 Spring 的 Resource 响应处理分段和无效范围。 */
+    /** 返回文件内容，交给 Spring Resource 处理播放器的 Range 请求和无效范围。 */
     private ResponseEntity<Resource> content(FileContent value) {
         MediaType type = MediaType.parseMediaType(value.mimeType());
         if (value.mimeType().startsWith("text/")) {

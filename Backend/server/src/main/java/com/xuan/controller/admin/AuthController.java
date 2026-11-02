@@ -39,14 +39,14 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 登录和 OAuth 入口在这里；Cookie 只关联浏览器，绑定时需要的原会话由业务服务检查。
+ * 登录和第三方授权接口，Cookie 只标识浏览器，绑定时由业务层检查原会话。
  */
 @RestController("adminAuthController")
 @RequestMapping("/admin/auth")
 @RequiredArgsConstructor
 public class AuthController {
 
-    /** 这个安全 Cookie 只关联 OAuth 浏览器，不是本站登录凭据。 */
+    /** 第三方授权的浏览器标识 Cookie，不作为登录凭据。 */
     public static final String BROWSER_COOKIE = "__Host-dl-oauth-browser";
     private final IUserService users;
     private final SessionManager sessions;
@@ -57,7 +57,7 @@ public class AuthController {
     private final CaptchaStore captchas;
 
     /**
-     * 注册先检查输入和频率，再创建用户返回 201；角色、状态和密码编码由用户业务处理，不自动登录。
+     * 注册用户，先校验参数和请求频率，角色、状态及密码加密由业务层处理；成功返回 201，不自动登录。
      *
      * @param body 通过 Jakarta Validation 校验的允许的注册字段
      * @param request 用于识别客户端 IP 的当前 HTTP 请求
@@ -76,10 +76,10 @@ public class AuthController {
     }
 
     /**
-     * 后台登录同时验证账密、绑定邮箱、邮件验证码和图形验证码，缺一项都不能发会话。
+     * 登录后台，用户名、密码、绑定邮箱、邮件验证码和图形验证码全部通过后才创建会话。
      *
      * @param body 已校验的后台登录凭据
-     * @param request 用于 IP 与归一用户名维度限流的当前请求
+     * @param request 用于按 IP 和统一格式后的用户名限流的请求
      * @return 仅成功登录返回的独立 Bearer 会话
      */
     @PostMapping("/login")
@@ -101,7 +101,7 @@ public class AuthController {
         }
     }
 
-    /** 图形验证码通过后，再核对账密和后台权限，只向账号当前邮箱发送验证码。 */
+    /** 发送后台登录验证码，先校验图形验证码、用户名、密码和后台权限，只发送到账号当前邮箱。 */
     @PostMapping("/email-code")
     @RateLimit(value = "login-total", limit = 30)
     public Result<Void> emailCode(@Valid @RequestBody AdminEmailCodeDTO body, HttpServletRequest request) {
@@ -131,7 +131,7 @@ public class AuthController {
     }
 
     /**
-     * 公开列出已启用且配置齐全的平台，不返回应用 ID、密钥或回调配置。
+     * 查询可用的第三方平台，不返回应用id、密钥或回调配置。
      *
      * @return 仅含平台标识和展示名称的列表，无可用平台时为空列表
      */

@@ -8,7 +8,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 留言父链创建后不可改，删除保留占位与私密范围。
+ * 留言记录，创建后不可修改回复关系，删除时连同全部子回复一起删除。
  */
 @Data
 @TableName("blog_message")

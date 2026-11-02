@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台日志有查询和清理入口，没有创建或更新入口。
+ * 后台操作日志接口，只提供查询和清理。
  */
 @RestController
 @RequestMapping("/admin/operation-logs")
@@ -29,21 +29,21 @@ public class OperationLogController {
 
     private final IOperationLogService logs;
 
-    /** 列表不返回摘要。 */
+    /** 分页查询操作日志，列表不返回操作参数摘要。 */
     @GetMapping
     @SaCheckPermission("sys:log:query")
     public Result<PageResult<OperationLogVO>> list(@Valid @ModelAttribute OperationLogQueryDTO query) {
         return Result.ok(logs.listLogs(query));
     }
 
-    /** 不可编辑记录不返回版本。 */
+    /** 根据id查询操作日志详情，记录不可编辑，不返回版本。 */
     @GetMapping("/{id}")
     @SaCheckPermission("sys:log:query")
     public Result<OperationLogDetailVO> detail(@PathVariable String id) {
         return Result.ok(logs.detail(IdUtils.parse(id)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除操作日志，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:log:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {

@@ -8,7 +8,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * 这里只检查展示 URL，不抓取资源；只收不带凭据和控制字符的绝对 HTTP(S) 地址。
+ * 展示地址校验，只接受不含凭据和控制字符的完整 HTTP(S) 地址，不抓取内容。
  */
 public final class UrlPolicy {
 
@@ -22,12 +22,12 @@ public final class UrlPolicy {
     private UrlPolicy() {
     }
 
-    /** 展示图标只能是已登记键或外部HTTP(S)地址。 */
+    /** 检查图标，只允许已注册名称或外部 HTTP(S) 地址。 */
     public static boolean validIcon(String value) {
         return value == null || ICONS.contains(value) || valid(value);
     }
 
-    /** 社交邮箱链接只收单个邮箱，不收查询参数、fragment或控制字符。 */
+    /** 检查社交链接中的邮箱地址，只允许单个邮箱，不接受查询参数、# 片段或控制字符。 */
     public static boolean validSocial(String value) {
         if (value != null && value.startsWith("mailto:")) {
             String email = value.substring(7);
@@ -38,7 +38,7 @@ public final class UrlPolicy {
     }
 
     /**
-     * 检查公开展示地址，不访问远端，也不能把附件 API 路径当公开图片地址。
+     * 检查展示链接，不访问远端，附件接口路径不能当作公开图片地址。
      *
      * @param value 待校验地址；null 交由字段必填约束处理
      * @return 是否为长度和结构合法的绝对 HTTP(S) 地址，null 返回 true
@@ -67,7 +67,7 @@ public final class UrlPolicy {
     }
 
     /**
-     * 头像地址不合法就报统一业务错误，不把原地址写进错误里。
+     * 检查头像地址，不合法时抛出业务错误，不返回原地址。
      *
      * @param value 待校验头像地址，可为 null
      * @throws BusinessException 地址无效时返回 VALIDATION_ERROR

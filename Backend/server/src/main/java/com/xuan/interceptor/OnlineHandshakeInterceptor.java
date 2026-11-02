@@ -21,7 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
-/** Upgrade 只开放精确入口；握手不读取 Cookie 或 Header 中的本站身份。 */
+/** 校验在线统计的 WebSocket 握手，只开放指定地址，不从 Cookie 或请求头获取登录身份。 */
 @Component
 @RequiredArgsConstructor
 public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
@@ -29,7 +29,7 @@ public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
     private final RedisRateLimiter limiter;
     private final JsonMapper json;
 
-    /** {@inheritDoc} */
+    /** 检查握手参数、来源和请求频率，通过后保存站点信息。 */
     @Override
     public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
             WebSocketHandler handler, Map<String, Object> attributes) throws Exception {
@@ -59,7 +59,7 @@ public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
         }
     }
 
-    /** 握手失败仍返回统一错误；限流时告诉客户端等待秒数。 */
+    /** 返回握手失败结果，触发限流时附上等待秒数。 */
     private void reject(ServerHttpResponse response, BusinessException error) throws Exception {
         response.setStatusCode(HttpStatusCode.valueOf(error.getStatus()));
         response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
@@ -71,7 +71,7 @@ public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
                 .getBytes(StandardCharsets.UTF_8));
     }
 
-    /** {@inheritDoc} */
+    /** 握手结束时不调整在线人数，连接尚未加入统计。 */
     @Override
     public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
             WebSocketHandler handler, Exception exception) {

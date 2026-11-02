@@ -43,7 +43,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** {@inheritDoc} */
+    /** 分页查询后台操作日志。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<OperationLogVO> listLogs(OperationLogQueryDTO query) {
@@ -55,7 +55,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
                 IdUtils.parse(query.userId()), IdUtils.parse(query.targetId()), begin, end));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询操作日志详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OperationLogDetailVO detail(long id) {
@@ -69,7 +69,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
                 row.getOperationTime(), data);
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除操作日志。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "sys:log", permission = "sys:log:delete", targetIdArgument = 0)
@@ -77,7 +77,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         deleteBatch(List.of(Long.toString(id)));
     }
 
-    /** 不借query范围放宽delete，也不把SELF伪装为全局权限。 */
+    /** 检查本次日志操作权限，查询范围不能代替删除范围，SELF 不能当作 ALL。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -95,7 +95,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         return row;
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除操作日志，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:log", permission = "sys:log:delete")

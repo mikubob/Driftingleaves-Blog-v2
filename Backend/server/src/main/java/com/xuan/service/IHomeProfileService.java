@@ -7,16 +7,16 @@ import com.xuan.model.ResourceVersion;
 import com.xuan.vo.HomeProfilePublicVO;
 
 /**
- * 主页、博客与简历共用固定站点主人资料。
+ * 站点主人资料业务接口，主页、博客和简历共用。
  */
 public interface IHomeProfileService extends IService<HomeProfile> {
 
-    /** 未设置时返回null。 */
+    /** 查询站点主人公开资料，未设置时返回 null。 */
     HomeProfilePublicVO publicProfile();
 
-    /** 空资源也返回版本供首次设置使用。 */
+    /** 查询站点主人资料及版本，尚未设置时也返回版本，供首次保存使用。 */
     ResourceVersion<HomeProfile> detail();
 
-    /** 锁定站点和所选启用账号后完整替换。 */
+    /** 设置或更新站点主人资料，先锁住站点和所选的启用账号，再完整替换资料。 */
     ResourceVersion<HomeProfile> replace(HomeProfileWriteDTO request, String revision);
 }

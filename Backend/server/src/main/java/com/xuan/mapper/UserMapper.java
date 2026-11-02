@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 用户只写约定的字段，加锁和撤销会话由业务层统一处理。
+ * 用户数据接口，只更新允许修改的字段，加锁和撤销会话由业务层处理。
  */
 public interface UserMapper extends BaseMapper<SysUser> {
 
@@ -106,7 +106,7 @@ public interface UserMapper extends BaseMapper<SysUser> {
     /**
      * 只更新昵称、邮箱、头像和简介，NULL 也要写；调用方负责用户行锁和版本检查。
      *
-     * @param user 已在原资料上应用 PATCH 出现性语义的用户数据
+     * @param user 按 PATCH 规则合并后的用户资料：没传的字段不改，传入 null 时清空可空字段
      * @return 更新影响行数
      */
     int updateProfile(@Param("user") SysUser user);

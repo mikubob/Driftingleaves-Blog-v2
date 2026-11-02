@@ -35,7 +35,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ * 经历业务实现，公开展示和后台管理读同一张表，成功日志写入失败时资料一起回滚。
  */
 @Service
 @RequiredArgsConstructor
@@ -48,7 +48,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** {@inheritDoc} */
+    /** 查询公开经历列表。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "experiences", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -59,7 +59,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
                         MarkdownUtils.toHtml(row.getContent()))));
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询后台经历。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CvExperience> listItems(ExperienceQueryDTO query) {
@@ -67,7 +67,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询经历详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<CvExperience> detail(long id) {
@@ -75,7 +75,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return profile(requireItem(items.selectById(id)));
     }
 
-    /** {@inheritDoc} */
+    /** 新增经历。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "cv:experience", permission = "cv:experience:create")
@@ -90,7 +90,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return profile(items.selectById(row.getExperienceId()));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id更新经历。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "cv:experience", permission = "cv:experience:update", targetIdArgument = 0)
@@ -104,7 +104,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return profile(items.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除经历。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "cv:experience", permission = "cv:experience:delete", targetIdArgument = 0)
@@ -120,7 +120,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         }
     }
 
-    /** 白名单逐项赋值，NULL也写入数据库。 */
+    /** 填入允许修改的字段，NULL 也要写入数据库。 */
     private void assign(CvExperience row, ExperienceWriteDTO request) {
         row.setExperienceType(request.getExperienceType());
         row.setTitle(request.getTitle());
@@ -133,7 +133,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         row.setStatus(request.getStatus());
     }
 
-    /** 先锁操作者再锁资源，每次等待后重查原Token、启用身份和独立权限。 */
+    /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
     private CvExperience lock(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -142,7 +142,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return requireItem(row);
     }
 
-    /** 全站资源没有SELF版本，必须由授予本次权限的角色提供ALL。 */
+    /** 检查本次操作的 ALL 权限，此类资料全站共用，不支持只操作本人的范围。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -152,7 +152,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         }
     }
 
-    /** 先检查权限，再报告不存在。 */
+    /** 检查记录是否存在，调用前必须先通过权限校验。 */
     private CvExperience requireItem(CvExperience row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "资料不存在");
@@ -160,7 +160,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
         return row;
     }
 
-    /** 业务版本排除审计时间和公开渲染结果。 */
+    /** 计算资料版本，不包含审计时间和前台生成的展示内容。 */
     private ResourceVersion<CvExperience> profile(CvExperience row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(
                 Arrays.asList(row.getExperienceId(), row.getExperienceType(), row.getTitle(), row.getSubtitle(),
@@ -168,7 +168,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
                         row.getStatus()))) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除经历，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "cv:experience", permission = "cv:experience:delete")

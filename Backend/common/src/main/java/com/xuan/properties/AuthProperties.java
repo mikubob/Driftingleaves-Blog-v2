@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 登录相关配置由应用扫描加载，凭据从环境或外部配置读取。
+ * 登录配置，由应用加载，凭据从环境或外部配置读取。
  */
 @Data
 @Validated

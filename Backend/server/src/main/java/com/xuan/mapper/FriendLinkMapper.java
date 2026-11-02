@@ -7,7 +7,7 @@ import com.xuan.entity.BlogFriendLink;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 友链是全站资源，SELF 也不虚构按作者筛选。
+ * 友情链接数据接口，查询全站资源，SELF 也不按作者筛选。
  */
 public interface FriendLinkMapper extends BaseMapper<BlogFriendLink> {
 

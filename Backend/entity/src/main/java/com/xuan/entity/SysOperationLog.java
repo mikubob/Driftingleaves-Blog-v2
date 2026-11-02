@@ -33,7 +33,7 @@ public class SysOperationLog {
     /** 这里只记录业务检查过的权限，不会因此给用户授权。 */
     @TableField("permission_code")
     private String permissionCode;
-    /** 完整业务字段的 JSON 快照，不含登录凭据或文件二进制；历史日志可为空。 */
+    /** 操作当时的完整业务参数，按 JSON 保存，不含登录凭据或文件内容；历史日志可为空。 */
     @TableField("operation_data")
     private String operationData;
     /** 0 失败、1 成功。 */

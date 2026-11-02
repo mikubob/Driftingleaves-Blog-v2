@@ -10,7 +10,7 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * 三个公开站点的固定基址，用于Feed链接与采集来源/路径核验，不能信任Host头。
+ * 公开站点地址配置，用于生成订阅链接和检查访问来源、路径，不使用请求 Host 头。
  */
 @Data
 @ConfigurationProperties("app.sites")
@@ -21,7 +21,7 @@ public class PublicSiteProperties {
     private String cvBaseUrl;
     private String apiBaseUrl;
 
-    /** 缺失配置时关闭依赖它的入口，不猜部署域名。 */
+    /** 获取站点地址，缺少配置时拒绝相关请求，不推测部署域名。 */
     public URI base(String code) {
         String value = switch (code) {
             case "home" -> homeBaseUrl;
@@ -45,7 +45,7 @@ public class PublicSiteProperties {
         }
     }
 
-    /** 从明确配置的Origin和最长路径前缀认定站点，同域子站不能伪装成主页。 */
+    /** 根据来源和路径确定站点，使用已配置的 Origin 和最长匹配前缀，避免同域子站混淆。 */
     public void requireSite(String code, String origin, String path) {
         URI source;
         try {
@@ -88,7 +88,7 @@ public class PublicSiteProperties {
         }
     }
 
-    /** 全站统一文章前端地址，采集与Feed使用同一个规则。 */
+    /** 生成文章前台地址，访问采集和订阅链接使用相同规则。 */
     public String articleUrl(String slug) {
         return base("blog").toString() + "/articles/" + slug;
     }

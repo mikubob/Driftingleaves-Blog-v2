@@ -20,7 +20,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 公开条件、操作范围和排序都写进文章 SQL，正文和关联由业务事务一起保存。
+ * 文章数据接口，SQL 限制公开条件、权限范围和排序，正文及关联由业务事务一起保存。
  */
 @Mapper
 public interface ArticleMapper extends BaseMapper<BlogArticle> {
@@ -30,14 +30,14 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      *
      * @param page 分页容器，保留超末页页码
      * @param filter 已校验的PUBLIC/作者范围及AND过滤
-     * @return 同一过滤条件的元数据分页
+     * @return 使用相同筛选条件的文章资料分页
      */
     IPage<ArticleRow> articlePage(IPage<ArticleRow> page, @Param("filter") ArticleFilter filter);
 
     /** 作者数、文章数和资料共用 PUBLIC 条件，不按角色或账号私密资料枚举用户。 */
     IPage<AuthorPublicVO> authorPage(IPage<AuthorPublicVO> page, @Param("now") LocalDateTime now);
 
-    /** 没有 PUBLIC 文章时返回 null，公开投影不含邮箱、登录名或权限。 */
+    /** 根据id查询作者公开资料，没有公开文章时返回 null，不返回邮箱、登录名或权限。 */
     AuthorPublicVO publicAuthor(@Param("id") long id, @Param("now") LocalDateTime now);
 
     /** 本人 ID 由会话提供，total 与记录都排除当前非 PUBLIC 文章。 */
@@ -77,7 +77,7 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     ArticleRow publicById(@Param("id") long id, @Param("now") LocalDateTime now);
 
     /**
-     * 正文要和文章资料在同一快照或行锁事务里读取，不能只靠 HTML 缓存判断附件引用。
+     * 正文要和文章资料在同一个只读事务或行锁事务中读取，不能只靠 HTML 缓存判断附件引用。
      *
      * @param id 文章ID
      * @return 文章正文，没查到为 null
@@ -128,7 +128,7 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      * 文件按 ID 升序锁定，而且要早于文章锁；删除文件和写引用都遵守这个顺序。
      *
      * @param id 文件ID，调用方按升序调用
-     * @return 锁定元数据或null，锁保持至提交
+     * @return 已加锁的文章资料或 null，锁保持到事务提交
      */
     BlogFile lockFile(@Param("id") long id);
 
@@ -144,7 +144,7 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     /**
      * 替换全部可写资料，SQL 还要限制本次操作范围，不改作者和计数。
      *
-     * @param article 已通过锁内版本及状态检查的候选元数据
+     * @param article 加锁后已通过版本和状态检查的待更新文章资料
      * @param author 本次操作的SELF作者ID，ALL为null
      * @return 受影响文章数
      */

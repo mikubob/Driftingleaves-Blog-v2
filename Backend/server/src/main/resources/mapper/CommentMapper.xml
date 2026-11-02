@@ -11,7 +11,7 @@
         SELECT * FROM blog_site_config WHERE config_key = 'comment' FOR UPDATE
     </select>
 
-    <!-- 已确认父链可见，当前层只需筛 1/3；回复数同样包含可展开的占位节点。 -->
+    <!-- 已确认全部上级评论可见，当前层只查询状态 1（通过）和 3（删除占位），回复数也包含可展开的占位记录。 -->
     <select id="publicPage" resultType="com.xuan.model.CommentRow">
         SELECT<include refid="columns"/>,
         (SELECT COUNT(*) FROM blog_comment r WHERE r.article_id = c.article_id

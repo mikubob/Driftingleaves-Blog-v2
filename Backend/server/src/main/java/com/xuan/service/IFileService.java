@@ -12,30 +12,30 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 
 /**
- * 文件业务统一处理上传者范围、文章/音乐真实引用和存储补偿，不返回公开存储直链。
+ * 文件业务接口，检查上传者范围、文章和音乐引用，处理存储失败后的清理，不返回存储直链。
  */
 public interface IFileService extends IService<BlogFile> {
 
-    /** 同一快照按 query 范围查元数据与总数。 */
+    /** 分页查询文件，按文件查询权限限定范围，文件资料和总数在同一个只读事务中查询。 */
     PageResult<FileVO> listFiles(FileQueryDTO query);
 
-    /** 按文件 query 范围取不可变元数据，不生成业务版本。 */
+    /** 根据id查询文件资料，按文件查询权限限定范围；文件资料不能编辑，不生成版本。 */
     FileVO detail(long id);
 
-    /** 临时写入并验证图片、音频或歌词，存储成功后写元数据；事务失败清理新对象。 */
+    /** 上传文件，先临时保存并检查图片、音频或歌词，存储成功后保存文件资料；事务失败时删除新上传的文件。 */
     FileVO upload(MultipartFile file);
 
-    /** 文件 query 范围内读取原文件，与文章公开状态无关。 */
+    /** 根据id读取原文件，按文件查询权限限定范围，与文章是否公开无关。 */
     FileContent original(long id);
 
-    /** 文件锁内检查全部文章和音乐引用，无引用才删存储和元数据；存储失败保留记录。 */
+    /** 根据id删除文件，加锁后检查全部文章和音乐引用；无人引用才删除文件及数据库记录，文件删除失败时保留记录。 */
     void delete(long id);
 
-    /** 文件锁后再锁文章，公开入口固定 PUBLIC，后台分别检查文章和文件 query 范围。 */
+    /** 读取文章附件，先锁文件再锁文章；公开接口只允许公开文章，后台分别检查文章和文件的查询权限范围。 */
     FileContent attachment(long articleId, long fileId, boolean admin);
 
-    /** 只有当前展示中的曲目实际引用的文件才允许匿名读取。 */
+    /** 读取音乐附件，未登录时只能读取当前展示曲目实际引用的文件。 */
     FileContent musicAttachment(long fileId);
-    /** 每个文件独立提交，顺序与输入一致，不把部分失败伪装成整批成功。 */
+    /** 批量删除文件，每个文件独立提交，按输入顺序返回结果，部分失败时不能把整批标为成功。 */
     BatchFileResultsVO deleteBatch(List<String> ids);
 }

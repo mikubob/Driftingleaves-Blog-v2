@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开标签接口，只返回前台需要的字典资料。
+ * 公开标签查询接口，只返回前台需要的资料。
  */
 @RestController("blogTagController")
 @RequestMapping("/blog/tags")
@@ -26,13 +26,13 @@ public class TagController {
 
     private final ITagService tags;
 
-    /** 分页获取标签，没有数据时 records 返回空数组。 */
+    /** 分页查询标签，没有数据时 records 返回空数组。 */
     @GetMapping
     public Result<PageResult<Tag>> list(@Valid @ModelAttribute PageQueryDTO query) {
         return Result.ok(tags.publicTags(query));
     }
 
-    /** slug 改名后旧值返回 404，不维护重定向历史。 */
+    /** 根据slug查询标签，slug 修改后旧地址返回 404，不保存重定向记录。 */
     @GetMapping("/{slug}")
     public Result<TagPublicDetailVO> detail(@PathVariable @Size(max = 100)
             @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*") String slug) {

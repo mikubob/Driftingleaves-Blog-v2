@@ -19,11 +19,11 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** 公开缓存使用声明式注解，固定 TTL、独立前缀、事务感知与业务代次。 */
+/** 配置公开查询缓存，设置过期时间和专用前缀，按事务结果和缓存版本控制读写。 */
 @Configuration
 @EnableCaching(order = 150)
 public class PublicCacheConfig {
-    /** 固定各公开查询的有效期，提交后失效与回填仍由事务感知管理器处理。 */
+    /** 创建缓存管理器，设置公开查询的过期时间，事务提交后再清理或写入缓存。 */
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory factory, PublicCacheStore store, PublicCacheSerializer serializer) {
         var defaults = RedisCacheConfiguration.defaultCacheConfig().disableCachingNullValues()
@@ -44,33 +44,33 @@ public class PublicCacheConfig {
         configs.put("rankings", defaults.entryTtl(Duration.ofSeconds(60)));
         configs.put("comments", defaults.entryTtl(Duration.ofSeconds(30)));
         configs.put("statistics", defaults.entryTtl(Duration.ofMinutes(5)));
-        // 每次启动切换共享代次，部署基址/渲染变化及恢复的旧条目不能继续命中；保留遗留写保护。
+        // 每次启动都切换缓存版本，避免继续读取地址、渲染规则变更前或恢复出来的旧数据；保留已有写入保护标记。
         configs.keySet().forEach(store::invalidate);
         var writer = RedisCacheWriter.nonLockingRedisCacheWriter(factory, BatchStrategies.scan(100));
         RedisCacheManager manager = new RedisCacheManager(writer, defaults, false, configs) {
-            /** 缓存读写交给带代次校验的存储，避免并发写入后回填旧值。 */
+            /** 读写缓存时检查版本，避免其他请求保存新数据后，又把旧查询结果写回缓存。 */
             @Override
             protected RedisCache createRedisCache(String name, RedisCacheConfiguration config) {
                 return new RedisCache(name, writer, config.computePrefixWith(n -> store.prefix(n))) {
-                    /** 查询时同时核对代次与尚未提交的写标记。 */
+                    /** 查询缓存时，同时检查版本和未提交事务的写入标记。 */
                     @Override
                     protected Object lookup(Object key) {
                         return store.read(name, key);
                     }
 
-                    /** 只允许回填本次查询开始时的代次。 */
+                    /** 只向本次查询开始时的缓存版本写入结果。 */
                     @Override
                     public void put(Object key, Object value) {
                         store.put(name, key, value, config.getTtlFunction().getTimeToLive(key, value));
                     }
 
-                    /** 轮换代次，使该域已有条目立即失效。 */
+                    /** 切换这类缓存的版本，让原有缓存立即失效。 */
                     @Override
                     public void clear() {
                         store.invalidate(name);
                     }
 
-                    /** 主动清理也走相同的代次失效流程。 */
+                    /** 主动清理时也通过切换版本让缓存失效。 */
                     @Override
                     public boolean invalidate() {
                         clear();

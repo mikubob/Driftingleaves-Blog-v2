@@ -29,7 +29,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 
 /**
- * 可信来源、PUBLIC文章和可选会话核验通过后，才写访客与一条明细。
+ * 访问采集实现，先检查来源、文章公开状态和可选登录信息，再保存访客及本次浏览记录。
  */
 @Service
 @RequiredArgsConstructor
@@ -46,7 +46,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
     private final Clock clock;
     private final AuthRateLimiter limiter;
 
-    /** {@inheritDoc} */
+    /** 记录站点访问。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public TrackingResultVO track(PageViewCreateDTO request, String origin, String ip, String userAgent) {
@@ -116,7 +116,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         return new TrackingResultVO(true);
     }
 
-    /** 可选Bearer一旦出现就必须有效，等待行锁后不能沿用旧Token。 */
+    /** 检查可选的登录信息，传入 Bearer 时必须有效，加锁等待后要重新检查。 */
     private Long current() {
         if (sessions.currentToken() == null) {
             return null;
@@ -126,12 +126,12 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         return actor;
     }
 
-    /** 浏览采集不使用执行机器本地时间，也不增加文章累计阅读。 */
+    /** 获取访问记录的 UTC 时间，不使用机器本地时间，也不增加文章累计阅读量。 */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
-    /** 不回显客户端路径或ID。 */
+    /** 返回访问参数错误，不带客户端传入的路径或id。 */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "文章关联与访问路径不匹配");
     }

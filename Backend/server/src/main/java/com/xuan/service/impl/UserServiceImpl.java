@@ -90,7 +90,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final IpLocationResolver locations;
 
     /**
-     * 同一快照里分页取全站用户和完整角色，只返回约定资料，不直接返回内部实体。
+     * 分页查询用户，在同一个只读事务中读取用户和全部角色，只返回允许展示的资料，不直接返回数据库实体。
      *
      * @param query 已完成入口校验的分页、字面关键词和状态过滤
      * @param roleId 已校验的可空角色 ID，包含禁用角色的关联
@@ -105,7 +105,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * 详情和角色在同一快照里取，确保资料和整体版本对得上。
+     * 根据id查询用户详情，在同一个只读事务中读取资料和角色，确保返回的资料与版本一致。
      *
      * @param userId 全局目标用户 ID，不作为操作者身份
      * @return 脱敏详情及带引号版本；不存在返回 404
@@ -242,8 +242,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * {@inheritDoc}
-     * 全部版本校验完成后再写状态，结果版本在撤销操作者会话前计算。
+     * 批量启用或禁用用户，全部版本校验完成后再写状态，结果版本在撤销操作者会话前计算。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -279,7 +278,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return BatchUtils.versions(items, versions);
     }
 
-    /** {@inheritDoc} 用户锁阻止新增外键引用，所有引用检查完成后才开始删除。 */
+    /** 批量删除用户，用户锁阻止新增外键引用，所有引用检查完成后才开始删除。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:user", permission = "sys:user:delete")
@@ -403,7 +402,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     }
 
     /**
-     * 同一事务快照或用户锁内读取后台资料，版本和本人资料接口共用。
+     * 同一个只读事务或用户行锁内读取后台资料，版本和本人资料接口共用。
      *
      * @param user 当前内部实体
      * @return 脱敏资料及仅由业务字段和完整角色集合生成的版本
@@ -477,7 +476,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return createSession(user, clock.millis(), "PASSWORD", timeoutSeconds);
     }
 
-    /** {@inheritDoc} 发送不创建账号，验证码只能用于请求指定的操作。 */
+    /** 发送注册或前台登录验证码，发送不创建账号，验证码只能用于请求指定的操作。 */
     @Override
     public void sendEmailCode(EmailCodeDTO request) {
         String purpose = request.purpose() == EmailCodeDTO.Purpose.REGISTER
@@ -485,7 +484,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         emailCodes.send(request.email(), purpose);
     }
 
-    /** {@inheritDoc} 邮件发送失败不会签发会话或假装成功。 */
+    /** 发送后台登录验证码，邮件发送失败不会签发会话或假装成功。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void sendAdminEmailCode(AdminEmailCodeDTO request) {
@@ -493,7 +492,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         emailCodes.send(request.email(), EmailCodeStore.ADMIN_LOGIN);
     }
 
-    /** {@inheritDoc} 邮件验证码每次尝试都消费，失败不能重复猜测。 */
+    /** 使用邮箱验证码登录前台，邮件验证码每次尝试都消费，失败不能重复猜测。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO loginEmail(EmailLoginDTO request) {
@@ -506,7 +505,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return createSession(user, clock.millis(), "EMAIL", SessionManager.BLOG_TIMEOUT_SECONDS);
     }
 
-    /** {@inheritDoc} 只有完整后台认证才能创建带后台认证标记的会话。 */
+    /** 验证密码和邮件验证码后登录后台，只有完整后台认证才能创建带后台认证标记的会话。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SessionVO loginAdmin(AdminLoginDTO request) {

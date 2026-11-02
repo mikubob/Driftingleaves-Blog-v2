@@ -9,13 +9,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Servlet 错误也用统一响应，不把容器内部路径或异常返回给用户。
+ * Servlet 错误处理接口，返回统一错误，不包含内部路径或异常。
  */
 @RestController
 public class HttpErrorController implements ErrorController {
 
     /**
-     * 把容器错误转成统一 JSON，保留原 HTTP 状态；只返回公开错误码和固定文案，不带异常、堆栈或内部路径。
+     * 返回容器错误，保留原 HTTP 状态，JSON 只包含公开错误码和固定文案，不带异常、堆栈或内部路径。
      *
      * @param request 由容器携带错误状态属性的当前请求
      * @return 包含实际 HTTP 状态的统一错误结果

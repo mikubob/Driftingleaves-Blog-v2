@@ -15,7 +15,7 @@ import com.xuan.vo.CategoryPublicDetailVO;
 import java.util.List;
 
 /**
- * 分类是全站字典，SELF 权限也能操作整个字典，不按当前作者筛选。
+ * 分类业务接口，分类全站共用，SELF 也能操作全部分类，不按作者筛选。
  */
 public interface ICategoryService extends IService<BlogCategory> {
 
@@ -34,11 +34,11 @@ public interface ICategoryService extends IService<BlogCategory> {
     /** 创建分类，不自动修改文章。 */
     BlogCategory create(CategoryCreateDTO request);
 
-    /** 锁住分类并核对版本后，把资料完整替换。 */
+    /** 根据id更新分类，先锁住分类并检查版本，再完整替换资料。 */
     CategoryProfileVO update(long id, CategoryUpdateDTO request, String revision);
 
-    /** 核对版本后删除，文章保留并把分类置空；失败时一起回滚。 */
+    /** 根据id删除分类，先检查版本；保留文章并清空文章分类，失败时一起回滚。 */
     void delete(long id, String revision);
-    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    /** 批量删除分类，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

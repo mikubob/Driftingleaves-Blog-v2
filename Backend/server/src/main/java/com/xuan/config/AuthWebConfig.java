@@ -40,7 +40,7 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 公开入口逐条放行，其他业务默认要求登录；后台还要检查入口权限和具体业务权限。
+ * 配置接口登录和权限检查，公开接口单独放行，后台同时检查入口和操作权限。
  */
 @Configuration
 @RequiredArgsConstructor
@@ -71,7 +71,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     private final ObjectProvider<HttpServletRequest> requests;
 
     /**
-     * 先检查身份和后台入口，再检查业务权限，避免报错顺序混乱。
+     * 注册权限拦截器，先检查登录和后台入口，再检查操作权限。
      */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
@@ -85,7 +85,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         // 3. 后台方法还得声明具体业务权限，只有 admin:access 不能操作业务。
         registry.addInterceptor(new HandlerInterceptor() {
             /**
-             * {@inheritDoc}
+             * 检查后台接口是否声明操作权限。
              */
             @Override
             public boolean preHandle(HttpServletRequest request, HttpServletResponse response,
@@ -101,7 +101,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     }
 
     /**
-     * 按方法和完整路径放行公开接口，其余请求检查有效会话及后台权限。
+     * 检查请求权限，按方法和完整路径放行公开接口，其余请求检查登录和后台权限。
      */
     private void guard(HttpServletRequest request, Object handler) {
         // 1. 先放行错误分派和预检，跨域能不能通过由前面的 CORS 过滤器检查。
@@ -145,7 +145,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         }
     }
 
-    /** 登录与本人设置沿用身份规则，后台业务才要求入口和业务权限。 */
+    /** 判断是否为后台业务接口，登录和本人设置单独检查。 */
     private boolean isAdminBusinessPath(String path) {
         return path.startsWith("/admin/") && !path.startsWith("/admin/auth/")
                 && !path.equals("/admin/security/not-found")
@@ -153,7 +153,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     }
 
     /**
-     * 只允许配置的前端来源，暴露版本等响应头并统一拒绝非法跨域。
+     * 配置跨域，只允许已配置的前端来源，开放版本等响应头，拒绝时返回统一错误。
      */
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter(JsonMapper json) {
@@ -184,7 +184,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         CorsFilter cors = new CorsFilter(source);
         cors.setCorsProcessor(new DefaultCorsProcessor() {
             /**
-             * {@inheritDoc}
+             * 返回跨域请求被拒绝的 JSON 结果。
              */
             @Override
             protected void rejectRequest(ServerHttpResponse response) throws IOException {

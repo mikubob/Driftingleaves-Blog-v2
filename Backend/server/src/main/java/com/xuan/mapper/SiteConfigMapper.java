@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 配置只查 site/comment/message，不提供新增或删除配置键的业务入口。
+ * 站点配置数据接口，只查询 site、comment、message，不提供配置键的新增或删除。
  */
 public interface SiteConfigMapper extends BaseMapper<BlogSiteConfig> {
 

@@ -14,7 +14,7 @@ import com.xuan.vo.TagPublicDetailVO;
 import java.util.List;
 
 /**
- * 标签是全站字典，文章关联的保存仍走文章接口。
+ * 标签业务接口，标签全站共用，文章标签关联仍由文章接口保存。
  */
 public interface ITagService extends IService<BlogTag> {
 
@@ -30,14 +30,14 @@ public interface ITagService extends IService<BlogTag> {
     /** 获取标签详情和当前版本，不存在就返回 404。 */
     TagProfileVO detail(long id);
 
-    /** 新建标签，不自动给文章添加关联。 */
+    /** 新增标签，不自动关联文章。 */
     BlogTag create(TagWriteDTO request);
 
-    /** 锁住标签并核对版本后，替换名称和 slug。 */
+    /** 根据id更新标签，先锁住标签并检查版本，再替换名称和 slug。 */
     TagProfileVO update(long id, TagWriteDTO request, String revision);
 
-    /** 核对版本后删除标签和文章标签关联，保留文章；失败一起回滚。 */
+    /** 根据id删除标签，先检查版本，再删除标签和文章标签关联，保留文章；失败时一起回滚。 */
     void delete(long id, String revision);
-    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    /** 批量删除标签，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

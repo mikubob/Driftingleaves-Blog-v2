@@ -14,7 +14,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Locale;
 
-/** 邮件验证码独立保存五分钟，按用途和邮箱原子消费，答案不返回浏览器。 */
+/** 邮件验证码存储，独立保存五分钟，按用途和邮箱一次性校验，不返回答案。 */
 @Component
 @RequiredArgsConstructor
 public class EmailCodeStore {
@@ -32,7 +32,7 @@ public class EmailCodeStore {
     private final AuthProperties auth;
     private final MailClient mail;
 
-    /** 先保存摘要再同步发送，SMTP 失败时删除本次验证码并向上传播错误。 */
+    /** 发送邮件验证码，先保存摘要，发送失败时删除本次验证码并抛出错误。 */
     public void send(String email, String purpose) {
         String code = String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
         String key = key(email, purpose);
@@ -52,7 +52,7 @@ public class EmailCodeStore {
         }
     }
 
-    /** 每次尝试都取出并删除，输错、过期、重放和跨用途使用均拒绝。 */
+    /** 校验邮件验证码，每次尝试后删除，拒绝错误、过期、重复或跨用途使用。 */
     public void verify(String email, String purpose, String code) {
         String expected = redis.execute(CONSUME, List.of(key(email, purpose)));
         if (code == null || expected == null || !expected.equals(TokenUtils.digest(code))) {
@@ -60,7 +60,7 @@ public class EmailCodeStore {
         }
     }
 
-    /** 邮箱大小写和首尾空白统一处理，Redis 键中不保存原地址。 */
+    /** 生成邮件验证码缓存键，统一邮箱大小写并去掉首尾空白，不保存原邮箱地址。 */
     private String key(String email, String purpose) {
         return auth.getRedisPrefix() + "email-code:" + purpose + ":"
                 + TokenUtils.digest(email.strip().toLowerCase(Locale.ROOT));

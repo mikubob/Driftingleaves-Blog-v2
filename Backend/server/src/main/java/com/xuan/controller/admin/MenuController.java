@@ -26,7 +26,7 @@ import java.net.URI;
 import java.util.List;
 
 /**
- * 菜单接口先检查身份和后台入口，再检查各项菜单操作权限。
+ * 后台菜单管理接口，检查登录、后台入口和菜单操作权限。
  */
 @RestController
 @RequestMapping("/admin/menus")
@@ -36,7 +36,7 @@ public class MenuController {
     private final IMenuService menus;
 
     /**
-     * 检查后台入口和查询权限后取完整后台树，本人能访问哪些菜单走另一个接口。
+     * 查询完整后台菜单树，先检查后台入口和查询权限；本人可访问的菜单由另一个接口查询。
      *
      * @return 200 全状态 MenuNode 列表，无逐条 X-Revision
      */
@@ -47,7 +47,7 @@ public class MenuController {
     }
 
     /**
-     * 检查后台入口和查询权限后取菜单详情及版本。
+     * 根据id查询菜单详情及版本，先检查后台入口和查询权限。
      *
      * @param menuId 正十进制菜单 ID
      * @return 200 详情及 X-Revision，不存在返回 404
@@ -59,7 +59,7 @@ public class MenuController {
     }
 
     /**
-     * 检查后台入口和创建权限后建菜单，不自动给角色授权或增加接口权限。
+     * 新增菜单，先检查后台入口和创建权限，不自动给角色授权或增加接口权限。
      *
      * @param body 已校验的创建字段和默认值，不接受客户端审计字段
      * @return 201 资料和详情 Location，无 X-Revision
@@ -72,7 +72,7 @@ public class MenuController {
     }
 
     /**
-     * 检查后台入口和更新权限后完整替换菜单，创建后的 menuCode 不能改。
+     * 根据id更新菜单，先检查后台入口和更新权限，再完整替换资料，menuCode 不可修改。
      *
      * @param menuId 目标菜单 ID
      * @param body 全部可写字段，可空字段不可省略
@@ -87,7 +87,7 @@ public class MenuController {
         return profile(menus.update(id(menuId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除菜单，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:menu:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {

@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import emojiList from './emoji.json'
 
-/** 局部表情面板，无输入 props；select(char) 通知调用者插入，卸载移除外部点击监听。 */
+/** 表情选择面板，无输入参数，选中时触发 select(char)，卸载时移除外部点击监听。 */
 
 const emit = defineEmits(['select'])
 const show = ref(false)

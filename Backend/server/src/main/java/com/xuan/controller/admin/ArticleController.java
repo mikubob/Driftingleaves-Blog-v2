@@ -30,7 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台文章先检查入口和操作权限，再由业务事务检查各自范围和版本。
+ * 后台文章管理接口，先检查权限，再由业务事务检查范围和版本。
  */
 @RestController
 @RequestMapping("/admin/articles")
@@ -40,7 +40,7 @@ public class ArticleController {
     private final IArticleService articles;
 
     /**
-     * 按 query 权限范围分页，默认只看正常文章，列表不带正文和每条版本。
+     * 分页查询后台文章，按查询权限限定范围，默认不查回收站，列表不带正文和每条记录的版本。
      *
      * @param query 已校验的分页及过滤，authorId不能扩大SELF
      * @return 200后台文章分页
@@ -52,7 +52,7 @@ public class ArticleController {
     }
 
     /**
-     * 按 query 权限范围取文章完整详情，回收站文章也能查。
+     * 根据id查询文章完整详情，按查询权限限定范围，回收站文章也能查。
      *
      * @param articleId 正十进制目标ID
      * @return 200详情及X-Revision，不存在或越界404
@@ -64,7 +64,7 @@ public class ArticleController {
     }
 
     /**
-     * 检查后台入口和 create 权限后，以当前用户创建草稿；失败时不能留下半篇文章。
+     * 创建文章草稿，先检查后台入口和创建权限，作者取当前用户，失败时不保留部分内容。
      *
      * @param body 已校验的创建字段及默认值，不接受身份或服务端字段
      * @return 201 完整详情、Location及X-Revision
@@ -78,7 +78,7 @@ public class ArticleController {
     }
 
     /**
-     * PUT 要填全，可空字段也要传；锁内查 update 范围，已发布文章还要单独查 publish 范围。
+     * 根据id更新文章，PUT 要传完整资料，可空字段也要传；加锁后检查更新权限范围，已发布文章还要检查发布权限范围。
      *
      * @param articleId 正十进制目标ID
      * @param body 全部允许的内容字段，不接受状态或HTML
@@ -93,14 +93,14 @@ public class ArticleController {
         return profile(articles.update(IdUtils.parse(articleId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量发布或下架文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-status")
     @SaCheckPermission("blog:article:publish")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchStatusDTO body) {
         return Result.ok(articles.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量将文章移入回收站，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-recycle")
     @SaCheckPermission("blog:article:delete")
     public Result<Void> recycle(@Valid @RequestBody BatchRevisionDTO body) {
@@ -108,14 +108,14 @@ public class ArticleController {
         return Result.ok(null);
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量恢复回收站文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-restore")
     @SaCheckPermission("blog:article:restore")
     public Result<BatchVersionsVO> restore(@Valid @RequestBody BatchRevisionDTO body) {
         return Result.ok(articles.restoreBatch(body.getItems()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量永久删除回收站文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-permanent-delete")
     @SaCheckPermission({"blog:article:delete", "blog:article:purge"})
     public Result<Void> purge(@Valid @RequestBody BatchRevisionDTO body) {
@@ -126,9 +126,9 @@ public class ArticleController {
 
 
     /**
-     * 把文章整体版本写进响应头，响应体只返回约定的后台详情字段。
+     * 返回文章详情，整体版本放在响应头，响应体只包含后台允许返回的字段。
      *
-     * @param result 同一快照或锁事务生成的详情与版本
+     * @param result 同一个只读事务或加锁事务生成的详情与版本
      * @return 200 约定详情及X-Revision
      */
     private ResponseEntity<Result<ArticleAdminDetailVO>> profile(ArticleProfileVO result) {

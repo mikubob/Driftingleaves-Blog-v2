@@ -25,7 +25,7 @@ const blockError = ref('')
 const blocked = computed(() => props.disabled || busy.value)
 let generation = 0
 
-/** 翻页、筛选、刷新时只清当前页选择，不将旧ID带到新的查询结果。 */
+/** 翻页、筛选或刷新时清空当前页的选择，避免把旧id带到新的查询结果。 */
 function clear() {
   selected.value = []
   props.table?.clearSelection()
@@ -66,7 +66,7 @@ async function block() {
   })
 }
 
-/** 读取全部版本后确认具体目标，只提交一次批量写请求。 */
+/** 批量操作前先读取所有选中记录的版本，再确认操作对象，最后只发送一次批量请求。 */
 async function execute(action, extra = {}) {
   if (blocked.value || !selected.value.length) {
     return

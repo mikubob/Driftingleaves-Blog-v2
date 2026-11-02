@@ -17,19 +17,19 @@ import java.time.Clock;
 import java.util.List;
 
 /**
- * 这里配置分页、密码、时钟和事务顺序，虚拟线程和失败日志由各自配置负责。
+ * 配置分页、密码加密、UTC 时钟和事务执行顺序。
  */
 @Configuration
 @EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
 
-    /** 沿用官方 Redis DAO 的键处理方式，加上本站前缀，避免混用其他应用的会话。 */
+    /** 配置 Redis 会话存储，复用官方 DAO 并添加本站前缀，避免与其他应用混用。 */
     @Bean
     @Primary
     public SaTokenDaoForRedisTemplate sessionDao(RedisConnectionFactory factory, AuthProperties properties) {
         // 1. 沿用官方 DAO，只补上保留 TTL 和本站键前缀的行为。
         SaTokenDaoForRedisTemplate dao = new SaTokenDaoForRedisTemplate() {
-            /** 本机 Redis 5 没有 KEEPTTL，用脚本保留 TTL，也不能让过期会话重新生效。 */
+            /** 更新会话并保留过期时间，Redis 5 不支持 KEEPTTL，改用脚本，已过期的会话不再写入。 */
             @Override
             public void setStringAndKeepTTL(String finalKey, String value) {
                 // 一次 Lua 里读旧 TTL 并设置新值，键已经过期就不能更新复活。
@@ -43,7 +43,7 @@ public class InfrastructureConfig {
             }
 
             /**
-             * {@inheritDoc}
+             * 给会话 Redis 键添加本站前缀。
              */
             @Override
             public String wrapKey(String key) {
@@ -57,7 +57,7 @@ public class InfrastructureConfig {
     }
 
     /**
-     * 为 MySQL 查询配置分页拦截器，保留项目统一分页行为。
+     * 配置 MySQL 分页拦截器。
      */
     @Bean
     public MybatisPlusInterceptor mybatisPlusInterceptor() {
@@ -67,7 +67,7 @@ public class InfrastructureConfig {
     }
 
     /**
-     * 使用配置的 BCrypt 成本创建密码编码器，不沿用旧密码散列。
+     * 配置 BCrypt 密码编码器，加密强度从配置读取。
      */
     @Bean
     public BCryptPasswordEncoder passwordEncoder(AuthProperties properties) {
@@ -75,7 +75,7 @@ public class InfrastructureConfig {
     }
 
     /**
-     * 提供 UTC 时钟，让业务时间不受执行机器时区影响。
+     * 配置 UTC 时钟，避免受机器时区影响。
      */
     @Bean
     public Clock clock() {

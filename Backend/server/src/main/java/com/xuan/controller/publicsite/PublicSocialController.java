@@ -11,7 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 公开站点共用启用的社交链接列表。
+ * 公开社交链接接口，各站点共用，只返回启用的记录。
  */
 @RestController("publicSocialController")
 @RequestMapping({"/blog/social-links", "/home/social-links", "/cv/social-links"})
@@ -20,7 +20,7 @@ public class PublicSocialController {
 
     private final ISocialService items;
 
-    /** 不输出管理字段或原始Markdown。 */
+    /** 查询公开社交链接列表，不返回管理字段或原始 Markdown。 */
     @GetMapping
     public Result<List<SocialPublicVO>> list() {
         return Result.ok(items.publicItems());

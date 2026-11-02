@@ -11,7 +11,7 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.List;
 
-/** 在线票据独立命名；核对来源和身份后比较完整载荷，原子删除。 */
+/** 在线票据存储，使用专用键，核对来源、身份和完整数据后一次性删除。 */
 @Component
 @RequiredArgsConstructor
 public class OnlineTicketStore {
@@ -23,14 +23,14 @@ public class OnlineTicketStore {
     private final StringRedisTemplate redis;
     private final AuthProperties auth;
 
-    /** 申请不登记在线状态，TTL 不随读取续期。 */
+    /** 生成在线票据，此时不增加在线人数，读取时不延长有效期。 */
     public String issue(String value) {
         String ticket = TokenUtils.random();
         redis.opsForValue().set(key(ticket), value, Duration.ofSeconds(30));
         return ticket;
     }
 
-    /** 错误票据不访问任意 Redis 键，也不回显凭据。 */
+    /** 读取在线票据，拒绝无效格式，不访问其他 Redis 键或返回原票据。 */
     public String read(String ticket) {
         if (ticket == null || !ticket.matches("[A-Za-z0-9_-]{43}")) {
             throw invalid();
@@ -42,19 +42,19 @@ public class OnlineTicketStore {
         return value;
     }
 
-    /** 并发加入只有一个消费者成功；失败后不能恢复票据。 */
+    /** 一次性使用在线票据，并发请求只能成功一次，失败后不恢复票据。 */
     public void consume(String ticket, String expected) {
         if (!Long.valueOf(1).equals(redis.execute(CONSUME, List.of(key(ticket)), expected))) {
             throw invalid();
         }
     }
 
-    /** 键里只留票据摘要，在线与其他用途的票据不能混用。 */
+    /** 生成在线票据缓存键，只保存摘要，与其他票据分开。 */
     private String key(String ticket) {
         return auth.getRedisPrefix() + "online:ticket:" + TokenUtils.digest(ticket);
     }
 
-    /** 统一拒绝无效票据，不泄露具体失效原因。 */
+    /** 返回票据无效错误，不透露具体原因。 */
     public static BusinessException invalid() {
         return new BusinessException(400, "ONLINE_TICKET_INVALID", "连接票据无效，请重新连接");
     }

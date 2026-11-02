@@ -25,7 +25,7 @@ public class IpLocationResolver implements AutoCloseable {
      * 查国家、省份和城市，查不到的字段就留 null，不编造地址。
      *
      * @param ip IPv4 或 IPv6 字面量；请求 IP 应先由 IpUtils 按可信代理规则提取
-     * @return 无效、回环或未命中时字段为 null；库内 0/空字段同样归一为 null
+     * @return 无效、回环或未命中时字段为 null；库内 0/空字段同样改为 null
      * @throws BusinessException 数据库查询故障或线程中断时返回 503，不当作普通未知地址
      */
     public GeoInfo getGeoInfo(String ip) {

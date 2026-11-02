@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.net.URI;
 
 /**
- * OSS 开关由环境配置决定，启用后再检查配置；不要生成会暴露密钥的 toString。
+ * OSS 配置，开关从环境读取，启用时检查配置，不生成含密钥的 toString。
  */
 @Getter
 @Setter
@@ -26,7 +26,7 @@ public class AliOssProperties {
     /** 读写都限制在这个专属前缀内，前缀不能留空。 */
     private String keyPrefix = "drifting-leaves-v2/";
 
-    /** 启用后先检查配置是否齐全，报错只说哪项有问题，不带凭据或地址。 */
+    /** 检查 OSS 配置是否完整，仅在启用时校验，报错不包含凭据或地址。 */
     public void validateEnabled() {
         URI uri;
         try {

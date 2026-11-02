@@ -36,7 +36,7 @@ const form = reactive({
   status: 1,
 })
 
-/** 上传仍走文件权限与补偿流程，成功后只填入表单；保存曲目才建立公开引用。 */
+/** 上传音乐附件，由文件接口检查权限并处理失败清理；成功后填写表单，保存曲目后才建立公开引用。 */
 async function upload(event, kind) {
   const file = event.target.files?.[0]
   event.target.value = ''

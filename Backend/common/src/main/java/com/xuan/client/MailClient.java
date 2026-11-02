@@ -1,10 +1,10 @@
 package com.xuan.client;
 
 /**
- * 发送邮件；只有 SMTP 接受后才返回，失败不能伪装成功。
+ * 邮件发送接口，SMTP 接受邮件后才返回成功。
  */
 public interface MailClient {
 
-    /** 收件地址由认证或订阅业务检查；正文和标题只由服务端生成。 */
+    /** 发送邮件，收件地址由业务层校验，标题和正文由服务端生成。 */
     void send(String to, String subject, String text);
 }

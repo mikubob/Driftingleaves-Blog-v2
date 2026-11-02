@@ -21,7 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** 在事务建立读取快照之前开始缓存上下文，内部代理调用共用查询代次。 */
+/** 在事务第一次查询前记录缓存调用信息，内部通过代理调用时共用同一个缓存版本。 */
 @Aspect
 @Component
 @Order(80)
@@ -29,7 +29,7 @@ import java.util.Set;
 public class PublicCacheAspect {
     private final PublicCacheStore store;
 
-    /** 只处理声明了缓存的业务方法，不将私人服务或通用 Mapper 放进缓存。 */
+    /** 处理公开查询缓存，只缓存已声明的方法，不缓存私有业务或通用 Mapper。 */
     @Around("@annotation(org.springframework.cache.annotation.Cacheable) || " +
             "@annotation(org.springframework.cache.annotation.CacheEvict) || @annotation(org.springframework.cache.annotation.Caching) || " +
             "execution(* com.xuan.service.impl.ArticleServiceImpl.publicArticles(..)) || " +

@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 本人留言只操作当前user_id，ALL也不能读取他人本人详情。
+ * 本人留言接口，只操作当前用户的留言，有 ALL 范围也不能读取他人的本人详情。
  */
 @RestController("meMessageController")
 @RequestMapping("/blog/me/messages")
@@ -35,19 +35,19 @@ public class MyMessageController {
     private final IMessageService messages;
     private final CaptchaStore captchas;
 
-    /** 本人保留待审、驳回、私密与占位记录。 */
+    /** 分页查询本人留言，包括待审、驳回、私密和删除占位记录。 */
     @GetMapping
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageOwnQueryDTO query) {
         return Result.ok(messages.ownMessages(query));
     }
 
-    /** 编辑前获取当前业务版本。 */
+    /** 根据id查询本人留言及版本，供编辑使用。 */
     @GetMapping("/{id}")
     public ResponseEntity<Result<MessagePrivateVO>> detail(@PathVariable String id) {
         return response(messages.ownDetail(IdUtils.parse(id)));
     }
 
-    /** 编辑先消费验证码，只能替换正文、格式和通知意愿，并重新审核。 */
+    /** 修改本人留言，先校验并作废验证码，只改正文、格式和回复通知设置，修改后重新审核。 */
     @PutMapping("/{id}")
     @SaCheckPermission("blog:message:updateOwn")
     public ResponseEntity<Result<MessagePrivateVO>> edit(@PathVariable String id,

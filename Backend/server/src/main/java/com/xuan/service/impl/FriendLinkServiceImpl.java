@@ -65,7 +65,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return PageResult.from(links.linkPage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** 资料和版本在同一个快照里读取，避免两者对不上。 */
+    /** 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LinkProfileVO detail(long id) {
@@ -173,7 +173,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return new LinkProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除友情链接，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:link", permission = "blog:link:delete")

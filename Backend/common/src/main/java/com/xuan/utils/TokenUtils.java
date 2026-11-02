@@ -8,7 +8,7 @@ import java.security.SecureRandom;
 import java.util.Base64;
 
 /**
- * 这里只生成随机标识和 SHA-256 摘要，不依赖会话、Redis、业务模型或应用配置。
+ * 随机标识和 SHA-256 摘要工具，不依赖会话、Redis 或业务配置。
  */
 public final class TokenUtils {
 
@@ -33,7 +33,7 @@ public final class TokenUtils {
      *
      * @param value 待摘要文本，不可为 null
      * @return 64 位小写十六进制 SHA-256
-     * @throws IllegalStateException JDK 缺少 SHA-256 实现时拒绝降级
+     * @throws IllegalStateException JDK 不支持 SHA-256 时抛出异常，不改用其他算法
      */
     public static String digest(String value) {
         try {

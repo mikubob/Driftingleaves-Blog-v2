@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { computed, onScopeDispose, ref, watch } from 'vue'
 
-/** 沿用原站主题开关；系统监听随 Store 销毁，不持久化身份。 */
+/** 切换页面主题，Store 销毁时移除系统主题监听，不保存登录信息。 */
 export const useThemeStore = defineStore('theme', () => {
   const mode = ref('auto')
   const media = window.matchMedia('(prefers-color-scheme: dark)')

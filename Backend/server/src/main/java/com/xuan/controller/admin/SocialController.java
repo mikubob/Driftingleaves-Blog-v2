@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台全站资料维护，权限、版本和写入由同一业务事务落实。
+ * 后台社交链接管理接口，业务层在同一事务中检查权限和版本、保存资料。
  */
 @RestController("adminSocialController")
 @RequestMapping("/admin/home/social-links")
@@ -35,21 +35,21 @@ public class SocialController {
 
     private final ISocialService items;
 
-    /** 分页不返回逐条版本，编辑前读取详情。 */
+    /** 分页查询社交链接，列表不带每条记录的版本，编辑前先查询详情。 */
     @GetMapping
     @SaCheckPermission("home:social:query")
     public Result<PageResult<HomeSocialLink>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
         return Result.ok(items.listItems(query));
     }
 
-    /** 资料版本放响应头。 */
+    /** 根据id查询社交链接详情，版本放在 X-Revision 响应头。 */
     @GetMapping("/{id}")
     @SaCheckPermission("home:social:query")
     public ResponseEntity<Result<HomeSocialLink>> detail(@PathVariable String id) {
         return profile(items.detail(IdUtils.parse(id)));
     }
 
-    /** 创建成功返回201和新资料版本。 */
+    /** 新增社交链接，成功后返回 201 和新版本。 */
     @PostMapping
     @SaCheckPermission("home:social:create")
     public ResponseEntity<Result<HomeSocialLink>> create(@Valid @RequestBody SocialWriteDTO request) {
@@ -58,7 +58,7 @@ public class SocialController {
                 .header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }
 
-    /** PUT完整替换并在锁内核对版本。 */
+    /** 根据id更新社交链接，PUT 要传完整资料，加锁后检查版本。 */
     @PutMapping("/{id}")
     @SaCheckPermission("home:social:update")
     public ResponseEntity<Result<HomeSocialLink>> update(@PathVariable String id,
@@ -67,7 +67,7 @@ public class SocialController {
         return profile(items.update(IdUtils.parse(id), request, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除社交链接，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("home:social:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -75,7 +75,7 @@ public class SocialController {
         return Result.ok(null);
     }
 
-    /** 响应体只放资料。 */
+    /** 返回社交链接资料，版本放在 X-Revision 响应头。 */
     private ResponseEntity<Result<HomeSocialLink>> profile(ResourceVersion<HomeSocialLink> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }

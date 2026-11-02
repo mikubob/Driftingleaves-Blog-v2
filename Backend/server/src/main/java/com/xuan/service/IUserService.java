@@ -28,76 +28,76 @@ import com.xuan.vo.UserProfileVO;
 import java.util.List;
 
 /**
- * 本站身份从会话取得，后台传入的目标 ID 只能表示操作对象，不能代替操作者身份。
+ * 用户业务接口，当前用户取登录会话，目标id只用于指定操作对象。
  */
 public interface IUserService extends IService<SysUser> {
 
-    /** 检查后台和业务权限后分页，列表和总数用同样条件，全部已分配角色都返回，不带逐条版本。 */
+    /** 分页查询用户，先检查后台入口和查询权限；列表和总数使用相同条件，返回全部已分配角色，不带每条记录的版本。 */
     PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId);
 
-    /** 检查后台和业务权限后，同一快照里取资料、角色和整体版本，用户不存在返回 404。 */
+    /** 根据id查询用户详情及版本，先检查后台入口和查询权限，再在同一个只读事务中读取资料和角色；用户不存在返回 404。 */
     AdminUserProfileVO adminDetail(long userId);
 
-    /** 后台创建密码账号不分默认角色，唯一键冲突就全部回滚。 */
+    /** 创建带密码的用户，不分配默认角色，用户名或邮箱重复时全部回滚。 */
     UserAdminVO adminCreate(AdminUserCreateDTO request);
 
-    /** 先拿保护锁，再按 ID 锁用户，锁内重查身份、权限和版本，禁用前先撤销会话。 */
+    /** 根据id更新用户，先拿保护锁，再按id锁住用户；加锁后重新检查身份、权限和版本，禁用前先撤销会话。 */
     AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision);
 
-    /** 同一保护锁事务里完整替换启用角色，保留最后管理员，提交前撤销目标用户全部会话。 */
+    /** 根据id更新用户角色，在同一个保护锁事务中完整替换为启用的角色；保留最后一个有效管理员，提交前撤销该用户的全部会话。 */
     AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision);
 
-    /** 整批核对用户版本后仅修改启用状态，保留最后管理员；实际禁用时撤销会话，失败整批回滚。 */
+    /** 批量启用或禁用用户，先检查每个用户的版本，只修改启用状态；保留最后一个有效管理员，实际禁用时撤销会话，任一失败则整批回滚。 */
     BatchVersionsVO adminSetStatusBatch(List<BatchItemDTO> items, int status);
 
-    /** 整批校验版本和内容引用后物理删除，级联关联并撤销全部会话，保留最后管理员及历史记录。 */
+    /** 批量删除用户，先检查全部版本和内容引用，再删除用户及关联、撤销全部会话；保留最后一个有效管理员和历史记录。 */
     void adminDeleteBatch(List<BatchItemDTO> items);
 
-    /** 用户和 member 关联一起创建，注册成功不自动登录。 */
+    /** 注册用户并分配 member 角色，用户和角色关联一起提交，注册成功后不自动登录。 */
     MeVO register(RegisterDTO request);
 
-    /** 先锁用户再验密码，按登录端指定的秒数发独立 Token、记录登录时间。 */
+    /** 使用用户名和密码登录，先锁住用户再检查密码，按登录端指定的有效秒数生成独立 Token，并记录登录时间。 */
     SessionVO login(LoginDTO request, int timeoutSeconds);
 
     /** 注册和邮箱登录分别发送验证码，SMTP 接受后才返回成功。 */
     void sendEmailCode(EmailCodeDTO request);
 
-    /** 后台发送验证码前锁用户，核对账密、当前邮箱和后台权限。 */
+    /** 发送后台登录验证码，先锁住用户，检查用户名、密码、当前邮箱和后台权限。 */
     void sendAdminEmailCode(AdminEmailCodeDTO request);
 
     /** 按当前绑定邮箱锁用户，消费邮件验证码后签发前台会话。 */
     SessionVO loginEmail(EmailLoginDTO request);
 
-    /** 同一用户锁内同时核对账密、当前邮箱、邮件验证码和后台权限。 */
+    /** 登录后台，在同一个用户锁内检查用户名、密码、当前邮箱、邮件验证码和后台权限。 */
     SessionVO loginAdmin(AdminLoginDTO request);
 
-    /** 同一用户锁内取资料，并用全部角色关联一起算整体版本。 */
+    /** 查询当前用户资料，在用户锁内读取资料和全部角色，并一起计算版本。 */
     UserProfileVO me();
 
-    /** 没传的字段不改，同一行锁事务里查版本并只写允许的资料。 */
+    /** 修改当前用户资料，加锁并检查版本，只更新允许修改的字段，没传的字段保持不变。 */
     UserProfileVO patch(ProfilePatchDTO request, String revision);
 
-    /** 最近认证和旧密码都通过后才能改密码，提交前撤销全部会话。 */
+    /** 设置或修改当前用户密码，先检查最近认证，已有密码时还要检查旧密码，提交前撤销全部会话。 */
     void setPassword(PasswordSetDTO request);
 
-    /** 清密码后要保留至少一种配置可用的平台登录，提交前撤销全部会话。 */
+    /** 清除当前用户密码，至少保留一种已配置且可用的第三方登录方式，提交前撤销全部会话。 */
     void clearPassword(PasswordClearDTO request);
 
-    /** 只返回当前配置可用的平台绑定和创建时间。 */
+    /** 查询当前用户的第三方绑定，只返回当前可用的平台和绑定时间。 */
     List<OAuthBindingVO> bindings();
 
-    /** 用户锁内检查不能删掉最后登录方式，删除后撤销全部会话。 */
+    /** 解除第三方绑定，在用户锁内确认仍有其他登录方式，解绑后撤销全部会话。 */
     void unbind(String source);
 
-    /** 拦截器和绑定等操作用它查当前账号，不能只信登录时的状态。 */
+    /** 检查当前登录用户，供拦截器和绑定等操作使用，不能只依赖登录时的账号状态。 */
     long requireCurrent();
 
-    /** 仅查找已经绑定的平台身份；未绑定时先完成邮箱注册，不自动创建账号。 */
+    /** 根据第三方身份查询已绑定用户，未绑定时要求先完成邮箱注册，不自动创建账号。 */
     long resolveOAuth(String source, String uuid, String nickname, String avatar);
 
-    /** 绑定在原用户锁内重查会话，不创建或切换其他账号。 */
+    /** 绑定第三方账号，在原用户锁内重新检查会话，不创建或切换其他账号。 */
     OAuthBindingVO bindOAuth(long userId, String tokenHash, String source, String uuid);
 
-    /** 票据消费后，用户锁内重查原身份仍绑定再发会话，兑换等待不能刷新认证时间。 */
+    /** 使用第三方账号登录，一次性使用票据后，在用户锁内确认原身份仍已绑定，再创建会话；兑换等待不能刷新认证时间。 */
     SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds);
 }

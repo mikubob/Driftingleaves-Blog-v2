@@ -26,13 +26,13 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 
 /**
- * MVC 用 Jackson 3 严格检查输入，ID 返回字符串，时间按 UTC 毫秒格式返回。
+ * 配置 JSON 读写，使用 Jackson 3 检查输入，id返回字符串，时间使用 UTC 毫秒格式。
  */
 @Configuration
 public class WebJsonConfig {
 
     /**
-     * 统一配置 ID、UTC 时间和严格输入规则，拒绝隐式类型转换。
+     * 配置id和时间的 JSON 格式，拒绝不符合类型要求的输入。
      */
     @Bean
     public JsonMapperBuilderCustomizer webJsonCustomizer() {
@@ -45,7 +45,7 @@ public class WebJsonConfig {
             // 2. 输入 ID 只能是合法十进制字符串，不能把 JSON 数字自动转过来。
             module.addDeserializer(Long.class, new ValueDeserializer<>() {
                 /**
-                 * {@inheritDoc}
+                 * 读取字符串id，检查正整数格式和 Long 范围。
                  */
                 @Override
                 public Long deserialize(JsonParser parser, DeserializationContext context) {
@@ -69,7 +69,7 @@ public class WebJsonConfig {
                 private final DateTimeFormatter format = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'");
 
                 /**
-                 * {@inheritDoc}
+                 * 将 UTC 时间转成带毫秒和 Z 标记的 JSON 字符串。
                  */
                 @Override
                 public void serialize(LocalDateTime value, JsonGenerator generator, SerializationContext context) {

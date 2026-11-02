@@ -63,7 +63,7 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * 留言写入先锁操作者、message配置、完整父链，每段等待后重新检查原会话。
+ * 留言业务实现，写入时依次锁住操作者、message 配置和全部上级留言，每次等待后重新检查原会话。
  */
 @Service
 @RequiredArgsConstructor
@@ -81,7 +81,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final Clock clock;
     private final IpLocationResolver locations;
 
-    /** {@inheritDoc} */
+    /** 分页查询可见留言及直接回复。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query) {
@@ -92,7 +92,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
             throw missing();
         }
-        // shortcut: 当前沿用评论的轻量父链读取方式，留言量使扫描不可接受时再演进父链查询。
+        // shortcut: 目前沿用评论的方式查询全部上级留言，留言过多导致扫描太慢时再改查询方式。
         List<Long> visible = nodes.stream().filter(node -> Objects.equals(parent, node.getParentId()))
                 .filter(node -> MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer))
                 .map(MessageNode::getMessageId).toList();
@@ -104,7 +104,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 Long.toString((visible.size() + (long) query.pageSize() - 1) / query.pageSize()), rows);
     }
 
-    /** {@inheritDoc} */
+    /** 发表留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent) {
@@ -116,7 +116,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireMember("create");
         requireEnabled(policy);
 
-        // 2. 从根到父留言加锁，确认可以回复，并保留整条父链的私密限制。
+        // 2. 从根到父留言依次加锁，确认可以回复，并保留全部上级留言的私密限制。
         List<BlogMessage> path = lockPath(request.getParentId(), "create", false);
         requireReplyable(path, actor, false);
 
@@ -141,7 +141,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), actor)), actor);
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询本人留言。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query) {
@@ -152,7 +152,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                         .convert(row -> privateView(row, actor)));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询本人留言及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> ownDetail(long id) {
@@ -160,7 +160,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(required(messages.scoped(id, actor)), actor);
     }
 
-    /** {@inheritDoc} */
+    /** 根据id修改本人留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)
@@ -173,7 +173,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireMember("updateOwn");
         requireEnabled(policy);
 
-        // 2. 锁住完整父链后重新查本人范围和版本，删除占位不能恢复成正文。
+        // 2. 锁住全部上级留言后，重新检查本人范围和版本，删除占位不能恢复原文。
         required(messages.scoped(id, actor));
         lockPath(id, "updateOwn", false);
         MessageRow row = required(messages.scoped(id, requireMember("updateOwn")));
@@ -192,7 +192,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(required(messages.scoped(id, actor)), actor);
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除本人留言及全部子回复。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void deleteOwn(long id) {
@@ -207,7 +207,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         deleteTree(id, true);
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询后台留言。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query) {
@@ -221,7 +221,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                         .convert(row -> privateView(row, actor)));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询后台留言及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> adminDetail(long id) {
@@ -229,12 +229,12 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(required(messages.scoped(id, null)), actor);
     }
 
-    /** {@inheritDoc} */
+    /** 根据id审核留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "review", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
     public ResourceVersion<MessagePrivateVO> review(long id, int status, String expected) {
-        // 1. 锁住配置与完整父链后核对版本，隐藏祖先未通过时不能单独放行子节点。
+        // 1. 锁住配置和全部上级留言后检查版本，上级隐藏留言未通过时，不能单独让下级回复通过。
         List<BlogMessage> path = lockAdmin(id, "review");
         MessageRow row = required(messages.scoped(id, null));
         RevisionUtils.check(revision(row), expected);
@@ -258,13 +258,13 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(required(messages.scoped(id, null)), sessions.currentUserId());
     }
 
-    /** {@inheritDoc} */
+    /** 在后台回复留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
     @RateLimit(value = "message-reply", limit = 10, dimension = RateLimit.Dimension.USER)
     public MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent) {
-        // 1. 后台回复也检查开关和完整父链，不能借管理员身份放宽私密范围。
+        // 1. 后台回复也要检查开关和全部上级留言，管理员身份不能放宽私密范围。
         long actor = requireAdmin("review");
         users.lockById(actor);
         requireAdmin("review");
@@ -274,7 +274,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         List<BlogMessage> path = lockPath(id, "review", true);
         requireReplyable(path, actor, true);
 
-        // 2. 使用实际操作人作为作者，继承父链私密性，后台回复直接标为通过。
+        // 2. 作者取实际操作人，保留上级留言的私密限制，后台回复直接设为审核通过。
         BlogMessage row = new BlogMessage();
         row.setUserId(actor);
         row.setParentId(id);
@@ -293,7 +293,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), null)), actor);
     }
 
-    /** 审核和删除也锁相同配置与父链，关闭enabled不阻止历史治理。 */
+    /** 审核或删除留言前，锁住配置和全部上级留言；关闭留言开关后，仍允许管理历史留言。 */
     private List<BlogMessage> lockAdmin(long id, String operation) {
         long actor = requireAdmin(operation);
         users.lockById(actor);
@@ -303,7 +303,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return lockPath(id, operation, true);
     }
 
-    /** 父关系不可改，先定位完整链再按根到目标加锁，环或缺失一律拒绝。 */
+    /** 锁住目标留言和全部上级留言，回复关系不可改，从根到目标依次加锁，遇到循环或缺失记录时拒绝操作。 */
     private List<BlogMessage> lockPath(Long id, String operation, boolean admin) {
         if (id == null) {
             return List.of();
@@ -339,7 +339,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return path;
     }
 
-    /** 普通回复还需当前前台能看到完整链，后台也不能回复待审、驳回或占位目标。 */
+    /** 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审、驳回或删除占位的目标。 */
     private void requireReplyable(List<BlogMessage> path, long actor, boolean admin) {
         if (CollUtil.isEmpty(path)) {
             return;
@@ -354,12 +354,12 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 私密性从完整链继承，客户端传0不能放宽。 */
+    /** 判断留言是否私密，只要有上级留言是私密的，客户端传 0 也不能改为公开。 */
     private boolean secret(List<BlogMessage> path) {
         return path.stream().anyMatch(row -> row.getIsSecret() == 1);
     }
 
-    /** 与第十章维护同一行，不另加缓存。 */
+    /** 读取留言配置，与后台维护使用同一条记录，不另加缓存。 */
     private BlogSiteConfig lockConfig() {
         BlogSiteConfig row = configs.lockByKey("message");
         if (row == null) {
@@ -412,7 +412,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return actor;
     }
 
-    /** 配置锁阻止新增后代，锁住待删分支并复核权限，再按子到父删除。 */
+    /** 删除留言及全部子回复，配置锁阻止新增回复；锁住待删留言并重新检查权限后，从子回复向父留言依次删除。 */
     private void deleteTree(long id, boolean own) {
         Map<Long, List<Long>> children = new HashMap<>();
         for (MessageNode node : messages.nodes()) {
@@ -436,14 +436,14 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 版本排除昵称、头像和审计时间。 */
+    /** 计算留言版本，不包含昵称、头像和审计时间。 */
     private String revision(BlogMessage row) {
         return "\"" + TokenUtils.digest(json.writeValueAsString(
                 Arrays.asList(row.getUserId(), row.getParentId(), row.getContent(), row.getContentFormat(),
                         row.getIsSecret(), row.getNotifyReply(), row.getStatus(), row.getEditedAt()))) + "\"";
     }
 
-    /** 公私响应都复用已处理的公开字段，私密入口只多通知意愿。 */
+    /** 整理本人留言资料，复用公开响应中的已处理字段，额外返回回复通知设置。 */
     private MessagePrivateVO privateView(MessageRow row, Long viewer) {
         MessagePublicVO value = publicView(row, viewer);
         return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
@@ -469,12 +469,12 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 deleted ? null : row.getUserAgentBrowser());
     }
 
-    /** 当前资料和版本一起返回。 */
+    /** 返回当前留言资料及对应版本。 */
     private ResourceVersion<MessagePrivateVO> profile(MessageRow row, Long viewer) {
         return new ResourceVersion<>(privateView(row, viewer), revision(row));
     }
 
-    /** 归属SQL检查后才返回资料不存在。 */
+    /** 检查留言是否存在，必须先由 SQL 限制归属范围。 */
     private MessageRow required(MessageRow row) {
         if (row == null) {
             throw missing();
@@ -502,7 +502,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "留言配置不可用");
     }
 
-    /** 同批通过的祖先可满足后代条件，但未选中的隐藏祖先仍阻止整批通过。 */
+    /** 批量审核留言，同批通过的上级留言可供下级回复通过检查；未选中的上级留言不可见时，整批拒绝通过。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:message", permission = "blog:message:review")
@@ -547,7 +547,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 全部显式目标先检查存在性，再清理重叠分支，保留未选中的祖先和兄弟。 */
+    /** 批量删除留言，先检查所有选中的记录，再删除这些留言及其子回复；保留未选中的上级和同级留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:message", permission = "blog:message:moderate")

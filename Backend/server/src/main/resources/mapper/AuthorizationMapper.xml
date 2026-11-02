@@ -29,7 +29,7 @@
         WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY p.permission_code
     </select>
 
-    <!-- 取有效角色授予的启用菜单及权限编码，DISTINCT 去掉多角色重复项；隐藏项和按钮保留，权限、祖先链和空目录交给业务层再查。 -->
+    <!-- 查询有效角色授予的启用菜单和权限编码，用 DISTINCT 去重；保留隐藏菜单和按钮，再由业务层检查权限、全部上级菜单和空目录。 -->
     <select id="menus" resultType="com.xuan.mapper.AuthorizationMapper$MenuGrant">
         <!-- 按角色菜单授权取启用节点，is_visible 只管显示，不能当作撤权。 -->
         SELECT DISTINCT m.*, p.permission_code FROM sys_user u

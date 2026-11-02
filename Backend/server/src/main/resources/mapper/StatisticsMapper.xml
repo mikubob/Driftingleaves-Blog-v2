@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 不保存计数副本，所有统计读同一快照；NULL访客只影响UV，不影响PV。 -->
+<!-- 直接查询现有记录进行统计，不另存计数；在同一个只读事务中读取，访客为空只影响独立访客数（UV），不影响浏览量（PV）。 -->
 <mapper namespace="com.xuan.mapper.StatisticsMapper">
     <sql id="viewsRange">v.view_time &gt;= #{begin}
         <if test="end != null">AND v.view_time &lt; #{end}</if>

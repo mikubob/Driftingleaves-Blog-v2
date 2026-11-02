@@ -15,7 +15,7 @@ import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 
 /**
- * OSS 对象键由服务端生成，读写都只能在专属前缀里进行，不提供公开直链。
+ * OSS 文件客户端，文件名由服务端生成，只读写指定前缀，不提供公开直链。
  */
 public class AliOssClient {
 
@@ -23,7 +23,7 @@ public class AliOssClient {
     private final String bucket;
     private final String prefix;
 
-    /** SDK 由容器关闭，这里只留下用得着的配置，不保留明文凭据。 */
+    /** 初始化 OSS 文件客户端，不保留明文凭据，SDK 由容器关闭。 */
     public AliOssClient(OSS oss, AliOssProperties properties) {
         properties.validateEnabled();
         this.oss = oss;
@@ -32,7 +32,7 @@ public class AliOssClient {
     }
 
     /**
-     * 上传已经过业务检查的文件；类型、归属和数据库失败后的补偿仍由文件业务处理。
+     * 上传文件到 OSS，文件类型、归属和数据库失败后的清理由业务层负责。
      *
      * @param bytes 非空且已按类型限长的文件内容
      * @param extension 已与内容识别一致的受支持扩展名，不使用原文件名
@@ -52,7 +52,7 @@ public class AliOssClient {
             oss.putObject(new PutObjectRequest(bucket, key, new ByteArrayInputStream(bytes), metadata));
             return key;
         } catch (OSSException | ClientException exception) {
-            // 云端可能已经写入但响应丢失，按本次随机键补偿，失败只留固定运维消息。
+            // 云端可能已保存文件但响应丢失，按本次随机文件名尝试删除，失败时只记录固定错误。
             try {
                 oss.deleteObject(bucket, key);
             } catch (OSSException | ClientException cleanupFailure) {
@@ -64,7 +64,7 @@ public class AliOssClient {
     }
 
     /**
-     * 权限检查通过后打开私有对象，用完必须关闭流，否则 SDK 连接不能释放。
+     * 打开 OSS 私有文件，调用前先检查权限，使用后必须关闭流以释放连接。
      *
      * @param key 来自数据库的本站对象键，禁止 URL、路径穿越及其他前缀
      * @return 待关闭的对象流；不存在返回 404，云端失败返回 503
@@ -83,7 +83,7 @@ public class AliOssClient {
         }
     }
 
-    /** 发布引用前先确认私有对象还在，不下载文件，也不访问外部展示 URL。 */
+    /** 检查 OSS 文件是否存在，不下载内容或访问外部链接。 */
     public boolean exists(String key) {
         requireKey(key);
         try {
@@ -93,7 +93,7 @@ public class AliOssClient {
         }
     }
 
-    /** 业务确认文件没人引用后才能删，云端删除失败就报错，不能当作已经删掉。 */
+    /** 删除 OSS 文件，业务层先确认无人引用，云端删除失败时报错。 */
     public void delete(String key) {
         requireKey(key);
         try {
@@ -103,7 +103,7 @@ public class AliOssClient {
         }
     }
 
-    /** 先检查完整对象键再调用 SDK，不靠解码或整理路径来接收含糊的输入。 */
+    /** 检查 OSS 文件路径，只接受完整合法的对象键，不通过解码或整理路径放宽检查。 */
     private void requireKey(String key) {
         if (key == null || key.length() > 512 || !key.startsWith(prefix)
                 || !FileUtils.validObjectKey(key.substring(prefix.length()))) {
@@ -111,7 +111,7 @@ public class AliOssClient {
         }
     }
 
-    /** 对外只报固定错误，不把 SDK 异常、签名、Bucket 和内部地址带出去。 */
+    /** 返回 OSS 服务错误，不带 SDK 异常、签名、Bucket 或内部地址。 */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "对象存储暂不可用");
     }

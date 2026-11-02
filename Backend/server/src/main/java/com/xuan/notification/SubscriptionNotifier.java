@@ -26,7 +26,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 
 /**
- * 发布/审核提交后才投递邮件，收件人只取当前已确认订阅，不发送私密原文。
+ * 发送文章发布和留言回复通知，事务提交后才发给已确认的订阅，不发送私密原文。
  */
 @Component
 public class SubscriptionNotifier {
@@ -42,7 +42,7 @@ public class SubscriptionNotifier {
     private final Clock clock;
     private final ExecutorService executor;
 
-    /** 执行器单独注入，不搬运请求线程、Token或会话上下文。 */
+    /** 初始化邮件通知，使用专用线程池，不传递请求线程、Token 或会话信息。 */
     public SubscriptionNotifier(SubscriptionMapper subscriptions, ArticleMapper articles, MessageMapper messages,
             SubscriptionTicketStore tickets, MailClient mail, MailProperties properties, PublicSiteProperties sites,
             JsonMapper json, Clock clock, @Qualifier("mailExecutor") ExecutorService executor) {
@@ -58,22 +58,22 @@ public class SubscriptionNotifier {
         this.executor = executor;
     }
 
-    /** 只由首次发布入口登记，回滚、下架重发和普通编辑不会触发。 */
+    /** 登记新文章通知，仅首次发布时调用，回滚、重新上架和普通编辑不触发。 */
     public void afterArticlePublished(long id) {
         afterCommit(() -> article(id));
     }
 
-    /** 只由留言实际变为通过或免审新建时登记，不反复通知相同审核目标。 */
+    /** 登记留言回复通知，仅审核实际通过或免审创建时调用，不重复通知相同审核结果。 */
     public void afterMessageApproved(long id) {
         afterCommit(() -> reply(id));
     }
 
-    /** 成功提交后排队；发信失败只记固定运维错误，不回滚已经保存的内容。 */
+    /** 事务提交后发送邮件，发送失败只记录固定错误，不回滚已保存的内容。 */
     private void afterCommit(Runnable task) {
         // shortcut: 通知只在进程内排队，需要跨宕机可靠投递时再引入持久化任务。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             /**
-             * {@inheritDoc}
+             * 事务提交后，将邮件任务交给线程池。
              */
             @Override
             public void afterCommit() {
@@ -92,7 +92,7 @@ public class SubscriptionNotifier {
         });
     }
 
-    /** 扫描已激活收件人，每批100条，发送前再次检查PUBLIC与当前订阅轮次。 */
+    /** 发送新文章通知，每批读取 100 个已激活订阅，发送前重新检查文章公开状态和当前订阅轮次。 */
     private void article(long id) {
         long after = 0;
         while (true) {
@@ -120,7 +120,7 @@ public class SubscriptionNotifier {
         }
     }
 
-    /** 只提醒直接被回复者，不使用登录邮箱，也不在正文里拼入任何留言原文。 */
+    /** 发送留言回复通知，只提醒直接被回复的人，使用已确认的订阅邮箱，不包含留言原文。 */
     private void reply(long id) {
         MessageRow reply = messages.scoped(id, null);
         if (reply == null || reply.getStatus() != 1 || reply.getParentId() == null) {
@@ -140,7 +140,7 @@ public class SubscriptionNotifier {
         }
     }
 
-    /** 每封实际发送的邮件创建本轮可幂等使用的退订能力。 */
+    /** 发送订阅邮件，并生成本轮退订票据，重复退订也返回成功。 */
     private void send(BlogRssSubscription row, String subject, String text) {
         String round = tickets.deliveryRound(row.getSubscriptionId());
         if (round == null) {
@@ -153,7 +153,7 @@ public class SubscriptionNotifier {
                 text + "\n退订：" + properties.getUnsubscribeUrl() + "#unsubscribeTicket=" + ticket);
     }
 
-    /** 不把邮箱、原文、票据或SMTP异常写进运维日志。 */
+    /** 记录发信失败，不保存邮箱、原文、票据或 SMTP 异常详情。 */
     private static void failed() {
         System.getLogger(SubscriptionNotifier.class.getName())
                 .log(System.Logger.Level.ERROR, "订阅通知发送失败，请检查邮件服务");

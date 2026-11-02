@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 /**
- * 点赞只写 MySQL 明细，文章锁让它与发布、下架、回收互斥，不另存缓存计数。
+ * 点赞业务实现，只保存 MySQL 明细；点赞和发布、下架、回收共用文章锁，不另存缓存计数。
  */
 @Service
 @RequiredArgsConstructor
@@ -31,7 +31,7 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
 
-    /** 同一快照里查公开文章与本人状态，不要求 like 权限。 */
+    /** 查询本人对公开文章的点赞状态，在同一个只读事务中检查文章和点赞记录，不要求点赞权限。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LikeStateVO state(long article) {
@@ -40,7 +40,7 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return likes.state(article, actor);
     }
 
-    /** 拿文章锁后才看复合键，不吞唯一键异常继续事务。 */
+    /** 为文章点赞，先锁住文章，再按文章和用户查询点赞记录；唯一键冲突时让事务失败。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LikeStateVO like(long article) {
@@ -51,7 +51,7 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return likes.state(article, actor);
     }
 
-    /** 没有明细也返回 false；非公开文章在删除之前就拒绝，既有明细保留。 */
+    /** 取消文章点赞，没有记录时也返回 false；非公开文章拒绝操作并保留原记录。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LikeStateVO unlike(long article) {

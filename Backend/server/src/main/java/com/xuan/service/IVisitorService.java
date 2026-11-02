@@ -12,28 +12,28 @@ import com.xuan.vo.VisitorVO;
 import java.util.List;
 
 /**
- * 访客管理仅限制统计标识，不修改本站用户状态。
+ * 访客业务接口，只限制统计标识，不修改用户账号状态。
  */
 public interface IVisitorService extends IService<BlogVisitor> {
 
-    /** ALL后台分页读取访客资料及当前保留的浏览次数。 */
+    /** 分页查询访客资料及当前保留的浏览次数，需要 ALL 范围。 */
     PageResult<VisitorVO> listVisitors(VisitorQueryDTO query);
 
-    /** 版本只包含限制字段，最近访问不会使版本过期。 */
+    /** 根据id查询访客详情，版本只包含访问限制字段，最近访问变化不会导致版本过期。 */
     ResourceVersion<VisitorVO> detail(long id);
 
-    /** 限制到指定UTC时间或永久，持锁后检查版本。 */
+    /** 根据id限制访客访问，可以指定 UTC 结束时间或永久限制，加锁后检查版本。 */
     ResourceVersion<BlogVisitor> block(long id, String until, String revision);
 
-    /** 解除限制且清空结束时间，相同目标仍检查版本。 */
+    /** 根据id解除访客限制，同时清空限制结束时间；已解除限制时也要检查版本。 */
     ResourceVersion<BlogVisitor> unblock(long id, String revision);
 
-    /** 外键将历史PV的visitor_id置NULL，PV仍然保留。 */
+    /** 根据id删除访客，历史浏览记录保留，由外键把其中的 visitor_id 设为 NULL。 */
     void delete(long id, String revision);
-    /** 单个或多个目标共用入口，全部数据库变更共同提交。 */
+    /** 批量删除访客，单条也走此入口，所有数据库修改一起提交。 */
     void deleteBatch(List<BatchItemDTO> items);
-    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    /** 批量限制访客访问，单条也走此入口，任一失败则整批回滚。 */
     BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until);
-    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    /** 批量解除访客限制，单条也走此入口，任一失败则整批回滚。 */
     BatchVersionsVO unblockBatch(List<BatchItemDTO> items);
 }

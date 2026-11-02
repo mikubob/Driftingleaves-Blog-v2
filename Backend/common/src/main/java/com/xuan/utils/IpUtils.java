@@ -9,7 +9,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 只解析 IP 地址，从右往左跳过明确配置的可信代理，不查主机名。
+ * 客户端 IP 工具，从右向左排除可信代理，只解析地址，不查询主机名。
  */
 public final class IpUtils {
 
@@ -17,7 +17,7 @@ public final class IpUtils {
     }
 
     /**
-     * 取得规范的客户端 IP，不查 DNS；转发链有问题就用直连地址。
+     * 获取客户端 IP，不查 DNS，转发信息无效时使用直连地址。
      *
      * @param request 当前请求，容器的自动转发头处理必须关闭
      * @param trustedProxies 受信代理的精确 IPv4/IPv6 地址，不接受网段和主机名
@@ -43,7 +43,7 @@ public final class IpUtils {
         return current;
     }
 
-    /** 需要脱敏展示时，取得 IPv4 /24 或 IPv6 /48 网段。 */
+    /** 隐藏 IP 的部分地址，返回 IPv4 /24 或 IPv6 /48 网段。 */
     public static String anonymize(String value) {
         String ip = normalize(value);
         if (ip == null) {
@@ -58,12 +58,12 @@ public final class IpUtils {
         }
     }
 
-    /** 先把地址整理成统一写法再比较，避免同一个 IPv6 地址写法不同而漏掉检查。 */
+    /** 检查是否为可信代理，先统一地址格式，避免漏掉同一 IPv6 地址的不同写法。 */
     private static boolean trusted(String ip, List<String> proxies) {
         return proxies.stream().anyMatch(proxy -> ip.equals(normalize(proxy)));
     }
 
-    /** 只收完整 IP 地址，不接受端口、zone ID、主机名或 IPv4 缩写。 */
+    /** 统一 IP 地址格式，只接受完整地址，不接受端口、zone ID、主机名或 IPv4 缩写。 */
     public static String normalize(String value) {
         if (StrUtil.isEmpty(value) || value.length() > 45) {
             return null;

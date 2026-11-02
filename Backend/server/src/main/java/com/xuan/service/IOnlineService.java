@@ -3,8 +3,8 @@ package com.xuan.service;
 import com.xuan.dto.OnlineTicketCreateDTO;
 import com.xuan.vo.OnlineTicketVO;
 
-/** 核验公开站点和可选 HTTP 身份，签发一次性在线入场票据。 */
+/** 在线统计票据业务接口，检查站点和可选的登录身份后，生成一次性票据。 */
 public interface IOnlineService {
-    /** 来源、站点和可选会话有效后签发票据，不改变在线人数。 */
+    /** 生成一次性在线统计票据，先检查来源、站点和可选的登录会话，此时不增加在线人数。 */
     OnlineTicketVO issue(OnlineTicketCreateDTO request, String origin, String ip);
 }

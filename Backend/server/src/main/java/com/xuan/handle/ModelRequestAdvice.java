@@ -18,7 +18,7 @@ import org.springframework.web.servlet.HandlerMapping;
 
 import java.util.Set;
 
-/** 身份、系统管理和文章字典只收声明过的参数，不能把忽略身份字段当作校验通过。 */
+/** 检查登录、系统管理和文章分类标签接口的参数，拒绝未声明的字段。 */
 @ControllerAdvice(assignableTypes = {AuthController.class, com.xuan.controller.auth.CaptchaController.class,
         com.xuan.controller.admin.AuthController.class, com.xuan.controller.admin.MeController.class,
         MeController.class, UserController.class,
@@ -30,7 +30,7 @@ import java.util.Set;
         com.xuan.controller.blog.MyArticleController.class})
 public class ModelRequestAdvice {
 
-    /** 绑定前只查参数名、重复值和无请求体约定，字段内容仍交给 DTO 和业务层检查。 */
+    /** 检查参数名、重复参数和不允许的请求体，字段内容由 DTO 和业务层校验。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);

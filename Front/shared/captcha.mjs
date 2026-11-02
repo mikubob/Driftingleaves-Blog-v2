@@ -10,7 +10,7 @@ export function validateCaptcha(value) {
   return value
 }
 
-/** 在请求边界写入校验头，保留六位数字的前导零。 */
+/** 发送请求时填写验证码请求头，保留六位数字开头的零。 */
 export function setCaptchaHeaders(headers, captcha) {
   if (captcha === undefined) {
     return

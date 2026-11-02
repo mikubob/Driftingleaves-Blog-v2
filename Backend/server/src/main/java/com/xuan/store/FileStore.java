@@ -20,7 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
 /**
- * 统一读写本地和 OSS 文件，负责路径检查、对象可用性和失败清理。
+ * 文件存储，统一读写本地和 OSS 文件，检查路径、文件可用性并处理失败清理。
  */
 @Component
 @RequiredArgsConstructor
@@ -31,9 +31,9 @@ public class FileStore {
     private final ObjectProvider<AliOssClient> oss;
 
     /**
-     * 文件行锁和权限检查通过后再查实际对象；文件缺失或不可读返回 503，不抓取外部 URL。
+     * 检查文件是否可用，调用前先锁住文件并检查权限；文件缺失或不可读时返回 503，不抓取外部链接。
      *
-     * @param file 数据库元数据，不能使用客户端存储键或Bucket
+     * @param file 数据库中的文件资料，不能使用客户端传入的存储路径或 Bucket
      */
     public void requireAvailable(BlogFile file) {
         if ("oss".equals(file.getStorageType())) {
@@ -56,7 +56,7 @@ public class FileStore {
         }
     }
 
-    /** 上传临时文件也放在实际根目录，后面的原子移动才不会跨文件系统。 */
+    /** 创建上传临时文件，放在存储根目录，保证后续移动在同一个文件系统内完成。 */
     public Path temporary() {
         try {
             Files.createDirectories(files.getLocalRoot());
@@ -66,7 +66,7 @@ public class FileStore {
         }
     }
 
-    /** 已验证的文件按类型分目录，文件名由服务端随机生成，不使用展示文件名作为路径。 */
+    /** 保存已校验的文件，按类型分目录，使用服务端随机文件名，不使用展示名称作为路径。 */
     public void store(Path temporary, String extension, BlogFile file) {
         AliOssClient client = oss.getIfAvailable();
         if (client != null) {
@@ -91,7 +91,7 @@ public class FileStore {
         }
     }
 
-    /** 在业务锁内读取有界字节，关闭流后才返回，存储缺失或大小变化统一 503。 */
+    /** 读取文件内容，必须在业务锁内调用并限制大小，关闭流后返回；文件缺失或大小变化时返回 503。 */
     public byte[] read(BlogFile file) {
         String key = file.getObjectKey();
         String extension = key == null ? "" : key.substring(key.lastIndexOf('.') + 1);
@@ -112,7 +112,7 @@ public class FileStore {
         }
     }
 
-    /** 已不存在的对象也算清理完成，供数据库提交失败后的 DELETE 重试使用。 */
+    /** 删除存储文件，已不存在时也算成功，供数据库提交失败后的删除重试使用。 */
     public void delete(BlogFile file) {
         if ("oss".equals(file.getStorageType())) {
             ossClient(file).delete(file.getObjectKey());
@@ -125,7 +125,7 @@ public class FileStore {
         }
     }
 
-    /** 临时文件和回滚补偿清理失败要留固定运维错误，不能把路径或云端响应写进日志。 */
+    /** 清理临时文件或回滚后残留的文件，失败时记录固定错误，不记录路径或云端响应。 */
     public void cleanup(Path temporary, BlogFile stored) {
         try {
             if (stored != null && stored.getObjectKey() != null) {
@@ -143,7 +143,7 @@ public class FileStore {
         }
     }
 
-    /** 元数据中的 Bucket 也必须匹配当前受管存储，不能借历史记录访问别的空间。 */
+    /** 获取 OSS 客户端，检查文件记录中的 Bucket，不能访问其他存储空间。 */
     private AliOssClient ossClient(BlogFile file) {
         AliOssClient client = oss.getIfAvailable();
         if (client == null || !ossProperties.getBucket().equals(file.getBucket())) {
@@ -152,7 +152,7 @@ public class FileStore {
         return client;
     }
 
-    /** 已有文件必须检查真实路径，缺失对象仍检查父目录，保证重试删除不会走出根目录。 */
+    /** 获取本地文件路径，文件存在时检查真实路径，不存在时检查父目录，防止访问根目录之外。 */
     private Path localTarget(BlogFile file) throws IOException {
         if (!"local".equals(file.getStorageType()) || !"".equals(file.getBucket())
                 || file.getObjectKey() == null
@@ -175,7 +175,7 @@ public class FileStore {
         return target;
     }
 
-    /** 对象没了或存储出错都要失败，不能拿空对象当作发布成功。 */
+    /** 返回文件存储不可用错误，文件缺失时也不能返回空内容充当成功。 */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "引用文件存储暂不可用");
     }

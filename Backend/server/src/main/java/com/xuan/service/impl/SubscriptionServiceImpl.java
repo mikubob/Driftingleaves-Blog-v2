@@ -69,14 +69,14 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     private final Clock clock;
     private final PlatformTransactionManager transactions;
 
-    /** {@inheritDoc} */
+    /** 查询本人订阅。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SubscriptionVO own() {
         return view(subscriptions.byUser(requireMember(null)));
     }
 
-    /** {@inheritDoc} */
+    /** 申请订阅并发送确认邮件。 */
     @Override
     public SubscriptionVO request(SubscriptionWriteDTO request) {
         // 1. 在事务里依次锁住用户与订阅，等待结束后重新检查原会话和订阅权限。
@@ -132,7 +132,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return view(application.row());
     }
 
-    /** {@inheritDoc} */
+    /** 确认邮箱并激活订阅。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SubscriptionVO confirm(String ticket) {
@@ -163,7 +163,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return view(subscriptions.selectById(row.getSubscriptionId()));
     }
 
-    /** {@inheritDoc} */
+    /** 取消本人订阅。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void cancelOwn() {
@@ -177,7 +177,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** {@inheritDoc} */
+    /** 根据邮件票据取消订阅。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void cancelTicket(String ticket) {
@@ -198,7 +198,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         cancel(row);
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询订阅。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogRssSubscription> listSubscriptions(SubscriptionQueryDTO query) {
@@ -207,7 +207,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
                 IdUtils.parse(query.userId())));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询订阅详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<BlogRssSubscription> detail(long id) {
@@ -215,7 +215,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return profile(required(subscriptions.selectById(id)));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id修改订阅状态。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "status", target = "blog:rss", permission = "blog:rss:update", targetIdArgument = 0)
@@ -239,7 +239,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return profile(subscriptions.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除订阅。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:rss", permission = "blog:rss:delete", targetIdArgument = 0)
@@ -263,7 +263,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return required(row);
     }
 
-    /** 已退订不重写时间，旧链接重试仍保持幂等。 */
+    /** 取消订阅，已退订时不再修改时间，重复使用旧链接仍返回成功。 */
     private void cancel(BlogRssSubscription row) {
         if (row.getStatus() != 2) {
             row.setStatus(2);
@@ -282,7 +282,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return actor;
     }
 
-    /** ALL只从授予当前操作的角色计算。 */
+    /** 检查本次操作的 ALL 范围，只使用实际授予该权限的角色。 */
     private void requireAdmin(String operation) {
         long actor = requireMember(null);
         authorization.requireScope(actor, "admin:access");
@@ -291,7 +291,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 确认载荷格式错误也按票据无效处理，不回显原JSON。 */
+    /** 解析订阅确认票据，数据格式错误时按票据无效处理，不返回原始 JSON。 */
     private SubscriptionConfirmation confirmation(String raw) {
         try {
             return json.readValue(raw, SubscriptionConfirmation.class);
@@ -300,7 +300,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 退订载荷只来自独立Redis命名空间。 */
+    /** 读取退订票据，只从专用的 Redis 键中取数据。 */
     private SubscriptionUnsubscribe unsubscribe(String raw) {
         try {
             return json.readValue(raw, SubscriptionUnsubscribe.class);
@@ -324,26 +324,26 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return row;
     }
 
-    /** 时间和状态都是本业务版本，排除审计时间。 */
+    /** 计算订阅版本，包含订阅相关时间和状态，不包含审计时间。 */
     private ResourceVersion<BlogRssSubscription> profile(BlogRssSubscription row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(
                 json.writeValueAsString(Arrays.asList(row.getUserId(), row.getEmail(), row.getStatus(),
                         row.getVerifiedAt(), row.getSubscribeTime(), row.getUnsubscribeTime()))) + "\"");
     }
 
-    /** 数据库UTC精度为毫秒，票据保存相同精度供比较。 */
+    /** 获取 UTC 毫秒时间，与数据库和票据保持相同精度。 */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
     /**
-     * 仅供请求方法把提交结果带到真实发信阶段，不对外序列化票据。
+     * 订阅申请结果，只用于提交后发送邮件，不把票据直接返回给客户端。
      */
     private record Application(BlogRssSubscription row, String ticket) {
 
     }
 
-    /** 先锁定整批所属用户并完成校验，之后才修改订阅和投递轮次。 */
+    /** 批量删除订阅，先锁住全部所属用户并检查权限和版本，再统一删除。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:rss", permission = "blog:rss:delete")
@@ -370,7 +370,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 先锁定整批所属用户并完成校验，之后才修改订阅和投递轮次。 */
+    /** 批量修改订阅状态，先锁住全部所属用户并检查权限和版本，再更新状态及邮件轮次。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:rss", permission = "blog:rss:update")

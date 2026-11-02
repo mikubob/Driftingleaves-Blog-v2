@@ -10,13 +10,13 @@ import org.springframework.web.servlet.HandlerMapping;
 
 import java.util.Set;
 
-/** 第十章拒绝未声明、重复和空查询参数，不让 MVC 静默忽略状态或身份字段。 */
+/** 检查站点接口参数，拒绝未声明、重复和空参数，包括多余的状态或身份字段。 */
 @ControllerAdvice(assignableTypes = {FriendLinkController.class,
         PublicSiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
         com.xuan.controller.admin.SiteConfigController.class})
 public class SiteRequestAdvice {
 
-    /** 值的类型和长度交给 DTO，GET 不接受请求体。 */
+    /** 检查查询参数和 GET 请求体，参数类型及长度由 DTO 校验。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         if ("GET".equals(request.getMethod()) && (request.getContentLengthLong() > 0

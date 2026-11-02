@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 配置列表、详情、完整替换都走后台入口及自己的业务权限，不开放建键和删键。
+ * 后台站点配置接口，分别检查查询和更新权限，不提供配置键的新增或删除。
  */
 @RestController
 @RequestMapping("/admin/configs")
@@ -28,21 +28,21 @@ import java.util.List;
 public class SiteConfigController {
     private final ISiteConfigService configs;
 
-    /** 配置固定三种键，不做没有需要的分页。 */
+    /** 查询站点配置列表，只返回三种固定配置，不分页。 */
     @GetMapping
     @SaCheckPermission("blog:config:query")
     public Result<List<ConfigVO>> list() {
         return Result.ok(configs.listConfigs());
     }
 
-    /** 查询未知键返回404，已有键附带 X-Revision。 */
+    /** 根据配置键查询站点配置，未知键返回 404，已有配置的版本放在 X-Revision。 */
     @GetMapping("/{configKey}")
     @SaCheckPermission("blog:config:query")
     public ResponseEntity<Result<ConfigVO>> detail(@PathVariable String configKey) {
         return profile(configs.detail(configKey));
     }
 
-    /** 完整替换值与公开标记，版本与锁后权限由写事务核对。 */
+    /** 根据配置键更新站点配置，完整替换值和公开标记，在写事务中加锁并检查权限和版本。 */
     @PutMapping("/{configKey}")
     @SaCheckPermission("blog:config:update")
     public ResponseEntity<Result<ConfigVO>> update(@PathVariable String configKey,
@@ -51,7 +51,7 @@ public class SiteConfigController {
         return profile(configs.update(configKey, body, revision));
     }
 
-    /** 业务版本只放响应头，不混进配置对象。 */
+    /** 返回站点配置资料，版本放在 X-Revision 响应头。 */
     private ResponseEntity<Result<ConfigVO>> profile(ConfigProfileVO result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.config()));
     }

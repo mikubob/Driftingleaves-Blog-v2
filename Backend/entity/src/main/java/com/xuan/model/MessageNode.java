@@ -5,7 +5,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 /**
- * 公开逐层分页只读父链需要的轻量字段，不先加载隐藏原文。
+ * 留言关系数据，逐级查询回复时只读取所需字段，不提前加载隐藏的原文。
  */
 @Data
 public class MessageNode {

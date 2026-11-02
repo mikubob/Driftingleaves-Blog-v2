@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 角色和授权一起保存，写入时业务层先后锁保护点、用户和角色。
+ * 角色数据接口，角色和授权一起保存，业务层依次拿保护锁、用户锁和角色锁。
  */
 public interface RoleMapper extends BaseMapper<SysRole> {
 

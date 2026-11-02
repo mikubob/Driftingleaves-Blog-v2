@@ -19,7 +19,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** 缓存域代次与每笔事务的持久保护标记；不操作任何安全存储键。 */
+/** 保存各类公开缓存的版本和事务写入标记，不操作登录、票据等安全相关的 Redis 键。 */
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -63,7 +63,7 @@ public class PublicCacheStore {
         return auth.getRedisPrefix() + "cache:public:v1:" + domain + ":";
     }
 
-    /** 在事务中的任何 SELECT 建立快照之前，记录本次读允许使用的代次。 */
+    /** 在事务第一次执行 SELECT 前，记下本次查询可以使用的缓存版本。 */
     public void beginRead(String domain) {
         var frame = PublicCacheContext.current();
         String slot = "start:" + domain;
@@ -79,7 +79,7 @@ public class PublicCacheStore {
         }
     }
 
-    /** GET 同时检查代次和全部写标记，未命中记住回源前代次。 */
+    /** 读取缓存时同时检查版本和全部写入标记；缓存未命中时，记下查数据库前的缓存版本。 */
     public Object read(String domain, Object key) {
         var frame = PublicCacheContext.current();
         if (frame == null || frame.bypass()) {
@@ -105,7 +105,7 @@ public class PublicCacheStore {
         }
     }
 
-    /** 仅能回填开始回源时的代次；事务提交前的数据由 CacheManager 延后到提交后处理。 */
+    /** 保存查询结果时，只能写入查数据库前记下的缓存版本；事务提交前的数据由 CacheManager 等到提交后再处理。 */
     public void put(String domain, Object key, Object value, Duration ttl) {
         var frame = PublicCacheContext.current();
         if (frame == null || frame.bypass() || value == null) {

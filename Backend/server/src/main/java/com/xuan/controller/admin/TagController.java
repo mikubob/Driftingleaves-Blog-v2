@@ -26,7 +26,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台标签接口，先过后台入口和业务权限检查，再交给业务事务处理。
+ * 后台标签管理接口，检查后台入口和操作权限，由业务事务处理。
  */
 @RestController
 @RequestMapping("/admin/tags")
@@ -35,14 +35,14 @@ public class TagController {
 
     private final ITagService tags;
 
-    /** 获取标签分页，列表不提供每条记录的版本，编辑前要先取详情。 */
+    /** 分页查询标签，列表不带每条记录的版本，编辑前先查询详情。 */
     @GetMapping
     @SaCheckPermission("blog:tag:query")
     public Result<PageResult<BlogTag>> list(@Valid @ModelAttribute TagQueryDTO query) {
         return Result.ok(tags.listTags(query));
     }
 
-    /** 获取标签详情，把当前版本放进 X-Revision 响应头。 */
+    /** 根据id查询标签详情，版本放在 X-Revision 响应头。 */
     @GetMapping("/{tagId}")
     @SaCheckPermission("blog:tag:query")
     public ResponseEntity<Result<BlogTag>> detail(@PathVariable String tagId) {
@@ -58,7 +58,7 @@ public class TagController {
                 .body(Result.ok(value));
     }
 
-    /** 完整替换标签资料，版本检查留到锁事务里，缺版本返回 428。 */
+    /** 根据id更新标签，完整替换资料，加锁后检查版本，未传版本时返回 428。 */
     @PutMapping("/{tagId}")
     @SaCheckPermission("blog:tag:update")
     public ResponseEntity<Result<BlogTag>> update(@PathVariable String tagId,
@@ -67,7 +67,7 @@ public class TagController {
         return profile(tags.update(IdUtils.parse(tagId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除标签，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:tag:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -75,7 +75,7 @@ public class TagController {
         return Result.ok(null);
     }
 
-    /** 响应体只放标签资料，版本单独放响应头。 */
+    /** 返回标签资料，版本只放在响应头。 */
     private ResponseEntity<Result<BlogTag>> profile(TagProfileVO result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.tag()));
     }

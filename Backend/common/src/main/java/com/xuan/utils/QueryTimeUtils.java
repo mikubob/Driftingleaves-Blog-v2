@@ -9,14 +9,14 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
 /**
- * 明细筛选采用UTC毫秒时间，数据库DATETIME范围之外的输入直接拒绝。
+ * 查询时间工具，使用 UTC 毫秒时间，拒绝超出数据库 DATETIME 范围的值。
  */
 public final class QueryTimeUtils {
 
     private QueryTimeUtils() {
     }
 
-    /** 将接口Time转换为数据库UTC值，不接受隐式本地时区。 */
+    /** 将接口时间转为数据库 UTC 时间，不使用本地时区。 */
     public static LocalDateTime parse(String value) {
         if (ObjectUtil.isNull(value)) {
             return null;
@@ -35,7 +35,7 @@ public final class QueryTimeUtils {
         }
     }
 
-    /** 明细筛选使用[begin,end)，单侧界限允许缺失。 */
+    /** 检查查询时间范围，包含开始时刻、不包含结束时刻，可以只传一端。 */
     public static void requireRange(LocalDateTime begin, LocalDateTime end) {
         if (ObjectUtil.isNotNull(begin) && ObjectUtil.isNotNull(end) && !begin.isBefore(end)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "begin须早于end");

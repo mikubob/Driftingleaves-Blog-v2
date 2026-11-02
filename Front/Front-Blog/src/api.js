@@ -32,7 +32,7 @@ export function isWebUrl(value) {
 const publicAttachment = /^\/api\/v1\/blog\/articles\/[1-9]\d*\/files\/[1-9]\d*\/content$/
 const musicAttachment = /^\/api\/v1\/blog\/music\/files\/[1-9]\d*\/content$/
 
-/** 外链与媒体在响应入口检查，不接受脚本、凭据或协议相对地址。 */
+/** 检查接口返回的链接和媒体地址，拒绝脚本协议、带凭据的地址和以 // 开头的地址。 */
 function validateFields(value, key = '') {
   if (key === 'captchaId' && isCaptchaId(value)) {
     return
@@ -112,7 +112,7 @@ const session = (value) => model(value, {
   tokenType: (item) => item === 'Bearer', accessToken: (item) => text(item) && !!item, user: me,
 })
 
-/** 只检查本博客实际使用的响应模型，错误数据在进入页面状态前拒绝。 */
+/** 校验博客接口返回的数据，格式不正确时不更新页面。 */
 function validateData(path, data, method) {
   const route = path.split('?')[0]
   const read = method === 'GET'
@@ -211,7 +211,7 @@ class ApiError extends Error {
   }
 }
 
-/** 统一处理 Result、失效身份和 Retry-After，不重放写请求。 */
+/** 发送博客请求，统一读取 Result 响应、处理登录失效和 Retry-After 等待提示，不自动重试写请求。 */
 export async function request(path, { body, revision, captcha, ...options } = {}) {
   const headers = new Headers({ Accept: 'application/json' })
   setCaptchaHeaders(headers, captcha)

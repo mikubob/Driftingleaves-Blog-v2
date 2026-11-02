@@ -1,4 +1,4 @@
-/** LRC/JSON 统一为秒数与文本；TXT 保留全文，不把歌词当 HTML。 */
+/** 解析歌词，将 LRC/JSON 转为秒数和文本，TXT 保留全文，不按 HTML 显示。 */
 export function parseLyrics(source, type) {
   const text = source.replace(/^\uFEFF/, '')
   if (!text.trim() || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/u.test(text)) {

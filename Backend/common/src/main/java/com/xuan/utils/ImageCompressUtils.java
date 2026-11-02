@@ -13,13 +13,13 @@ import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.MemoryCacheImageOutputStream;
 
-/** 复用已经校验、解码的图片压缩，避免重复解码和逐轮叠加有损压缩。 */
+/** 图片压缩工具，使用已解码的原图，避免重复解码和多次有损压缩。 */
 public final class ImageCompressUtils {
 
     private ImageCompressUtils() {
     }
 
-    /** 保留原格式和 PNG 透明通道；只有产物更小时才采用，否则返回原字节。 */
+    /** 压缩图片，保留格式和 PNG 透明通道，压缩后更大时返回原内容。 */
     public static byte[] compress(byte[] original, BufferedImage image, String extension,
             ImageProperties properties) throws IOException {
         long targetBytes = properties.getMaxSizeKb() * 1024L;
@@ -57,7 +57,7 @@ public final class ImageCompressUtils {
         return result.length < original.length ? result : original;
     }
 
-    /** 写入内存并及时释放编码器，不把临时图片留给 ImageIO 磁盘缓存。 */
+    /** 将图片编码到内存，完成后释放编码器，不使用 ImageIO 磁盘缓存。 */
     private static byte[] encode(BufferedImage image, String format, float quality) throws IOException {
         ImageWriter writer = ImageIO.getImageWritersByFormatName(format).next();
         try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();

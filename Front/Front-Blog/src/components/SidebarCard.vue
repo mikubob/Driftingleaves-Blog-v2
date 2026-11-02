@@ -413,7 +413,7 @@ function goTag(slug) {
   color: #303133;
 }
 
-/* 在线连接由主布局管理，侧栏切换只读取同一份快照。 */
+/* 在线连接由主布局管理，切换侧栏时读取同一份在线人数。 */
 .online-stats {
   border-top: 1px solid var(--blog-border-light, #ebeef5);
   margin-top: 12px;

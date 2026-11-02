@@ -34,7 +34,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
+ * 社交链接业务实现，公开展示和后台管理读同一张表，成功日志写入失败时资料一起回滚。
  */
 @Service
 @RequiredArgsConstructor
@@ -46,7 +46,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** {@inheritDoc} */
+    /** 查询公开社交链接列表。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "social", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -54,7 +54,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return items.publicItems().stream().map(row -> new SocialPublicVO(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder())).toList();
     }
 
-    /** {@inheritDoc} */
+    /** 分页查询后台社交链接。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<HomeSocialLink> listItems(DisplayQueryDTO query) {
@@ -62,7 +62,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id查询社交链接详情及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<HomeSocialLink> detail(long id) {
@@ -70,7 +70,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return profile(requireItem(items.selectById(id)));
     }
 
-    /** {@inheritDoc} */
+    /** 新增社交链接。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "home:social", permission = "home:social:create")
@@ -85,7 +85,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return profile(items.selectById(row.getSocialId()));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id更新社交链接。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "home:social", permission = "home:social:update", targetIdArgument = 0)
@@ -99,7 +99,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return profile(items.selectById(id));
     }
 
-    /** {@inheritDoc} */
+    /** 根据id删除社交链接。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "home:social", permission = "home:social:delete", targetIdArgument = 0)
@@ -119,7 +119,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         }
     }
 
-    /** 白名单逐项赋值，NULL也写入数据库。 */
+    /** 填入允许修改的字段，NULL 也要写入数据库。 */
     private void assign(HomeSocialLink row, SocialWriteDTO request) {
         row.setName(request.getName());
         row.setIcon(request.getIcon());
@@ -128,7 +128,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         row.setStatus(request.getStatus());
     }
 
-    /** 先锁操作者再锁资源，每次等待后重查原Token、启用身份和独立权限。 */
+    /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
     private HomeSocialLink lock(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -137,7 +137,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return requireItem(row);
     }
 
-    /** 全站资源没有SELF版本，必须由授予本次权限的角色提供ALL。 */
+    /** 检查本次操作的 ALL 权限，此类资料全站共用，不支持只操作本人的范围。 */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -147,7 +147,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         }
     }
 
-    /** 先检查权限，再报告不存在。 */
+    /** 检查记录是否存在，调用前必须先通过权限校验。 */
     private HomeSocialLink requireItem(HomeSocialLink row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "资料不存在");
@@ -155,12 +155,12 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         return row;
     }
 
-    /** 业务版本排除审计时间和公开渲染结果。 */
+    /** 计算资料版本，不包含审计时间和前台生成的展示内容。 */
     private ResourceVersion<HomeSocialLink> profile(HomeSocialLink row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder(), row.getStatus()))) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除社交链接，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "home:social", permission = "home:social:delete")

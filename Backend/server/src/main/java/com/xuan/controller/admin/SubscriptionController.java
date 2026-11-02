@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 订阅后台按独立ALL权限查询、管理状态和删除，不能代替邮箱确认。
+ * 后台邮件订阅接口，查询、修改状态和删除分别要求 ALL 范围，不能代替邮箱确认。
  */
 @RestController("adminSubscriptionController")
 @RequestMapping("/admin/rss-subscriptions")
@@ -33,28 +33,28 @@ public class SubscriptionController {
 
     private final ISubscriptionService subscriptions;
 
-    /** 无全量邮箱导出。 */
+    /** 分页查询订阅，不提供全量邮箱导出。 */
     @GetMapping
     @SaCheckPermission("blog:rss:query")
     public Result<PageResult<BlogRssSubscription>> list(@Valid @ModelAttribute SubscriptionQueryDTO query) {
         return Result.ok(subscriptions.listSubscriptions(query));
     }
 
-    /** 可编辑状态的版本放响应头。 */
+    /** 根据id查询订阅详情，状态版本放在 X-Revision 响应头。 */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:rss:query")
     public ResponseEntity<Result<BlogRssSubscription>> detail(@PathVariable String id) {
         return response(subscriptions.detail(IdUtils.parse(id)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量修改订阅状态，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-status")
     @SaCheckPermission("blog:rss:update")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchStatusDTO body) {
         return Result.ok(subscriptions.changeStatusBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除订阅，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:rss:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -62,7 +62,7 @@ public class SubscriptionController {
         return Result.ok(null);
     }
 
-    /** 版本不写到响应体中。 */
+    /** 返回订阅资料，版本只放在响应头。 */
     private ResponseEntity<Result<BlogRssSubscription>> response(ResourceVersion<BlogRssSubscription> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }

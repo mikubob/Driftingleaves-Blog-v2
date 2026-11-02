@@ -4,14 +4,14 @@ import cn.hutool.core.util.ObjectUtil;
 import com.xuan.exception.BusinessException;
 
 /**
- * 路径和查询里的 ID 也按 JSON ID 的规则检查，只收正十进制字符串。
+ * id校验工具，路径、查询和 JSON 参数都使用正十进制字符串。
  */
 public final class IdUtils {
 
     private IdUtils() {
     }
 
-    /** 可选参数没传就返回 null；有符号、前导零或超过 Long 范围都报错。 */
+    /** 将字符串id转为 Long，未传时返回 null，包含符号、前导零或超出范围时报错。 */
     public static Long parse(String value) {
         if (ObjectUtil.isNull(value)) {
             return null;

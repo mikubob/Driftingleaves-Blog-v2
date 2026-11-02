@@ -7,7 +7,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 第三方身份由数据库唯一键防重复，删除时要同时限制用户和平台。
+ * 第三方绑定数据接口，唯一键防止重复身份，删除时同时限制用户和平台。
  */
 public interface OAuthBindingMapper extends BaseMapper<SysUserOauth> {
     /**

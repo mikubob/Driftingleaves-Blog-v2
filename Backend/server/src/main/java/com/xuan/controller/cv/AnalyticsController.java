@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开采集仅返回是否记录，不创建访客会话。
+ * 公开访问统计接口，只返回是否记录，不创建登录会话。
  */
 @RestController("cvAnalyticsController")
 @RequestMapping("/cv/analytics/page-views")
@@ -26,7 +26,7 @@ public class AnalyticsController {
     private final IAnalyticsService analytics;
     private final AuthProperties auth;
 
-    /** Origin必须与明确站点配置匹配；IP只从既有可信代理解析器提取。 */
+    /** 记录站点访问，检查 Origin 是否匹配站点配置，按可信代理规则获取 IP。 */
     @PostMapping
     public Result<TrackingResultVO> track(@Valid @RequestBody PageViewCreateDTO body, HttpServletRequest request) {
         if (!"cv".equals(body.getSiteCode())) {

@@ -1,4 +1,4 @@
-/** 与后端相同的标题 slug；空标题使用 section，保留 Unicode 字母与数字。 */
+/** 生成标题锚点，规则与后端一致，空标题使用 section，保留 Unicode 字母和数字。 */
 const headingSlug = (text) =>
   text
     .trim()
@@ -6,7 +6,7 @@ const headingSlug = (text) =>
     .replace(/[^\p{L}\p{M}\p{N}_\s-]/gu, '')
     .replace(/\s/g, '-') || 'section'
 
-/** 在当前文档 used 集合中分配并登记唯一标题 ID；同名按顺序递增后缀。 */
+/** 生成不重复的标题id并记入 used 集合，同名标题按顺序增加后缀。 */
 export const uniqueHeadingId = (text, used) => {
   const base = headingSlug(text)
   let id = base
@@ -16,7 +16,7 @@ export const uniqueHeadingId = (text, used) => {
   return id
 }
 
-/** 在容器内按解码后的 id/name 查找片段目标；缺失/非法编码返回 null，不拼 CSS 选择器。 */
+/** 查找页内锚点，使用解码后的 id/name，目标缺失或编码错误时返回 null，不拼接 CSS 选择器。 */
 export const findFragmentTarget = (container, hash) => {
   if (!container || !hash.startsWith('#') || hash === '#') return null
   let id

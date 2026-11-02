@@ -10,14 +10,14 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 文章计数和评论入口共用完整祖先链检查，不能只看直接父节点。
+ * 评论可见性检查，文章计数和评论查询都检查全部上级评论。
  */
 public final class CommentVisibilityPolicy {
 
     private CommentVisibilityPolicy() {
     }
 
-    /** 逐层回溯并记住结果，0/2 隐藏整支，3 保留可展开位置；不受 SQL 递归深度限制。 */
+    /** 判断评论是否可见，逐级检查并缓存结果；状态 0/2 隐藏全部下级回复，状态 3 保留展开位置，不受 SQL 递归深度限制。 */
     public static Set<Long> visible(List<CommentNode> nodes) {
         Map<Long, CommentNode> byId = new HashMap<>();
         nodes.forEach(node -> byId.put(node.getCommentId(), node));

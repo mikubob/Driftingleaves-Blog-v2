@@ -1,12 +1,12 @@
 package com.xuan.utils;
 
-/** 从请求头识别评论和留言展示所需的浏览器与系统，不把原始 User-Agent 公开。 */
+/** 设备识别工具，从请求头获取浏览器和系统，不公开原始 User-Agent。 */
 public final class UserAgentUtils {
 
     private UserAgentUtils() {
     }
 
-    /** 衍生浏览器必须先于 Chrome、Safari 判断，它们的请求头也包含这些标记。 */
+    /** 识别浏览器，先检查衍生浏览器，再检查 Chrome 和 Safari，避免把兼容标记认错。 */
     public static String browser(String agent) {
         if (agent == null || agent.isBlank()) {
             return null;
@@ -41,7 +41,7 @@ public final class UserAgentUtils {
         return null;
     }
 
-    /** 手机系统先于兼容标记判断，无法识别时留空，由展示端显示未知。 */
+    /** 识别操作系统，先检查手机系统，再检查兼容标记，无法识别时留空。 */
     public static String operatingSystem(String agent) {
         if (agent == null || agent.isBlank()) {
             return null;

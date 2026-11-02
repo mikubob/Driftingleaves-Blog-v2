@@ -10,7 +10,7 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 
 /**
- * 这里只维护标签字典，文章里的标签集合仍由文章业务一起保存。
+ * 标签数据接口，只维护标签资料，文章标签关联由文章业务保存。
  */
 public interface TagMapper extends BaseMapper<BlogTag> {
 

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 私密性由完整父链决定，SQL本人归属不能因ALL而扩大。 -->
+<!-- 是否私密由全部上级留言决定，SQL 中的本人范围不能因 ALL 权限扩大。 -->
 <mapper namespace="com.xuan.mapper.MessageMapper">
     <sql id="columns">
         m.*,u.nickname AS author_nickname,u.avatar AS author_avatar

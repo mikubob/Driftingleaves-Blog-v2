@@ -6,7 +6,7 @@ export const apiRoot = `${apiOrigin}/api/v1`
 let accessToken = ''
 let onUnauthenticated = () => {}
 
-/** 设置当前请求凭据，持久化与恢复由会话模块负责。 */
+/** 设置请求使用的 Token，保存和恢复登录状态由会话模块负责。 */
 export function setAuthorization(token, onExpired = onUnauthenticated) {
   accessToken = token
   onUnauthenticated = onExpired
@@ -29,7 +29,7 @@ export function isId(value) {
   )
 }
 
-/** 在响应入口检查 ID 与计数，避免 BIGINT 被当作浮点数继续使用。 */
+/** 检查接口返回的id和计数，避免把 BIGINT 转成浮点数后丢失精度。 */
 function validateNumbers(value, key = '') {
   if (key === 'captchaId' && isCaptchaId(value)) {
     return
@@ -56,7 +56,7 @@ function validateNumbers(value, key = '') {
   }
 }
 
-/** 统一处理鉴权、Result、版本及限流；失败请求不自动重放。 */
+/** 发送后台请求，统一处理登录状态、Result 响应、版本和限流提示；失败后不自动重试。 */
 export async function request(path, { body, revision, captcha, blob = false, ...options } = {}) {
   const headers = new Headers({ Accept: blob ? '*/*' : 'application/json' })
   setCaptchaHeaders(headers, captcha)
@@ -180,7 +180,7 @@ export async function getPage(path, params, signal) {
   return data
 }
 
-/** 选择器读取全部页，避免字典超过一页后选项缺失。 */
+/** 查询选择器的全部选项，读取所有分页，避免漏掉后续页。 */
 export async function getOptions(path, params = {}, signal) {
   const records = []
   let page = 1

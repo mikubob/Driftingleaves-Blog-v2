@@ -12,24 +12,24 @@ import com.xuan.vo.MenuVO;
 import java.util.List;
 
 /**
- * 菜单是全站资源，身份、后台入口和具体权限都要查，菜单授权不能代替接口授权。
+ * 菜单业务接口，菜单全站共用，检查登录、后台入口和操作权限，菜单授权不能代替接口授权。
  */
 public interface IMenuService extends IService<SysMenu> {
 
-    /** 同一快照里取完整树，空目录、禁用项、隐藏项和按钮都保留，每层排序固定。 */
+    /** 查询完整后台菜单树，在同一个只读事务中读取，保留空目录、禁用菜单、隐藏菜单和按钮，每层按固定顺序排列。 */
     List<MenuNodeVO> tree();
 
     /** 检查权限后取菜单详情和版本，不存在返回 404。 */
     MenuProfileVO detail(long menuId);
 
-    /** 持有结构锁时检查字段、祖先和访问权限，创建菜单不自动给角色授权。 */
+    /** 新增菜单，拿到结构锁后检查字段、上级菜单和访问权限，不自动给角色授权。 */
     MenuVO create(MenuCreateDTO request);
 
-    /** 结构锁内重查身份、版本和受影响的树，再完整替换资料，不自动补角色祖先或权限。 */
+    /** 根据id更新菜单，拿到结构锁后重新检查身份、版本和受影响的菜单，再完整替换资料；不自动补齐角色的上级菜单或权限。 */
     MenuProfileVO update(long menuId, MenuUpdateDTO request, String revision);
 
-    /** 锁内先查版本，有子节点就报 RESOURCE_IN_USE；删叶子只级联 role_menu，不撤销会话。 */
+    /** 根据id删除菜单，加锁后先检查版本；存在子菜单时返回 RESOURCE_IN_USE，只能删除没有子菜单的节点，同时清理 role_menu 关联，不撤销会话。 */
     void delete(long menuId, String revision);
-    /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
+    /** 批量删除菜单，单条也走此入口，任一失败则整批回滚。 */
     void deleteBatch(List<BatchItemDTO> items);
 }

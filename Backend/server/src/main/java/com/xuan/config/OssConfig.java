@@ -12,13 +12,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * OSS 只在开关启用时创建，关闭时不用凭据，也不访问云资源。
+ * 配置 OSS 存储，只在启用时创建客户端，关闭时不读取凭据或访问云端。
  */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(prefix = "app.oss", name = "enabled", havingValue = "true")
 public class OssConfig {
 
-    /** 启用后先查配置，再用 V4 签名创建共用 SDK；容器退出时关闭连接。 */
+    /** 创建 OSS SDK，先检查配置，使用 V4 签名，应用关闭时释放连接。 */
     @Bean(destroyMethod = "shutdown")
     public OSS oss(AliOssProperties properties) {
         properties.validateEnabled();
@@ -33,7 +33,7 @@ public class OssConfig {
                 .clientConfiguration(config).build();
     }
 
-    /** 业务只能通过限定前缀的客户端读写文件，不能返回云端公开直链。 */
+    /** 创建 OSS 文件客户端，只允许读写指定前缀下的文件，不返回云端直链。 */
     @Bean
     public AliOssClient aliOssClient(OSS oss, AliOssProperties properties) {
         return new AliOssClient(oss, properties);

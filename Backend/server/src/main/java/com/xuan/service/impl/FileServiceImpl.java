@@ -88,7 +88,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     private final ImageProperties imageProperties;
     private final JsonMapper json;
 
-    /** 同一快照查询元数据和总数，筛选上传者不能扩大 query 的 SELF。 */
+    /** 分页查询文件，在同一个只读事务中查询文件资料和总数，筛选上传者不能扩大查询权限的 SELF 范围。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<FileVO> listFiles(FileQueryDTO query) {
@@ -97,14 +97,14 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 requireAdmin("query"), filter).convert(this::view));
     }
 
-    /** 元数据不可编辑，无需版本，响应不会泄露内部存储资料。 */
+    /** 根据id查询文件资料，资料不可编辑，不返回版本或内部存储信息。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FileVO detail(long id) {
         return view(requireFile(articles.scopedFile(id, requireAdmin("query"))));
     }
 
-    /** 先临时落盘并验证，再写真实存储和元数据；审计或提交失败同样触发对象补偿。 */
+    /** 上传文件，先临时保存并校验，再写入存储和数据库；日志写入或事务提交失败时清理新文件。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "upload", target = "blog:file", permission = "blog:file:upload")
@@ -128,7 +128,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         BlogFile row = new BlogFile();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             /**
-             * {@inheritDoc}
+             * 事务结束后清理临时文件，未提交成功时同时清理新上传文件。
              */
             @Override
             public void afterCompletion(int status) {
@@ -180,7 +180,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return content(requireFile(articles.scopedFile(id, requireAdmin("query"))));
     }
 
-    /** 持文件锁扫描全部文章源引用；先删存储，元数据和成功审计随后共同提交。 */
+    /** 删除文件，锁住文件后检查所有文章的正文和封面引用；先删除存储文件，再一起提交文件记录删除和成功日志。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:file", permission = "blog:file:delete", targetIdArgument = 0)
@@ -214,7 +214,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         storage.delete(row);
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             /**
-             * {@inheritDoc}
+             * 文件已删除但数据库未提交时，记录清理失败，供后续重试。
              */
             @Override
             public void afterCompletion(int status) {
@@ -227,7 +227,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         files.deleteScoped(id, scope);
     }
 
-    /** 同一顺序锁文件和文章，锁后查最新 PUBLIC 或两份独立范围，并确认正文/封面确实引用。 */
+    /** 读取文章附件，先锁文件再锁文章，重新检查公开状态或文章、文件各自的权限范围，并确认正文或封面引用了该文件。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileContent attachment(long articleId, long fileId, boolean admin) {
@@ -403,7 +403,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         }
     }
 
-    /** 原 Token 与账号实时有效，ALL/SELF 只取本次文件操作的授权。 */
+    /** 检查文件操作权限，原 Token 和账号必须仍有效，ALL/SELF 只使用本次操作的授权。 */
     private Long requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -411,7 +411,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return "ALL".equals(authorization.requireScope(actor, "blog:file:" + operation)) ? null : actor;
     }
 
-    /** 文章 query 单独计算范围，不能拿文件的 ALL 放大文章 SELF。 */
+    /** 检查文章查询范围，文件的 ALL 权限不能扩大文章的 SELF 范围。 */
     private Long articleScope() {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -419,14 +419,14 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return "ALL".equals(authorization.requireScope(actor, "blog:article:query")) ? null : actor;
     }
 
-    /** 元数据只取白名单字段，不把实体直接交给 HTTP 序列化。 */
+    /** 整理文件响应，只返回允许的字段，不直接返回数据库实体。 */
     private FileVO view(BlogFile row) {
         return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), row.getMimeType(),
                 row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
                 "/api/v1/admin/files/" + row.getFileId() + "/content");
     }
 
-    /** 先完成鉴权和范围过滤，再给缺失或越界统一 404。 */
+    /** 检查文件是否存在，先校验权限和范围；文件不存在或无权访问时都返回 404。 */
     private BlogFile requireFile(BlogFile row) {
         if (row == null) {
             throw missing();
@@ -459,7 +459,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "文件存储暂不可用");
     }
 
-    /** 对象存储不能跨文件回滚，每项通过原服务代理独立提交并返回实际结果。 */
+    /** 批量删除文件，存储无法整批回滚，每个文件通过服务代理单独提交，并返回实际结果。 */
     @Override
     public BatchFileResultsVO deleteBatch(List<String> ids) {
         requireAdmin("delete");

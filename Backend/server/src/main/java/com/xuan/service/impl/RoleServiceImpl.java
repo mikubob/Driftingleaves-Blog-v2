@@ -54,7 +54,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     private final JsonMapper json;
 
     /**
-     * 同一只读快照里检查后台和业务权限再分页，统计、完整关联和返回资料要对应。
+     * 分页查询角色，在同一个只读事务中先检查后台入口和查询权限，确保总数、全部关联和返回资料一致。
      *
      * @param query 已校验的页码、页大小、字面关键词和状态
      * @return 按角色 ID 升序的分页，不提供逐条版本
@@ -67,7 +67,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     }
 
     /**
-     * 同一快照里取角色和全部权限、菜单关联，禁用关联也参与整体版本。
+     * 根据id查询角色详情，在同一个只读事务中读取全部权限和菜单，禁用的关联也参与版本计算。
      *
      * @param roleId 全局目标角色 ID
      * @return 角色详情及带引号版本，不存在时在权限检查后返回 404
@@ -227,7 +227,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     }
 
     /**
-     * 结构保护锁内补齐祖先，逐个检查启用、循环、父类型和明确授予的访问权限。
+     * 补齐上级菜单，持有结构锁时逐个检查启用状态、循环、父类型和实际授予的权限。
      *
      * @param selected 已校验的格式的菜单 ID 集合
      * @param permissions 本次明确选择且已确认启用的权限，不隐式增加
@@ -321,7 +321,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     }
 
     /**
-     * 同一快照或锁事务里取资料并按固定顺序计算整体版本，不包含时间字段。
+     * 同一个只读事务或加锁事务中取资料并按固定顺序计算整体版本，不包含时间字段。
      *
      * @param role 当前角色实体
      * @return 角色资料与带引号 SHA-256 版本，权限或菜单变化也会改变摘要
@@ -334,7 +334,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     }
 
     /**
-     * 返回角色资料和排序后的完整关联，禁用项也保留；调用方负责同一快照或行锁。
+     * 返回角色资料和排序后的完整关联，禁用项也保留；调用方要在同一个只读事务或行锁内读取。
      *
      * @param role 当前角色实体
      * @return 对外约定的角色字段
@@ -345,7 +345,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 roles.permissionIds(role.getRoleId()), roles.menuIds(role.getRoleId()));
     }
 
-    /** 先验证整批授权对象，删除完成后统一撤销所有受影响用户会话。 */
+    /** 批量删除角色，先检查整批目标，删除后撤销所有受影响用户的会话。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:role", permission = "sys:role:delete")

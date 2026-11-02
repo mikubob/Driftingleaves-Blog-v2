@@ -43,7 +43,7 @@ public class FeedServiceImpl implements IFeedService {
     private final JsonMapper json;
     private final Clock clock;
 
-    /** {@inheritDoc} */
+    /** 生成最近二十篇公开文章的RSS订阅。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "rss", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -68,7 +68,7 @@ public class FeedServiceImpl implements IFeedService {
         return xml.append("</channel></rss>").toString();
     }
 
-    /** {@inheritDoc} */
+    /** 生成站点地图或地图索引。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")

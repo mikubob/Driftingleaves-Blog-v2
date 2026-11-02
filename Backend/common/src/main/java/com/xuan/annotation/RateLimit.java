@@ -6,7 +6,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * 按固定时间窗口限流，IP 一直计数，需要时再加上当前用户或 Token。
+ * 请求限流注解，按固定时间窗口统计 IP，需要时同时统计用户或 Token。
  */
 @Target(ElementType.METHOD)
 @Retention(RetentionPolicy.RUNTIME)
@@ -15,7 +15,7 @@ public @interface RateLimit {
     /** 同名操作共用一个限流窗口，名称由服务端确定。 */
     String value();
 
-    /** 每个维度在窗口内允许的请求数。 */
+    /** 每项统计在时间窗口内允许的请求次数。 */
     int limit();
 
     /** 窗口秒数。 */

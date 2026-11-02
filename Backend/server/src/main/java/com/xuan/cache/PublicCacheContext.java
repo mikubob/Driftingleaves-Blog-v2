@@ -10,7 +10,7 @@ import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 
-/** 在同一线程内保存缓存调用层次，嵌套查询共用代次，最外层退出时释放。 */
+/** 在线程内记录每层缓存调用，嵌套查询共用缓存版本，最外层调用结束时清理。 */
 public final class PublicCacheContext {
 
     private static final ThreadLocal<Deque<Frame>> CURRENT = ThreadLocal.withInitial(ArrayDeque::new);
@@ -18,11 +18,11 @@ public final class PublicCacheContext {
     private PublicCacheContext() {
     }
 
-    /** 每层保留返回类型和失效范围，代次由同一条调用链共用。 */
+    /** 记录每层的返回类型和要清理的缓存，同一条调用链共用缓存版本。 */
     public record Frame(Type type, Set<String> evictions, Map<String, String> generations, boolean bypass) {
     }
 
-    /** 在事务创建读取快照之前入栈；已有外层事务时沿用原来的旁路规则。 */
+    /** 在事务第一次查询前记录本层缓存信息；已有外层事务时，继续按原规则跳过缓存。 */
     public static void open(Type type, Set<String> evictions) {
         Frame parent = current();
         Map<String, String> generations = parent == null ? new HashMap<>() : parent.generations();
@@ -31,7 +31,7 @@ public final class PublicCacheContext {
         CURRENT.get().push(new Frame(type, evictions, generations, bypass));
     }
 
-    /** 无论调用成功还是抛错都要出栈，不能把本次查询的类型留给后续请求。 */
+    /** 清理当前层缓存信息，成功或异常时都要执行，避免影响后续请求。 */
     public static void close() {
         CURRENT.get().pop();
         if (CURRENT.get().isEmpty()) {
@@ -39,12 +39,12 @@ public final class PublicCacheContext {
         }
     }
 
-    /** 存储与序列化只使用当前层的查询类型、代次及事务状态。 */
+    /** 获取当前层的查询类型、缓存版本和事务状态，供缓存读写和序列化使用。 */
     public static Frame current() {
         return CURRENT.get().peek();
     }
 
-    /** 写入前汇总当前调用链的失效范围，内部代理调用不能丢失外层声明。 */
+    /** 汇总本次调用要清理的缓存，保留外层方法声明的范围。 */
     public static Set<String> evictions() {
         Set<String> domains = new LinkedHashSet<>();
         for (Frame frame : CURRENT.get()) {

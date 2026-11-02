@@ -10,14 +10,14 @@ import org.apache.ibatis.plugin.Invocation;
 import org.apache.ibatis.plugin.Signature;
 import org.springframework.stereotype.Component;
 
-/** 在原业务锁与校验之后、SQL 修改之前启动对应注解声明的缓存保护。 */
+/** 拦截数据库写入，在业务加锁和校验后、执行 SQL 前登记注解指定的缓存保护。 */
 @Component
 @RequiredArgsConstructor
 @Intercepts(@Signature(type = Executor.class, method = "update", args = {MappedStatement.class, Object.class}))
 public class PublicCacheMutationInterceptor implements Interceptor {
     private final PublicCacheStore store;
 
-    /** 登记成功才执行真实写 SQL，登记失败仍交给原事务回滚。 */
+    /** 登记缓存保护后执行写入，登记失败时由原事务回滚。 */
     @Override
     public Object intercept(Invocation invocation) throws Throwable {
         store.beforeMutation();

@@ -65,7 +65,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     private final JsonMapper json;
 
     /**
-     * 同一快照里先查后台入口和查询权限，再取完整后台树，不套用本人菜单筛选。
+     * 查询完整后台菜单树，在同一个只读事务中先检查后台入口和查询权限，不按本人菜单范围筛选。
      *
      * @return 全状态菜单，保留空目录、隐藏及按钮，逐层按排序值和 ID 升序
      */
@@ -81,7 +81,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     }
 
     /**
-     * 同一只读快照里先检查权限，再取资料和版本，禁用项仍能管理。
+     * 根据id查询菜单详情及版本，在同一个只读事务中先检查权限，禁用菜单也能管理。
      *
      * @param menuId 目标菜单
      * @return 详情与带引号版本；不存在返回 404
@@ -218,7 +218,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     }
 
     /**
-     * 持有结构锁时找出目标和全部后代，用来锁关联用户、检查类型变化，记录访问过的节点避免循环。
+     * 查询目标菜单及全部下级菜单，持有结构锁后使用，供关联用户加锁和类型变更检查，记录已访问节点防止循环。
      *
      * @param menuId 分支根 ID
      * @param nodes 已读取的整树
@@ -291,7 +291,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     }
 
     /**
-     * 结构锁内查整条祖先链和父类型；启停不改变结构是否合法，也不要求父节点必须启用。
+     * 检查全部上级菜单及父菜单类型，必须持有结构锁；启停不影响结构规则，不要求父菜单启用。
      *
      * @param menu 候选节点或受影响后代
      * @param nodes 包含候选变更的整树
@@ -320,7 +320,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     }
 
     /**
-     * 调用方持有同一快照，节点已按排序值和 ID 排好，这里逐层组装完整树。
+     * 调用方要在同一个只读事务中查询，节点已按排序值和 ID 排好，这里逐层组装完整树。
      *
      * @param parentId 当前父 ID，根为 null
      * @param children 完整节点的父子分组
@@ -370,7 +370,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     }
 
     /**
-     * 在同一快照或菜单锁事务里按固定顺序计算业务字段摘要，时间不算版本。
+     * 在同一个只读事务或菜单加锁事务中按固定顺序计算业务字段摘要，时间不算版本。
      *
      * @param menu 当前菜单
      * @return 对外详情与带引号 SHA-256 版本；子节点和角色关联不属于菜单可写模型
@@ -386,7 +386,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     /**
      * 只把约定字段放进菜单响应，实体以后加字段也不能自动泄露出去。
      *
-     * @param menu 一致快照或锁事务内已确认存在的菜单
+     * @param menu 同一个只读事务或加锁事务中已确认存在的菜单
      * @return 菜单资料和数据库维护的 UTC 审计时间
      */
     private MenuVO view(SysMenu menu) {

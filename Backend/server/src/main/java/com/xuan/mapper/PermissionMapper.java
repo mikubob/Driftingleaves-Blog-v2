@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 权限字典写入依次锁保护点、升序用户和目标权限，顺序由业务层负责。
+ * 权限数据接口，业务层先拿保护锁，再按id升序锁用户，最后锁目标权限。
  */
 public interface PermissionMapper extends BaseMapper<SysPermission> {
     /**

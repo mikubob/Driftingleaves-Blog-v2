@@ -10,13 +10,13 @@ import org.springframework.web.servlet.HandlerMapping;
 
 import java.util.Set;
 
-/** 第9章只接收文档声明的查询参数，避免 userId 等身份字段被 MVC 静默忽略。 */
+/** 检查评论等互动接口的参数，拒绝未声明的 userId 等字段。 */
 @ControllerAdvice(assignableTypes = {CommentController.class,
         com.xuan.controller.blog.MyCommentController.class, com.xuan.controller.admin.CommentController.class,
         ArticleLikeController.class})
 public class InteractionRequestAdvice {
 
-    /** 只在绑定前查一次参数名和重复值；值的类型、长度由各入口原有校验负责。 */
+    /** 检查参数名和重复参数，参数类型及长度仍由接口原有校验负责。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         if ("GET".equals(request.getMethod()) && request.getContentLengthLong() > 0) {

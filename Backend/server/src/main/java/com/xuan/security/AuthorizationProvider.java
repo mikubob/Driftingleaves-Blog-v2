@@ -21,7 +21,7 @@ import java.util.Set;
 import java.util.TreeMap;
 
 /**
- * 实时查询授权，角色、权限和菜单在同一读取事务里用同一个快照。
+ * 用户授权查询，在同一个只读事务中实时读取角色、权限和菜单。
  */
 @Component
 @RequiredArgsConstructor
@@ -49,7 +49,7 @@ public class AuthorizationProvider implements StpInterface {
             "blog:link:update", "blog:link:delete", "blog:config:query", "blog:config:update");
     /** 上传和删除已有实际文件入口，禁止删除，但不增加最后管理员必须拥有的能力。 */
     public static final Set<String> FILE_PERMISSIONS = Set.of("blog:file:upload", "blog:file:delete");
-    /** 这些固定权限已有实际消费者，不扩展最后管理员保护名单。 */
+    /** 这些固定权限已有接口使用，不能删除，也不加入最后管理员保护名单。 */
     public static final Set<String> EXTENDED_PERMISSIONS = Set.of(
             "sys:user:delete",
             "home:profile:query",
@@ -108,7 +108,7 @@ public class AuthorizationProvider implements StpInterface {
         return mapper.roleCodes(Long.parseLong(loginId.toString()));
     }
 
-    /** 只合并授予当前权限的角色，无关角色的 ALL 不能扩大范围。 */
+    /** 查询当前用户的有效权限，只合并实际授予该权限的角色范围，不能借用无关角色的 ALL。 */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CapabilitiesVO capabilities(long userId) {
         // 1. 按权限码合并真正授予它的角色范围，用 TreeMap 让响应按字典序排列。
@@ -122,7 +122,7 @@ public class AuthorizationProvider implements StpInterface {
         return new CapabilitiesVO(mapper.roleCodes(userId), List.copyOf(scopes.keySet()), scopes);
     }
 
-    /** 拿到范围后，资源 Mapper 还要把归属写进 SQL，这里不能代替 SQL 权限检查。 */
+    /** 获取操作权限范围，Mapper 仍需在 SQL 中限制归属，不能只依赖这里的检查。 */
     public String requireScope(long userId, String permission) {
         String scope = capabilities(userId).dataScopes().get(permission);
         if (scope == null) {
@@ -131,7 +131,7 @@ public class AuthorizationProvider implements StpInterface {
         return scope;
     }
 
-    /** 菜单的整条祖先链都要有效，空目录、循环或错误父类型不能生成路由。 */
+    /** 查询本人菜单，全部上级菜单都必须有效，空目录、循环或父类型错误的菜单不生成路由。 */
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<MenuNodeVO> menus(long userId) {
         // 1. 先查后台入口权限，普通 member 不返回后台菜单。
@@ -149,7 +149,7 @@ public class AuthorizationProvider implements StpInterface {
             }
         }
 
-        // 3. 每个节点都查完整祖先链，再把合法节点分成根节点和子节点。
+        // 3. 检查每个菜单的全部上级菜单，再将有效菜单分为根菜单和子菜单。
         Map<Long, List<MenuGrant>> children = new HashMap<>();
         List<MenuGrant> roots = new ArrayList<>();
         for (MenuGrant menu : candidates.values()) {
@@ -167,10 +167,10 @@ public class AuthorizationProvider implements StpInterface {
     }
 
     /**
-     * 逐级检查菜单祖先的授权、启用状态和类型，遇到环就拒绝该分支。
+     * 检查全部上级菜单的授权、启用状态和类型，出现循环时拒绝该分支。
      */
     private boolean validChain(MenuGrant menu, Map<Long, MenuGrant> candidates) {
-        // 1. 沿父链记下走过的节点，发现循环就拒绝这个分支。
+        // 1. 逐级检查上级菜单并记录已访问的节点，发现循环时拒绝该分支。
         Set<Long> seen = new HashSet<>();
         MenuGrant current = menu;
         while (current != null) {

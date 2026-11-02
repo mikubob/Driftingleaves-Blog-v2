@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开展示只返回启用资料。
+ * 公开音乐查询接口，只返回启用的资料。
  */
 @RestController("blogMusicController")
 @RequestMapping("/blog/music")
@@ -22,7 +22,7 @@ public class MusicController {
 
     private final IMusicService items;
 
-    /** 不输出管理字段或原始Markdown。 */
+    /** 查询公开音乐列表，不返回管理字段或原始 Markdown。 */
     @GetMapping
     public Result<PageResult<MusicPublicVO>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
         return Result.ok(items.publicItems(query));

@@ -59,7 +59,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
                 .convert(row -> new Tag(row.getTagId(), row.getTagName(), row.getSlug())));
     }
 
-    /** 当前标签和 PUBLIC 数量在同一快照中取得，读取不增加文章阅读。 */
+    /** 根据slug查询标签及公开文章数，在同一个只读事务中读取，不增加文章阅读量。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -79,7 +79,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()), query));
     }
 
-    /** 在同一快照里取标签资料和版本，标签不存在就返回 404。 */
+    /** 根据id查询标签详情及版本，在同一个只读事务中读取，标签不存在时返回 404。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TagProfileVO detail(long id) {
@@ -202,7 +202,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return new TagProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
 
-    /** 先锁定并核验全部目标，再在一个事务中清理；任一失败整批回滚。 */
+    /** 批量删除标签，先加锁并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:tag", permission = "blog:tag:delete")

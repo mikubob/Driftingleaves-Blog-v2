@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * 文章和音乐共用本站 origin、受管文件路径及存储直链检查。
+ * 文件地址校验，文章和音乐共用本站来源、附件路径和存储直链规则。
  */
 @Component
 @RequiredArgsConstructor
@@ -26,7 +26,7 @@ public class FileUrlPolicy {
     private final FileProperties files;
     private final AliOssProperties ossProperties;
 
-    /** 检查本站附件路径；普通链接和外部地址返回 null，存储直链及编码歧义直接拒绝。 */
+    /** 解析本站附件路径，普通链接和外部地址返回 null，拒绝存储直链和编码不明确的地址。 */
     public String attachmentPath(String value) {
         URI uri;
         try {
@@ -81,7 +81,7 @@ public class FileUrlPolicy {
         return raw;
     }
 
-    /** 本站 origin 从部署配置取，不能根据请求 Host 或转发头临时认定。 */
+    /** 判断是否为本站地址，只使用部署配置，不相信请求 Host 或转发头。 */
     public boolean siteOrigin(URI uri) {
         Set<String> origins = new HashSet<>(auth.getAllowedOrigins());
         origins.addAll(files.getPublicOrigins());
@@ -91,7 +91,7 @@ public class FileUrlPolicy {
                 && port(origin) == port(uri));
     }
 
-    /** 比较 origin 时，HTTP 和 HTTPS 的默认端口按同一个地址处理。 */
+    /** 获取地址端口，未指定时使用 HTTP 或 HTTPS 对应的默认端口。 */
     private int port(URI uri) {
         if (uri.getPort() >= 0) {
             return uri.getPort();
@@ -99,7 +99,7 @@ public class FileUrlPolicy {
         return "http".equalsIgnoreCase(uri.getScheme()) ? 80 : 443;
     }
 
-    /** 配置过的 OSS endpoint 和 bucket 域名也不能拿来做公开直链绕过文章附件地址。 */
+    /** 判断是否为存储域名，OSS endpoint 和 Bucket 地址都不能绕过附件接口直接公开。 */
     private boolean storageHost(String host) {
         String endpoint = ossProperties.getEndpoint();
         if (StrUtil.nullToEmpty(endpoint).isBlank()) {
@@ -109,7 +109,7 @@ public class FileUrlPolicy {
         return host.equalsIgnoreCase(storage) || host.equalsIgnoreCase(ossProperties.getBucket() + "." + storage);
     }
 
-    /** 输入有问题只报固定错误，不透露 URL、存储键或私密文件是否存在。 */
+    /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束");
     }

@@ -19,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 本人查询和删除只取会话用户，文章下架后仍能处理自己的评论。
+ * 本人评论接口，用户取当前会话，文章下架后仍能查询和删除自己的评论。
  */
 @RestController("ownCommentController")
 @RequestMapping("/blog/me/comments")
@@ -28,7 +28,7 @@ public class MyCommentController {
 
     private final ICommentService comments;
 
-    /** 不额外要求 query 权限，也不接收客户端 userId。 */
+    /** 分页查询本人评论，不额外要求查询权限，不接受客户端 userId。 */
     @GetMapping
     public Result<PageResult<CommentOwnVO>> list(@Valid @ModelAttribute CommentOwnQueryDTO query) {
         return Result.ok(comments.ownComments(query));

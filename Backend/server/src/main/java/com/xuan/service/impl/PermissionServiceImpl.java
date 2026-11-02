@@ -48,7 +48,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     private final JsonMapper json;
 
     /**
-     * 同一只读快照里先查后台入口和业务权限，列表、总数用同样条件。
+     * 分页查询权限，在同一个只读事务中先检查后台入口和查询权限，列表和总数使用相同条件。
      *
      * @param query 已校验的分页、字面关键词、模块和状态
      * @return 权限 ID 升序分页，无逐条版本；SELF 不缩小全局字典
@@ -62,7 +62,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 同一快照里先查权限，再取字典资料和版本，禁用项也保留。
+     * 根据id查询权限详情及版本，在同一个只读事务中先检查权限，禁用的权限也能查。
      *
      * @param permissionId 全局权限 ID
      * @return 详情及带引号版本，不存在返回 404
@@ -151,7 +151,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     /**
      * 实时查启用账号、原 Token、后台入口和本次业务权限。
      *
-     * @param permission 当前 sys:permission 操作权限，SELF 对全局字典无本人语义
+     * @param permission 当前 sys:permission 操作权限，SELF 对全局字典不区分本人记录
      */
     private void requireAdmin(String permission) {
         long actor = identities.requireCurrent();
@@ -193,7 +193,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 先检查权限，再查字典项是否存在，禁用项也能取到。
+     * 检查权限记录是否存在，先校验操作权限，禁用记录也能查。
      *
      * @param permission 数据库查询结果
      * @return 存在的实体；不存在抛出 404
@@ -224,7 +224,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 同一快照或锁事务里按固定顺序生成业务版本，时间字段不参与。
+     * 同一个只读事务或加锁事务中按固定顺序生成业务版本，时间字段不参与。
      *
      * @param permission 当前实体，编码固定，资料及状态均参与摘要
      * @return 约定资料及带引号的 SHA-256 版本
@@ -237,7 +237,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 只返回约定的字典资料，调用方负责用同一快照或行锁读取。
+     * 只返回允许展示的权限资料，调用方要在同一个只读事务或行锁内读取。
      *
      * @param permission 已确认存在的实体
      * @return 对外字段及数据库维护的 UTC 审计时间
@@ -249,7 +249,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
                 permission.getCreateTime(), permission.getUpdateTime());
     }
 
-    /** 先验证整批授权对象，删除完成后统一撤销所有受影响用户会话。 */
+    /** 批量删除权限，先检查整批目标，删除后撤销所有受影响用户的会话。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:permission", permission = "sys:permission:delete")

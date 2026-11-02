@@ -16,7 +16,7 @@ import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-/** 统一 JSON 的真实 404 在序列化前计一次，服务故障不累计不存在次数。 */
+/** 记录接口返回的 404，在输出 JSON 前计数，服务故障不计入。 */
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
@@ -24,13 +24,13 @@ public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
     private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
 
-    /** 统一响应在写出时再判断，不依赖方法声明是否包着 ResponseEntity。 */
+    /** 在响应写出时检查状态，不受方法是否返回 ResponseEntity 影响。 */
     @Override
     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
         return true;
     }
 
-    /** 超限时尚未写出响应，可以直接返回封禁状态及剩余秒数。 */
+    /** 检查 404 次数，超限时改为返回封禁状态和剩余秒数。 */
     @Override
     public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType contentType,
             Class<? extends HttpMessageConverter<?>> converterType, ServerHttpRequest request,

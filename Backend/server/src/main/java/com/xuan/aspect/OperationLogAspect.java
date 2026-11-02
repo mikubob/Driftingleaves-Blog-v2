@@ -72,7 +72,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 操作日志在业务写事务里保存，成功日志写失败就回滚；失败日志等回滚结束后另写。
+ * 记录操作日志，成功日志与业务一起提交，写入失败就回滚；失败日志在回滚后另写。
  */
 @Aspect
 @Component
@@ -125,7 +125,7 @@ public class OperationLogAspect {
     private final Clock clock;
     private final JsonMapper json;
 
-    /** 操作参数先保存为 JSON 快照，成功和失败沿用同一份数据，不记录响应或异常原文。 */
+    /** 记录本次操作，先保存 JSON 参数供成功和失败日志共用，不记录响应或异常原文。 */
     @Around("@annotation(operation)")
     public Object around(ProceedingJoinPoint point, OperationLog operation) throws Throwable {
         if (!TransactionSynchronizationManager.isActualTransactionActive()
@@ -149,7 +149,7 @@ public class OperationLogAspect {
         // 1. 先登记事务结束回调，业务、外层事务或提交阶段出错都能记录失败。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             /**
-             * {@inheritDoc}
+             * 事务未成功提交时，提交失败日志任务。
              */
             @Override
             public void afterCompletion(int status) {
@@ -178,7 +178,7 @@ public class OperationLogAspect {
         }
     }
 
-    /** 登记的业务字段保留完整原值，上传只保存文件信息；未登记参数不进入日志。 */
+    /** 提取日志参数，只保存已登记的业务字段，上传只记录文件信息。 */
     private String operationData(ProceedingJoinPoint point) {
         String[] names = ((MethodSignature) point.getSignature()).getParameterNames();
         Object[] arguments = point.getArgs();
@@ -232,7 +232,7 @@ public class OperationLogAspect {
         return json.writeValueAsString(data);
     }
 
-    /** 只从已知的创建结果里取目标 ID。 */
+    /** 从已知的创建结果中获取目标id。 */
     private Long createdId(Object value) {
         if (value == null) {
             return null;
@@ -260,7 +260,7 @@ public class OperationLogAspect {
         };
     }
 
-    /** 只记录名单里的固定错误码，不能把异常自由文本存进日志。 */
+    /** 获取可记录的错误码，只保留名单中的固定值，不保存异常原文。 */
     private String safeError(Throwable error) {
         if (error instanceof NotLoginException) {
             return "UNAUTHENTICATED";

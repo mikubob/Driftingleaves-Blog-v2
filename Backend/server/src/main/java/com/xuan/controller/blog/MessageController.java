@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 前台会话只影响本人/私密可见性，管理员仍需从后台路径管理。
+ * 前台留言接口，登录只影响本人和私密留言的查看范围，管理员仍从后台管理。
  */
 @RestController("blogMessageController")
 @RequestMapping("/blog/messages")
@@ -35,13 +35,13 @@ public class MessageController {
     private final CaptchaStore captchas;
     private final AuthProperties auth;
 
-    /** 默认根节点，每次只展开一层，total不计不可见内容。 */
+    /** 分页查询留言，默认查询根留言，每次只展开直接回复，total 只统计可见内容。 */
     @GetMapping
     public Result<PageResult<MessagePublicVO>> list(@Valid @ModelAttribute MessagePublicQueryDTO query) {
         return Result.ok(messages.publicMessages(query));
     }
 
-    /** 普通前台发表每用户和可信IP一分钟十次，不自动给管理员免审。 */
+    /** 发表留言，每用户和可信 IP 每分钟最多十次，管理员不自动免审。 */
     @PostMapping
     @SaCheckPermission("blog:message:create")
     @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)

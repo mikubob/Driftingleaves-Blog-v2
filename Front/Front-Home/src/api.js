@@ -53,7 +53,7 @@ function assertResponse(valid) {
   }
 }
 
-/** 公开请求统一解析 Result，保留 HTTP、业务错误和限流反馈。 */
+/** 发送公开请求并解析 Result，保留 HTTP 错误、业务错误和限流提示。 */
 async function request(path, options = {}) {
   let response
   try {
@@ -113,7 +113,7 @@ export async function getProfile(signal) {
   return data
 }
 
-/** 保留后端社交顺序与字符串 ID，链接与图标在响应入口校验。 */
+/** 查询公开社交链接，保留后端顺序和字符串id，收到响应时校验链接和图标。 */
 export async function getSocialLinks(signal) {
   const data = await request('/home/social-links', { signal })
   assertResponse(Array.isArray(data) && data.every((item) => matchesFields(item, {
@@ -143,7 +143,7 @@ export async function getSiteConfig(signal) {
   return data[0]?.configValue ?? null
 }
 
-/** 浏览统计单次发送；失败由调用方处理，不自动重放可能已写入的 POST。 */
+/** 发送一次浏览统计，失败由调用方处理，不自动重试可能已保存的 POST 请求。 */
 export async function recordPageView(payload, signal) {
   const data = await request('/home/analytics/page-views', {
     method: 'POST',

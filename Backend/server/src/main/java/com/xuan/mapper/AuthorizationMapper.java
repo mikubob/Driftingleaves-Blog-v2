@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 用户、角色、权限都要有效，不能靠角色名跳过权限检查。
+ * 用户授权查询接口，用户、角色和权限都必须有效，不能按角色名跳过检查。
  */
 public interface AuthorizationMapper {
 
@@ -38,7 +38,7 @@ public interface AuthorizationMapper {
     List<Grant> grants(@Param("userId") long userId);
 
     /**
-     * 先按排序值和 ID 取有效角色授予的启用菜单，业务层在同一读取事务里再查权限、祖先链并去掉空目录。
+     * 查询有效角色授予的启用菜单，按排序值和id排列；业务层在同一个读取事务中检查权限和全部上级菜单，再移除空目录。
      *
      * @param userId 当前会话的本站用户 ID
      * @return 去重后的菜单候选列表，包含已授权的隐藏项和按钮

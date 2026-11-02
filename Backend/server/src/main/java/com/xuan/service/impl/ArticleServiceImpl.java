@@ -90,14 +90,14 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     private final JsonMapper json;
 
     /**
-     * 文件必须比文章先加锁，保存已锁对象，后面不能倒过来补拿新文件锁。
+     * 已加锁的文章和文件，必须先锁文件再锁文章，后续不能倒过来补锁文件。
      */
     private record LockedArticle(ArticleRow article, Map<Long, BlogFile> files) {
 
     }
 
     /**
-     * 同一快照里查公开列表，ID 和月份先检查；分类隐藏只影响返回的分类资料。
+     * 分页查询公开文章，先检查id和月份，在同一个只读事务中读取；分类隐藏只影响返回的分类资料。
      *
      * @param query 公开请求过滤
      * @return 稳定置顶/发布时间/ID倒序分页，不改变阅读数
@@ -121,7 +121,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return page;
     }
 
-    /** 集合及静态字段缓存经容器代理调用，当前互动数由外层事务补齐。 */
+    /** 缓存公开文章列表，通过 Spring 代理调用；当前阅读量、点赞数和评论数由外层事务补充。 */
     @Override
     @Caching(cacheable = {
             @Cacheable(cacheNames = "articles", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
@@ -146,7 +146,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 .convert(row -> publicView(row, new ArticlePublicVO())));
     }
 
-    /** 作者发现只依赖 PUBLIC 文章，列表与 total 使用同一只读快照。 */
+    /** 分页查询有公开文章的作者，列表和总数在同一个只读事务中读取。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -154,7 +154,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return PageResult.from(articles.authorPage(new Page<>(query.page(), query.pageSize()), now()));
     }
 
-    /** 不能通过作者页判断没有公开作品的账号是否存在。 */
+    /** 查询作者公开资料，不能据此判断没有公开文章的账号是否存在。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -166,7 +166,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return value;
     }
 
-    /** 作者和点赞者是不同身份，查询本人点赞不需要后台或点赞写权限。 */
+    /** 查询本人点赞的文章，使用当前点赞用户，不要求后台权限或点赞写权限。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<LikedArticleVO> likedArticles(PageQueryDTO query) {
@@ -177,7 +177,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 文章锁内取公开详情、上下篇和阅读信息，全部成功后再原子加一次阅读。
+     * 查询公开文章详情，锁住文章后读取正文、上下篇和阅读信息，全部成功后再增加一次阅读量。
      *
      * @param slug 已校验的大小写敏感slug
      * @return 安全公开详情；任何正文或数据库失败回滚计数，不以Token放宽PUBLIC
@@ -205,7 +205,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return value;
     }
 
-    /** 只缓存公开静态响应片段；原事务每次重新检查 PUBLIC、当前正文、附件及真实互动。 */
+    /** 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态、正文和附件，并查询当前互动数。 */
     @Override
     @Cacheable(cacheNames = "articleDetail", key = "T(com.xuan.utils.TokenUtils).digest(#row.slug + ':' + #row.articleId + ':' + #markdown + ':' + #row.coverUrl)")
     public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown, String html) {
@@ -225,7 +225,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 同一快照里按 UTC 月份统计公开文章，分页和统计共用条件。
+     * 按 UTC 月份查询公开文章归档，在同一个只读事务中读取，分页和统计使用相同条件。
      *
      * @param page 已校验的页码
      * @param pageSize 已校验的页大小
@@ -239,7 +239,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 先实时查后台入口和 query 权限，SQL 再限制作者；authorId 只是额外条件，不能扩大 SELF。
+     * 分页查询后台文章，先检查后台入口和查询权限，再由 SQL 限制作者；authorId 只能缩小范围，不能扩大 SELF。
      *
      * @param query 后台分页、状态、回收站及字面关键词
      * @return 修改时间及ID倒序列表，不携带正文或版本
@@ -256,7 +256,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 文章资料、正文、升序标签和当前分类在同一只读快照里取，回收站也能查。
+     * 根据id查询文章详情，在同一个只读事务中读取资料、正文、升序标签和当前分类；回收站文章也能查。
      *
      * @param id 目标文章
      * @return 约定的后台详情和整体版本；范围外统一404
@@ -271,7 +271,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * 锁住操作者后再查身份和创建权限，作者固定取会话、状态固定草稿，关联一起提交。
      *
      * @param request 已校验的字段及 POST 默认值，创建时不得包含本站附件
-     * @return 创建后的完整详情及版本；唯一键或关联失败回滚元数据、正文、标签与审计
+     * @return 创建后的完整详情及版本；唯一键或关联失败一起回滚文章资料、正文、标签和日志
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -313,7 +313,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 先拿文件锁、文章锁并重查权限，再检查版本、完整替换文章；已发布还要单独查 publish 范围。
+     * 根据id更新文章，先锁文件和文章，重新检查权限及版本，再完整替换内容；已发布文章还要检查发布权限范围。
      *
      * @param id 目标文章
      * @param request PUT全部允许字段
@@ -356,7 +356,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 锁事务里查 publish 范围和版本，状态只允许 0→1、1→2、2→1 或保持当前目标。
+     * 根据id发布或下架文章，加锁后检查发布权限范围和版本；状态只允许 0→1、1→2、2→1 或保持不变。
      *
      * @param id 目标文章
      * @param status 入口保证1或2
@@ -407,7 +407,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 文章锁内查 delete 范围和版本，只写回收时间，正文、关联和互动都留下。
+     * 根据id将文章移入回收站，加锁后检查删除权限范围和版本，只更新回收时间，保留正文、关联和互动记录。
      *
      * @param id 目标文章
      * @param revision 当前版本；已回收仍先检查该版本
@@ -438,7 +438,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 文章锁内查 restore 范围、版本和回收状态，恢复后固定下架，不自动公开。
+     * 根据id恢复回收站文章，加锁后检查恢复权限范围、版本和回收状态，恢复后设为下架，不自动公开。
      *
      * @param id 目标文章
      * @param revision 当前回收站版本
@@ -472,7 +472,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return profile(articles.scoped(id, null, false));
     }
 
-    /** 先锁完整评论树，再按子到父删除；文件不删除，成功审计与聚合清理共同提交。 */
+    /** 永久删除文章前，先锁住全部评论，再从子回复到父评论依次删除；保留文件，成功日志和文章相关记录一起提交。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "purge", target = "blog:article", permission = "blog:article:purge", targetIdArgument = 0)
@@ -525,7 +525,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 同一快照里查公开榜单，本月按 UTC 首次发布时间筛选，热度仍看累计数。
+     * 查询公开文章排行，在同一个只读事务中读取；本月榜按 UTC 首次发布时间筛选，热度仍按累计数排名。
      *
      * @param period site或month
      * @param metric view或like
@@ -598,10 +598,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 最终引用的每个文件都要存在、满足 query 权限及上传者范围，还得确认存储对象可用。
+     * 检查文章附件，文件必须存在、可用，并满足文件查询权限和上传者范围。
      *
      * @param ids 已在文章锁前升序取得行锁的文件ID集合
-     * @param locked 文章锁前读取并持锁的文件快照；缺失记录不能在文章锁后补锁
+     * @param locked 加文章锁前已读取并加锁的文件资料；缺失的文件不能等文章加锁后再补锁
      */
     private void validateFiles(Set<Long> ids, Map<Long, BlogFile> locked) {
         if (CollUtil.isEmpty(ids)) {
@@ -668,7 +668,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      *
      * @param article 新草稿或当前锁定文章
      * @param request 已通过入口和业务校验的完整内容
-     * @param cover 已归一化的规范封面URL
+     * @param cover 已整理好格式的封面 URL
      */
     private void apply(BlogArticle article, ArticleWriteDTO request, String cover) {
         article.setTitle(request.getTitle());
@@ -688,7 +688,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      *
      * @param id 新建或已锁定文章ID
      * @param request 完整正文和标签集合，字典已锁定
-     * @param html 服务端渲染清理的公开上下文缓存
+     * @param html 服务端生成并清理后的公开 HTML
      */
     private void saveBody(long id, ArticleWriteDTO request, String html) {
         articles.saveContent(id, request.getMarkdownContent(), html);
@@ -725,7 +725,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /**
      * 文章没正文就按存储故障处理，不能编个空正文返回，也不能创建孤立文章。
      *
-     * @param id 同一快照或当前行锁下的文章ID
+     * @param id 同一个只读事务或当前行锁内的文章id
      * @return 存在的正文；缺失返回503使写事务回滚
      */
     private BlogArticleContent content(long id) {
@@ -737,10 +737,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 同一快照或锁事务里取后台详情并计算版本，Markdown 和升序 tagIds 都要算进去。
+     * 同一个只读事务或加锁事务中取后台详情并计算版本，Markdown 和升序 tagIds 都要算进去。
      *
-     * @param row 最新文章元数据
-     * @return 安全后台HTML及带引号版本，排除计数、审计时间和派生阅读信息
+     * @param row 最新文章资料
+     * @return 安全后台HTML及带引号版本，不包含计数、审计时间和根据正文计算的阅读信息
      */
     private ArticleProfileVO profile(ArticleRow row) {
         ArticleAdminDetailVO value = adminView(row, new ArticleAdminDetailVO());
@@ -756,10 +756,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /**
      * 按固定顺序计算版本，把全部可写资料、状态、首次发布时间、回收时间、Markdown 和升序标签都算进去。
      *
-     * @param row 同一快照或行锁下的最新元数据
+     * @param row 同一个只读事务或行锁内的最新文章资料
      * @param markdown 同一篇文章的原始正文，不以HTML缓存替代
      * @param tags 当前完整升序标签ID集合
-     * @return 带引号SHA-256业务版本，不包含派生计数及审计时间
+     * @return 带引号SHA-256业务版本，不包含计算得到的计数和审计时间
      */
     private String revision(BlogArticle row, String markdown, List<Long> tags) {
         return "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getArticleId(), row.getAuthorId(),
@@ -772,7 +772,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /**
      * 拿到文章锁并检查范围后，先查单个具体版本，再查状态或是否重复操作。
      *
-     * @param article 当前锁定元数据，关联标签已锁定
+     * @param article 当前已加锁的文章资料，关联标签也已加锁
      * @param expected 客户端原样版本；缺失428、格式错误400、过期412
      */
     private void checkRevision(BlogArticle article, String expected) {
@@ -792,9 +792,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /**
      * 前台只返回约定字段，隐藏分类给 null，标签升序，作者不带邮箱或后台资料。
      *
-     * @param row 已满足PUBLIC的文章元数据和公开作者资料
+     * @param row 符合公开条件的文章资料和作者公开资料
      * @param value 公开列表或详情模型
-     * @return 同一快照或锁事务内填充的公开字段，不输出Markdown源
+     * @return 同一个只读事务或加锁事务中填充的公开字段，不输出Markdown源
      */
     private <T extends ArticlePublicVO> T publicView(ArticleRow row, T value) {
         value.setArticleId(row.getArticleId());
@@ -856,7 +856,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 逐层检查评论的整条祖先链，只有自身通过、祖先全部通过或占位的评论才计数。
+     * 统计可见评论，评论自身必须审核通过，全部上级评论也必须已通过或为删除占位。
      *
      * @param id 当前文章
      * @return 不含待审、驳回、占位及隐藏后代的真实明细数量，无额外缓存或SQL计数列
@@ -887,7 +887,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量发布或下架文章，先锁住并检查全部目标，版本按原选择顺序返回。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:article", permission = "blog:article:publish")
@@ -933,7 +933,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量将文章移入回收站，先锁住并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:article", permission = "blog:article:delete")
@@ -965,7 +965,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量恢复回收站文章，先锁住并检查全部目标，版本按原选择顺序返回。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-restore", target = "blog:article", permission = "blog:article:restore")
@@ -1002,7 +1002,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
+    /** 批量永久删除回收站文章，先锁住并检查全部目标，任一失败则整批回滚。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-purge", target = "blog:article", permission = "blog:article:purge")

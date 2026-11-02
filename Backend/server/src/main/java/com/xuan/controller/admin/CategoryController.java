@@ -27,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台分类接口，先过后台入口和业务权限检查，再交给业务事务处理。
+ * 后台分类管理接口，检查后台入口和操作权限，由业务事务处理。
  */
 @RestController
 @RequestMapping("/admin/categories")
@@ -36,14 +36,14 @@ public class CategoryController {
 
     private final ICategoryService categories;
 
-    /** 获取分类分页，列表不提供每条记录的版本，编辑前要先取详情。 */
+    /** 分页查询分类，列表不带每条记录的版本，编辑前先查询详情。 */
     @GetMapping
     @SaCheckPermission("blog:category:query")
     public Result<PageResult<BlogCategory>> list(@Valid @ModelAttribute CategoryQueryDTO query) {
         return Result.ok(categories.listCategories(query));
     }
 
-    /** 获取分类详情，把当前版本放进 X-Revision 响应头。 */
+    /** 根据id查询分类详情，版本放在 X-Revision 响应头。 */
     @GetMapping("/{categoryId}")
     @SaCheckPermission("blog:category:query")
     public ResponseEntity<Result<BlogCategory>> detail(@PathVariable String categoryId) {
@@ -59,7 +59,7 @@ public class CategoryController {
                 .body(Result.ok(value));
     }
 
-    /** 完整替换分类资料，版本检查留到锁事务里，缺版本返回 428。 */
+    /** 根据id更新分类，完整替换资料，加锁后检查版本，未传版本时返回 428。 */
     @PutMapping("/{categoryId}")
     @SaCheckPermission("blog:category:update")
     public ResponseEntity<Result<BlogCategory>> update(@PathVariable String categoryId,
@@ -68,7 +68,7 @@ public class CategoryController {
         return profile(categories.update(IdUtils.parse(categoryId), body, revision));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除分类，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:category:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -76,7 +76,7 @@ public class CategoryController {
         return Result.ok(null);
     }
 
-    /** 响应体只放分类资料，版本单独放响应头。 */
+    /** 返回分类资料，版本只放在响应头。 */
     private ResponseEntity<Result<BlogCategory>> profile(CategoryProfileVO result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.category()));
     }

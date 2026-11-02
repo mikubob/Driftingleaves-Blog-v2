@@ -11,7 +11,7 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * 登录和注解限流共用 Redis 固定窗口；Redis 出错就拒绝请求，超限返回等待秒数。
+ * Redis 限流，登录和注解共用固定时间窗口，超限返回等待秒数，Redis 出错时拒绝请求。
  */
 @Component
 @RequiredArgsConstructor
@@ -36,12 +36,12 @@ public class RedisRateLimiter {
             """, Long.class);
     private final StringRedisTemplate redis;
 
-    /** 一次脚本把各项计数都加上，任意一项超限就拒绝。 */
+    /** 增加请求次数，用一次脚本更新各项计数，任一超限就拒绝。 */
     public void hit(List<String> keys, int windowSeconds, int limit) {
         hit(keys, windowSeconds, Collections.nCopies(keys.size(), limit));
     }
 
-    /** 同一脚本允许 IP、统计标识和本站用户采用各自阈值。 */
+    /** 检查各项请求次数，IP、统计标识和用户可以分别设置上限。 */
     public void hit(List<String> keys, int windowSeconds, List<Integer> limits) {
         if (keys.isEmpty() || keys.size() != limits.size() || windowSeconds < 1 || limits.stream().anyMatch(n -> n < 1)) {
             throw new IllegalArgumentException("限流窗口和维度无效");
@@ -52,12 +52,12 @@ public class RedisRateLimiter {
         reject(redis.execute(HIT, keys, args.toArray()));
     }
 
-    /** 这里只看已有次数，不增加计数，密码登录只记录失败时用它。 */
+    /** 检查已有请求次数，不增加计数，供只统计失败次数的密码登录使用。 */
     public void check(List<String> keys, int limit) {
         reject(redis.execute(CHECK, keys, Integer.toString(limit)));
     }
 
-    /** 把脚本结果转成业务错误，Redis 出错不能放行。 */
+    /** 处理限流结果，超限或 Redis 出错时抛出业务错误。 */
     private void reject(Long retryAfter) {
         if (retryAfter == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "请求保护暂不可用");

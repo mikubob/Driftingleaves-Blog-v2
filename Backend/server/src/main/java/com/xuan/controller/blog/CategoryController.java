@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开分类接口，只返回前台需要的字典资料。
+ * 公开分类查询接口，只返回前台需要的资料。
  */
 @RestController("blogCategoryController")
 @RequestMapping("/blog/categories")
@@ -26,13 +26,13 @@ public class CategoryController {
 
     private final ICategoryService categories;
 
-    /** 分页获取分类，没有数据时 records 返回空数组。 */
+    /** 分页查询分类，没有数据时 records 返回空数组。 */
     @GetMapping
     public Result<PageResult<Category>> list(@Valid @ModelAttribute PageQueryDTO query) {
         return Result.ok(categories.publicCategories(query));
     }
 
-    /** slug 只接受 ASCII 分词，隐藏或不存在的分类统一返回 404。 */
+    /** 根据slug查询分类，只接受 ASCII 字母、数字和连接符，分类隐藏或不存在时返回 404。 */
     @GetMapping("/{slug}")
     public Result<CategoryPublicDetailVO> detail(@PathVariable @Size(max = 100)
             @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*") String slug) {

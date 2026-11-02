@@ -3,16 +3,16 @@ package com.xuan.service;
 import com.xuan.vo.LikeStateVO;
 
 /**
- * 复合键点赞只有本人状态和幂等增删，没有独立 ID CRUD。
+ * 文章点赞业务接口，查询本人状态、点赞和取消点赞，重复操作保持相同结果，不单独生成点赞id。
  */
 public interface IArticleLikeService {
 
-    /** 只要求本人登录，仍须 PUBLIC，不额外要求 like 权限。 */
+    /** 查询本人点赞状态，要求用户登录、文章公开，不额外要求点赞权限。 */
     LikeStateVO state(long article);
 
-    /** 文章锁内重查原会话、like 权限和公开状态，重复点赞保持 true。 */
+    /** 为文章点赞，锁住文章后重新检查原会话、点赞权限和公开状态，重复点赞仍返回 true。 */
     LikeStateVO like(long article);
 
-    /** 同样只允许 PUBLIC，没点过也成功，不删除历史非公开文章明细。 */
+    /** 取消文章点赞，只能操作公开文章，没点过赞也返回成功；非公开文章的历史点赞记录保留。 */
     LikeStateVO unlike(long article);
 }

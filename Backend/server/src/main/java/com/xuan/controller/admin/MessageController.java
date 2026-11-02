@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台查看私密留言须本次独立权限提供ALL。
+ * 后台留言管理接口，查看私密留言需要本次操作权限的 ALL 范围。
  */
 @RestController("adminMessageController")
 @RequestMapping("/admin/messages")
@@ -38,28 +38,28 @@ public class MessageController {
     private final IMessageService messages;
     private final AuthProperties auth;
 
-    /** 筛选与total使用相同条件。 */
+    /** 分页查询后台留言，列表和总数使用相同筛选条件。 */
     @GetMapping
     @SaCheckPermission("blog:message:query")
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageAdminQueryDTO query) {
         return Result.ok(messages.adminMessages(query));
     }
 
-    /** 查询权限不能代替审核权限。 */
+    /** 根据id查询留言详情，查询权限不能代替审核权限。 */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:message:query")
     public ResponseEntity<Result<MessagePrivateVO>> detail(@PathVariable String id) {
         return response(messages.adminDetail(IdUtils.parse(id)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量审核留言，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-review")
     @SaCheckPermission("blog:message:review")
     public Result<BatchVersionsVO> review(@Valid @RequestBody BatchStatusDTO body) {
         return Result.ok(messages.reviewBatch(body.getItems(), body.getStatus()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除留言及全部子回复，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:message:moderate")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
@@ -67,7 +67,7 @@ public class MessageController {
         return Result.ok(null);
     }
 
-    /** 后台回复沿用登录、review 权限和限流，不要求图形验证码。 */
+    /** 在后台回复留言，检查登录、审核权限和请求频率，不要求图形验证码。 */
     @PostMapping("/{id}/replies")
     @SaCheckPermission("blog:message:review")
     public ResponseEntity<Result<MessagePrivateVO>> reply(@PathVariable String id,
@@ -76,7 +76,7 @@ public class MessageController {
                 IpUtils.clientIp(httpRequest, auth.getTrustedProxies()), httpRequest.getHeader("User-Agent"))));
     }
 
-    /** 响应体不含业务版本。 */
+    /** 返回后台留言资料，版本只放在响应头。 */
     private ResponseEntity<Result<MessagePrivateVO>> response(ResourceVersion<MessagePrivateVO> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }

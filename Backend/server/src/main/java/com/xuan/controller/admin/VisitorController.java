@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 统计访客仅用于统计治理，不影响用户、阅读或互动权限。
+ * 后台访客管理接口，只管理统计标识，不改变用户、阅读或互动权限。
  */
 @RestController
 @RequestMapping("/admin/visitors")
@@ -33,35 +33,35 @@ public class VisitorController {
 
     private final IVisitorService visitors;
 
-    /** 只在ALL后台读取访客资料及浏览次数。 */
+    /** 分页查询访客资料及浏览次数，需要 ALL 范围。 */
     @GetMapping
     @SaCheckPermission("blog:visitor:query")
     public Result<PageResult<VisitorVO>> list(@Valid @ModelAttribute VisitorQueryDTO query) {
         return Result.ok(visitors.listVisitors(query));
     }
 
-    /** 最近访问变化不参与限制字段的版本。 */
+    /** 根据id查询访客详情，最近访问变化不影响访问限制的版本。 */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:visitor:query")
     public ResponseEntity<Result<VisitorVO>> detail(@PathVariable String id) {
         return response(visitors.detail(IdUtils.parse(id)));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量限制访客访问，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-block")
     @SaCheckPermission("blog:visitor:block")
     public Result<BatchVersionsVO> block(@Valid @RequestBody BatchBlockDTO body) {
         return Result.ok(visitors.blockBatch(body.getItems(), body.getBlockedUntil()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量解除访客限制，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PutMapping("/batch-unblock")
     @SaCheckPermission("blog:visitor:unblock")
     public Result<BatchVersionsVO> unblock(@Valid @RequestBody BatchRevisionDTO body) {
         return Result.ok(visitors.unblockBatch(body.getItems()));
     }
 
-    /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
+    /** 批量删除访客，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:visitor:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
@@ -69,7 +69,7 @@ public class VisitorController {
         return Result.ok(null);
     }
 
-    /** 版本只放响应头。 */
+    /** 返回访客资料，版本只放在 X-Revision 响应头。 */
     private ResponseEntity<Result<VisitorVO>> response(ResourceVersion<VisitorVO> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }

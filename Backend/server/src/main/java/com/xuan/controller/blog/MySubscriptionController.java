@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 本人订阅操作只使用当前会话，不从请求接收userId。
+ * 本人邮件订阅接口，用户取当前会话，不接受 userId 参数。
  */
 @RestController("meSubscriptionController")
 @RequestMapping("/blog/me/rss-subscription")
@@ -27,13 +27,13 @@ public class MySubscriptionController {
 
     private final ISubscriptionService subscriptions;
 
-    /** 未申请返回null，不返回任何票据。 */
+    /** 查询本人订阅，未申请时返回 null，不返回票据。 */
     @GetMapping
     public Result<SubscriptionVO> own() {
         return Result.ok(subscriptions.own());
     }
 
-    /** 同账号和可信IP共用每分钟5次申请/重发限制。 */
+    /** 申请订阅或重发确认邮件，同账号和可信 IP 共用每分钟五次限制。 */
     @PutMapping
     @SaCheckPermission("blog:rss:subscribe")
     @RateLimit(value = "subscription-request", limit = 5, dimension = RateLimit.Dimension.USER)
@@ -41,7 +41,7 @@ public class MySubscriptionController {
         return Result.ok(subscriptions.request(request));
     }
 
-    /** Bearer必须属于邮件申请的同一用户。 */
+    /** 确认订阅，Bearer 必须属于申请邮件的用户。 */
     @PostMapping("/confirm")
     @SaCheckPermission("blog:rss:subscribe")
     @RateLimit(value = "subscription-confirm", limit = 10, dimension = RateLimit.Dimension.USER)
@@ -49,7 +49,7 @@ public class MySubscriptionController {
         return Result.ok(subscriptions.confirm(request.ticket()));
     }
 
-    /** 退订不存在或已退订均幂等200。 */
+    /** 取消本人订阅，不存在或已退订时也返回 200。 */
     @DeleteMapping
     @SaCheckPermission("blog:rss:unsubscribe")
     public Result<Void> cancel() {

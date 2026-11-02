@@ -5,7 +5,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 点赞按完整复合键操作，不套用单 ID CRUD，也不维护第二套计数。
+ * 文章点赞数据接口，按文章和用户的组合主键操作，不另存点赞计数。
  */
 @Mapper
 public interface ArticleLikeMapper {

@@ -21,7 +21,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * 解析文章正文和封面的附件引用，并转换后台展示地址。
+ * 文章附件工具，解析正文和封面引用，转换后台展示地址。
  */
 @Component
 @RequiredArgsConstructor
@@ -34,25 +34,25 @@ public class ArticleAttachmentPolicy {
     private final FileUrlPolicy urls;
 
     /**
-     * 保存清理后的 HTML、封面和实际引用 ID，Markdown 原文仍和文章一起保存。
+     * 文章附件检查结果，包含清理后的 HTML、封面和引用id；Markdown 原文仍随文章保存。
      */
     public record References(String coverUrl, String html, Set<Long> fileIds) {
 
     }
 
     /**
-     * 从 Markdown 语法树和清理后的 HTML 中找链接、图片，普通数字和代码块不能算附件引用。
+     * 查询正文和封面中的附件引用，检查 Markdown 和清理后的 HTML，不把普通数字或代码块当附件。
      *
      * @param articleId 当前文章；创建为null，此时不允许任何本站附件
      * @param markdown 原始正文，不修改客户端Markdown源
      * @param cover 封面，可为空；外部封面必须是合法HTTP(S)
-     * @return 规范公开上下文HTML及去重引用集合；跨篇和编码歧义返回400
+     * @return 清理后的 HTML 和去重后的附件id；跨文章引用或编码不明确时返回 400
      */
     public References inspect(Long articleId, String markdown, String cover) {
         Set<Long> ids = new TreeSet<>();
         PARSER.parse(markdown).accept(new AbstractVisitor() {
             /**
-             * {@inheritDoc}
+             * 检查 Markdown 链接或图片中的附件引用。
              */
             @Override
             public void visit(Link link) {
@@ -61,7 +61,7 @@ public class ArticleAttachmentPolicy {
             }
 
             /**
-             * {@inheritDoc}
+             * 检查 Markdown 链接或图片中的附件引用。
              */
             @Override
             public void visit(Image image) {
@@ -82,13 +82,13 @@ public class ArticleAttachmentPolicy {
         return new References(normalizedCover, document.body().html(), Set.copyOf(ids));
     }
 
-    /** 后台 HTML 和封面只改写已经确认的本站附件地址，不动 Markdown 原文或外部地址。 */
+    /** 将本站附件地址转为后台地址，不修改 Markdown 原文或外部链接。 */
     public String adminUrl(String value) {
         return value != null && CONTEXT.matcher(value).matches()
                 ? value.replace("/api/v1/blog/articles/", "/api/v1/admin/articles/") : value;
     }
 
-    /** 只改 HTML 属性里规范的本站附件地址，不能改正文、外部 URL 或代码示例。 */
+    /** 转换 HTML 中的本站附件地址，只改链接属性，不修改正文、外部链接或代码示例。 */
     public String adminHtml(String html) {
         Document document = Jsoup.parseBodyFragment(html);
         for (Element element : document.select("a[href], img[src]")) {
@@ -98,7 +98,7 @@ public class ArticleAttachmentPolicy {
         return document.body().html();
     }
 
-    /** 本站附件必须属于当前文章，外部地址保持原样。 */
+    /** 检查并整理文章附件地址，本站附件必须属于当前文章，外部地址保持原样。 */
     private String canonical(String value, Long articleId, Set<Long> ids) {
         String path = urls.attachmentPath(value);
         if (path == null) {
@@ -112,7 +112,7 @@ public class ArticleAttachmentPolicy {
         return path;
     }
 
-    /** 输入有问题只报固定错误，不透露 URL、存储键或私密文件是否存在。 */
+    /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束");
     }

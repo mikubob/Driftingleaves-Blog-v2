@@ -9,7 +9,7 @@ import org.apache.ibatis.annotations.Param;
 import java.time.LocalDateTime;
 
 /**
- * 浏览明细只新增或删除，不能编辑历史身份与资源关联。
+ * 浏览记录数据接口，只允许新增和删除，不能修改历史身份及资源关联。
  */
 public interface PageViewMapper extends BaseMapper<BlogPageView> {
     /** 筛选及total一致，所有ID均由入口解析为正Long。 */

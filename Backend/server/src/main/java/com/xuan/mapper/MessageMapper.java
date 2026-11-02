@@ -11,10 +11,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 留言写入按操作者、message配置、根到目标加锁，归属在SQL中限定。
+ * 留言数据接口，SQL 限制归属，写入时先锁操作者和 message 配置，再从根到目标锁住留言。
  */
 public interface MessageMapper extends BaseMapper<BlogMessage> {
-    /** 只查父链字段，不取隐藏原文。 */
+    /** 查询上级留言关系，不读取隐藏的原文。 */
     List<MessageNode> nodes();
     /** 可见性和分页已确认，最多取当前页50条原文。 */
     List<MessageRow> visibleRows(@Param("ids") List<Long> ids);
@@ -26,6 +26,6 @@ public interface MessageMapper extends BaseMapper<BlogMessage> {
     IPage<MessageRow> messagePage(IPage<MessageRow> page, @Param("user") Long user,
             @Param("status") Integer status, @Param("secret") Integer secret,
             @Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end);
-    /** 只更新正文、通知、审核和编辑时间，不改作者、父链或私密范围。 */
+    /** 更新留言正文、回复通知、审核状态和编辑时间，不修改作者、回复关系或私密范围。 */
     int change(@Param("row") BlogMessage row, @Param("user") Long user);
 }

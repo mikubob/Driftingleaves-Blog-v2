@@ -35,7 +35,7 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * shortcut: 人数与连接仅属于当前进程，多实例部署时需改为共享成员与跨节点广播。
- * 状态、快照与发送共用一把锁，避免同一连接收到倒序广播；发送仍使用 Spring 的并发会话保护。
+ * 更新在线状态、统计人数和发送消息使用同一把锁，避免同一连接收到顺序颠倒的广播；发送时仍使用 Spring 的并发会话保护。
  */
 @Component
 @RequiredArgsConstructor
@@ -55,7 +55,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         timer.scheduleWithFixedDelay(this::sweep, 5, 5, TimeUnit.SECONDS);
     }
 
-    /** {@inheritDoc} */
+    /** 登记新连接并设置消息大小限制，五秒内未加入在线统计则关闭。 */
     @Override
     public synchronized void afterConnectionEstablished(WebSocketSession session) {
         session.setTextMessageSizeLimit(1024);
@@ -65,7 +65,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         member.joinTimeout = timer.schedule(() -> expireJoin(session.getId()), 5, TimeUnit.SECONDS);
     }
 
-    /** 首条消息、字段和频率在 WebSocket 自己的信任边界校验。 */
+    /** 接收 WebSocket 消息时，检查首条消息、字段和发送频率。 */
     @Override
     protected synchronized void handleTextMessage(WebSocketSession session, TextMessage message) {
         Member member = members.get(session.getId());
@@ -133,7 +133,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** {@inheritDoc} */
+    /** 拒绝二进制消息，在线统计只接受文本消息。 */
     @Override
     protected synchronized void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
         Member member = members.get(session.getId());
@@ -142,7 +142,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** {@inheritDoc} */
+    /** 移除已关闭的连接，并更新在线人数。 */
     @Override
     public synchronized void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         Member member = members.remove(session.getId());
@@ -152,7 +152,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** {@inheritDoc} */
+    /** 处理连接传输错误，发送错误后关闭连接。 */
     @Override
     public synchronized void handleTransportError(WebSocketSession session, Throwable error) {
         Member member = members.get(session.getId());
@@ -161,7 +161,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 与消息入口使用同一时限，迟到的 ping 不能把成员重新变成在线。 */
+    /** 检查连接是否超时，与消息处理使用相同期限，迟到的心跳不能恢复在线状态。 */
     private void requireAlive(Member member, long now) {
         if (member.binding == null && now - member.openedAt >= 5000) {
             throw invalidMessage();
@@ -221,7 +221,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         return new Counts(users.size(), guests.size());
     }
 
-    /** 发送失败先移除，再生成新快照；其余成员不会收到新快照之后的旧数据。 */
+    /** 发送失败时先移除该连接，再统计最新在线人数，避免其他成员先收到新人数、后收到旧人数。 */
     private void publish(Member joining) {
         while (true) {
             Counts current = counts();
