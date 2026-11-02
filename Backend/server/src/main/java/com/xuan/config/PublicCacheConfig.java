@@ -1,7 +1,7 @@
 package com.xuan.config;
 
 import com.xuan.cache.PublicCacheSerializer;
-import com.xuan.cache.PublicCacheStore;
+import com.xuan.store.PublicCacheStore;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

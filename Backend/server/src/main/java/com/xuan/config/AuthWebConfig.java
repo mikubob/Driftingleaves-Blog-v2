@@ -118,6 +118,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
         if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
                 || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
+                || path.matches("/blog/music/files/[^/]+/content")
                 || path.matches("/blog/(authors|categories|tags)/[^/]+")))) {
             if (("GET /blog/messages".equals(route) || path.matches("/(home|blog|cv)/analytics/(page-views|online/tickets)")
                     && "POST".equals(request.getMethod())) && request.getHeader(
@@ -171,8 +172,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
         config.setAllowedOrigins(properties.getAllowedOrigins());
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Revision",
-                "X-Captcha-Id", "X-Captcha-Code"));
-        config.setExposedHeaders(List.of("X-Revision", "Location", "Retry-After"));
+                "X-Captcha-Id", "X-Captcha-Code", "Range"));
+        config.setExposedHeaders(List.of("X-Revision", "Location", "Retry-After",
+                "Accept-Ranges", "Content-Range", "Content-Length"));
         config.setAllowCredentials(true);
         config.setMaxAge(600L);
 

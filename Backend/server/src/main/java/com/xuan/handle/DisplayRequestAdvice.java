@@ -27,8 +27,8 @@ import java.util.Set;
         ExperienceController.class,
         SkillController.class,
         MusicController.class,
-        com.xuan.controller.blog.HomeProfileController.class,
-        com.xuan.controller.blog.SocialController.class,
+        com.xuan.controller.publicsite.PublicHomeProfileController.class,
+        com.xuan.controller.publicsite.PublicSocialController.class,
         com.xuan.controller.cv.ExperienceController.class,
         com.xuan.controller.cv.SkillController.class,
         com.xuan.controller.blog.MusicController.class, OperationLogController.class,
@@ -39,8 +39,6 @@ import java.util.Set;
         AnalyticsController.class, com.xuan.controller.blog.OnlineController.class,
         com.xuan.controller.home.AnalyticsController.class, com.xuan.controller.home.OnlineController.class,
         com.xuan.controller.cv.AnalyticsController.class, com.xuan.controller.cv.OnlineController.class,
-        com.xuan.controller.home.HomeProfileController.class, com.xuan.controller.home.SocialController.class,
-        com.xuan.controller.cv.HomeProfileController.class, com.xuan.controller.cv.SocialController.class,
         VisitorController.class, PageViewController.class,
         StatisticsController.class, com.xuan.controller.blog.StatisticsController.class})
 public class DisplayRequestAdvice {

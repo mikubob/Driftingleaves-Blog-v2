@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.dto.TagQueryDTO;
@@ -17,6 +16,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ITagService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Tag;
@@ -52,7 +52,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     /** 前台按 ID 升序取标签，不返回创建和修改时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "tags", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<Tag> publicTags(PageQueryDTO query) {
         return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()),
                         new TagQueryDTO(query.page(), query.pageSize(), null))
@@ -62,7 +62,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     /** 当前标签和 PUBLIC 数量在同一快照中取得，读取不增加文章阅读。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "tags", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public TagPublicDetailVO publicDetail(String slug) {
         TagPublicDetailVO value = tags.publicBySlug(slug, LocalDateTime.now(ZoneOffset.UTC));
         if (value == null) {
@@ -219,7 +219,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
             @CacheEvict(cacheNames = "sitemap", allEntries = true)
     })
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

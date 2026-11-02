@@ -2,6 +2,10 @@
 
 直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [API.md](../../docs/API.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
 
+## 音乐与歌词播放
+
+音乐播放器支持外部地址及 `/api/v1/blog/music/files/{fileId}/content` 受管地址，API 层统一补上已配置的 API origin。原生 audio 使用后端 Range 响应；打开播放列表面板后加载歌词，LRC/JSON同步展示当前行，TXT保留全文。切歌、关闭面板或组件卸载时取消歌词请求；失败可重试。歌词必须为UTF-8且≤1 MiB，JSON为 `[{"time":0,"text":"歌词"}]`（秒），外站歌词需允许浏览器CORS。隐藏音乐不能通过公开文件路径读取。
+
 ## 原组件复用
 
 | 原文件 | 本项目位置与适配 |
@@ -45,7 +49,6 @@ $env:BLOG_BASE_URL = 'http://127.0.0.1:5174'
 `FRONTEND_ORIGINS` 替换整份白名单，应保留其他正在使用的真实 Origin，修改后重启后端。代理保留浏览器 Origin，不能替代后端来源校验。使用 `localhost` 时同步替换博客基址。
 
 ```powershell
-pnpm test
 pnpm build
 pnpm preview
 ```
@@ -69,22 +72,9 @@ OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_C
 
 注册须填写邮箱及邮件中的六位验证码；前台可选账密、邮箱验证码或已绑定第三方登录，三种方式都填写图形验证码。发送邮件会消费图形验证码并刷新图片，注册/登录提交时填写新图片。邮件验证码五分钟有效，发送失败明确报错，每邮箱一分钟最多发送一次。验证码只由邮件接收，不出现在 HTTP 响应；注册与登录用途不能混用。第三方未绑定时先完成邮箱注册，再到个人中心绑定，后续第三方登录不重复验证邮箱。
 
-## 验证
+## 构建检查
 
-`pnpm test` 覆盖请求、精度、版本、鉴权、限流、异步取消、统计脱敏，以及原组件字段映射、表情插入和字典分页。浏览器验证使用 `tests/browser-smoke.mjs`，只在 HTTP 边界使用明确虚构数据，不连接业务数据库或外部账号。
-
-```powershell
-New-Item -ItemType Directory -Path output/playwright -Force
-npx --package @playwright/cli playwright-cli -s=legacy-blog open about:blank
-npx --package @playwright/cli playwright-cli -s=legacy-blog run-code --filename tests/browser-smoke.mjs
-npx --package @playwright/cli playwright-cli -s=legacy-blog close
-```
-
-截图在忽略目录 `output/playwright/legacy-*.png`。这些检查不代表真实 MySQL、Redis、OSS、SMTP 或 OAuth 平台联调。
-
-登录、注册和个人中心的原生输入框通过边框变色显示焦点，避免叠加全局轮廓；共享图形验证码输入框采用相同方式。两端登录焦点回归在后台 5176 与博客 5174 服务启动后，从仓库根目录执行 `npx --package @playwright/cli playwright-cli -s=auth-focus run-code --filename Front/shared/auth-focus-browser-smoke.mjs`，先用同一会话执行 `open about:blank`。该检查挂载真实登录组件，覆盖后台、博客账密与邮箱登录、注册，以及博客浅色和深色主题；HTTP 边界仅提供虚构验证码和平台列表。
-
-公共分页沿用老项目的数字页码与省略号，只有一页时隐藏；首页每页 6 条，其他列表保留各自条数。两端分页交互回归见 `../shared/pagination-browser-smoke.mjs`，运行方式见[管理端说明](../Front-Admin/README.md)。
+项目已按要求移除自动化测试源码、浏览器检查脚本和测试执行入口；可使用 `pnpm build` 检查生产构建。
 
 ## 服务器异常与限流
 

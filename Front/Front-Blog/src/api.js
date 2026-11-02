@@ -30,6 +30,7 @@ export function isWebUrl(value) {
 }
 
 const publicAttachment = /^\/api\/v1\/blog\/articles\/[1-9]\d*\/files\/[1-9]\d*\/content$/
+const musicAttachment = /^\/api\/v1\/blog\/music\/files\/[1-9]\d*\/content$/
 
 /** 外链与媒体在响应入口检查，不接受脚本、凭据或协议相对地址。 */
 function validateFields(value, key = '') {
@@ -46,16 +47,18 @@ function validateFields(value, key = '') {
     && (typeof value !== 'string' || !/^\d+$/.test(value))) {
     throw new Error('接口返回的计数格式不正确。')
   }
-  if (['avatar', 'coverUrl', 'audioUrl', 'originalUrl', 'website', 'githubUrl', 'authorizationUrl', 'url'].includes(key)
+  if (['avatar', 'coverUrl', 'audioUrl', 'lyricUrl', 'originalUrl', 'website', 'githubUrl', 'authorizationUrl', 'url'].includes(key)
     && !isWebUrl(value)
     && !(key === 'coverUrl' && publicAttachment.test(value))
+    && !(['coverUrl', 'audioUrl', 'lyricUrl'].includes(key) && musicAttachment.test(value))
     && !(key === 'url' && typeof value === 'string' && /^mailto:[^\s@?#]+@[^\s@?#]+\.[^\s@?#]+$/.test(value))) {
     throw new Error('接口返回了不支持的链接。')
   }
   if (typeof value === 'object') {
     for (const [field, child] of Object.entries(value)) {
       validateFields(child, field)
-      if (field === 'coverUrl' && typeof child === 'string' && publicAttachment.test(child)) {
+      if (typeof child === 'string' && ((field === 'coverUrl' && publicAttachment.test(child))
+        || (['coverUrl', 'audioUrl', 'lyricUrl'].includes(field) && musicAttachment.test(child)))) {
         value[field] = `${apiRoot}${child.slice('/api/v1'.length)}`
       }
     }
@@ -121,7 +124,10 @@ function validateData(path, data, method) {
     '/blog/authors': (item) => author(item) && count(item.articleCount),
     '/blog/archives': (item) => model(item, { month: (month) => /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month), articleCount: count }),
     '/blog/links': (item) => model(item, { linkId: isId, linkName: text, url: text, avatar: nullableText, description: nullableText }),
-    '/blog/music': (item) => model(item, { musicId: isId, title: text, artist: nullableText, audioUrl: text }),
+    '/blog/music': (item) => model(item, {
+      musicId: isId, title: text, artist: nullableText, audioUrl: text, lyricUrl: nullableText,
+      lyricType: (type) => type === null || ['lrc', 'txt', 'json'].includes(type),
+    }) && (item.lyricUrl === null) === (item.lyricType === null),
     '/blog/messages': message,
     '/blog/me/messages': message,
     '/blog/me/comments': comment,

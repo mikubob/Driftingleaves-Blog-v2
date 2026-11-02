@@ -46,7 +46,7 @@ public class FeedServiceImpl implements IFeedService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "rss", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "rss", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public String rss() {
         String base = sites.base("blog").toString();
         BlogSiteConfig config = configs.selectById("site");
@@ -71,7 +71,7 @@ public class FeedServiceImpl implements IFeedService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public String sitemap(Integer requested) {
         int wanted = ObjectUtil.defaultIfNull(requested, 1);
         SitemapPages pages = new SitemapPages(wanted);

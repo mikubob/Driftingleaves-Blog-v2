@@ -2,7 +2,7 @@ package com.xuan.properties;
 
 import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
-import com.xuan.utils.UrlPolicy;
+import com.xuan.policy.UrlPolicy;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 

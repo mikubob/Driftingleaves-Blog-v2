@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryQueryDTO;
@@ -18,6 +17,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ICategoryService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArticlePublicVO.Category;
@@ -54,7 +54,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     /** 获取展示中的分类，排序相同时按 ID 排，不返回后台状态和时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "categories", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "categories", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<Category> publicCategories(PageQueryDTO query) {
         return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), null, true)
                 .convert(row -> new Category(row.getCategoryId(), row.getCategoryName(), row.getSlug(),
@@ -64,7 +64,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     /** 公开入口不因后台 Token 放宽分类状态，也不返回业务版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "categories", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "categories", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public CategoryPublicDetailVO publicDetail(String slug) {
         CategoryPublicDetailVO value = categories.publicBySlug(slug, LocalDateTime.now(ZoneOffset.UTC));
         if (value == null) {
@@ -228,7 +228,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
             @CacheEvict(cacheNames = "sitemap", allEntries = true)
     })
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.client.MailClient;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.SubscriptionQueryDTO;
@@ -22,6 +21,7 @@ import com.xuan.service.ISubscriptionService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.store.SubscriptionTicketStore;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
@@ -348,7 +348,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:rss", permission = "blog:rss:delete")
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         requireAdmin("delete");
         Set<Long> userIds = new TreeSet<>();
         userIds.add(sessions.currentUserId());
@@ -375,7 +375,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:rss", permission = "blog:rss:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         requireAdmin("update");
         Set<Long> userIds = new TreeSet<>();
         userIds.add(sessions.currentUserId());
@@ -399,7 +399,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             long id = IdUtils.parse(item.id());
             versions.put(id, changeStatus(id, status, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
 }

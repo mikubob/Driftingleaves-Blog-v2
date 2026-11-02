@@ -1,7 +1,7 @@
 package com.xuan.handle;
 
 import com.xuan.controller.blog.FriendLinkController;
-import com.xuan.controller.blog.SiteConfigController;
+import com.xuan.controller.publicsite.PublicSiteConfigController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -12,8 +12,7 @@ import java.util.Set;
 
 /** 第十章拒绝未声明、重复和空查询参数，不让 MVC 静默忽略状态或身份字段。 */
 @ControllerAdvice(assignableTypes = {FriendLinkController.class,
-        SiteConfigController.class, com.xuan.controller.home.SiteConfigController.class,
-        com.xuan.controller.cv.SiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
+        PublicSiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
         com.xuan.controller.admin.SiteConfigController.class})
 public class SiteRequestAdvice {
 

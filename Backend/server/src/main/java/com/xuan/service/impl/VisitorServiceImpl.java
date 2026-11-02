@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
@@ -16,6 +15,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.service.IVisitorService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
@@ -156,7 +156,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @OperationLog(type = "batch-delete", target = "blog:visitor", permission = "blog:visitor:delete")
     @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -175,7 +175,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-block", target = "blog:visitor", permission = "blog:visitor:block")
     public BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -191,7 +191,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             long id = IdUtils.parse(item.id());
             versions.put(id, block(id, until, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
     /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
@@ -199,7 +199,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-unblock", target = "blog:visitor", permission = "blog:visitor:unblock")
     public BatchVersionsVO unblockBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -211,7 +211,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             long id = IdUtils.parse(item.id());
             versions.put(id, unblock(id, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
 }

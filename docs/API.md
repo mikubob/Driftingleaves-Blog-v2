@@ -1,15 +1,15 @@
 # DriftingLeavesV2 接口文档
 
-接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-01。
+接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-02。
 
-统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **192 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **193 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
 
-2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，当前 192 个 HTTP 路由（Admin 123 个），详情、创建、编辑及本人接口保留。旧客户端须与后端同步更新。
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取后，当前 193 个 HTTP 路由（Admin 123 个），详情、创建、编辑及本人接口保留。旧客户端须与后端同步更新。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
 | [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 123 |
-| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 57 |
+| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 58 |
 | [Home 主页端](#client-home) | `/api/v1/home` | 主人资料、社交、配置与统计 | 5 |
 | [Cv 简历端](#client-cv) | `/api/v1/cv` | 主人资料、社交、简历、配置与统计 | 7 |
 
@@ -2470,7 +2470,7 @@ Authorization: Bearer <site-token>
 
 | 字段/响应头 | 类型 | 说明 |
 | --- | --- | --- |
-| 响应体 | binary | PNG/JPEG 原始字节，不是 Result |
+| 响应体 | binary | 已存储文件字节（图片可能已压缩），不是 Result；支持 Range/206/416 |
 | `Content-Type` | string | 服务端确认的 image/png 或 image/jpeg |
 | `Content-Length` | integer | 实际文件字节数 |
 | `Content-Disposition` | string | inline；filename* 使用安全 UTF-8 编码 |
@@ -3809,7 +3809,7 @@ Authorization: Bearer <site-token>
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `file` | binary | 是 | 唯一文件字段，单个 PNG/JPEG，非空且 ≤10MiB，不收路径/上传者 |
+| `file` | binary | 是 | 唯一文件字段，非空；PNG/JPEG≤10MiB、MP3/WAV/OGG/FLAC≤60MiB、UTF-8 LRC/TXT/JSON≤1MiB，不收路径/上传者 |
 
 ##### 请求示例
 
@@ -3846,7 +3846,7 @@ Location: /api/v1/admin/files/42
 }
 ```
 
-单文件非空，PNG/JPEG ≤10MiB；multipart ≤11MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。每个请求按用户和可信 IP 共用每 60 秒 10 次窗口，仅计一次；超限 429/RATE_LIMITED 并返回 Retry-After。当前默认启用OSS，新上传为oss；需由环境提供OSS凭据，缺失时启动失败，旧对象不迁移，响应不返回直链。
+单文件非空：PNG/JPEG≤10MiB、MP3/WAV/OGG/FLAC≤60MiB、UTF-8 LRC/TXT/JSON≤1MiB；multipart≤61MiB，内容识别与扩展名一致；尺寸与存储补偿见第 13 节。新上传默认启用服务端压缩：目标 500KiB、JPEG 起始质量 0.9、最长边 2560px；保留 PNG/JPEG 格式及 PNG 透明通道，仅采用更小的产物。sizeBytes 和内容响应长度对应实际存储字节，不保留压缩前副本；JPEG 可能有损，关闭压缩可保留原字节。目标大小不是硬上限，PNG 无损编码及 JPEG 最低质量 0.3 可能无法达到目标；压缩结果不更小时沿用原字节。每个请求按用户和可信 IP 共用每 60 秒 10 次窗口，仅计一次；超限 429/RATE_LIMITED 并返回 Retry-After。当前默认启用OSS，新上传为oss；需由环境提供OSS凭据，缺失时启动失败，旧对象不迁移，响应不返回直链。
 
 ---
 
@@ -3880,7 +3880,7 @@ Authorization: Bearer <site-token>
 
 | 字段/响应头 | 类型 | 说明 |
 | --- | --- | --- |
-| 响应体 | binary | PNG/JPEG 原始字节，不是 Result |
+| 响应体 | binary | 已存储文件字节（图片可能已压缩），不是 Result；支持 Range/206/416 |
 | `Content-Type` | string | 服务端确认的 image/png 或 image/jpeg |
 | `Content-Length` | integer | 实际文件字节数 |
 | `Content-Disposition` | string | inline；filename* 使用安全 UTF-8 编码 |
@@ -4896,9 +4896,9 @@ X-Revision: "<current-revision>"
 | `title` | S(200) | 是 | 曲目标题 |
 | `artist` | S(200)? | 是，可null | 作者或歌手 |
 | `durationSeconds` | integer&#124;null | 是，可null | 0..4294967295秒，未知为null |
-| `coverUrl` | URL? | 是，可null | 外部HTTP(S)封面 |
-| `audioUrl` | URL | 是 | 外部HTTP(S)音频URL；保存不触发服务端下载 |
-| `lyricUrl` | URL? | 是，可null | 歌词URL；无歌词时为null |
+| `coverUrl` | string? | 是，可null | 外部HTTP(S)封面或规范音乐文件路径 |
+| `audioUrl` | string | 是 | 外部HTTP(S)音频或规范音乐文件路径；外链保存不触发下载 |
+| `lyricUrl` | string? | 是，可null | 外部HTTP(S)歌词或规范音乐文件路径；无歌词时为null |
 | `lyricType` | string&#124;null | 是，可null | lrc/json/txt；必须与lyricUrl同时为空或同时非空 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 | `status` | integer | 是 | 0隐藏 1展示 |
@@ -4969,9 +4969,9 @@ lyricUrl与lyricType同时为空或同时非空；durationSeconds可为null。�
 | `title` | S(200) | 是 | 曲目标题 |
 | `artist` | S(200)? | 是，可null | 作者或歌手 |
 | `durationSeconds` | integer&#124;null | 是，可null | 0..4294967295秒，未知为null |
-| `coverUrl` | URL? | 是，可null | 外部HTTP(S)封面 |
-| `audioUrl` | URL | 是 | 外部HTTP(S)音频URL；保存不触发服务端下载 |
-| `lyricUrl` | URL? | 是，可null | 歌词URL；无歌词时为null |
+| `coverUrl` | string? | 是，可null | 外部HTTP(S)封面或规范音乐文件路径 |
+| `audioUrl` | string | 是 | 外部HTTP(S)音频或规范音乐文件路径；外链保存不触发下载 |
+| `lyricUrl` | string? | 是，可null | 外部HTTP(S)歌词或规范音乐文件路径；无歌词时为null |
 | `lyricType` | string&#124;null | 是，可null | lrc/json/txt；必须与lyricUrl同时为空或同时非空 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 | `status` | integer | 是 | 0隐藏 1展示 |
@@ -7478,7 +7478,7 @@ GET /api/v1/blog/articles/101/files/42/content
 
 | 字段/响应头 | 类型 | 说明 |
 | --- | --- | --- |
-| 响应体 | binary | PNG/JPEG 原始字节，不是 Result |
+| 响应体 | binary | 已存储文件字节（图片可能已压缩），不是 Result；支持 Range/206/416 |
 | `Content-Type` | string | 服务端确认的 image/png 或 image/jpeg |
 | `Content-Length` | integer | 实际文件字节数 |
 | `Content-Disposition` | string | inline；filename* 使用安全 UTF-8 编码 |
@@ -8818,7 +8818,8 @@ GET /api/v1/blog/music?page=1&pageSize=10
     "records": [
       {
         "musicId": "51", "title": "秋日", "artist": null, "durationSeconds": 180, "coverUrl": null,
-        "audioUrl": "https://example.test/audio.mp3"
+        "audioUrl": "/api/v1/blog/music/files/601/content",
+        "lyricUrl": "/api/v1/blog/music/files/602/content", "lyricType": "lrc", "sortOrder": 0
       }
     ]
   },
@@ -8827,6 +8828,26 @@ GET /api/v1/blog/music?page=1&pageSize=10
 ```
 
 仅status=1，sortOrder ASC,musicId ASC；不由服务端代理或抓取音频。是否有歌词由lyricUrl判断，不重复存储hasLyric。
+
+<a id="music-file-content"></a>
+
+#### 2.14.2 读取公开音乐文件
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `GET /api/v1/blog/music/files/{fileId}/content` |
+| 访问要求 | 匿名；至少一首展示曲目实际引用此规范路径 |
+| Path | `fileId`：十进制正整数ID字符串 |
+| Header | `Range` 可选，如 `bytes=0-1023`、`bytes=1024-` 或 `bytes=-1024` |
+| 请求体 / Query | 不接受 |
+| 响应 | 原文件字节，200完整或206分段；无效范围416 |
+
+```http
+GET /api/v1/blog/music/files/42/content
+Range: bytes=0-1023
+```
+
+成功响应包含实际MIME（文本为UTF-8）、Content-Length、Accept-Ranges、no-store、nosniff及安全编码的inline文件名；206另含Content-Range。只存在隐藏引用或未保存到曲目时404，管理员Token不放宽公开规则。存储不可用503；业务错误为JSON Result，Range错误由Spring MVC处理。后台预览沿用带Bearer的 `/api/v1/admin/files/{fileId}/content`，检查文件query范围。保存音乐及文件删除规则见[音乐模型](API_CONTRACT.md#model-12-11)。
 
 ---
 
@@ -9863,7 +9884,7 @@ Blog连接由实际 `view/Layout/index.vue` 管理，站点统计卡片只读取
 
 ### 17. 背景音乐与播放列表
 
-维护站点曲目元数据；音频、封面、歌词使用外部 HTTP(S) URL。现有图片上传接口不支持音频或歌词上传，也不提供播放资源代理。
+音乐表单通过既有 POST /admin/files 上传音频、封面或歌词，再保存曲目；继续支持外部 HTTP(S) 地址。受管文件地址为 /api/v1/blog/music/files/{fileId}/content，只有当前展示曲目实际引用时可匿名读取，隐藏音乐使用后台授权原文件预览。读取支持 Range/206/416，不代理外部媒体。完整权限、格式、歌词结构及删除引用规则见[音乐模型](API_CONTRACT.md#model-12-11)。
 
 <a id="group-18"></a>
 
@@ -10703,9 +10724,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `title` | S(200) | 曲目标题 |
 | `artist` | S(200)? | 作者或歌手 |
 | `durationSeconds` | integer&#124;null | 0..4294967295秒，未知为null |
-| `coverUrl` | URL? | 外部HTTP(S)封面 |
-| `audioUrl` | URL | 外部HTTP(S)音频URL；保存不触发服务端下载 |
-| `lyricUrl` | URL? | 歌词URL；无歌词时为null |
+| `coverUrl` | string? | 外部HTTP(S)封面或规范音乐文件路径 |
+| `audioUrl` | string | 外部HTTP(S)音频或规范音乐文件路径；外链保存不触发下载 |
+| `lyricUrl` | string? | 外部HTTP(S)歌词或规范音乐文件路径；无歌词时为null |
 | `lyricType` | string&#124;null | lrc/json/txt；必须与lyricUrl同时为空或同时非空 |
 | `sortOrder` | int32 | 越小越靠前 |
 
@@ -10719,9 +10740,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `title` | S(200) | 曲目标题 |
 | `artist` | S(200)? | 作者或歌手 |
 | `durationSeconds` | integer&#124;null | 0..4294967295秒，未知为null |
-| `coverUrl` | URL? | 外部HTTP(S)封面 |
-| `audioUrl` | URL | 外部HTTP(S)音频URL；保存不触发服务端下载 |
-| `lyricUrl` | URL? | 歌词URL；无歌词时为null |
+| `coverUrl` | string? | 外部HTTP(S)封面或规范音乐文件路径 |
+| `audioUrl` | string | 外部HTTP(S)音频或规范音乐文件路径；外链保存不触发下载 |
+| `lyricUrl` | string? | 外部HTTP(S)歌词或规范音乐文件路径；无歌词时为null |
 | `lyricType` | string&#124;null | lrc/json/txt；必须与lyricUrl同时为空或同时非空 |
 | `sortOrder` | int32 | 越小越靠前 |
 | `status` | integer | 0隐藏 1展示 |
@@ -10971,9 +10992,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 先创建草稿取得 articleId，再上传并在正文/封面引用文件；公开附件路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`，必须对应当前文章并实际引用。后台详情的安全 HTML 使用后台附件路径，客户端携带 Bearer 获取后生成临时 object URL。
 
-公开文章确实引用的文件可从该文章上下文读取；草稿、私密、下架和回收站上下文返回 404。后台读取同时满足文章和文件各自权限范围。头像、配置、主页/简历图标和音乐等展示字段仅用外部资源，不接受本站附件 API。
+公开文章确实引用的文件可从该文章上下文读取；草稿、私密、下架和回收站上下文返回 404。后台读取同时满足文章和文件各自权限范围。音乐使用独立的[公开音乐文件路径](#music-file-content)，保存时检查文件权限与用途；头像、配置和主页/简历图标仍仅用外部资源。
 
-仍被任何文章（含回收站）引用的文件不可删除。删除文件不要求版本；存储失败保留元数据并返回 503。需要私密隔离的内容应另传文件，不能复用已经公开的 fileId。详细引用、存储补偿与事务规则见 [文件开发约定](API_CONTRACT.md#file-consistency)。
+仍被任何文章（含回收站）或音乐（含隐藏曲目）引用的文件不可删除。删除文件不要求版本；存储失败保留元数据并返回 503。需要私密隔离的内容应另传文件，不能复用已经公开的 fileId。详细引用、存储补偿与事务规则见 [文件开发约定](API_CONTRACT.md#file-consistency)。
 
 <a id="transactions"></a>
 

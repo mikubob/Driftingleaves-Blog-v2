@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.PageViewQueryDTO;
 import com.xuan.entity.BlogPageView;
 import com.xuan.exception.BusinessException;
@@ -14,6 +13,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IPageViewService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.SitePathUtils;
@@ -80,7 +80,7 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     @OperationLog(type = "batch-delete", target = "blog:view", permission = "blog:view:delete")
     @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void deleteBatch(List<String> ids) {
-        var sorted = BatchInputs.ids(ids);
+        var sorted = BatchUtils.ids(ids);
         for (long id : sorted) {
             users.lockById(sessions.currentUserId());
             requireAdmin("delete");

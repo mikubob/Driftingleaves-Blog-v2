@@ -2,6 +2,10 @@
 
 独立的 Vue 3 + Vite + Element Plus 工程，UI 复用 `DriftingLeaves-Website/Frontend-Admin`：公共主题、系统字体栈、iconfont 字体、侧栏与顶栏、统计卡片，以及菜单悬停、侧栏折叠和页面切换动画。登录页保留当前设计。迁移后的样式为原生 CSS，不新增 Sass 依赖。接口依据仓库 `docs/API.md` 及实际后端实现。
 
+## 音乐与歌词上传
+
+音乐管理支持直接上传音频、封面和歌词，并继续支持手工填写外部 HTTP(S) 地址。上传复用文件管理：PNG/JPEG≤10 MiB，MP3/WAV/OGG/FLAC≤60 MiB，UTF-8 LRC/TXT/JSON≤1 MiB；需要文件 upload 与 query 权限。歌词上传后自动填写格式，JSON 为 `[{"time":0,"text":"歌词"}]`，time 单位为秒。上传成功后仍需保存音乐；取消或替换后未使用的文件可在文件管理清理。文件管理可预览图片、音频和歌词，仍被文章或音乐引用（含隐藏曲目）的文件不能删除。
+
 ## 四模块边界
 
 `Front-Home`、`Front-Blog`、`Front-Cv`、`Front-Admin` 分别维护自己的源码、依赖、锁文件、环境配置和构建产物。Admin 不导入其他模块的文件，不需要先启动或构建其他模块；模块之间通过后端 HTTP API 交换业务数据。
@@ -22,7 +26,6 @@ pnpm dev
 后端使用 `dev` 环境时默认放行上述两个开发 Origin。Vite 的 `changeOrigin` 只修改转发的 Host，仍保留浏览器 Origin，因此使用开发代理也需要后端放行来源。设置 `FRONTEND_ORIGINS` 会替换全部默认来源；自定义域名或端口需写入该变量，修改后重启后端。不要通过删除 Origin 或放行通配符绕过来源检查。
 
 ```powershell
-pnpm test
 pnpm build
 pnpm preview
 ```
@@ -62,28 +65,9 @@ pnpm preview
 
 完成页读取 ticket 后立即清除 fragment。绑定弹窗通过精确同源 `postMessage` 将票据交回保留 Token 的原页面，原页面校验 origin、source 和当前绑定流程后兑换。300 秒敏感认证窗口、Cookie、平台可用性与一次性票据均由后端控制。
 
-## 验证
+## 构建检查
 
-`pnpm test` 使用 Node 内置测试运行器，覆盖真实请求与会话模块的版本头、字符串 ID、分页、multipart、错误分类、限流、私密图片地址、菜单白名单与权限范围、密码字节限制、列表取消和错误状态。
-
-浏览器检查文件为 `tests/browser-smoke.mjs`，用 Playwright CLI 在 HTTP 边界提供明确的虚构数据，检查全部 22 个管理页面、10 类编辑表单提交、文章保存请求、版本冲突保留输入、OAuth 绑定弹窗携带原会话兑换、移动端、刷新后恢复登录及固定到期时间。在已运行 `pnpm dev` 且本机存在可用浏览器时执行：
-
-```powershell
-npx --yes --package @playwright/cli playwright-cli -s=drifting-admin open http://127.0.0.1:5176/login
-npx --yes --package @playwright/cli playwright-cli -s=drifting-admin run-code --filename tests/browser-smoke.mjs
-npx --yes --package @playwright/cli playwright-cli -s=drifting-admin close
-
-# 文章编辑回归使用独立会话，避免前一轮测试的会话初始化脚本干扰。
-npx --yes --package @playwright/cli playwright-cli -s=article-editor open http://127.0.0.1:5176/login
-npx --yes --package @playwright/cli playwright-cli -s=article-editor run-code --filename tests/article-editor-smoke.mjs
-npx --yes --package @playwright/cli playwright-cli -s=article-editor close
-```
-
-`tests/article-editor-smoke.mjs` 检查连续新建独立文章、发布后返回列表、草稿续存、发布失败重试、请求期间输入与重复快捷键、最新版本头、缓存列表刷新、安全实时预览、移动端及详情失败禁用保存。
-
-列表分页沿用老项目：每页可选 10/15/20/50 条，支持数字页码与跳页；切换条数回到第一页并保留筛选。两端动态分页回归在仓库根目录执行 `npx --package @playwright/cli playwright-cli -s=pagination run-code --filename Front/shared/pagination-browser-smoke.mjs`，运行前启动后台 5176 和博客 5174 的 Vite 服务，并用同一会话执行 `open about:blank`。该脚本挂载真实分页组件，在 HTTP 请求处使用虚构数据。
-
-浏览器截图保存在忽略的 `output/playwright/` 下。测试替身与生产构建不代表真实后端、数据库、OSS、SMTP 或第三方平台联调已完成。本次不启动后端、不操作业务数据库。
+项目已按要求移除自动化测试源码、浏览器检查脚本和测试执行入口；可使用 `pnpm build` 检查生产构建。
 
 ## 服务器异常与限流
 
@@ -99,19 +83,15 @@ UI 资源位于 `src/assets/`；管理区保留持久登录与动态权限菜单
 
 后台主体、导航、常规按钮和普通标签保持克制的黑白灰风格。仅在关键语义处使用颜色：绿色表示发布、通过、启用与恢复，橙色表示草稿、待审核及下架等提醒操作，红色表示驳回、禁用、限制和删除，紫色突出置顶与私密留言。统计卡片仅用小面积图标区分指标，待审数量用橙色提醒，图表保留系列配色以便阅读。单条与批量操作保持一致，状态文字继续保留，不仅依赖颜色传达含义。
 
-下拉框的焦点边框由 Element Plus 外层统一显示，全局键盘焦点规则排除其内部搜索输入框，避免出现截断的重复黑框。`tests/form-focus-smoke.mjs` 可通过 Playwright CLI 的 `run-code --filename` 执行，检查选择、搜索、多选、文本、密码、数字、多行、日期、日期时间、日期区间及真实分页组件，并确认无匹配结果和键盘焦点正常。
+下拉框的焦点边框由 Element Plus 外层统一显示，全局键盘焦点规则排除其内部搜索输入框，避免出现截断的重复黑框。
 
 统计报表使用与老管理端相同的 ECharts 5.6.0，复用折线渐变、柱体和环形图的入场与更新动画，以及日期提示、柱体阴影、扇区高亮和图例切换。原有每日数据、文章排行和省份明细保留在可展开区域，提示和明细保留 BIGINT 原始计数。图表按容器尺寸自动重绘，离开页面时释放实例。`pnpm test` 包含真实图表渲染、精确计数提示、标题转义、零值和空数据验证。
 
-`tests/charts-smoke.mjs` 挂载真实统计页面，以虚构 HTTP 数据检查四张图表的实际入场动画、鼠标悬停、图例点击、键盘展开明细、375px 布局、零值与空结果刷新及卸载清理。启动 `pnpm dev` 后执行：
+启动 `pnpm dev` 后执行：
 
 ```powershell
 npx --yes --package @playwright/cli playwright-cli -s=charts open http://127.0.0.1:5176/login
-npx --yes --package @playwright/cli playwright-cli -s=charts run-code --filename tests/charts-smoke.mjs
-npx --yes --package @playwright/cli playwright-cli -s=charts close
-```
 
-浏览器检查还覆盖登录页设计保留、侧栏图标唯一性、折叠与展开、keepAlive 状态，以及未知路由、429、503、网络异常的全屏 404 与返回入口。
 
 图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言及本人留言编辑同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
 
@@ -122,7 +102,7 @@ npx --yes --package @playwright/cli playwright-cli -s=charts close
 
 需要版本的批次先顺序读取所选详情，再确认并提交一个写请求，最多100项；取消或读取失败不执行写入，版本冲突保留选择并提示重新读取，不自动降级逐条提交。评论/留言删除确认说明全部后代影响；菜单只选择叶子，内置角色不可选；访客封禁需填写结束时间或明确勾选永久。文件清理显示成功/失败数量，并逐项列出失败ID、原因及错误码。
 
-共用实现为 `src/components/BatchActions.vue` 和 `src/batch.js`。单元测试使用 `pnpm test`；浏览器夹具 `tests/batch-selection-smoke.mjs` 使用虚构HTTP数据驱动18个真实Vue页面，不连接业务服务，可经Playwright CLI的 `run-code --filename` 执行。
+共用实现为 `src/components/BatchActions.vue` 和 `src/batch.js`。
 
 2026-11-01 批量选择验收：`pnpm test` 24项通过，`pnpm build`成功；Playwright虚构HTTP夹具验证18个真实页面、47项检查通过，覆盖当前页全选/取消、翻页清空、取消确认不写入、多项单次请求、版本冲突不重试、文件失败明细、永久限制明确选择和权限隐藏。桌面/手机截图位于仓库`output/playwright/batch-selection.png`及`batch-selection-mobile.png`；静态核对18页覆盖全部26个统一入口。本次未修改后端或连接业务库。
 
@@ -132,4 +112,4 @@ npx --yes --package @playwright/cli playwright-cli -s=charts close
 
 两类详情共用 DiscussionDetail：桌面双列、手机单列，展示当前接口已有的账号、记录 ID、状态、属地、系统、浏览器和时间；留言另含可见性、内容格式及通知意愿。正文置于带边框的内容区，纯文本保留换行，Markdown 沿用后端安全 HTML 与私密图片读取。SafeHtml 等待容器挂载后填入内容，修复首次打开详情时 Markdown 正文为空的问题。接口和数据库不变，后台回复继续无需验证码。
 
-新增浏览器检查可通过 Playwright CLI 的 `run-code --filename Front/Front-Admin/tests/discussion-layout-smoke.mjs` 执行，覆盖 1440/1280/390 像素下的两类页面、长正文、纯文本转义、Markdown、历史未知字段、大整数 ID 及打开期间调整窗口。HTTP 边界使用虚构数据，截图位于仓库的 `output/playwright/comments-detail-*.png` 和 `messages-detail-*.png`。
+HTTP 边界使用虚构数据，截图位于仓库的 `output/playwright/comments-detail-*.png` 和 `messages-detail-*.png`。

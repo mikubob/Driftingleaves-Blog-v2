@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { session } from '@/session.js'
 import { useBlogStore, useThemeStore } from '@/stores'
+import { loadLyrics } from '@/shared/lyrics.js'
 
 const router = useRouter()
 const blogStore = useBlogStore()
@@ -41,8 +42,54 @@ const isPlaying = ref(false)
 const audioRef = ref(null)
 const musicIndex = ref(0)
 const musicListVisible = ref(false)
+const lyrics = ref([])
+const lyricLoading = ref(false)
+const lyricError = ref('')
+const playbackTime = ref(0)
+let lyricController
 
 const currentTrack = computed(() => blogStore.musics[musicIndex.value] || null)
+const currentLyric = computed(() => {
+  let text = '♪'
+  for (const line of lyrics.value) {
+    if (line.time > playbackTime.value) {
+      break
+    }
+    text = line.text || '♪'
+  }
+  return text
+})
+
+async function loadCurrentLyrics() {
+  lyricController?.abort()
+  lyrics.value = []
+  lyricError.value = ''
+  lyricLoading.value = false
+  const track = currentTrack.value
+  if (!musicListVisible.value || !track?.lyricUrl) {
+    return
+  }
+  const controller = new AbortController()
+  lyricController = controller
+  lyricLoading.value = true
+  try {
+    const lines = await loadLyrics(track.lyricUrl, track.lyricType, controller.signal)
+    if (!controller.signal.aborted) {
+      lyrics.value = lines
+    }
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      lyricError.value = failure.message
+    }
+  } finally {
+    if (!controller.signal.aborted) {
+      lyricLoading.value = false
+    }
+  }
+}
+
+watch([() => currentTrack.value?.id, musicListVisible], loadCurrentLyrics)
+onUnmounted(() => lyricController?.abort())
 const DESKTOP_SEARCH_EXPANDED_WIDTH = 180
 const HEADER_LAYOUT_BUFFER = 12
 let headerResizeObserver = null
@@ -118,11 +165,11 @@ const togglePlay = async () => {
       return
     }
   }
-  isPlaying.value = !isPlaying.value
 }
 
 const playTrack = (index) => {
   musicIndex.value = index
+  playbackTime.value = 0
   isPlaying.value = false
   nextTick(() => {
     if (audioRef.value) {
@@ -317,6 +364,10 @@ onUnmounted(() => {
             :src="currentTrack.musicUrl"
             preload="none"
             @ended="nextTrack"
+            @timeupdate="playbackTime = $event.target.currentTime"
+            @play="isPlaying = true"
+            @pause="isPlaying = false"
+            @error="isPlaying = false"
           />
           <transition name="fade">
             <div v-show="musicListVisible" class="music-panel">
@@ -325,6 +376,15 @@ onUnmounted(() => {
                 <span class="music-panel-count">
                   {{ blogStore.musics.length }} 首
                 </span>
+              </div>
+              <div v-if="currentTrack.lyricUrl" class="player-lyrics" aria-label="当前曲目歌词">
+                <p v-if="lyricLoading">正在加载歌词…</p>
+                <p v-else-if="lyricError" role="alert">
+                  {{ lyricError }}
+                  <button type="button" @click="loadCurrentLyrics">重试</button>
+                </p>
+                <pre v-else-if="currentTrack.lyricType === 'txt'">{{ lyrics[0]?.text }}</pre>
+                <p v-else>{{ currentLyric }}</p>
               </div>
               <ul class="music-panel-list">
                 <li
@@ -713,6 +773,8 @@ onUnmounted(() => {
 
 /* 闊充箰鍒楄〃 */
 .music-panel {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
@@ -749,11 +811,28 @@ onUnmounted(() => {
   font-weight: 400;
 }
 .music-panel-list {
+  min-height: 0;
   list-style: none;
   margin: 0;
   padding: 4px 0;
   max-height: 300px;
   overflow-y: auto;
+}
+.player-lyrics {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  max-height: 120px;
+  overflow: auto;
+  color: var(--blog-text);
+  font-size: 12px;
+  border-bottom: 1px solid var(--blog-border);
+}
+.player-lyrics p,
+.player-lyrics pre {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: inherit;
 }
 .music-panel-item {
   display: flex;

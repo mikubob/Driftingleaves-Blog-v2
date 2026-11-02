@@ -51,7 +51,7 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     /** SQL 同时限制 site 与公开标记，不会因为错误公开 comment 而暴露审核策略。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "configs", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "configs", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<ConfigVO> publicConfigs() {
         return configs.configs(true).stream().map(this::view).toList();
     }

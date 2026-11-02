@@ -3,8 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
-import com.xuan.content.CommentVisibility;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
@@ -19,11 +17,13 @@ import com.xuan.mapper.CommentMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.model.CommentRow;
+import com.xuan.policy.CommentVisibilityPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ICommentService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UserAgentUtils;
@@ -79,7 +79,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query) {
         requirePublic(article);
         Long parent = IdUtils.parse(query.parentId());
-        if (parent != null && !CommentVisibility.visible(articles.commentNodes(article)).contains(parent)) {
+        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parent)) {
             throw missing();
         }
         return self.getObject().cachedPublicComments(article, query);
@@ -87,7 +87,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
 
     /** 外层已在当前快照校验 PUBLIC 与祖先链，缓存只保存共同公开结果。 */
     @Override
-    @Cacheable(cacheNames = "comments", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "comments", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
         return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, IdUtils.parse(query.parentId()))
                 .convert(this::publicView));
@@ -125,7 +125,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 throw missing();
             }
             if (parent.getStatus() != 1
-                    || !CommentVisibility.visible(articles.commentNodes(article)).contains(parentId)) {
+                    || !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parentId)) {
                 throw conflict("父评论已不可回复");
             }
         }
@@ -416,7 +416,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @OperationLog(type = "batch-review", target = "blog:comment", permission = "blog:comment:review")
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         lockBatchArticles(items.stream().map(item -> IdUtils.parse(item.id())).toList(), "review");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -432,7 +432,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             long id = IdUtils.parse(item.id());
             versions.put(id, review(id, status, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
 
@@ -442,7 +442,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @OperationLog(type = "batch-delete", target = "blog:comment", permission = "blog:comment:moderate")
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public void moderateBatch(List<String> ids) {
-        var sorted = BatchInputs.ids(ids);
+        var sorted = BatchUtils.ids(ids);
         lockBatchArticles(sorted, "moderate");
         Map<Long, CommentRow> selected = new HashMap<>();
         for (long id : sorted) {

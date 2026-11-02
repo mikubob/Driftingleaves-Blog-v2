@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SkillWriteDTO;
@@ -12,15 +11,16 @@ import com.xuan.exception.BusinessException;
 import com.xuan.mapper.SkillMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ResourceVersion;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISkillService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.SkillPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -49,7 +49,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "skills", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "skills", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<SkillPublicVO> publicItems(DisplayQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
                 .convert(row -> new SkillPublicVO(row.getSkillId(), row.getName(), row.getDescription(), row.getIcon(), row.getSortOrder())));
@@ -164,7 +164,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @OperationLog(type = "batch-delete", target = "cv:skill", permission = "cv:skill:delete")
     @CacheEvict(cacheNames = "skills", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

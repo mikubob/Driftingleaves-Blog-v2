@@ -2,8 +2,8 @@ package com.xuan.config;
 
 import com.xuan.client.MailClient;
 import com.xuan.exception.BusinessException;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.MailProperties;
-import com.xuan.utils.UrlPolicy;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

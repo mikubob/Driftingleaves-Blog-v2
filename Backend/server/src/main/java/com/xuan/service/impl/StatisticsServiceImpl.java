@@ -52,7 +52,7 @@ public class StatisticsServiceImpl implements IStatisticsService {
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "statistics", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "statistics", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PublicStatisticsVO publicStatistics() {
         LocalDate today = LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC);
         return statistics.publicStatistics(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), now());

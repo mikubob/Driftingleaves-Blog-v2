@@ -9,13 +9,13 @@ import com.xuan.exception.BusinessException;
 import com.xuan.mapper.HomeProfileMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ResourceVersion;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IHomeProfileService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.HomeProfilePublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -46,7 +46,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "home", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "home", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public HomeProfilePublicVO publicProfile() {
         HomeProfile row = profiles.selectById(1L);
         return row == null ? null : new HomeProfilePublicVO(row.getNickname(), row.getTagline(), row.getDescription(),

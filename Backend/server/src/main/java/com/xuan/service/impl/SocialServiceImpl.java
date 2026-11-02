@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.SocialWriteDTO;
@@ -12,15 +11,16 @@ import com.xuan.exception.BusinessException;
 import com.xuan.mapper.SocialMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ResourceVersion;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISocialService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.SocialPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -49,7 +49,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "social", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "social", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<SocialPublicVO> publicItems() {
         return items.publicItems().stream().map(row -> new SocialPublicVO(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder())).toList();
     }
@@ -166,7 +166,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @OperationLog(type = "batch-delete", target = "home:social", permission = "home:social:delete")
     @CacheEvict(cacheNames = "social", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

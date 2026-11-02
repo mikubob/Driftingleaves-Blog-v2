@@ -2,9 +2,9 @@ package com.xuan.client;
 
 import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.AuthProperties;
 import com.xuan.store.RedisOAuthStore;
-import com.xuan.utils.UrlPolicy;
 import lombok.RequiredArgsConstructor;
 import me.zhyd.oauth.config.AuthConfig;
 import me.zhyd.oauth.config.AuthDefaultSource;

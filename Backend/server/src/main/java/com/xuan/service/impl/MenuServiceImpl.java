@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MenuCreateDTO;
 import com.xuan.dto.MenuUpdateDTO;
@@ -17,6 +16,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMenuService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MenuNodeVO;
@@ -406,7 +406,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "菜单结构检查点未初始化");
         }
         requireAdmin("sys:menu:delete");
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         List<Long> ids = sorted.stream().map(item -> IdUtils.parse(item.id())).toList();
         Set<Long> affected = new TreeSet<>(menus.userIds(ids));
         affected.add(sessions.currentUserId());

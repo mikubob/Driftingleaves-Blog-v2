@@ -1,7 +1,8 @@
 <script setup>
 import { onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getImage, request } from '../api.js'
+import { getFile, request } from '../api.js'
+import { fileAccept, uploadFile } from '../fileUpload.js'
 import { can } from '../session.js'
 import { formatCount, formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
@@ -20,11 +21,14 @@ const input = ref(null)
 const busy = ref(false)
 const imageUrl = ref('')
 const imageName = ref('')
+const previewType = ref('')
+const previewText = ref('')
 const previewVisible = ref(false)
 let controller
 
 function releaseImage() {
   controller?.abort()
+  previewText.value = ''
   if (imageUrl.value) {
     URL.revokeObjectURL(imageUrl.value)
     imageUrl.value = ''
@@ -34,9 +38,17 @@ function releaseImage() {
 async function preview(row) {
   releaseImage()
   controller = new AbortController()
+  const current = controller
   try {
-    const result = await getImage(`/api/v1/admin/files/${row.fileId}/content`, controller.signal)
-    imageUrl.value = result
+    const result = await getFile(`/api/v1/admin/files/${row.fileId}/content`, current.signal)
+    const text = row.mimeType.startsWith('audio/') || row.mimeType.startsWith('image/')
+      ? '' : await result.text()
+    if (current.signal.aborted) {
+      return
+    }
+    previewType.value = row.mimeType
+    previewText.value = text
+    imageUrl.value = text ? '' : URL.createObjectURL(result)
     imageName.value = row.originalName
     previewVisible.value = true
   } catch (failure) {
@@ -52,16 +64,10 @@ async function upload(event) {
   if (!file) {
     return
   }
-  if (!['image/png', 'image/jpeg'].includes(file.type) || file.size === 0 || file.size > 10485760) {
-    ElMessage.error('请选择不超过 10 MiB 的 PNG/JPEG 图片。')
-    return
-  }
   busy.value = true
   try {
-    const body = new FormData()
-    body.append('file', file)
-    await request('/admin/files', { method: 'POST', body })
-    ElMessage.success('图片已上传')
+    await uploadFile(file)
+    ElMessage.success('文件已上传')
     load(true)
   } catch (failure) {
     ElMessage.error(failure.message)
@@ -73,7 +79,7 @@ async function upload(event) {
 async function remove(row) {
   try {
     await ElMessageBox.confirm(
-      `删除文件「${row.originalName}」？仍被文章（含回收站）引用的文件无法删除。`,
+      `删除文件「${row.originalName}」？仍被文章（含回收站）或音乐（含隐藏曲目）引用的文件无法删除。`,
       '删除文件',
       { confirmButtonText: '删除', cancelButtonText: '取消' },
     )
@@ -108,7 +114,7 @@ const batchActions = computed(() => {
       revision: false,
       fileResults: true,
       danger: true,
-      warning: '文件将逐项清理，仍被文章引用的文件不会删除；每个文件的结果会单独显示。',
+      warning: '文件将逐项清理，仍被文章或音乐引用的文件不会删除；每个文件的结果会单独显示。',
     })
   }
   return actions
@@ -121,10 +127,10 @@ const batchActions = computed(() => {
       <div>
         <p class="eyebrow">CONTENT / FILES</p>
         <h1>文件管理</h1>
-        <p class="muted-text">安全管理图片附件，文件访问由后端核验授权。</p>
+        <p class="muted-text">管理图片、音频和歌词，文件访问由后端核验授权。</p>
       </div>
       <div>
-        <input ref="input" type="file" accept="image/png,image/jpeg" hidden @change="upload" />
+        <input ref="input" type="file" :accept="Object.values(fileAccept).join(',')" hidden @change="upload" />
         <el-button
           v-if="can('blog:file:upload')"
           type="primary"
@@ -132,7 +138,7 @@ const batchActions = computed(() => {
           @click="input.click()"
         >
           <AdminIcon name="plus" />
-          上传图片
+          上传文件
         </el-button>
       </div>
     </div>
@@ -154,12 +160,18 @@ const batchActions = computed(() => {
         />
         <el-select
           v-model="filters.mimeType"
-          aria-label="图片格式"
+          aria-label="文件格式"
           placeholder="全部格式"
           clearable
         >
           <el-option label="PNG" value="image/png" />
           <el-option label="JPEG" value="image/jpeg" />
+          <el-option label="MP3" value="audio/mpeg" />
+          <el-option label="WAV" value="audio/wav" />
+          <el-option label="OGG" value="audio/ogg" />
+          <el-option label="FLAC" value="audio/flac" />
+          <el-option label="LRC / TXT" value="text/plain" />
+          <el-option label="JSON 歌词" value="application/json" />
         </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
@@ -169,7 +181,7 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>文件列表</h2>
-        <span class="muted-text">PNG / JPEG · 单张不超过 10 MiB</span>
+        <span class="muted-text">图片 ≤10 MiB · MP3/WAV/OGG/FLAC ≤60 MiB · UTF-8 LRC/TXT/JSON ≤1 MiB</span>
       </div>
             <BatchActions
         ref="batch" resource="/admin/files" id-key="fileId"
@@ -216,7 +228,18 @@ const batchActions = computed(() => {
       />
     </el-card>
     <el-dialog v-model="previewVisible" :title="imageName" width="760px" @closed="releaseImage">
-      <img v-if="imageUrl" :src="imageUrl" :alt="imageName" class="file-preview" />
+      <img v-if="imageUrl && previewType.startsWith('image/')" :src="imageUrl" :alt="imageName" class="file-preview" />
+      <audio v-else-if="imageUrl && previewType.startsWith('audio/')" :src="imageUrl" controls :aria-label="imageName" />
+      <pre v-else class="lyric-preview">{{ previewText }}</pre>
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.lyric-preview {
+  max-height: 480px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>

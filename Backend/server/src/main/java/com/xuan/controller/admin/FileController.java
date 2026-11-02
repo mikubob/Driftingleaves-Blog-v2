@@ -13,6 +13,8 @@ import com.xuan.vo.BatchFileResultsVO;
 import com.xuan.vo.FileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,7 +31,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 后台文件元数据、上传和原图入口，图片通过 Bearer fetch 后再显示临时 object URL。
+ * 后台文件元数据、上传和内容入口，私密文件通过 Bearer fetch 后再预览。
  */
 @RestController
 @RequiredArgsConstructor
@@ -63,8 +65,8 @@ public class FileController {
     /** 本人原文件预览与文章公开无关，内容响应不包 Result。 */
     @GetMapping("/admin/files/{fileId}/content")
     @SaCheckPermission("blog:file:query")
-    public ResponseEntity<byte[]> original(@PathVariable String fileId) {
-        return image(files.original(IdUtils.parse(fileId)));
+    public ResponseEntity<Resource> original(@PathVariable String fileId) {
+        return content(files.original(IdUtils.parse(fileId)));
     }
 
     /** 单个和多个目标共用入口，权限、版本及失败结果由业务层统一处理。 */
@@ -77,17 +79,21 @@ public class FileController {
     /** 两项 query 权限及各自范围都要满足，文章还必须真正引用该文件。 */
     @GetMapping("/admin/articles/{articleId}/files/{fileId}/content")
     @SaCheckPermission({"blog:article:query", "blog:file:query"})
-    public ResponseEntity<byte[]> attachment(@PathVariable String articleId, @PathVariable String fileId) {
-        return image(files.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), true));
+    public ResponseEntity<Resource> attachment(@PathVariable String articleId, @PathVariable String fileId) {
+        return content(files.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), true));
     }
 
-    /** 返回已读完的原图，文件名只进安全编码头，所有图片都禁止缓存和 MIME 猜测。 */
-    private ResponseEntity<byte[]> image(FileContent value) {
-        return ResponseEntity.ok().contentType(MediaType.parseMediaType(value.mimeType()))
+    /** Resource 由 Spring MVC 处理 Range/206/416，字节已在权限和业务锁内读取完成。 */
+    private ResponseEntity<Resource> content(FileContent value) {
+        MediaType type = MediaType.parseMediaType(value.mimeType());
+        if (value.mimeType().startsWith("text/")) {
+            type = new MediaType(type, StandardCharsets.UTF_8);
+        }
+        return ResponseEntity.ok().contentType(type)
                 .contentLength(value.bytes().length).header("Cache-Control", "no-store")
                 .header("X-Content-Type-Options", "nosniff")
                 .header("Content-Disposition",
                         ContentDisposition.inline().filename(value.name(), StandardCharsets.UTF_8).build().toString())
-                .body(value.bytes());
+                .body(new ByteArrayResource(value.bytes()));
     }
 }

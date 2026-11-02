@@ -20,10 +20,10 @@ public class PublicCacheSerializer implements RedisSerializer<Object> {
     /** 按当前公开方法声明的返回类型读取，不启用任意类型反序列化。 */
     @Override
     public Object deserialize(byte[] bytes) {
-        var frame = PublicCacheScope.current();
+        var frame = PublicCacheContext.current();
         if (frame == null) {
             throw new SerializationException("缓存读取缺少公开查询类型");
         }
-        return bytes == null || bytes.length == 0 ? null : json.readValue(bytes, json.constructType(frame.type));
+        return bytes == null || bytes.length == 0 ? null : json.readValue(bytes, json.constructType(frame.type()));
     }
 }

@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
@@ -12,14 +11,15 @@ import com.xuan.entity.BlogFriendLink;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.FriendLinkMapper;
 import com.xuan.mapper.UserMapper;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IFriendLinkService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +50,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     /** 获取展示中的友链，排序相同时按 ID 排，不返回后台状态和时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "links", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "links", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<LinkPublicVO> publicLinks(PageQueryDTO query) {
         return PageResult.from(links.linkPage(new Page<>(query.page(), query.pageSize()), null, true)
                 .convert(row -> new LinkPublicVO(row.getLinkId(), row.getLinkName(), row.getUrl(),
@@ -179,7 +179,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @OperationLog(type = "batch-delete", target = "blog:link", permission = "blog:link:delete")
     @CacheEvict(cacheNames = "links", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

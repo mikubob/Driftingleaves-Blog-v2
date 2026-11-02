@@ -89,7 +89,7 @@
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-redis-template</artifactId>
         </dependency>
-        <!-- 平台客户端运行时需要 JustAuth，集成测试也会实际检查它的 state 和身份解析 API。 -->
+        <!-- 平台客户端运行时需要 JustAuth，用于第三方身份解析。 -->
         <dependency>
             <groupId>me.zhyd.oauth</groupId>
             <artifactId>JustAuth</artifactId>
@@ -104,18 +104,6 @@
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <scope>provided</scope>
-        </dependency>
-        <!-- 应用测试的基础工具只在测试时使用。 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- 用 Boot 4 MVC 和 MockMvc 测试实际接口。 -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webmvc-test</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

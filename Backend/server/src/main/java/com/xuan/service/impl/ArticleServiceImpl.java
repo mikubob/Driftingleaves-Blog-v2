@@ -5,11 +5,6 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
-import com.xuan.content.ArticleResources;
-import com.xuan.content.ArticleResources.References;
-import com.xuan.content.CommentVisibility;
-import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
@@ -26,16 +21,22 @@ import com.xuan.mapper.ArticleMapper.CommentNode;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleFilter;
 import com.xuan.model.ArticleRow;
+import com.xuan.notification.SubscriptionNotifier;
+import com.xuan.policy.ArticleAttachmentPolicy;
+import com.xuan.policy.ArticleAttachmentPolicy.References;
+import com.xuan.policy.CommentVisibilityPolicy;
+import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IArticleService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.FileStore;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.MarkdownUtils.ArticleContent;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.ArchiveVO;
 import com.xuan.vo.ArticleAdminDetailVO;
 import com.xuan.vo.ArticleAdminVO;
@@ -79,12 +80,13 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
     private final ArticleMapper articles;
     private final ObjectProvider<IArticleService> self;
-    private final SubscriptionNotifications notifications;
+    private final SubscriptionNotifier notifications;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
-    private final ArticleResources resources;
+    private final ArticleAttachmentPolicy resources;
+    private final FileStore storage;
     private final JsonMapper json;
 
     /**
@@ -122,8 +124,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /** 集合及静态字段缓存经容器代理调用，当前互动数由外层事务补齐。 */
     @Override
     @Caching(cacheable = {
-            @Cacheable(cacheNames = "articles", key = "@publicCacheKeys.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
-            @Cacheable(cacheNames = "search", key = "@publicCacheKeys.key(#root.methodName, #root.args)", condition = "#query.keyword() != null && #query.page() <= 3 && #query.pageSize() <= 20")
+            @Cacheable(cacheNames = "articles", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
+            @Cacheable(cacheNames = "search", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() != null && #query.page() <= 3 && #query.pageSize() <= 20")
     })
     public PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> page = loadPublicArticles(query);
@@ -147,7 +149,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /** 作者发现只依赖 PUBLIC 文章，列表与 total 使用同一只读快照。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "authors", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query) {
         return PageResult.from(articles.authorPage(new Page<>(query.page(), query.pageSize()), now()));
     }
@@ -155,7 +157,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     /** 不能通过作者页判断没有公开作品的账号是否存在。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "authors", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public AuthorPublicVO publicAuthor(long userId) {
         AuthorPublicVO value = articles.publicAuthor(userId, now());
         if (value == null) {
@@ -231,7 +233,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "archives", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "archives", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<ArchiveVO> archives(int page, int pageSize) {
         return PageResult.from(articles.archives(new Page<>(page, pageSize), now()));
     }
@@ -532,7 +534,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "rankings", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "rankings", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<HotArticleVO> rankings(String period, String metric, int limit) {
         LocalDateTime at = now();
         YearMonth month = "month".equals(period) ? YearMonth.from(at) : null;
@@ -612,7 +614,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             if (file == null || articles.scopedFile(id, "SELF".equals(scope) ? actor : null) == null) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "引用文件不存在或不在文件权限范围内");
             }
-            resources.requireAvailable(file);
+            storage.requireAvailable(file);
         }
     }
 
@@ -861,7 +863,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     private long commentCount(long id) {
         List<CommentNode> nodes = articles.commentNodes(id);
-        Set<Long> visible = CommentVisibility.visible(nodes);
+        Set<Long> visible = CommentVisibilityPolicy.visible(nodes);
         return nodes.stream().filter(node -> node.getStatus() == 1 && visible.contains(node.getCommentId())).count();
     }
 
@@ -904,7 +906,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             @CacheEvict(cacheNames = "comments", allEntries = true)
     })
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "publish");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -928,7 +930,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             long id = IdUtils.parse(item.id());
             versions.put(id, changeStatus(id, status, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
     /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
@@ -950,7 +952,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             @CacheEvict(cacheNames = "comments", allEntries = true)
     })
     public void recycleBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "delete");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -982,7 +984,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             @CacheEvict(cacheNames = "comments", allEntries = true)
     })
     public BatchVersionsVO restoreBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "restore");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -997,7 +999,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             long id = IdUtils.parse(item.id());
             versions.put(id, restore(id, item.revision()).revision());
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
     /** 锁定并核验整批目标后执行，结果按原始选择顺序返回。 */
@@ -1019,7 +1021,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             @CacheEvict(cacheNames = "comments", allEntries = true)
     })
     public void purgeBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "purge");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());

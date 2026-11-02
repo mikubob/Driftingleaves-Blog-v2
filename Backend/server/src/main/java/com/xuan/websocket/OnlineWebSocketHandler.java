@@ -2,6 +2,7 @@ package com.xuan.websocket;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.model.OnlineBinding;
+import com.xuan.policy.OnlineIdentityPolicy;
 import com.xuan.store.OnlineTicketStore;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -40,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 @RequiredArgsConstructor
 public class OnlineWebSocketHandler extends TextWebSocketHandler {
     private final OnlineTicketStore tickets;
-    private final OnlineIdentity identities;
+    private final OnlineIdentityPolicy identities;
     private final JsonMapper json;
     private final Clock clock;
     private final Map<String, Member> members = new LinkedHashMap<>();

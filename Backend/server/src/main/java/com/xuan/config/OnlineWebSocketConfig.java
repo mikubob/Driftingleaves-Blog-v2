@@ -1,7 +1,7 @@
 package com.xuan.config;
 
+import com.xuan.interceptor.OnlineHandshakeInterceptor;
 import com.xuan.properties.AuthProperties;
-import com.xuan.websocket.OnlineHandshake;
 import com.xuan.websocket.OnlineWebSocketHandler;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +15,7 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 @RequiredArgsConstructor
 public class OnlineWebSocketConfig implements WebSocketConfigurer {
     private final OnlineWebSocketHandler handler;
-    private final OnlineHandshake handshake;
+    private final OnlineHandshakeInterceptor handshake;
     private final AuthProperties auth;
 
     /** {@inheritDoc} */

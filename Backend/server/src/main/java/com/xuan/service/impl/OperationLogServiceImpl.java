@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.OperationLogQueryDTO;
 import com.xuan.entity.SysOperationLog;
 import com.xuan.exception.BusinessException;
@@ -14,6 +13,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IOperationLogService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.vo.OperationLogDetailVO;
@@ -100,7 +100,7 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:log", permission = "sys:log:delete")
     public void deleteBatch(List<String> ids) {
-        var sorted = BatchInputs.ids(ids);
+        var sorted = BatchUtils.ids(ids);
         for (long id : sorted) {
             users.lockById(sessions.currentUserId());
             requireAdmin("delete");

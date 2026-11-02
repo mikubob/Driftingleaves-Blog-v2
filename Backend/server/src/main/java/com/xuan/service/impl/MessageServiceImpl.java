@@ -5,9 +5,6 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.annotation.RateLimit;
-import com.xuan.batch.BatchInputs;
-import com.xuan.content.MessageVisibility;
-import com.xuan.content.SubscriptionNotifications;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
@@ -24,11 +21,14 @@ import com.xuan.mapper.UserMapper;
 import com.xuan.model.MessageNode;
 import com.xuan.model.MessageRow;
 import com.xuan.model.ResourceVersion;
+import com.xuan.notification.SubscriptionNotifier;
+import com.xuan.policy.MessageVisibilityPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMessageService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.QueryTimeUtils;
@@ -76,7 +76,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
-    private final SubscriptionNotifications notifications;
+    private final SubscriptionNotifier notifications;
     private final JsonMapper json;
     private final Clock clock;
     private final IpLocationResolver locations;
@@ -88,13 +88,13 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         Long viewer = sessions.currentToken() == null ? null : requireMember(null);
         Long parent = IdUtils.parse(query.parentId());
         List<MessageNode> nodes = messages.nodes();
-        Map<Long, MessageNode> index = MessageVisibility.index(nodes);
-        if (parent != null && !MessageVisibility.visible(parent, index, viewer)) {
+        Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
+        if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
             throw missing();
         }
         // shortcut: 当前沿用评论的轻量父链读取方式，留言量使扫描不可接受时再演进父链查询。
         List<Long> visible = nodes.stream().filter(node -> Objects.equals(parent, node.getParentId()))
-                .filter(node -> MessageVisibility.visible(node.getMessageId(), index, viewer))
+                .filter(node -> MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer))
                 .map(MessageNode::getMessageId).toList();
         int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
         List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
@@ -345,7 +345,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             return;
         }
         BlogMessage target = path.getLast();
-        if (!admin && !MessageVisibility.visible(target.getMessageId(), MessageVisibility.index(messages.nodes()),
+        if (!admin && !MessageVisibilityPolicy.visible(target.getMessageId(), MessageVisibilityPolicy.index(messages.nodes()),
                 actor)) {
             throw missing();
         }
@@ -507,7 +507,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:message", permission = "blog:message:review")
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         Set<Long> selected = new HashSet<>();
         for (var item : items) {
             selected.add(IdUtils.parse(item.id()));
@@ -544,7 +544,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             }
             versions.put(id, revision(required(messages.scoped(id, null))));
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
     /** 全部显式目标先检查存在性，再清理重叠分支，保留未选中的祖先和兄弟。 */
@@ -552,7 +552,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:message", permission = "blog:message:moderate")
     public void deleteBatch(List<String> ids) {
-        var sorted = BatchInputs.ids(ids);
+        var sorted = BatchUtils.ids(ids);
         for (long id : sorted) {
             lockAdmin(id, "moderate");
             required(messages.scoped(id, null));

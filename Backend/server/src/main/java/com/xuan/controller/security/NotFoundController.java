@@ -2,7 +2,7 @@ package com.xuan.controller.security;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
-import com.xuan.ratelimit.NotFoundGuard;
+import com.xuan.ratelimit.NotFoundRateLimiter;
 import com.xuan.result.Result;
 import com.xuan.utils.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
@@ -17,7 +17,7 @@ import java.io.IOException;
 @RequiredArgsConstructor
 public class NotFoundController {
 
-    private final NotFoundGuard guard;
+    private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
 
     /** 来源和无参数约定通过后，和后端真实 404 共用同一个窗口。 */

@@ -513,14 +513,14 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 | 模型 | 字段与约束 |
 | --- | --- |
-| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"local"（默认）或"oss"（显式启用后新上传）、createTime:Time、previewUrl:string（后台内容接口，非公开直链） |
+| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口，非公开直链） |
 | Upload | multipart只有file，单个、非空；不接uploaderId、文件路径、bucket、objectKey、isPublic |
 
-设计决定：首期只允许PNG/JPEG图片，单文件≤10MiB、单次multipart总大小≤11MiB；扩展名白名单`.png/.jpg/.jpeg`必须与服务端内容识别一致，不信Content-Type。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。图片不承诺压缩转码；以后有其他附件需求再明确类型及校验契约。
+支持PNG/JPEG图片≤10MiB，MP3/WAV/OGG/FLAC音频≤60MiB，UTF-8 LRC/TXT/JSON歌词≤1MiB；单次multipart总大小≤61MiB。扩展名必须与服务端内容识别一致，不信Content-Type。音频检查容器及首个音频头（WAV使用JDK音频解析），不承诺对整首曲目解码或转码；浏览器需支持对应编码。MP3检查ID3后的MPEG Layer III帧头和帧长度，OGG限Vorbis/Opus。歌词拒绝空文本、非法UTF-8和除换行/回车/Tab外的控制字符；LRC必须含有效时间标签，JSON行结构见12.11。MIME依次为image/png、image/jpeg、audio/mpeg、audio/wav、audio/ogg、audio/flac、text/plain（LRC/TXT）、application/json（JSON）。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。新上传校验并解码一次后按 app.image.compress 压缩，默认启用、目标500KiB、JPEG起始质量0.9、最长边2560px；保留PNG/JPEG格式和PNG透明通道，只采用更小的产物。JPEG每轮从同一像素源编码，最低质量0.3；PNG无损编码，不通过降质量反复尝试。大小和最长边是优化目标，结果未缩小时保留原字节，不能承诺都达到目标。不另存原图，关闭压缩时原样存储；历史对象不重写。本次不扩展其他附件类型。
 
-原文件名仅展示，移除路径分隔符/控制字符，结果空或>255报400；服务端生成ASCII随机object_key（≤512），normalize后的绝对路径必须仍位于上传根目录内，防目录穿越和符号链接越界。存储根目录不能被Nginx/静态资源映射公开。File模型不返回bucket/objectKey/磁盘路径。
+原文件名仅展示，移除路径分隔符/控制字符，结果空或>255报400；服务端生成ASCII object_key（≤512），按分类目录/随机文件名组织。PNG/JPEG存入image、音频存入audio、LRC存入lyric、TXT/JSON存入text目录；OSS对象键为专属前缀/分类/随机文件名，本地对象键为分类/随机文件名。normalize后的绝对路径必须仍位于上传根目录内，防目录穿越和符号链接越界。不接收旧版无分类目录的对象键。存储根目录不能被Nginx/静态资源映射公开。File模型不返回bucket/objectKey/磁盘路径。
 
-成功内容响应为原始文件字节，非Result：`Content-Type`取服务端确认的image/png或image/jpeg、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。首期不支持Range/分片/断点上传，忽略Range返回完整200；文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。失败仍返回对应HTTP的JSON Result。前端携带Bearer fetch后台内容并用临时object URL预览，不能把Token拼接进img URL。
+成功内容响应为实际存储的文件字节（图片可能已压缩），非Result：`Content-Type`取服务端确认的MIME，文本附UTF-8 charset、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。读取以Spring MVC Resource响应支持Range：完整200、有效范围206（含Content-Range）、不可满足范围416；不支持分片或断点上传。文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。业务失败仍返回对应HTTP的JSON Result；Range错误由Spring MVC处理。前端携带Bearer fetch后台内容，以临时object URL预览图片/音频，歌词以纯文本预览，不能把Token拼接进img URL。
 
 <a id="model-12-9"></a>
 
@@ -576,7 +576,7 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 
 ### 12.11 音乐模型
 
-实施状态：第17章6个入口已接通播放列表与后台元数据维护；歌词组合、无符号32位整数秒及外部URL实际校验。现有文件业务仍仅支持PNG/JPEG，不抓取或删除外部媒体。
+实施状态：播放列表与后台元数据维护已接入共用文件上传；音频、封面、歌词支持受管读取路径或外部HTTP(S)地址。歌词组合、无符号32位整数秒及文件类型实际校验，不抓取或删除外部媒体。
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
@@ -584,7 +584,15 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 | `Music` | `musicId`:ID（音乐ID）；`title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `MusicPublic` | `musicId`:ID（音乐ID）；`title`:S(200)（曲目标题）；`artist`:S(200)?（作者或歌手）；`durationSeconds`:integer&#124;null（0..4294967295秒，未知为null）；`coverUrl`:URL?（外部HTTP(S)封面）；`audioUrl`:URL（外部HTTP(S)音频URL；保存不触发服务端下载）；`lyricUrl`:URL?（歌词URL；无歌词时为null）；`lyricType`:string&#124;null（lrc/json/txt；必须与lyricUrl同时为空或同时非空）；`sortOrder`:int32（越小越靠前） |
 
-lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/json/txt；是否有歌词由URL判断。播放列表只返回status=1，sortOrder ASC,musicId ASC。所有媒体URL为外部HTTP(S)资源，不接受本站附件API路径、磁盘路径或任意脚本；服务器不下载或代理探测URL。现有文件接口仍只上传PNG/JPEG，新增曲目不意味着支持音频/歌词本地上传。删除曲目只删除元数据。
+lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/json/txt；是否有歌词由URL判断。播放列表只返回status=1，sortOrder ASC,musicId ASC。三个媒体字段允许外部HTTP(S)资源，或规范路径 `/api/v1/blog/music/files/{fileId}/content`；配置为本站origin的相同绝对地址保存为该相对路径。其余本站附件路径、磁盘路径和脚本均拒绝，服务器不下载或代理探测外部URL。表中音乐媒体字段是上述规则的URL特例。删除曲目只删除元数据，文件仍由文件管理清理。
+
+上传继续使用 `POST /admin/files` 的唯一 multipart `file` 部件及 `blog:file:upload` 权限，不增设上传接口或存储系统。支持格式、MIME和大小见12.8；上传响应的 `previewUrl` 是需Bearer的后台原文件接口。管理端上传成功后把fileId组成上述音乐路径填入表单，保存曲目时才建立引用；未保存或已替换的上传文件可从文件管理手动清理。
+
+保存受管引用先锁操作者，再升序锁所引用文件，最后锁音乐（创建时直接插入）。锁后复核原Token、音乐操作的ALL权限、文件query的独立ALL/SELF范围，以及封面为图片、音频为audio、歌词扩展名与lyricType一致、存储对象可用。原有If-Revision、事务、审计和播放列表缓存失效保持。文件删除在持文件锁时检查全部状态的音乐三个字段和原有全部文章引用，仍引用返回409/RESOURCE_IN_USE，包括隐藏音乐。
+
+新增 `GET /blog/music/files/{fileId}/content`，不接受查询参数或请求体。只在至少一首status=1曲目实际引用该路径时匿名读取；文件锁早于音乐行锁。没有公开引用（含仅隐藏引用）、越界或缺失统一404/NOT_FOUND，存储故障503。管理员Token不会放宽公开条件；隐藏文件预览使用既有 `GET /admin/files/{fileId}/content`，独立检查文件query及上传者范围。共享文件仍被其他展示曲目引用时保持公开。
+
+前台原生audio播放受管或外部音频；打开播放面板后匿名加载歌词，切歌或关闭面板取消请求。LRC支持多时间标签、毫秒和offset（正值提前）；JSON形状为 `[{"time":0,"text":"歌词"}]`，time为非负有限秒数；TXT保留全文。JSON/LRC按时间展示当前行，TXT按纯文本展示。外部歌词同样要求UTF-8且≤1MiB，并需外站允许浏览器CORS；失败显示错误与重试，不影响音频播放。
 
 <a id="model-12-12"></a>
 
@@ -712,15 +720,15 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 
 私密/草稿/下架/回收站附件不得通过前台路径读取，即使持有Token也404。通过后台文章上下文读取时同时满足文章和文件权限范围；只允许文章作者身份不等于已获跨用户文件权限。上传者本人的后台原文件预览与文章公开状态无关。文件表没有独立可变资源，删除不要求If-Revision，但必须执行[文件存储一致性](#file-consistency)引用检查及锁。
 
-设计决定：本站附件引用仅支持Markdown链接/图片和文章coverUrl，规范路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`；必须是当前文章articleId，不能指向另一篇文章的上下文。创建草稿后取得articleId，再上传/编辑引用；POST新文章不能附带未知articleId的本站文件URL。后端解析Markdown语法树（含清理后保留的HTML链接/图片）和coverUrl确认引用集合，不以文本随意包含数字作为引用证据。相同路径的绝对本站URL归一成规范相对路径；其余本站文件路径/编码绕过/存储直链拒绝，外部URL不映射为内部文件。
+文章附件引用支持Markdown链接/图片和文章coverUrl，规范路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`；必须是当前文章articleId，不能指向另一篇文章的上下文。创建草稿后取得articleId，再上传/编辑引用；POST新文章不能附带未知articleId的本站文件URL。后端解析Markdown语法树（含清理后保留的HTML链接/图片）和coverUrl确认引用集合，不以文本随意包含数字作为引用证据。相同路径的绝对本站URL归一成规范相对路径；其余本站文件路径/编码绕过/存储直链拒绝，外部URL不映射为内部文件。
 
 文章写入时，每个引用必须存在，写作者须有`blog:file:query`及对应文件范围；不能通过引用他人私密文件让其公开。发布时再检查所有引用可用。前台HTML保留上述公开上下文；后台详情HTML将这些路径改为相应`/admin/articles/.../content`，前端需Bearer fetch后替换临时object URL，原始Markdown不改写。一个文件被多篇文章引用时，只要某篇PUBLIC且确实引用，就可从该篇上下文公开读取；**需要私密隔离时必须另传一份文件，不能在公开文章复用同一fileId**。修改/撤销引用或下架后立即按当前状态鉴权。
 
-头像、友链图标、配置、主页与简历图标、音乐元数据均不接受本站附件API路径（包括等价绝对URL），仅用外部http(s)资源；不新增文件用途/公开状态字段。不能把私密附件URL粘贴进头像或公开配置实现匿名访问。
+音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链图标、配置、主页与简历图标仍不接受本站附件API路径（包括等价绝对URL），仅用外部http(s)资源；不新增文件用途/公开状态字段。不能把私密附件URL粘贴进头像或公开配置实现匿名访问。
 
 先写临时文件并完成校验，再原子移动为随机最终存储键，最后插入元数据并提交；任一步失败不得返回File成功结果，数据库写失败时删除刚写文件，补偿失败记录运维错误以清理孤立对象。没有成功元数据的存储对象永不通过API读取。
 
-删除在持有文件行锁时查所有文章（含私密、草稿、回收站）的Markdown/cover引用，仍有引用返回409。扫描应按批次解析现有文章元数据/正文表，不增文件引用表；数据量增长导致扫描不可接受时再单独演进引用模型，不能只扫描公开HTML缓存。所有文章创建/编辑/删除引用同时锁定涉及文件行，保证引用新增和文件删除互斥；多文件按fileId升序，先锁文件再锁文章，复读文章并校验X-Revision。实现不得只“先查一次再删”而允许并发插入引用。
+删除在持有文件行锁时检查全部状态音乐的音频/封面/歌词引用，再查所有文章（含私密、草稿、回收站）的Markdown/cover引用，仍有引用返回409。扫描应按批次解析现有文章元数据/正文表，不增文件引用表；数据量增长导致扫描不可接受时再单独演进引用模型，不能只扫描公开HTML缓存。所有文章创建/编辑/删除引用同时锁定涉及文件行，保证引用新增和文件删除互斥；多文件按fileId升序，先锁文件再锁文章，复读文章并校验X-Revision。实现不得只“先查一次再删”而允许并发插入引用。
 
 无引用才删除存储对象，确认删除成功/对象已不存在后删除元数据；存储失败保留元数据返回503，可再次DELETE。存储已删而数据库提交失败时元数据暂保留，读取返回503并记录异常，重试删除允许完成清理；不伪称跨文件系统/MySQL事务原子。上传记录存在但对象缺失同样不返回空文件成功。
 
@@ -787,7 +795,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | PersonalInfo/SocialMedia、Experience/Skill控制器及Service | 第15章；单站主人资料、社交链接、教育/工作/项目经历、技能；公开资料与登录资料分开 |
 | ArticleController、ArticleServiceImpl、ArticleMapper.xml | 第7章；筛选与搜索复用列表，保留详情字数、阅读时长、上下篇、同分类推荐；4榜合并到article-rankings参数 |
 | MessageController/MessageServiceImpl及最终实施契约 | 第16章；登录用户归属替代visitorToken，逐层有界分页替代整树展开，按子到父物理删除目标及全部后代，不改挂回复 |
-| MusicController/MusicServiceImpl | 第17章；曲目与歌词元数据、排序/隐藏；当前只接受外部媒体URL，不扩大图片上传类型 |
+| MusicController/MusicServiceImpl | 第17章；曲目与歌词元数据、排序/隐藏；共用文件上传、受管音乐读取与外部媒体URL |
 | RssSubscriptionController/ServiceImpl、RssFeedController、SitemapController | 第18章；邮箱确认、本人状态与退订、邮件退订票据、RSS/XML输出；不采用旧JWT或visitorId授权 |
 | Visitor/View/Report控制器、ReportServiceImpl与Mapper | 第19章；统计标识不作为身份，明细与PV/UV分开，数组报表替代逗号字符串；区间累计新访客明确定义 |
 | OperationLogController与旧操作日志模型 | 第20章；本站用户与权限码快照，日志只读及显式清理，无任意请求体落库 |

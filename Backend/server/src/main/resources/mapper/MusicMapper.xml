@@ -24,4 +24,15 @@
         cover_url=#{row.coverUrl}, audio_url=#{row.audioUrl}, lyric_url=#{row.lyricUrl}, lyric_type=#{row.lyricType},
         sort_order=#{row.sortOrder}, status=#{row.status} WHERE music_id = #{row.musicId}
     </update>
+
+    <select id="hasFileReference" resultType="boolean">
+        SELECT EXISTS(SELECT 1 FROM blog_music
+        WHERE cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
+    </select>
+
+    <select id="lockPublicFileReference" resultType="com.xuan.entity.BlogMusic">
+        SELECT * FROM blog_music WHERE status = 1
+        AND (cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
+        ORDER BY music_id LIMIT 1 FOR UPDATE
+    </select>
 </mapper>

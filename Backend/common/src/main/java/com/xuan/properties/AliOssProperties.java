@@ -8,7 +8,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import java.net.URI;
 
 /**
- * OSS 默认关闭，启用后再检查配置；不要生成会暴露密钥的 toString。
+ * OSS 开关由环境配置决定，启用后再检查配置；不要生成会暴露密钥的 toString。
  */
 @Getter
 @Setter

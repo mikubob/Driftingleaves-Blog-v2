@@ -4,7 +4,6 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminEmailCodeDTO;
 import com.xuan.dto.AdminLoginDTO;
@@ -25,20 +24,21 @@ import com.xuan.entity.SysUser;
 import com.xuan.entity.SysUserOauth;
 import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
-import com.xuan.properties.AuthProperties;
 import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.OAuthBindingMapper;
 import com.xuan.mapper.UserMapper;
+import com.xuan.policy.UrlPolicy;
+import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.store.EmailCodeStore;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.IpUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MeVO;
@@ -276,7 +276,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         for (long userId : revoked) {
             sessions.revokeAll(userId);
         }
-        return BatchInputs.versions(items, versions);
+        return BatchUtils.versions(items, versions);
     }
 
     /** {@inheritDoc} 用户锁阻止新增外键引用，所有引用检查完成后才开始删除。 */
@@ -323,7 +323,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         requireAdmin(permission);
 
         Map<Long, SysUser> targets = new LinkedHashMap<>();
-        for (BatchItemDTO item : BatchInputs.sorted(items)) {
+        for (BatchItemDTO item : BatchUtils.sorted(items)) {
             long userId = IdUtils.parse(item.id());
             SysUser user = locked.get(userId);
             if (user == null) {

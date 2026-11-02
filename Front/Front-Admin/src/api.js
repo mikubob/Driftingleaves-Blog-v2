@@ -58,7 +58,7 @@ function validateNumbers(value, key = '') {
 
 /** 统一处理鉴权、Result、版本及限流；失败请求不自动重放。 */
 export async function request(path, { body, revision, captcha, blob = false, ...options } = {}) {
-  const headers = new Headers({ Accept: blob ? 'image/png, image/jpeg' : 'application/json' })
+  const headers = new Headers({ Accept: blob ? '*/*' : 'application/json' })
   setCaptchaHeaders(headers, captcha)
   if (accessToken) {
     headers.set('Authorization', `Bearer ${accessToken}`)
@@ -96,11 +96,12 @@ export async function request(path, { body, revision, captcha, blob = false, ...
     throw reportRequestFailure(new ApiError(message, 429, 'RATE_LIMITED'), path)
   }
   if (blob && response.ok) {
-    const image = await response.blob()
-    if (!['image/png', 'image/jpeg'].includes(image.type)) {
-      throw new Error('文件响应不是可预览的 PNG/JPEG 图片。')
+    const file = await response.blob()
+    if (!['image/png', 'image/jpeg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac',
+      'text/plain', 'application/json'].includes(file.type.split(';')[0])) {
+      throw new Error('文件响应类型不受支持。')
     }
-    return { data: image }
+    return { data: file }
   }
   let result
   try {
@@ -193,8 +194,8 @@ export async function getOptions(path, params = {}, signal) {
   }
 }
 
-/** 私密图片只从已知 API 路径携带 Bearer 读取，不向外部 URL 发送 Token。 */
-export async function getImage(path, signal) {
+/** 私密文件只从已知 API 路径携带 Bearer 读取，不向外部 URL 发送 Token。 */
+export async function getFile(path, signal) {
   const prefix = '/api/v1'
   if (
     !/^\/api\/v1\/admin\/(?:files\/[1-9]\d*|articles\/[1-9]\d*\/files\/[1-9]\d*)\/content$/.test(
@@ -204,5 +205,14 @@ export async function getImage(path, signal) {
     throw new Error('不支持的后台文件地址。')
   }
   const { data } = await request(path.slice(prefix.length), { blob: true, signal })
+  return data
+}
+
+/** 正文图片仍只允许图片 Blob，调用方负责释放临时地址。 */
+export async function getImage(path, signal) {
+  const data = await getFile(path, signal)
+  if (!['image/png', 'image/jpeg'].includes(data.type)) {
+    throw new Error('文件响应不是可预览的 PNG/JPEG 图片。')
+  }
   return URL.createObjectURL(data)
 }

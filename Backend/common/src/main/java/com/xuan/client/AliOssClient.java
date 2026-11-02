@@ -8,6 +8,7 @@ import com.aliyun.oss.model.ObjectMetadata;
 import com.aliyun.oss.model.PutObjectRequest;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AliOssProperties;
+import com.xuan.utils.FileUtils;
 import com.xuan.utils.TokenUtils;
 
 import java.io.ByteArrayInputStream;
@@ -33,19 +34,18 @@ public class AliOssClient {
     /**
      * 上传已经过业务检查的文件；类型、归属和数据库失败后的补偿仍由文件业务处理。
      *
-     * @param bytes 非空文件内容，不超过当前 10MiB 文件大小约定
-     * @param extension 已与内容识别一致的 png、jpg 或 jpeg，不使用原文件名
-     * @return 专属前缀下的随机对象键，只有确认上传成功才返回
+     * @param bytes 非空且已按类型限长的文件内容
+     * @param extension 已与内容识别一致的受支持扩展名，不使用原文件名
+     * @return 专属前缀/分类目录/随机文件名，只有确认上传成功才返回
      */
     public String upload(byte[] bytes, String extension) {
-        if (bytes == null || bytes.length == 0 || bytes.length > 10 * 1024 * 1024
-                || !("png".equals(extension) || "jpg".equals(extension) || "jpeg".equals(extension))) {
+        if (bytes == null || bytes.length == 0 || bytes.length > FileUtils.maxBytes(extension)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "文件大小或扩展名不符合要求");
         }
-        String key = prefix + TokenUtils.random() + "." + extension;
+        String key = prefix + FileUtils.getFileCategory(extension) + "/" + TokenUtils.random() + "." + extension;
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(bytes.length);
-        metadata.setContentType("png".equals(extension) ? "image/png" : "image/jpeg");
+        metadata.setContentType(FileUtils.mimeType(extension));
         // 新对象一律设为私有，避免继承公开读取设置；不改 Bucket 或已有对象的 ACL。
         metadata.setObjectAcl(CannedAccessControlList.Private);
         try {
@@ -106,7 +106,7 @@ public class AliOssClient {
     /** 先检查完整对象键再调用 SDK，不靠解码或整理路径来接收含糊的输入。 */
     private void requireKey(String key) {
         if (key == null || key.length() > 512 || !key.startsWith(prefix)
-                || !key.substring(prefix.length()).matches("[A-Za-z0-9_-]+\\.(?:png|jpg|jpeg)")) {
+                || !FileUtils.validObjectKey(key.substring(prefix.length()))) {
             throw new BusinessException(400, "VALIDATION_ERROR", "对象键不符合本站存储边界");
         }
     }

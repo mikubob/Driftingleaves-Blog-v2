@@ -2,7 +2,7 @@ package com.xuan.handle;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
-import com.xuan.ratelimit.NotFoundGuard;
+import com.xuan.ratelimit.NotFoundRateLimiter;
 import com.xuan.result.Result;
 import com.xuan.utils.IpUtils;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +21,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 @RequiredArgsConstructor
 public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
 
-    private final NotFoundGuard guard;
+    private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
 
     /** 统一响应在写出时再判断，不依赖方法声明是否包着 ResponseEntity。 */

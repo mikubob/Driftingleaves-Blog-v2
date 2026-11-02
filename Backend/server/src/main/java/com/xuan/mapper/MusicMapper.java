@@ -15,4 +15,10 @@ public interface MusicMapper extends BaseMapper<BlogMusic> {
     BlogMusic lockById(@Param("id") long id);
     /** 显式覆盖可空字段，不能让NULL被默认更新策略跳过。 */
     int replace(@Param("row") BlogMusic row);
+
+    /** 删除文件时检查全部状态，隐藏曲目的引用同样保留。 */
+    boolean hasFileReference(@Param("url") String url);
+
+    /** 文件锁后锁定一个当前公开引用，状态变化与读取按同一音乐行锁排序。 */
+    BlogMusic lockPublicFileReference(@Param("url") String url);
 }

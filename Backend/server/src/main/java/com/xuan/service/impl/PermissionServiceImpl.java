@@ -3,7 +3,6 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
@@ -17,6 +16,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IPermissionService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.PermissionProfileVO;
@@ -258,7 +258,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
         requireAdmin("sys:permission:delete");
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         Set<Long> affected = new TreeSet<>();
         for (var item : sorted) {
             affected.addAll(permissions.userIds(IdUtils.parse(item.id())));

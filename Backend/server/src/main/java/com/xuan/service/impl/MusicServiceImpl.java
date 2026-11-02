@@ -3,24 +3,26 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.batch.BatchInputs;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DisplayQueryDTO;
 import com.xuan.dto.MusicWriteDTO;
 import com.xuan.entity.BlogMusic;
 import com.xuan.exception.BusinessException;
+import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.MusicMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ResourceVersion;
+import com.xuan.policy.MusicAttachmentPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMusicService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.FileStore;
+import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.utils.UrlPolicy;
 import com.xuan.vo.MusicPublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -32,6 +34,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.TreeSet;
 
 /**
  * 展示与维护直接读同一张表，成功审计失败时资料一起回滚。
@@ -46,11 +49,14 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
+    private final MusicAttachmentPolicy resources;
+    private final FileStore storage;
+    private final ArticleMapper articles;
 
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    @Cacheable(cacheNames = "music", key = "@publicCacheKeys.key(#root.methodName, #root.args)", unless = "#result == null")
+    @Cacheable(cacheNames = "music", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<MusicPublicVO> publicItems(DisplayQueryDTO query) {
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
                 .convert(row -> new MusicPublicVO(row.getMusicId(), row.getTitle(), row.getArtist(),
@@ -83,6 +89,10 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         validate(request);
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
+        lockFiles(request);
+        requireAdmin("create");
+        validateFiles(request);
+        requireAdmin("create");
         BlogMusic row = new BlogMusic();
         assign(row, request);
         items.insert(row);
@@ -96,8 +106,15 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @CacheEvict(cacheNames = "music", allEntries = true)
     public ResourceVersion<BlogMusic> update(long id, MusicWriteDTO request, String revision) {
         validate(request);
-        BlogMusic row = lock(id, "update");
+        users.lockById(sessions.currentUserId());
+        requireAdmin("update");
+        lockFiles(request);
+        BlogMusic row = items.lockById(id);
+        requireAdmin("update");
+        requireItem(row);
         RevisionUtils.check(profile(row).revision(), revision);
+        validateFiles(request);
+        requireAdmin("update");
         assign(row, request);
         items.replace(row);
         return profile(items.selectById(id));
@@ -112,16 +129,54 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         deleteBatch(List.of(new BatchItemDTO(Long.toString(id), revision)));
     }
 
-    /** 地址只检查和保存，不下载媒体或删除外部对象。 */
+    /** 受管文件地址规范化；外部地址只检查和保存，不下载媒体。 */
     private void validate(MusicWriteDTO request) {
-        if (!UrlPolicy.valid(request.getCoverUrl())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+        request.setCoverUrl(resources.normalizeUrl(request.getCoverUrl()));
+        request.setAudioUrl(resources.normalizeUrl(request.getAudioUrl()));
+        request.setLyricUrl(resources.normalizeUrl(request.getLyricUrl()));
+    }
+
+    /** 新引用按 ID 升序加锁，始终早于音乐行锁，与文件删除共用锁。 */
+    private void lockFiles(MusicWriteDTO request) {
+        var ids = new TreeSet<Long>();
+        for (String url : Arrays.asList(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl())) {
+            Long id = resources.fileId(url);
+            if (id != null) {
+                ids.add(id);
+            }
         }
-        if (!UrlPolicy.valid(request.getAudioUrl())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+        for (long id : ids) {
+            articles.lockFile(id);
         }
-        if (!UrlPolicy.valid(request.getLyricUrl())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "媒体地址须为外部HTTP(S)资源");
+    }
+
+    /** 锁后独立复核文件 query 范围、媒体类型和对象可用性，不能借音乐 ALL 扩大文件权限。 */
+    private void validateFiles(MusicWriteDTO request) {
+        List<String> urls = Arrays.asList(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl());
+        for (int index = 0; index < urls.size(); index++) {
+            Long id = resources.fileId(urls.get(index));
+            if (id == null) {
+                continue;
+            }
+            long actor = identities.requireCurrent();
+            sessions.requireActive(sessions.currentToken(), actor);
+            String scope = authorization.requireScope(actor, "blog:file:query");
+            var file = articles.scopedFile(id, "ALL".equals(scope) ? null : actor);
+            if (file == null) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "引用文件不存在或不在文件权限范围内");
+            }
+            boolean typeMatches;
+            if (index == 0) {
+                typeMatches = file.getMimeType().startsWith("image/");
+            } else if (index == 1) {
+                typeMatches = file.getMimeType().startsWith("audio/");
+            } else {
+                typeMatches = file.getObjectKey().endsWith("." + request.getLyricType());
+            }
+            if (!typeMatches) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "引用文件类型与音乐字段或歌词格式不一致");
+            }
+            storage.requireAvailable(file);
         }
     }
 
@@ -179,7 +234,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @OperationLog(type = "batch-delete", target = "blog:music", permission = "blog:music:delete")
     @CacheEvict(cacheNames = "music", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
-        var sorted = BatchInputs.sorted(items);
+        var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();

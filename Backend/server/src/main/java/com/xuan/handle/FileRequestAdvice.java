@@ -25,8 +25,8 @@ public class FileRequestAdvice {
             return;
         }
         if ("POST /admin/files".equals(route)) {
-            if (request.getContentLengthLong() > 11 * 1024 * 1024) {
-                throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "multipart请求超过11MiB");
+            if (request.getContentLengthLong() > 61 * 1024 * 1024) {
+                throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "multipart请求超过61MiB");
             }
             if (request.getQueryString() != null || !(request instanceof MultipartHttpServletRequest multipart)
                     || !multipart.getParameterMap().isEmpty() || multipart.getMultiFileMap().size() != 1
