@@ -5,6 +5,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.annotation.PublicCacheRead;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
@@ -104,6 +105,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @PublicCacheRead({"articles", "search"})
     public PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
         List<ArticlePublicVO> records = cached.records().stream()
@@ -184,6 +186,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @PublicCacheRead("articleDetail")
     public ArticlePublicDetailVO publicDetail(String slug) {
         LocalDateTime at = now();
         ArticleRow row = requireArticle(articles.publicBySlug(slug, at, true));

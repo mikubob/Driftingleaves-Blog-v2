@@ -2,7 +2,7 @@
 import { computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPage, isId, pageNumber, request } from '@/api.js'
-import { articleView } from '@/api/presentation.js'
+import { articleView } from '@/shared/presentation.js'
 import { useResource } from '@/composables/useResource.js'
 import ArticleCard from '@/components/ArticleCard.vue'
 import SidebarCard from '@/components/SidebarCard.vue'

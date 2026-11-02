@@ -15,12 +15,12 @@
 | `view/Layout/index.vue` | 同路径；保留布局、页面过渡、返回顶部；改为 V2 加载与浏览采集 |
 | `components/BlogHeader.vue` | 保留透明导航、响应式菜单、搜索、主题和音乐播放器；链接与曲目改接 V2 |
 | `components/HeroBanner.vue` | 保留原横幅和背景资源 |
-| `components/ArticleCard.vue` | 保留原卡片模板和完整样式；通过 `api/presentation.js` 映射 V2 属性 |
+| `components/ArticleCard.vue` | 保留原卡片模板和完整样式；通过 `shared/presentation.js` 映射 V2 属性 |
 | `components/HomeTimeWidgets.vue` | 直接复用时钟、日历、黄历、时间进度组件及原样式 |
 | `components/SidebarCard.vue` | 保留资料、统计、分类/标签弹窗和 RSS 弹窗；改为账号订阅 |
 | `components/BlogFooter.vue` | 保留页脚布局；公开配置、版权展示名、RSS 和 Sitemap 地址来自 V2 |
 | `components/TableOfContents.vue` | 保留桌面/移动目录、阅读进度与锚点交互 |
-| `view/Home, Category, Tag, Archive, Hot, Links, About` | 保留原页面模板和样式，替换数据读取；归档按 V2 月份分页 |
+| `view/Home, Category, Tag, Archive, Hot, Links, About` | 分类与标签文章页合并至本项目 `view/Taxonomy/index.vue`，路由和样式保留；其余页面替换数据读取，归档按 V2 月份分页 |
 | `view/Article, Message` | 保留原正文、点赞动画、表单和布局；评论/留言行提取到 `DiscussionList.vue`，支持 V2 逐层回复分页 |
 | `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 迁入 `src/shared/`，继续用于原表单 |
 | `assets/styles`、`assets/font`、`assets/images/bgc.webp` | 直接复用原站样式、字体和背景 |

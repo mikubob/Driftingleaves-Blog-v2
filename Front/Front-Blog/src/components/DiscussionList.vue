@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { getPage, request } from '@/api.js'
-import { discussionView } from '@/api/presentation.js'
+import { discussionView } from '@/shared/presentation.js'
 import { session, can } from '@/session.js'
 import { useResource } from '@/composables/useResource.js'
 import { formatDate } from '@/format.js'

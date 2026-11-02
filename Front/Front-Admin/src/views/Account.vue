@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { clearSession, session } from '../session.js'
-import { nullable, validatePassword } from '../format.js'
+import { nullable, validatePassword } from '../form.js'
 import RequestError from '../components/RequestError.vue'
 
 const loading = ref(false)

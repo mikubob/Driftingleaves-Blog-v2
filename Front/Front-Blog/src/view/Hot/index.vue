@@ -2,7 +2,7 @@
 import { computed, inject, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request, queryString } from '@/api.js'
-import { articleView } from '@/api/presentation.js'
+import { articleView } from '@/shared/presentation.js'
 import { useResource } from '@/composables/useResource.js'
 import { formatDate } from '@/format.js'
 import SidebarCard from '@/components/SidebarCard.vue'

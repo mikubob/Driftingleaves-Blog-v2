@@ -11,8 +11,8 @@ export const router = createRouter({
       children: [
         { path: '', name: 'home', component: () => import('./view/Home/index.vue'), meta: { title: '博客' } },
         { path: 'articles/:slug', name: 'article', component: () => import('./view/Article/index.vue'), meta: { title: '文章' } },
-        { path: 'category/:slug', component: () => import('./view/Category/index.vue'), meta: { title: '分类' } },
-        { path: 'tag/:slug', component: () => import('./view/Tag/index.vue'), meta: { title: '标签' } },
+        { path: 'category/:slug', component: () => import('./view/Taxonomy/index.vue'), props: { kind: 'category' }, meta: { title: '分类' } },
+        { path: 'tag/:slug', component: () => import('./view/Taxonomy/index.vue'), props: { kind: 'tag' }, meta: { title: '标签' } },
         { path: 'archive', component: () => import('./view/Archive/index.vue'), meta: { title: '归档' } },
         { path: 'archive/:month', component: () => import('./view/Home/index.vue'), meta: { title: '归档文章' } },
         { path: 'author/:userId', component: () => import('./view/Home/index.vue'), meta: { title: '作者文章' } },

@@ -320,11 +320,6 @@ export function pageNumber(value) {
   return Math.min(Number(value), 100000)
 }
 
-export function validatePassword(value) {
-  const length = [...value].length
-  return length >= 8 && length <= 64 && new TextEncoder().encode(value).length <= 72
-}
-
 /** 在线票据复用当前内存 Bearer，只在 HTTP Header 中发送。 */
 export async function getOnlineTicket(body, signal) {
   const { data } = await request('/blog/analytics/online/tickets', { method: 'POST', body, signal })

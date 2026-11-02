@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { request, validatePassword } from '../api.js'
+import { request } from '../api.js'
+import { validatePassword } from '../shared/form.js'
 import { acceptSession } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'

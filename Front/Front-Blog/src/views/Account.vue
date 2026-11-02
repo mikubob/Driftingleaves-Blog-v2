@@ -1,9 +1,10 @@
 <script setup>
 import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { getPage, isWebUrl, request, validatePassword } from '../api.js'
+import { getPage, isWebUrl, request } from '../api.js'
+import { validatePassword } from '../shared/form.js'
 import { can, clearSession, logout, session } from '../session.js'
-import { articleView } from '../api/presentation.js'
+import { articleView } from '../shared/presentation.js'
 import { useResource } from '../composables/useResource.js'
 import { formatDate } from '../format.js'
 import ArticleCard from '../components/ArticleCard.vue'

@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.annotation.PublicCacheRead;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
@@ -75,6 +76,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     /** 分页查询评论及直接回复，在同一个只读事务中检查文章和全部上级评论；关闭评论不隐藏历史记录。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @PublicCacheRead("comments")
     public PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query) {
         requirePublic(article);
         Long parent = IdUtils.parse(query.parentId());

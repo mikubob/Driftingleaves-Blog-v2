@@ -5,7 +5,7 @@ import { request } from '../api.js'
 import CaptchaField from '../../../shared/CaptchaField.vue'
 import { acceptSession } from '../session.js'
 import { firstPage, registerMenuRoutes } from '../router.js'
-import { validatePassword } from '../format.js'
+import { validatePassword } from '../form.js'
 import { User, Lock, ArrowRight } from '@element-plus/icons-vue'
 
 const router = useRouter()

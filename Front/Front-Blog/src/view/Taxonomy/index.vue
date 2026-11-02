@@ -2,11 +2,16 @@
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getPage, pageNumber, request } from '@/api.js'
-import { articleView } from '@/api/presentation.js'
+import { articleView } from '@/shared/presentation.js'
 import { useResource } from '@/composables/useResource.js'
 import ArticleCard from '@/components/ArticleCard.vue'
 import SidebarCard from '@/components/SidebarCard.vue'
 import ListPager from '@/components/ListPager.vue'
+const props = defineProps({ kind: { type: String, required: true } })
+// 分类和标签共用列表，接口路径与字段仍按各自类型读取。
+const taxonomy = computed(() => props.kind === 'category'
+  ? { path: 'categories', id: 'categoryId', name: 'categoryName' }
+  : { path: 'tags', id: 'tagId', name: 'tagName' })
 const route = useRoute()
 const router = useRouter()
 const { articleTitle, articleMeta } = inject('setHero')
@@ -21,12 +26,12 @@ const listing = useResource(() => route.fullPath.split('#')[0], async (signal) =
     }
     params.keyword = searchKeyword.value
   }
-  
-  const { data } = await request('/blog/tags/' + encodeURIComponent(route.params.slug), { signal })
-  params.tagId = data.tagId
-  articleTitle.value = data.tagName
+
+  const { data } = await request(`/blog/${taxonomy.value.path}/${encodeURIComponent(route.params.slug)}`, { signal })
+  params[taxonomy.value.id] = data[taxonomy.value.id]
+  articleTitle.value = data[taxonomy.value.name]
   articleMeta.value = (data.description || '') + ' · 共 ' + data.articleCount + ' 篇文章'
-  
+
   return getPage('/blog/articles', params, signal)
 })
 const articles = computed(() => listing.data?.records.map(articleView) || [])
@@ -38,9 +43,9 @@ function handlePageChange(page) {
 </script>
 
 <template>
-  <div class="tag-page">
-    <div class="tag-layout">
-      <div class="tag-main">
+  <div class="taxonomy-page">
+    <div class="taxonomy-layout">
+      <div class="taxonomy-main">
         <p v-if="listing.error" role="alert">
           {{ listing.error }}
           <button @click="listing.reload">重试</button>
@@ -62,7 +67,7 @@ function handlePageChange(page) {
           </div>
         </template>
         <div v-else-if="!listing.error" class="empty-card">
-          <p class="empty">该标签下暂无文章</p>
+          <p class="empty">{{ kind === 'category' ? '该分类下暂无文章' : '该标签下暂无文章' }}</p>
         </div>
       </div>
       <SidebarCard />
@@ -71,15 +76,15 @@ function handlePageChange(page) {
 </template>
 
 <style scoped>
-.tag-page {
+.taxonomy-page {
   width: 100%;
 }
-.tag-layout {
+.taxonomy-layout {
   display: flex;
   gap: 24px;
   align-items: flex-start;
 }
-.tag-main {
+.taxonomy-main {
   flex: 1;
   min-width: 0;
 }
@@ -140,7 +145,7 @@ function handlePageChange(page) {
 }
 
 @media (max-width: 1220px) {
-  .tag-layout {
+  .taxonomy-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(236px, 280px);
     align-items: start;
@@ -148,11 +153,11 @@ function handlePageChange(page) {
 }
 
 @media (max-width: 960px) {
-  .tag-layout {
+  .taxonomy-layout {
     flex-direction: column;
     display: flex;
   }
-  .tag-main {
+  .taxonomy-main {
     width: 100%;
   }
 }

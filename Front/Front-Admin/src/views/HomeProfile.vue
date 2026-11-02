@@ -3,7 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { getOptions, request } from '../api.js'
 import { can } from '../session.js'
-import { nullable } from '../format.js'
+import { nullable } from '../form.js'
 import RequestError from '../components/RequestError.vue'
 
 const form = reactive({

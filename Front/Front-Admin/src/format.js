@@ -15,15 +15,6 @@ export function formatCount(value) {
     : '—'
 }
 
-export function nullable(value) {
-  return typeof value === 'string' && !value.trim() ? null : value
-}
-
-export function validatePassword(value) {
-  const length = [...value].length
-  return length >= 8 && length <= 64 && new TextEncoder().encode(value).length <= 72
-}
-
 /** 计算展示比例，只把最终有限比例转为数字，原始计数保留 BIGINT 精度。 */
 export function ratio(value, maximum) {
   const max = BigInt(maximum || '0')
