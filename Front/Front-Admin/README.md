@@ -4,6 +4,17 @@
 
 独立的 Vue 3 + Vite + Element Plus 工程，UI 复用 `DriftingLeaves-Website/Frontend-Admin`：公共主题、系统字体栈、iconfont 字体、侧栏与顶栏、统计卡片，以及菜单悬停、侧栏折叠和页面切换动画。登录页保留当前设计。迁移后的样式为原生 CSS，不新增 Sass 依赖。接口依据仓库 `docs/API.md` 及实际后端实现。
 
+## 图片链接预览
+
+文章封面、音乐封面、个人头像、用户头像、友链头像、主页头像、经历标志、技能图标和社交图标在填写地址后立即显示预览，修改或清空地址同步更新。外部 HTTP(S) 图片支持 SVG 和无文件后缀地址；技能、社交的普通图标键不作为图片请求。文章和音乐附件通过后台鉴权接口读取，切换地址或离开页面时释放临时 URL；加载失败显示提示。
+
+浏览器回归使用虚构 HTTP 数据，不连接业务库。在本目录启动 `pnpm dev --port 5177` 后，从仓库根目录执行：
+
+```powershell
+npx --package @playwright/cli playwright-cli -s=image-preview open about:blank
+npx --package @playwright/cli playwright-cli -s=image-preview run-code --filename Front/Front-Admin/tests/image-preview.cjs
+```
+
 ## 音乐与歌词上传
 
 音乐管理支持直接上传音频、封面和歌词，并继续支持手工填写外部 HTTP(S) 地址。上传复用文件管理：PNG/JPEG≤10 MiB，MP3/WAV/OGG/FLAC≤60 MiB，UTF-8 LRC/TXT/JSON≤1 MiB；需要文件 upload 与 query 权限。歌词上传后自动填写格式，JSON 为 `[{"time":0,"text":"歌词"}]`，time 单位为秒。上传成功后仍需保存音乐；取消或替换后未使用的文件可在文件管理清理。文件管理可预览图片、音频和歌词，仍被文章或音乐引用（含隐藏曲目）的文件不能删除。

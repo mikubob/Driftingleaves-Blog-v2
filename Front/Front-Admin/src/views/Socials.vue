@@ -1,4 +1,5 @@
 <script setup>
+import ImagePreview from '../components/ImagePreview.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -227,6 +228,7 @@ const batchActions = computed(() => {
         <label>
           图标键或外部图片地址
           <el-input v-model="form.icon" type="text" maxlength="2048" />
+          <ImagePreview :src="form.icon" alt="社交图标预览" />
         </label>
         <label>
           排序

@@ -12,6 +12,7 @@ import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../
 import RequestError from '../components/RequestError.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
 import EmojiPicker from '../components/EmojiPicker.vue'
+import ImagePreview from '../components/ImagePreview.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -446,7 +447,8 @@ onBeforeUnmount(() => {
               accept="image/png,image/jpeg"
               class="cover-uploader"
             >
-              <div class="cover-placeholder">{{ uploading ? '上传中…' : '点击上传封面' }}</div>
+              <ImagePreview v-if="form.coverUrl.trim()" :src="form.coverUrl" alt="文章封面预览" class="cover-preview" />
+              <div v-else class="cover-placeholder">{{ uploading ? '上传中…' : '点击上传封面' }}</div>
             </el-upload>
             封面地址
             <el-input
@@ -641,6 +643,11 @@ onBeforeUnmount(() => {
 .cover-uploader,
 .cover-uploader :deep(.el-upload) {
   width: 100%;
+}
+
+.cover-preview {
+  width: 100%;
+  height: 128px;
 }
 
 .cover-placeholder {

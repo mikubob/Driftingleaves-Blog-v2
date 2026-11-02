@@ -1,4 +1,5 @@
 <script setup>
+import ImagePreview from '../components/ImagePreview.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -291,6 +292,7 @@ const batchActions = computed(() => {
         <label>
           标志图片地址
           <el-input v-model="form.logoUrl" type="url" maxlength="2048" />
+          <ImagePreview :src="form.logoUrl" alt="经历标志预览" />
         </label>
         <label>
           Markdown 内容

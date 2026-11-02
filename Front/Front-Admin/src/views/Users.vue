@@ -1,4 +1,5 @@
 <script setup>
+import ImagePreview from '../components/ImagePreview.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, request } from '../api.js'
@@ -383,6 +384,7 @@ onMounted(async () => {
         <label>
           头像地址
           <el-input v-model="form.avatar" type="url" maxlength="2048" />
+          <ImagePreview :src="form.avatar" alt="用户头像预览" />
         </label>
         <label>
           个人简介

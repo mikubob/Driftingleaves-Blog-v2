@@ -1,4 +1,5 @@
 <script setup>
+import ImagePreview from '../components/ImagePreview.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -241,6 +242,7 @@ const batchActions = computed(() => {
         <label>
           头像地址
           <el-input v-model="form.avatar" type="url" maxlength="2048" />
+          <ImagePreview :src="form.avatar" alt="友链头像预览" />
         </label>
         <label>
           站点介绍

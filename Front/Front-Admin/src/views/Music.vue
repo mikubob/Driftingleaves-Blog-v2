@@ -1,4 +1,5 @@
 <script setup>
+import ImagePreview from '../components/ImagePreview.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -296,6 +297,7 @@ const batchActions = computed(() => {
         <label>
           封面地址
           <el-input v-model="form.coverUrl" maxlength="2048" />
+          <ImagePreview :src="form.coverUrl" alt="音乐封面预览" />
         </label>
         <label v-if="can('blog:file:upload') && can('blog:file:query')">
           上传封面（PNG/JPEG，≤10 MiB）
