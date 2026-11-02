@@ -4,13 +4,13 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.BatchBlockDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.VisitorQueryDTO;
-import com.xuan.entity.BlogVisitor;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IVisitorService;
 import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.VisitorVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -33,17 +33,17 @@ public class VisitorController {
 
     private final IVisitorService visitors;
 
-    /** 只在ALL后台读取脱敏IP和UA。 */
+    /** 只在ALL后台读取访客资料及浏览次数。 */
     @GetMapping
     @SaCheckPermission("blog:visitor:query")
-    public Result<PageResult<BlogVisitor>> list(@Valid @ModelAttribute VisitorQueryDTO query) {
+    public Result<PageResult<VisitorVO>> list(@Valid @ModelAttribute VisitorQueryDTO query) {
         return Result.ok(visitors.listVisitors(query));
     }
 
     /** 最近访问变化不参与限制字段的版本。 */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:visitor:query")
-    public ResponseEntity<Result<BlogVisitor>> detail(@PathVariable String id) {
+    public ResponseEntity<Result<VisitorVO>> detail(@PathVariable String id) {
         return response(visitors.detail(IdUtils.parse(id)));
     }
 
@@ -70,7 +70,7 @@ public class VisitorController {
     }
 
     /** 版本只放响应头。 */
-    private ResponseEntity<Result<BlogVisitor>> response(ResourceVersion<BlogVisitor> result) {
+    private ResponseEntity<Result<VisitorVO>> response(ResourceVersion<VisitorVO> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
     }
 }

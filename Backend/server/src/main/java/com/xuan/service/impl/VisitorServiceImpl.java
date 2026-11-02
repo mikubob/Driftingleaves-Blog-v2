@@ -21,6 +21,7 @@ import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.VisitorVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
@@ -54,7 +55,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public PageResult<BlogVisitor> listVisitors(VisitorQueryDTO query) {
+    public PageResult<VisitorVO> listVisitors(VisitorQueryDTO query) {
         requireAdmin("query");
         return PageResult.from(visitors.visitorPage(new Page<>(query.page(), query.pageSize()), query));
     }
@@ -62,9 +63,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     /** {@inheritDoc} */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public ResourceVersion<BlogVisitor> detail(long id) {
+    public ResourceVersion<VisitorVO> detail(long id) {
         requireAdmin("query");
-        return profile(required(visitors.selectById(id)));
+        VisitorVO row = visitors.visitorDetail(id);
+        if (row == null) {
+            throw new BusinessException(404, "NOT_FOUND", "访客统计不存在");
+        }
+        return new ResourceVersion<>(row, restrictionRevision(row.isBlocked(), row.blockedUntil()));
     }
 
     /** {@inheritDoc} */
@@ -119,8 +124,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
 
     /** 限制字段是完整业务版本，不受持续变化的IP/UA和访问时间干扰。 */
     private ResourceVersion<BlogVisitor> profile(BlogVisitor row) {
-        return new ResourceVersion<>(row, "\"" + TokenUtils.digest(
-                json.writeValueAsString(Arrays.asList(row.getIsBlocked(), row.getBlockedUntil()))) + "\"");
+        return new ResourceVersion<>(row, restrictionRevision(row.getIsBlocked(), row.getBlockedUntil()));
+    }
+
+    /** 列表和详情新增的浏览次数不参与封禁版本，持续采集不会造成管理冲突。 */
+    private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil) {
+        return "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(isBlocked, blockedUntil))) + "\"";
     }
 
     /** 无独立ALL时不能查看或修改全站统计标识。 */

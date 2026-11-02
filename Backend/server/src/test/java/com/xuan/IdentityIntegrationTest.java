@@ -290,7 +290,7 @@ class IdentityIntegrationTest {
     }
 
     @Test
-    void allLoginAndDiscussionWritesRequireCaptchaAfterIdentityChecks() throws Exception {
+    void loginAndPublicDiscussionWritesRequireCaptchaAfterIdentityChecks() throws Exception {
         String token = adminLogin("captcha_admin");
         for (String end : List.of("admin", "blog")) {
             String loginBody = loginBody("captcha_admin", PASSWORD);
@@ -316,9 +316,6 @@ class IdentityIntegrationTest {
         assertCode(captchaWrite("/blog/messages",
                 "{\"content\":\"留言\",\"parentId\":null,\"contentFormat\":0,\"isSecret\":0,\"notifyReply\":0}",
                 token, null, null), 400, "CAPTCHA_INVALID");
-        assertCode(captchaWrite("/admin/messages/1/replies",
-                "{\"content\":\"回复\",\"contentFormat\":0,\"notifyReply\":0}", token, null, null),
-                400, "CAPTCHA_INVALID");
         assertCode(captchaWrite("/blog/messages",
                 "{\"content\":\"留言\",\"parentId\":null,\"contentFormat\":0,\"isSecret\":0,\"notifyReply\":0}",
                 null, null, null), 401, "UNAUTHENTICATED");

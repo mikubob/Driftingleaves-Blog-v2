@@ -94,4 +94,4 @@ npx --package @playwright/cli playwright-cli -s=legacy-blog close
 
 旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。浏览器 smoke 可分别传入 `no-preference`、`reduce`，通过真实 transitionrun / animationstart 验证两种系统偏好下的主要动效。
 
-图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言及本人留言编辑和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
+图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言及本人留言编辑同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。

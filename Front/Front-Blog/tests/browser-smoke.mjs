@@ -118,6 +118,7 @@ async function smoke(page, reducedMotion = 'no-preference') {
   let subscriptionState = null
   let messageState = {
     messageId: '301', parentId: null, author, content: '你好，欢迎来这个测试小站坐坐。',
+    location: '广东省 深圳市', userAgentOs: 'Android', userAgentBrowser: 'Chrome',
     htmlContent: '<p>你好，欢迎来这个测试小站坐坐。</p>', contentFormat: 0, isSecret: 0,
     isOwn: true, status: 1, createTime: time, updateTime: time, editedAt: null, notifyReply: 0,
   }
@@ -248,7 +249,15 @@ async function smoke(page, reducedMotion = 'no-preference') {
       }
       data = method === 'DELETE' ? null : messageState
     } else if (path === '/blog/messages') {
-      data = method === 'POST' ? { ...messageState, ...body, status: 0 } : pagination(url.searchParams.has('parentId') ? [] : [messageState], url.searchParams)
+      const replies = [
+        { ...messageState, messageId: '302', parentId: '301', content: '一条测试留言回复。', htmlContent: '<p>一条测试留言回复。</p>' },
+        { ...messageState, messageId: '303', parentId: '301', content: '历史留言回复', htmlContent: '<p>历史留言回复</p>',
+          location: null, userAgentOs: null, userAgentBrowser: null },
+        { ...messageState, messageId: '304', parentId: '301', author: null, content: '该留言已删除', htmlContent: '<p>该留言已删除</p>',
+          status: 3, location: null, userAgentOs: null, userAgentBrowser: null },
+      ]
+      data = method === 'POST' ? { ...messageState, ...body, status: 0 }
+        : pagination(url.searchParams.has('parentId') ? replies : [messageState], url.searchParams)
     } else if (path === '/blog/me/rss-subscription') {
       if (method === 'PUT') {
         subscriptionState = { subscriptionId: '501', email: body.email, status: 0 }
@@ -370,7 +379,8 @@ async function smoke(page, reducedMotion = 'no-preference') {
   await page.getByText('一条测试回复。', { exact: true }).waitFor()
   for (const item of await page.locator('.comment-item').all()) {
     for (const [label, expected] of [['IP 属地', '江苏省 南京市'], ['操作系统', 'Windows'], ['浏览器', 'Edge']]) {
-      if (await item.getByLabel(label, { exact: true }).first().innerText() !== expected) {
+      const marker = item.getByLabel(label, { exact: true }).first()
+      if ((await marker.innerText()).trim() !== expected || await marker.locator('svg').count() !== 1) {
         throw new Error(`评论或回复未显示正确的${label}`)
       }
     }
@@ -409,6 +419,34 @@ async function smoke(page, reducedMotion = 'no-preference') {
 
   // 4. 原留言表单的 EmojiPicker、Markdown、私密性与编辑版本。
   await page.locator('.nav-desktop a[href="/message"]').click()
+  for (const [label, expected] of [['IP 属地', '广东省 深圳市'], ['操作系统', 'Android'], ['浏览器', 'Chrome']]) {
+    const marker = page.locator('.msg-head').getByLabel(label, { exact: true }).first()
+    if ((await marker.innerText()).trim() !== expected || await marker.locator('svg').count() !== 1) {
+      throw new Error(`留言未显示正确的${label}和图标`)
+    }
+  }
+  await page.locator('.msg-actions').getByRole('button', { name: '查看回复', exact: true }).first().click()
+  const child = page.locator('.msg-children .msg-item-card').filter({ hasText: '一条测试留言回复。' })
+  for (const [label, expected] of [['IP 属地', '广东省 深圳市'], ['操作系统', 'Android'], ['浏览器', 'Chrome']]) {
+    if ((await child.getByLabel(label, { exact: true }).innerText()).trim() !== expected) {
+      throw new Error(`留言子回复未显示正确的${label}`)
+    }
+  }
+  const historical = page.locator('.msg-children .msg-item-card').filter({ hasText: '历史留言回复' })
+  for (const label of ['IP 属地', '操作系统', '浏览器']) {
+    if ((await historical.getByLabel(label, { exact: true }).innerText()).trim() !== '未知') {
+      throw new Error('历史留言没有显示未知')
+    }
+  }
+  const deleted = page.locator('.msg-children .msg-item-card').filter({ hasText: '该留言已删除' })
+  if (await deleted.locator('.discussion-meta-item').count()) {
+    throw new Error('删除占位仍显示了设备或属地')
+  }
+  await page.screenshot({ path: 'output/playwright/discussion-message-desktop.png', fullPage: true })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.screenshot({ path: 'output/playwright/discussion-message-mobile.png', fullPage: true })
+  await page.setViewportSize({ width: 1440, height: 1000 })
+  await page.locator('.msg-actions').getByRole('button', { name: '收起回复', exact: true }).first().click()
   await checkDiscussionFocus('.msg-form', '留言正文与验证码')
   await page.locator('.msg-actions').getByRole('button', { name: '回复', exact: true }).first().click()
   await page.locator('.reply-tip').waitFor()

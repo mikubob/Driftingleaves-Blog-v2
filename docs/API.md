@@ -152,7 +152,8 @@ GET /api/v1/blog/auth/captcha
 | `POST /api/v1/blog/articles/{articleId}/comments` | 发表评论或回复 |
 | `POST /api/v1/blog/messages` | 发表留言或回复 |
 | `PUT /api/v1/blog/me/messages/{messageId}` | 编辑本人留言；仍须携带 If-Revision，修改后重新审核 |
-| `POST /api/v1/admin/messages/{messageId}/replies` | 后台回复留言 |
+
+后台留言回复不要求图形验证码，仍执行后台登录、权限与限流；后台评论管理当前只有查询、审核和删除，没有独立回复接口，也不要求图形验证码。前台发表评论/回复、发表留言/回复及本人留言编辑仍按上表校验。
 
 验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片，不自动重放写入，正文保留供用户重试。
 
@@ -3128,6 +3129,7 @@ Authorization: Bearer <site-token>
         "author": {
           "userId": "12", "nickname": "落叶", "avatar": null
         },
+        "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
         "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
       }
     ]
@@ -3188,6 +3190,7 @@ X-Revision: "<current-revision>"
     "author": {
       "userId": "12", "nickname": "落叶", "avatar": null
     },
+    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
     "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
   },
   "errors": []
@@ -3216,8 +3219,6 @@ X-Revision: "<current-revision>"
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `X-Captcha-Id` | string | 是 | Header；见[验证码契约](#captcha) |
-| `X-Captcha-Code` | string | 是 | Header；6 位数字，保留前导零 |
 | `messageId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `content` | S(2000) | 是 | 去首尾空白后非空；Markdown保留原文内部空白 |
 | `contentFormat` | integer | 是 | 0纯文本 1Markdown |
@@ -3228,8 +3229,6 @@ X-Revision: "<current-revision>"
 ```http
 POST /api/v1/admin/messages/301/replies
 Authorization: Bearer <site-token>
-X-Captcha-Id: <captchaId>
-X-Captcha-Code: 012345
 Content-Type: application/json
 
 {"content":"你好，欢迎交流。","contentFormat":0,"notifyReply":0}
@@ -3249,13 +3248,14 @@ Content-Type: application/json
     "author": {
       "userId": "12", "nickname": "落叶", "avatar": null
     },
+    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
     "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
   },
   "errors": []
 }
 ```
 
-使用现有审核权限+ALL，没有新增未定义权限码；作者为当前后台用户，父节点固定Path，继承整条私密范围，初始status=1。父链必须允许展示，待审/驳回/占位目标409；message.enabled=false时拒绝。不接受isAdminReply标志，展示管理员身份时实时核验有效角色。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
+不要求图形验证码，也无需发送 X-Captcha-Id/X-Captcha-Code；仍须后台登录、blog:message:review 的 ALL 范围及用户/IP 限流。作者为当前后台用户，父节点固定Path，继承整条私密范围，初始status=1。父链必须允许展示，待审/驳回/占位目标409；message.enabled=false时拒绝。不接受isAdminReply标志，展示管理员身份时实时核验有效角色。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
 
 ---
 
@@ -5184,7 +5184,9 @@ Authorization: Bearer <site-token>
     "records": [
       {
         "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
-        "userAgent": null, "country": null, "province": null
+        "userAgent": null, "country": "中国", "province": "湖南省", "city": "长沙市",
+        "totalViews": "24", "isBlocked": 0, "blockedUntil": null,
+        "firstVisitTime": "2026-10-28T00:22:00.000Z", "lastVisitTime": "2026-11-01T12:53:00.000Z"
       }
     ]
   },
@@ -5192,7 +5194,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-需ALL；lastVisitTime DESC,visitorId DESC。仅后台返回统计标识、IP与UA，不公开原始访客清单。
+需ALL；lastVisitTime DESC,visitorId DESC。仅后台返回统计标识、IP与UA，不公开原始访客清单。`totalViews` 为该访客在所有站点当前保留的浏览明细条数，以十进制字符串返回，无明细为 `"0"`；删除明细后减少，不是独立维护的历史累计值。列表按 IP、国家、省份、城市、浏览次数、状态、首次访问、最近访问和封禁到期展示，保留详情与管理操作；状态根据 isBlocked 和 blockedUntil 判断，过期恢复正常，原封禁到期时间仍可查看。
 
 ---
 
@@ -5241,13 +5243,15 @@ X-Revision: "<current-revision>"
   "code": "OK", "msg": "成功",
   "data": {
     "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
-    "userAgent": null, "country": null, "province": null
+    "userAgent": null, "country": "中国", "province": "湖南省", "city": "长沙市",
+    "totalViews": "24", "isBlocked": 0, "blockedUntil": null,
+    "firstVisitTime": "2026-10-28T00:22:00.000Z", "lastVisitTime": "2026-11-01T12:53:00.000Z"
   },
   "errors": []
 }
 ```
 
-X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的最近访问/IP/UA；详情仍返回当前统计字段。
+X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的浏览次数、最近访问/IP/UA；详情仍返回当前统计字段，包括与列表相同口径的 totalViews。
 
 ---
 
@@ -5315,7 +5319,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-需ALL；筛选AND组合，begin<end；viewTime DESC,viewId DESC，不输出任何认证凭据。
+需ALL；筛选AND组合，begin<end；viewTime DESC,viewId DESC，不输出任何认证凭据。管理列表按页面标题、页面路径、访客 IP、来源和浏览时间展示；详情继续使用当前行的完整 PageView 数据，保留站点、记录/访客/用户/文章 ID 与 User-Agent，无需新增详情接口。
 
 ---
 
@@ -5617,7 +5621,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-筛选AND组合；begin<end；operationTime DESC,logId DESC。列表不展开operationData，详情向具有sys:log:query及ALL范围的管理员展示已记录的完整业务字段。
+筛选AND组合；begin<end；operationTime DESC,logId DESC。列表展示 logId（ID 列）和中文操作类型标签；operationType 继续返回原始 ASCII 动作值并用于精确筛选，不改写历史日志。新增/更新/删除分别显示为“新增/更新/删除”，batch-* 保留“批量”含义（如 batch-status 显示“批量更新状态”），其他已知动作按业务显示，未知动作原样展示；详情保留原始值。列表不展开operationData，详情向具有sys:log:query及ALL范围的管理员展示已记录的完整业务字段。
 
 ---
 
@@ -7901,6 +7905,7 @@ GET /api/v1/blog/messages?page=1&pageSize=10
         "author": {
           "userId": "12", "nickname": "落叶", "avatar": null
         },
+        "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
         "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
       }
     ]
@@ -7965,11 +7970,14 @@ Content-Type: application/json
     "author": {
       "userId": "12", "nickname": "落叶", "avatar": null
     },
+    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
     "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 0
   },
   "errors": []
 }
 ```
+
+属地、系统和浏览器由服务端从本次请求采集，不接受客户端指定；编辑保留发布时的标识，历史空值显示未知，不公开完整 IP 或原始 User-Agent。
 
 作者固定为当前用户。先锁message配置，再锁父链，检查enabled和父链可见性；按reviewRequired确定0/1，普通管理员经此前台入口也不自动免审。客户端不能写作者、昵称、rootId、status、isAdminReply或HTML。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
 
@@ -8123,6 +8131,7 @@ Authorization: Bearer <site-token>
         "author": {
           "userId": "12", "nickname": "落叶", "avatar": null
         },
+        "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
         "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
       }
     ]
@@ -8183,6 +8192,7 @@ X-Revision: "<current-revision>"
     "author": {
       "userId": "12", "nickname": "落叶", "avatar": null
     },
+    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
     "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
   },
   "errors": []
@@ -8253,6 +8263,7 @@ X-Revision: "<current-revision>"
     "author": {
       "userId": "12", "nickname": "落叶", "avatar": null
     },
+    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
     "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 0
   },
   "errors": []
@@ -10644,6 +10655,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author.nickname` | string | 当前昵称 |
 | `author.avatar` | URL&#124;null | 当前公开头像 |
 | `content` | string | 原文；删除占位固定为该留言已删除 |
+| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；历史记录和删除占位为 null，不公开完整 IP |
+| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、历史记录和删除占位为 null |
+| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、历史记录和删除占位为 null，不公开原始 User-Agent |
 | `htmlContent` | string | 安全渲染HTML；纯文本转义并保留换行 |
 | `contentFormat` | integer | 0纯文本 1Markdown |
 | `isSecret` | integer | 0公开 1悄悄话 |
@@ -10666,6 +10680,9 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author.nickname` | string | 当前昵称 |
 | `author.avatar` | URL&#124;null | 当前公开头像 |
 | `content` | string | 原文；删除占位固定为该留言已删除 |
+| `location` | string&#124;null | 发布时从可信 IP 解析的省市或国家；历史记录和删除占位为 null，不公开完整 IP |
+| `userAgentOs` | string&#124;null | 发布时识别的操作系统类型；未知、历史记录和删除占位为 null |
+| `userAgentBrowser` | string&#124;null | 发布时识别的浏览器类型；未知、历史记录和删除占位为 null，不公开原始 User-Agent |
 | `htmlContent` | string | 安全渲染HTML；纯文本转义并保留换行 |
 | `contentFormat` | integer | 0纯文本 1Markdown |
 | `isSecret` | integer | 0公开 1悄悄话 |
@@ -10758,6 +10775,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `visitorId` | ID | 统计访客ID，不是登录身份 |
 | `fingerprint` | string | ASCII统计标识，不可作为鉴权凭据 |
+| `totalViews` | string | 当前保留的关联浏览明细条数，所有站点合计，无明细为"0"；清理明细后减少，不参与 X-Revision |
 | `ipAddress` | string&#124;null | 最近IP，仅后台可见 |
 | `userAgent` | string&#124;null | ≤1024，最近User-Agent |
 | `country` | string&#124;null | 国家 |

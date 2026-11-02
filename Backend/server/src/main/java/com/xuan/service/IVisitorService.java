@@ -7,6 +7,7 @@ import com.xuan.entity.BlogVisitor;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.VisitorVO;
 
 import java.util.List;
 
@@ -15,11 +16,11 @@ import java.util.List;
  */
 public interface IVisitorService extends IService<BlogVisitor> {
 
-    /** ALL后台分页读取脱敏地址及统计资料。 */
-    PageResult<BlogVisitor> listVisitors(VisitorQueryDTO query);
+    /** ALL后台分页读取访客资料及当前保留的浏览次数。 */
+    PageResult<VisitorVO> listVisitors(VisitorQueryDTO query);
 
     /** 版本只包含限制字段，最近访问不会使版本过期。 */
-    ResourceVersion<BlogVisitor> detail(long id);
+    ResourceVersion<VisitorVO> detail(long id);
 
     /** 限制到指定UTC时间或永久，持锁后检查版本。 */
     ResourceVersion<BlogVisitor> block(long id, String until, String revision);

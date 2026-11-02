@@ -106,20 +106,6 @@
   font-weight: 500;
 }
 
-/* 元信息（位置、系统、浏览器）— 与昵称同行 */
-.c-meta-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 12px;
-  color: #b0b4bb;
-}
-.c-meta-icon {
-  width: 13px;
-  height: 13px;
-  flex-shrink: 0;
-}
-
 .c-body {
   font-size: 14px;
   color: #444;

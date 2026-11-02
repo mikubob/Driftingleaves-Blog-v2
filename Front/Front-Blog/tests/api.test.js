@@ -83,6 +83,25 @@ test('评论地域和浏览器只接受文本或空值，历史记录可以为�
   }
 })
 
+test('留言与回复接受属地和设备类型，历史记录为空且错误类型被拒绝', async () => {
+  const message = {
+    messageId: '1', content: '测试留言', htmlContent: '<p>测试留言</p>', contentFormat: 0,
+    isSecret: 0, isOwn: false, status: 1, createTime: '2026-11-02T00:00:00.000Z', author: null,
+    location: '江苏省 南京市', userAgentOs: 'Windows', userAgentBrowser: 'Edge',
+  }
+  for (const path of ['/blog/messages', '/blog/messages?parentId=2', '/blog/me/messages']) {
+    const result = { page: 1, pageSize: 10, total: '1', totalPages: '1', records: [message] }
+    respond(result)
+    assert.equal((await getPage(path)).records[0].userAgentBrowser, 'Edge')
+    for (const field of ['location', 'userAgentOs', 'userAgentBrowser']) {
+      respond({ ...result, records: [{ ...message, [field]: null }] })
+      assert.equal((await getPage(path)).records[0][field], null)
+      respond({ ...result, records: [{ ...message, [field]: {} }] })
+      await assert.rejects(getPage(path), /数据格式/)
+    }
+  }
+})
+
 test('凭据错误保留会话，身份失效才清除；Token 只经 Authorization 发送', async () => {
   let expired = false
   setAuthorization('fictional-memory-token', () => { expired = true })

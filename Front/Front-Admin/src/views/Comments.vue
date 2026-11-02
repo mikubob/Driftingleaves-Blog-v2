@@ -9,6 +9,7 @@ import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
+import DiscussionDetail from '../components/DiscussionDetail.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -169,19 +170,23 @@ const batchActions = computed(() => {
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column label="评论内容" min-width="280">
           <template #default="{ row }">
-            <button class="table-title" @click="view(row)">{{ row.content }}</button>
-            <p class="table-secondary">
-              {{ row.author?.nickname || '已删除用户' }} · {{ row.articleTitle }}
-            </p>
+            <button class="table-title discussion-preview" :title="row.content" @click="view(row)">{{ row.content }}</button>
           </template>
         </el-table-column>
+        <el-table-column label="昵称" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.author?.nickname || '已删除用户' }}</template>
+        </el-table-column>
+        <el-table-column prop="parentId" label="回复目标 ID" width="190">
+          <template #default="{ row }">{{ row.parentId || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="articleTitle" label="所属文章" min-width="240" show-overflow-tooltip />
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="review" /></template>
         </el-table-column>
         <el-table-column label="发表时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <template v-if="row.status !== 3">
@@ -218,27 +223,10 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
-    <el-dialog v-model="detailVisible" title="评论详情" width="650px">
-      <template v-if="detail">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item label="评论 ID">{{ detail.commentId }}</el-descriptions-item>
-          <el-descriptions-item label="所属文章">
-            {{ detail.articleTitle }}（{{ detail.articleId }}）
-          </el-descriptions-item>
-          <el-descriptions-item label="回复目标">
-            {{ detail.parentId || '根评论' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="作者">
-            {{ detail.author?.nickname || '已删除用户' }}
-          </el-descriptions-item>
-          <el-descriptions-item label="状态">
-            <StatusTag :value="detail.status" kind="review" />
-          </el-descriptions-item>
-          <el-descriptions-item label="IP 属地">{{ detail.location || '未知' }}</el-descriptions-item>
-          <el-descriptions-item label="操作系统">{{ detail.userAgentOs || '未知' }}</el-descriptions-item>
-          <el-descriptions-item label="浏览器">{{ detail.userAgentBrowser || '未知' }}</el-descriptions-item>
-        </el-descriptions>
-        <p class="plain-content">{{ detail.content }}</p>
+    <el-dialog v-model="detailVisible" title="评论详情" width="760px" destroy-on-close>
+      <DiscussionDetail v-if="detail" kind="comment" :detail="detail" />
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </section>

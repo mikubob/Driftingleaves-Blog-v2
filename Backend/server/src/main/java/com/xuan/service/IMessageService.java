@@ -24,8 +24,8 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 逐层分页，匿名和有效会话的total分别只计可见节点。 */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
 
-    /** 作者固定当前用户，私密性继承完整父链。 */
-    MessagePrivateVO create(MessageCreateDTO request);
+    /** 作者固定当前用户，私密性继承完整父链；仅保存发布时的属地、系统与浏览器类型。 */
+    MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent);
 
     /** 本人列表只按当前user_id取数。 */
     PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query);
@@ -48,8 +48,8 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 实际转为通过后提交，再使用已确认订阅发送提醒。 */
     ResourceVersion<MessagePrivateVO> review(long id, int status, String revision);
 
-    /** 用实际后台操作者身份回复，继承完整私密范围。 */
-    MessagePrivateVO replyAdmin(long id, MessageEditDTO request);
+    /** 用实际后台操作者身份回复，继承完整私密范围，记录本次请求的属地与设备类型。 */
+    MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent);
     /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */
     BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status);
     /** 单条和多条共用的事务入口，失败不保留部分数据库变更。 */

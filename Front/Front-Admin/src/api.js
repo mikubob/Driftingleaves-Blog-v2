@@ -43,7 +43,10 @@ function validateNumbers(value, key = '') {
       throw new Error('接口返回的 ID 格式不正确。')
     }
   }
-  if (/(?:Count|Bytes)$/.test(key) && (typeof value !== 'string' || !/^\d+$/.test(value))) {
+  if (
+    (/(?:Count|Bytes)$/.test(key) || key === 'totalViews') &&
+    (typeof value !== 'string' || !/^\d+$/.test(value))
+  ) {
     throw new Error('接口返回的计数格式不正确。')
   }
   if (value && typeof value === 'object') {

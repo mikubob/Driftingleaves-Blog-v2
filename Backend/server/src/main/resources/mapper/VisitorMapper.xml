@@ -23,8 +23,21 @@
         visitor_id=#{row.visitorId}
     </update>
 
-    <select id="visitorPage" resultType="com.xuan.entity.BlogVisitor">
-        SELECT * FROM blog_visitor
+    <!-- 仅统计当前访客关联的保留明细，使用visitor_id索引，不受列表地域筛选影响。 -->
+    <sql id="visitorWithViews">
+        SELECT v.visitor_id,v.fingerprint,v.ip_address,v.user_agent,v.country,v.province,v.city,
+        (SELECT COUNT(*) FROM blog_page_view pv WHERE pv.visitor_id=v.visitor_id) AS total_views,
+        v.is_blocked,v.blocked_until,v.first_visit_time,v.last_visit_time,v.create_time,v.update_time
+        FROM blog_visitor v
+    </sql>
+
+    <select id="visitorDetail" resultType="com.xuan.vo.VisitorVO">
+        <include refid="visitorWithViews"/>
+        WHERE v.visitor_id=#{id}
+    </select>
+
+    <select id="visitorPage" resultType="com.xuan.vo.VisitorVO">
+        <include refid="visitorWithViews"/>
         <where>
             <if test="query.country != null">AND country=#{query.country}</if>
             <if test="query.province != null">AND province=#{query.province}</if>

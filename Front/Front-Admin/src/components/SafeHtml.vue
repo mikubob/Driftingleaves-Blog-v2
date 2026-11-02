@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getImage } from '../api.js'
 
 const props = defineProps({ html: { type: String, default: '' } })
@@ -43,6 +43,8 @@ watch(
         }
       }
     }
+    // 首次立即监听可能早于容器挂载，等本轮 DOM 更新后再填正文。
+    await nextTick()
     if (!current.signal.aborted && container.value) {
       container.value.replaceChildren(...document.body.childNodes)
     }

@@ -101,6 +101,20 @@ async function settingsLogsSmoke(page) {
 
   await page.setViewportSize({ width: 1280, height: 900 })
   await page.goto('http://127.0.0.1:5176/system/logs')
+  await page.getByRole('cell', { name: id, exact: true }).first().waitFor()
+  const operationLabels = [
+    ['create', '新增'], ['delete', '删除'], ['batch-status', '批量更新状态'],
+    ['batch-delete', '批量删除'], ['future-action', 'future-action'], ['update', '更新'],
+  ]
+  for (const [type, label] of operationLabels) {
+    detail.operationType = type
+    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await page.locator('.el-table .el-tag').filter({ hasText: label }).waitFor()
+    if (await page.locator('.el-table .el-tag').innerText() !== label ||
+        await page.locator('.el-table .el-tag').getAttribute('title') !== type) {
+      throw new Error(`日志类型 ${type} 未正确展示标签及原始动作值`)
+    }
+  }
   await page.getByRole('button', { name: '详情', exact: true }).click()
   const dialog = page.getByRole('dialog', { name: '操作日志详情' })
   await dialog.waitFor()

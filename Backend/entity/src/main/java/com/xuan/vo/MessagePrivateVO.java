@@ -8,6 +8,7 @@ import java.time.LocalDateTime;
 public record MessagePrivateVO(Long messageId, Long parentId, ArticlePublicVO.Author author, String content,
                                String htmlContent, Integer contentFormat, Integer isSecret, Integer status,
                                LocalDateTime editedAt, boolean isOwn, LocalDateTime createTime,
-                               LocalDateTime updateTime, Integer notifyReply) {
+                               LocalDateTime updateTime, Integer notifyReply, String location, String userAgentOs,
+                               String userAgentBrowser) {
 
 }

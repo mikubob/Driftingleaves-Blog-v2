@@ -3,7 +3,7 @@ import { onMounted, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
-import { formatTime } from '../format.js'
+import { formatCount, formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
@@ -202,29 +202,39 @@ const batchActions = computed(() => {
         empty-text="暂无访客"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column prop="visitorId" label="访客 ID" min-width="180" />
-        <el-table-column label="地域" min-width="180">
-          <template #default="{ row }">
-            {{ [row.country, row.province, row.city].filter(Boolean).join(' / ') || '未知' }}
-          </template>
+        <el-table-column prop="ipAddress" label="IP 地址" min-width="160" show-overflow-tooltip />
+        <el-table-column prop="country" label="国家" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="province" label="省份" min-width="100" show-overflow-tooltip />
+        <el-table-column prop="city" label="城市" min-width="100" show-overflow-tooltip />
+        <el-table-column label="浏览次数" min-width="100" align="center">
+          <template #default="{ row }">{{ formatCount(row.totalViews) }}</template>
         </el-table-column>
-        <el-table-column prop="ipAddress" label="IP 地址" min-width="180" show-overflow-tooltip />
-        <el-table-column label="采集状态" width="130">
+        <el-table-column label="状态" width="100" align="center">
           <template #default="{ row }">
             <span :class="['status-tag', isBlocked(row) ? 'is-danger' : 'is-success']">
               <i aria-hidden="true"></i>
-              {{ isBlocked(row) ? '已限制' : '正常' }}
+              {{ isBlocked(row) ? '已封禁' : '正常' }}
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="最近访问" width="180">
+        <el-table-column label="首次访问" width="180" align="center">
+          <template #default="{ row }">{{ formatTime(row.firstVisitTime) }}</template>
+        </el-table-column>
+        <el-table-column label="最近访问" width="180" align="center">
           <template #default="{ row }">{{ formatTime(row.lastVisitTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="封禁到期" width="180" align="center">
+          <template #default="{ row }">
+            <span v-if="row.isBlocked !== 1">—</span>
+            <span v-else-if="row.blockedUntil">{{ formatTime(row.blockedUntil) }}</span>
+            <span v-else>永久</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <el-button type="warning" v-if="can('blog:visitor:block', true)" link @click="view(row, true)">
-              限制
+              封禁
             </el-button>
             <el-button
               type="success"
@@ -232,7 +242,7 @@ const batchActions = computed(() => {
               link
               @click="action(row, 'unblock')"
             >
-              解除
+              解封
             </el-button>
             <el-button type="danger" v-if="can('blog:visitor:delete', true)" link @click="action(row, 'delete')">
               删除
@@ -259,6 +269,7 @@ const batchActions = computed(() => {
           {{ [detail.country, detail.province, detail.city].filter(Boolean).join(' / ') || '未知' }}
         </el-descriptions-item>
         <el-descriptions-item label="User-Agent">{{ detail.userAgent }}</el-descriptions-item>
+        <el-descriptions-item label="浏览次数">{{ formatCount(detail.totalViews) }}</el-descriptions-item>
         <el-descriptions-item label="首次访问">
           {{ formatTime(detail.firstVisitTime) }}
         </el-descriptions-item>

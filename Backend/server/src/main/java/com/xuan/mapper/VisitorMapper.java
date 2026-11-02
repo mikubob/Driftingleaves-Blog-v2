@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
+import com.xuan.vo.VisitorVO;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
@@ -29,5 +30,8 @@ public interface VisitorMapper extends BaseMapper<BlogVisitor> {
     int restriction(@Param("row") BlogVisitor row);
 
     /** 列表按最近访问和ID倒序，查询条件与total一致。 */
-    IPage<BlogVisitor> visitorPage(IPage<BlogVisitor> page, @Param("query") VisitorQueryDTO query);
+    IPage<VisitorVO> visitorPage(IPage<VisitorVO> page, @Param("query") VisitorQueryDTO query);
+
+    /** 详情与列表按同一口径统计浏览次数，不存在时返回null。 */
+    VisitorVO visitorDetail(@Param("id") long id);
 }

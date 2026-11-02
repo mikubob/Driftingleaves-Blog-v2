@@ -25,6 +25,13 @@ function result(data, options = {}) {
   })
 }
 
+test('访客浏览次数保留大整数精度并拒绝数字响应', async () => {
+  globalThis.fetch = async () => result({ totalViews: '9007199254740993' })
+  assert.equal((await request('/admin/visitors/1')).data.totalViews, '9007199254740993')
+  globalThis.fetch = async () => result({ totalViews: 1 })
+  await assert.rejects(request('/admin/visitors/1'), /计数格式不正确/)
+})
+
 test('账号唯一冲突保留三种明确提示及字段明细', async () => {
   for (const [message, fields] of [
     ['用户名已被使用', ['username']],

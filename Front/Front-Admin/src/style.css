@@ -97,8 +97,33 @@ h2 {
   padding: 15px 0;
 }
 
+/* 沿用老后台的小号文字按钮，覆盖全局继承字体并保留操作语义色。 */
 .el-table .el-button.is-link {
-  font-size: 13px;
+  position: relative;
+  min-height: 24px;
+  height: 24px;
+  font-family: var(--el-font-family);
+  font-size: 12px;
+}
+
+.el-table .el-button--primary.is-link {
+  --el-button-text-color: var(--el-text-color-regular);
+}
+
+/* 只在实际显示的相邻按钮间分隔，权限隐藏后不会留下孤立分隔线。 */
+.el-table .el-button.is-link + .el-button.is-link {
+  margin-left: 17px;
+}
+
+.el-table .el-button.is-link + .el-button.is-link::after {
+  content: '';
+  position: absolute;
+  left: -9px;
+  top: 50%;
+  height: 1em;
+  border-left: 1px solid var(--el-border-color);
+  transform: translateY(-50%);
+  pointer-events: none;
 }
 
 .el-dialog {
@@ -257,6 +282,15 @@ h2 {
 .table-title:hover {
   color: var(--el-color-primary);
   text-decoration: underline;
+}
+
+/* 评论和留言列表只预览一行，完整正文在详情中查看。 */
+.discussion-preview {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .table-secondary {

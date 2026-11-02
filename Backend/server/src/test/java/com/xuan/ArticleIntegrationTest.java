@@ -4197,6 +4197,138 @@ class ArticleIntegrationTest {
     }
 
     @Test
+    void adminMessageReplyNeedsNoCaptchaButKeepsAuthenticationAndPermissions() throws Exception {
+        String admin = actor("reply_no_captcha_admin", 1);
+        String owner = actor("reply_no_captcha_owner", 3);
+        String root = createMessage(owner, null, "无需验证码的回复目标", 0);
+        reviewMessage(admin, root, 1);
+        String path = "/admin/messages/" + root + "/replies";
+        String body = json.writeValueAsString(messageEdit("后台直接回复"));
+
+        // 使用原始请求，明确不经过自动补验证码的测试 helper。
+        var reply = request(HttpMethod.POST, "/api/v1" + path).contextPath("/api/v1").servletPath(path)
+                .header("Authorization", "Bearer " + admin).contentType("application/json").content(body);
+        MvcResult result = mvc.perform(reply).andReturn();
+        code(result, 201, "OK");
+        assertThat(data(result).get("content").asString()).isEqualTo("后台直接回复");
+        assertThat(data(result).get("author").get("userId").asString())
+                .isEqualTo(userId("reply_no_captcha_admin"));
+        assertThat(data(result).get("parentId").asString()).isEqualTo(root);
+
+        code(mvc.perform(request(HttpMethod.POST, "/api/v1" + path).contextPath("/api/v1").servletPath(path)
+                .contentType("application/json").content(body)).andReturn(), 401, "UNAUTHENTICATED");
+        code(mvc.perform(request(HttpMethod.POST, "/api/v1" + path).contextPath("/api/v1").servletPath(path)
+                .header("Authorization", "Bearer " + owner).contentType("application/json").content(body))
+                .andReturn(), 403, "FORBIDDEN");
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_message WHERE parent_id=?", Integer.class, root))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void messageClientDetailsCoverCreationRepliesEditingAndDeletedPlaceholders() throws Exception {
+        String admin = actor("message_client_admin", 1);
+        String owner = actor("message_client_owner", 3);
+        jdbc.update("UPDATE blog_site_config SET config_value=JSON_OBJECT('enabled',TRUE,'reviewRequired',FALSE) " +
+                "WHERE config_key='message'");
+        String agent = "Windows NT 10.0 Chrome/130.0 Safari/537.36 Edg/130.0";
+        MvcResult created = mvc.perform(req("POST", "/blog/messages")
+                .header("Authorization", "Bearer " + owner).header("User-Agent", agent)
+                .header("X-Forwarded-For", "8.8.8.8").contentType("application/json")
+                .content(json.writeValueAsString(messageBody(null, "设备信息测试", 0)))
+                .with(request -> {
+                    request.setRemoteAddr("114.114.114.114");
+                    return request;
+                })).andReturn();
+        code(created, 201, "OK");
+        String id = data(created).get("messageId").asString();
+        JsonNode published = data(call("GET", "/blog/messages", null, null)).get("records").get(0);
+        for (JsonNode value : List.of(data(created), published,
+                data(call("GET", "/blog/me/messages/" + id, owner, null)),
+                data(call("GET", "/admin/messages/" + id, admin, null)))) {
+            assertThat(value.get("location").asString()).isEqualTo("江苏省 南京市");
+            assertThat(value.get("userAgentOs").asString()).isEqualTo("Windows");
+            assertThat(value.get("userAgentBrowser").asString()).isEqualTo("Edge");
+            assertThat(value.has("ipAddress")).isFalse();
+            assertThat(value.has("userAgent")).isFalse();
+            assertThat(value.toString()).doesNotContain("114.114.114.114", "8.8.8.8", agent);
+        }
+        assertThat(jdbc.queryForObject("SELECT user_agent_browser FROM blog_message WHERE message_id=?",
+                String.class, id)).isEqualTo("Edge");
+
+        // 前台子回复使用自己的 IPv6 与设备信息，不沿用父留言。
+        MvcResult child = mvc.perform(req("POST", "/blog/messages")
+                .header("Authorization", "Bearer " + owner)
+                .header("User-Agent", "Linux; Android 14 Chrome/130.0 SamsungBrowser/27.0")
+                .contentType("application/json").content(json.writeValueAsString(messageBody(id, "手机回复", 0)))
+                .with(request -> {
+                    request.setRemoteAddr("240e:3b7:3272:d8d0:db09:c067:8d59:539e");
+                    return request;
+                })).andReturn();
+        code(child, 201, "OK");
+        assertThat(data(child).get("location").asString()).isEqualTo("广东省 深圳市");
+        assertThat(data(child).get("userAgentOs").asString()).isEqualTo("Android");
+        assertThat(data(child).get("userAgentBrowser").asString()).isEqualTo("Samsung Internet");
+
+        // 后台回复同样按可信代理链取地址，不使用最左侧可伪造的地址。
+        List<String> proxies = properties.getTrustedProxies();
+        MvcResult reply;
+        try {
+            properties.setTrustedProxies(List.of("192.0.2.1"));
+            reply = mvc.perform(req("POST", "/admin/messages/" + id + "/replies")
+                    .header("Authorization", "Bearer " + admin)
+                    .header("User-Agent", "iPhone; CPU iPhone OS 18_0 like Mac OS X Version/18.0 Safari/604.1")
+                    .header("X-Forwarded-For", "8.8.8.8, 114.114.114.114").contentType("application/json")
+                    .content(json.writeValueAsString(messageEdit("后台回复"))).with(request -> {
+                        request.setRemoteAddr("192.0.2.1");
+                        return request;
+                    })).andReturn();
+        } finally {
+            properties.setTrustedProxies(proxies);
+        }
+        code(reply, 201, "OK");
+        assertThat(data(reply).get("location").asString()).isEqualTo("江苏省 南京市");
+        assertThat(data(reply).get("userAgentOs").asString()).isEqualTo("iOS");
+        assertThat(data(reply).get("userAgentBrowser").asString()).isEqualTo("Safari");
+        assertThat(data(call("GET", "/blog/messages?parentId=" + id, null, null)).get("records").size())
+                .isEqualTo(2);
+
+        String path = "/blog/me/messages/" + id;
+        String revision = call("GET", path, owner, null).getResponse().getHeader("X-Revision");
+        MvcResult edited = write("PUT", path, owner, revision, messageEdit("编辑仍保留发布设备"));
+        code(edited, 200, "OK");
+        assertThat(data(edited).get("userAgentBrowser").asString()).isEqualTo("Edge");
+        assertThat(data(edited).get("location").asString()).isEqualTo("江苏省 南京市");
+
+        jdbc.update("UPDATE blog_message SET status=3 WHERE message_id=?", id);
+        JsonNode deleted = data(call("GET", path, owner, null));
+        for (String field : List.of("location", "userAgentOs", "userAgentBrowser")) {
+            assertThat(deleted.get(field).isNull()).isTrue();
+        }
+    }
+
+    @Test
+    void messageClientLocationMigrationPreservesHistoricalContent() throws Exception {
+        String owner = actor("message_migration_owner", 3);
+        String id = createMessage(owner, null, "迁移保留留言正文", 0);
+        // 只在本测试创建的隔离库模拟旧表，不连接已有业务库。
+        jdbc.execute("ALTER TABLE blog_message DROP COLUMN location, DROP COLUMN user_agent_os, " +
+                "DROP COLUMN user_agent_browser");
+        try (var connection = jdbc.getDataSource().getConnection()) {
+            ScriptUtils.executeSqlScript(connection,
+                    new FileSystemResource("../../sql/migrations/20261102_message_client_location.sql"));
+        }
+        JsonNode historical = data(call("GET", "/blog/me/messages/" + id, owner, null));
+        assertThat(historical.get("content").asString()).isEqualTo("迁移保留留言正文");
+        for (String field : List.of("location", "userAgentOs", "userAgentBrowser")) {
+            assertThat(historical.get(field).isNull()).isTrue();
+        }
+        JsonNode fresh = data(call("POST", "/blog/messages", owner,
+                json.writeValueAsString(messageBody(null, "升级后新留言", 0))));
+        assertThat(fresh.get("location").asString()).isEqualTo("本地");
+        assertThat(fresh.get("userAgentBrowser").isNull()).isTrue();
+    }
+
+    @Test
     void messagePrivateParentChainIsVisibleOnlyToItsInitiatorThroughPublicRoutes() throws Exception {
         String admin = actor("message_admin", 1);
         String owner = actor("message_owner", 3);
@@ -4500,6 +4632,45 @@ class ArticleIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM blog_page_view", Integer.class)).isZero();
         jdbc.execute("DROP TRIGGER part7_fail");
         code(track(null, ORIGIN, tracking("fingerprint-analytics-rollback", "/", null)), 200, "OK");
+    }
+
+    @Test
+    void visitorCountsFollowRetainedViewsWithoutChangingRestrictionRevision() throws Exception {
+        String admin = actor("visitor_counts_admin", 1);
+        jdbc.update("INSERT INTO blog_visitor(visitor_id,fingerprint,country) VALUES" +
+                "(70001,'visitor-counts-first','China'),(70002,'visitor-counts-empty','China')," +
+                "(70003,'visitor-counts-other','Other')");
+        jdbc.update("INSERT INTO blog_page_view(visitor_id,site_code,page_path) VALUES" +
+                "(70001,'blog','/'),(70001,'home','/'),(70003,'cv','/'),(NULL,'blog','/')");
+
+        MvcResult listing = call("GET", "/admin/visitors?country=China&pageSize=1", admin, null);
+        code(listing, 200, "OK");
+        assertThat(data(listing).get("total").asString()).isEqualTo("2");
+        assertThat(data(listing).get("records").size()).isEqualTo(1);
+        assertThat(data(listing).get("records").get(0).get("visitorId").asString()).isEqualTo("70002");
+        assertThat(data(listing).get("records").get(0).get("totalViews").asString()).isEqualTo("0");
+        MvcResult secondPage = call("GET", "/admin/visitors?country=China&pageSize=1&page=2", admin, null);
+        code(secondPage, 200, "OK");
+        assertThat(data(secondPage).get("records").get(0).get("totalViews").isString()).isTrue();
+        assertThat(data(secondPage).get("records").get(0).get("totalViews").asString()).isEqualTo("2");
+
+        String path = "/admin/visitors/70001";
+        MvcResult detail = call("GET", path, admin, null);
+        code(detail, 200, "OK");
+        assertThat(data(detail).get("totalViews").asString()).isEqualTo("2");
+        String revision = detail.getResponse().getHeader("X-Revision");
+        jdbc.update("INSERT INTO blog_page_view(visitor_id,site_code,page_path) VALUES(70001,'cv','/')");
+        MvcResult visited = call("GET", path, admin, null);
+        assertThat(data(visited).get("totalViews").asString()).isEqualTo("3");
+        assertThat(visited.getResponse().getHeader("X-Revision")).isEqualTo(revision);
+
+        String view = jdbc.queryForObject("SELECT MIN(view_id) FROM blog_page_view WHERE visitor_id=70001", String.class);
+        code(call("POST", "/admin/page-views/batch-delete", admin,
+                json.writeValueAsString(Map.of("ids", List.of(view)))), 200, "OK");
+        MvcResult cleaned = call("GET", path, admin, null);
+        assertThat(data(cleaned).get("totalViews").asString()).isEqualTo("2");
+        assertThat(cleaned.getResponse().getHeader("X-Revision")).isEqualTo(revision);
+        code(call("GET", "/admin/visitors/79999", admin, null), 404, "NOT_FOUND");
     }
 
     @Test

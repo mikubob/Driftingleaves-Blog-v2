@@ -9,8 +9,7 @@ import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
-import SafeHtml from '../components/SafeHtml.vue'
-import CaptchaField from '../../../shared/CaptchaField.vue'
+import DiscussionDetail from '../components/DiscussionDetail.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -23,7 +22,6 @@ const detailVisible = ref(false)
 const replyVisible = ref(false)
 const busy = ref(false)
 const replyError = ref('')
-const captcha = ref(null)
 const reply = reactive({ content: '', contentFormat: 0, notifyReply: 0 })
 
 async function view(row, replying = false) {
@@ -65,7 +63,6 @@ async function sendReply() {
   try {
     await request(`/admin/messages/${detail.value.messageId}/replies`, {
       method: 'POST',
-      captcha: captcha.value.getValue(),
       body: {
         content: reply.content,
         contentFormat: reply.contentFormat,
@@ -78,9 +75,6 @@ async function sendReply() {
   } catch (failure) {
     replyError.value = failure.message
   } finally {
-    if (replyVisible.value) {
-      captcha.value?.refresh()
-    }
     busy.value = false
   }
 }
@@ -220,16 +214,20 @@ const batchActions = computed(() => {
         empty-text="暂无留言"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column label="留言" min-width="300">
+        <el-table-column label="留言内容" min-width="300">
           <template #default="{ row }">
-            <button class="table-title" @click="view(row)">{{ row.content }}</button>
-            <p class="table-secondary">
-              {{ row.author?.nickname || '已删除用户' }} ·
-              <span :class="['status-tag', { 'is-purple': row.isSecret }]">
-                {{ row.isSecret ? '悄悄话' : '公开留言' }}
-              </span>
-              <span v-if="row.parentId">· 回复 {{ row.parentId }}</span>
-            </p>
+            <button class="table-title discussion-preview" :title="row.content" @click="view(row)">{{ row.content }}</button>
+          </template>
+        </el-table-column>
+        <el-table-column label="昵称" width="140" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.author?.nickname || '已删除用户' }}</template>
+        </el-table-column>
+        <el-table-column prop="parentId" label="回复目标 ID" width="190">
+          <template #default="{ row }">{{ row.parentId || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="可见性" width="110">
+          <template #default="{ row }">
+            <span :class="['status-tag', { 'is-purple': row.isSecret }]">{{ row.isSecret ? '悄悄话' : '公开留言' }}</span>
           </template>
         </el-table-column>
         <el-table-column label="状态" width="110">
@@ -238,7 +236,7 @@ const batchActions = computed(() => {
         <el-table-column label="发表时间" width="175">
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="250">
+        <el-table-column label="操作" width="250" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <template v-if="row.status !== 3">
@@ -278,15 +276,10 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
-    <el-dialog v-model="detailVisible" title="留言详情" width="720px" destroy-on-close>
-      <template v-if="detail">
-        <p class="muted-text">
-          {{ detail.author?.nickname || '已删除用户' }} · {{ formatTime(detail.createTime) }} ·
-          {{ detail.isSecret ? '悄悄话' : '公开' }}
-        </p>
-        <p>留言 ID：{{ detail.messageId }} · 回复目标：{{ detail.parentId || '根留言' }}</p>
-        <StatusTag :value="detail.status" kind="review" />
-        <SafeHtml :html="detail.htmlContent" />
+    <el-dialog v-model="detailVisible" title="留言详情" width="760px" destroy-on-close>
+      <DiscussionDetail v-if="detail" kind="message" :detail="detail" />
+      <template #footer>
+        <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
     <el-dialog
@@ -315,11 +308,10 @@ const batchActions = computed(() => {
             邮件通知
             <el-switch v-model="reply.notifyReply" :active-value="1" :inactive-value="0" />
           </label>
-          <CaptchaField v-if="replyVisible" ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
           <p v-if="replyError" role="alert" class="error-text">{{ replyError }}</p>
           <div class="dialog-actions">
             <el-button :disabled="busy" @click="replyVisible = false">取消</el-button>
-            <el-button type="primary" native-type="submit" :loading="busy" :disabled="!captcha?.ready">发送回复</el-button>
+            <el-button type="primary" native-type="submit" :loading="busy">发送回复</el-button>
           </div>
         </form>
       </template>

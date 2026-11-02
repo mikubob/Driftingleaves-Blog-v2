@@ -83,7 +83,7 @@ const batchActions = computed(() => {
       <div>
         <p class="eyebrow">ANALYTICS / PAGE VIEWS</p>
         <h1>浏览记录</h1>
-        <p class="muted-text">SUB浏览记录</p>
+        <p class="muted-text">查看页面浏览明细、访客 IP 与访问来源。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
@@ -169,15 +169,14 @@ const batchActions = computed(() => {
         empty-text="暂无记录"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column prop="pageTitle" label="页面标题" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="siteCode" label="站点" min-width="80" show-overflow-tooltip />
+        <el-table-column prop="pageTitle" label="页面标题" min-width="260" show-overflow-tooltip />
         <el-table-column prop="pagePath" label="页面路径" min-width="240" show-overflow-tooltip />
+        <el-table-column prop="ipAddress" label="访客 IP" width="180" show-overflow-tooltip />
         <el-table-column prop="referer" label="来源" min-width="200" show-overflow-tooltip />
-        <el-table-column prop="ipAddress" label="IP 地址" min-width="160" show-overflow-tooltip />
-        <el-table-column label="访问时间" width="180">
+        <el-table-column label="浏览时间" width="180" align="center">
           <template #default="{ row }">{{ formatTime(row.viewTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="150" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <el-button type="danger" v-if="can('blog:view:delete', true)" link @click="remove(row)">

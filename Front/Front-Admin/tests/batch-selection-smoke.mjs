@@ -43,7 +43,7 @@ async function batchSelectionSmoke(page) {
       slug: `entry-${index}`, roleCode: 'custom', roleName: `角色${index}`, permissionName: `权限${index}`,
       menuName: `菜单${index}`, menuType: 'M', parentId: null, children: [], status: 1,
       content: `测试内容${index}`, contentFormat: 0, sizeBytes: '100', visibility: 1,
-      viewCount: '0', likeCount: '0', commentCount: '0', durationSeconds: 1, isBlocked: 0,
+      viewCount: '0', totalViews: '0', likeCount: '0', commentCount: '0', durationSeconds: 1, isBlocked: 0,
       createTime: null, updateTime: null, author: { userId: '1', nickname: '测试作者' } }
   }
   await page.unroute('**/api/v1/**')

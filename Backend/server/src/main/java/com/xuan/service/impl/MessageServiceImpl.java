@@ -17,6 +17,7 @@ import com.xuan.dto.MessagePublicQueryDTO;
 import com.xuan.entity.BlogMessage;
 import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
+import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.MessageMapper;
 import com.xuan.mapper.SiteConfigMapper;
 import com.xuan.mapper.UserMapper;
@@ -33,6 +34,7 @@ import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.utils.UserAgentUtils;
 import com.xuan.vo.ArticlePublicVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MessagePrivateVO;
@@ -77,6 +79,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final SubscriptionNotifications notifications;
     private final JsonMapper json;
     private final Clock clock;
+    private final IpLocationResolver locations;
 
     /** {@inheritDoc} */
     @Override
@@ -104,7 +107,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     /** {@inheritDoc} */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public MessagePrivateVO create(MessageCreateDTO request) {
+    public MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent) {
         // 1. 锁住用户和留言开关，每次等待结束后重新检查原会话与权限。
         long actor = requireMember("create");
         users.lockById(actor);
@@ -126,6 +129,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         row.setNotifyReply(request.getNotifyReply());
         row.setIsSecret(request.getIsSecret() == 1 || secret(path) ? 1 : 0);
         row.setStatus(policy.get("reviewRequired").asBoolean() ? 0 : 1);
+        row.setLocation(locations.getIpLocation(ip));
+        row.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
+        row.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
 
         // 4. 保存后登记通知，只有事务提交且留言通过审核才发送。
         messages.insert(row);
@@ -257,7 +263,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
     @RateLimit(value = "message-reply", limit = 10, dimension = RateLimit.Dimension.USER)
-    public MessagePrivateVO replyAdmin(long id, MessageEditDTO request) {
+    public MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent) {
         // 1. 后台回复也检查开关和完整父链，不能借管理员身份放宽私密范围。
         long actor = requireAdmin("review");
         users.lockById(actor);
@@ -277,6 +283,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         row.setNotifyReply(request.getNotifyReply());
         row.setIsSecret(secret(path) ? 1 : 0);
         row.setStatus(1);
+        row.setLocation(locations.getIpLocation(ip));
+        row.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
+        row.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
 
         // 3. 保存回复后登记提交后的通知，不在事务提交前发送邮件。
         messages.insert(row);
@@ -440,7 +449,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
                 value.htmlContent(), value.contentFormat(),
                 value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
-                value.updateTime(), row.getStatus() == 3 ? 0 : row.getNotifyReply());
+                value.updateTime(), row.getStatus() == 3 ? 0 : row.getNotifyReply(), value.location(),
+                value.userAgentOs(), value.userAgentBrowser());
     }
 
     /** 删除占位永不返回旧原文，纯文本转义并保留换行。 */
@@ -454,7 +464,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 deleted ? null : new ArticlePublicVO.Author(row.getUserId(), row.getAuthorNickname(),
                         row.getAuthorAvatar()),
                 content, html, format, row.getIsSecret(), row.getStatus(), row.getEditedAt(),
-                Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime());
+                Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime(),
+                deleted ? null : row.getLocation(), deleted ? null : row.getUserAgentOs(),
+                deleted ? null : row.getUserAgentBrowser());
     }
 
     /** 当前资料和版本一起返回。 */

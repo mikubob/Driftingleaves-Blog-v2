@@ -1,6 +1,6 @@
 package com.xuan.utils;
 
-/** 从请求头识别评论展示所需的浏览器和系统，不把原始 User-Agent 公开。 */
+/** 从请求头识别评论和留言展示所需的浏览器与系统，不把原始 User-Agent 公开。 */
 public final class UserAgentUtils {
 
     private UserAgentUtils() {

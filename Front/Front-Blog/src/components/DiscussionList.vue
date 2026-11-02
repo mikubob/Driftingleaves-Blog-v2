@@ -9,6 +9,7 @@ import { formatDate } from '@/format.js'
 import ListPager from './ListPager.vue'
 import ResourceState from './ResourceState.vue'
 import SafeHtml from './SafeHtml.vue'
+import DiscussionMeta from './DiscussionMeta.vue'
 const props = defineProps({ kind: String, articleId: String, parentId: { type: String, default: null }, allowReply: { type: Boolean, default: true } })
 const emit = defineEmits(['reply', 'edit', 'total'])
 const page = ref(1)
@@ -81,11 +82,7 @@ const handleDelete = doDelete
               <span class="c-nick">{{ c.nickname }}</span>
               <span v-if="c.isApproved === 2" class="c-pending">未通过</span>
               <span v-if="c.isApproved === 0" class="c-pending">未审核</span>
-              <template v-if="c.status !== 3">
-                <span class="c-meta-item" aria-label="IP 属地">{{ c.location || '未知' }}</span>
-                <span class="c-meta-item" aria-label="操作系统">{{ c.userAgentOs || '未知' }}</span>
-                <span class="c-meta-item" aria-label="浏览器">{{ c.userAgentBrowser || '未知' }}</span>
-              </template>
+              <DiscussionMeta v-if="c.status !== 3" :item="c" />
               <span class="c-date">{{ fmtDate(c.createTime) }}</span>
             </div>
             <div class="c-body" style="white-space: pre-wrap">{{ c.content }}</div>
@@ -154,6 +151,7 @@ const handleDelete = doDelete
               <span v-if="c.isSecret === 1" class="msg-pending">悄悄话</span>
               <span v-if="c.isApproved === 2" class="msg-pending">未通过</span>
               <span v-if="c.isApproved === 0" class="msg-pending">未审核</span>
+              <DiscussionMeta v-if="c.status !== 3" :item="c" />
               <span class="msg-date">{{ fmtDate(c.createTime) }}</span>
             </div>
             <SafeHtml class="msg-body" :html="c.contentHtml" />

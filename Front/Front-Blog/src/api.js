@@ -95,6 +95,7 @@ const subscription = (value) => model(value, {
 })
 const message = (value) => model(value, {
   messageId: isId, content: text, htmlContent: text, contentFormat: flag,
+  location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
   isSecret: flag, isOwn: (item) => typeof item === 'boolean',
   status: (item) => [0, 1, 2, 3].includes(item), createTime: time,
   author: (item) => item === null || author(item),

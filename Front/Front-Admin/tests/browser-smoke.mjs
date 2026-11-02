@@ -176,6 +176,9 @@ async function smoke(page) {
       {
         messageId: '1',
         parentId: null,
+        location: '江苏省 南京市',
+        userAgentOs: 'Windows',
+        userAgentBrowser: 'Edge',
         author: { userId: id, nickname: '测试读者' },
         content: '你好，这是虚构的测试留言。',
         htmlContent: '<p>测试留言</p>',
@@ -321,6 +324,7 @@ async function smoke(page) {
       {
         visitorId: '1',
         fingerprint: 'test-fingerprint',
+        totalViews: '24',
         ipAddress: '192.0.2.42',
         userAgent: 'Test Browser',
         country: '中国',
@@ -369,10 +373,13 @@ async function smoke(page) {
     if (req.method() !== 'GET') {
       const body = req.postDataJSON()
       writes.push({ path, method: req.method(), body, headers: req.headers() })
-      if (['/admin/auth/login', '/admin/auth/email-code'].includes(path) || /\/replies$/.test(path)) {
+      if (['/admin/auth/login', '/admin/auth/email-code'].includes(path)) {
         if (req.headers()['x-captcha-id'] !== 'a'.repeat(43) || req.headers()['x-captcha-code'] !== '012345') {
           throw new Error('缺少正确的验证码请求头')
         }
+      }
+      if (/\/replies$/.test(path) && (req.headers()['x-captcha-id'] || req.headers()['x-captcha-code'])) {
+        throw new Error('后台回复不应发送验证码请求头')
       }
       if (path === '/admin/auth/email-code') {
         return respond(null)
@@ -567,13 +574,40 @@ async function smoke(page) {
       await page.keyboard.press('Escape')
     }
     if (path === '/content/messages') {
+      await page.getByRole('button', { name: '详情', exact: true }).click()
+      const detailDialog = page.getByRole('dialog', { name: '留言详情', exact: true })
+      for (const [label, expected] of [['IP 属地', '江苏省 南京市'], ['操作系统', 'Windows'], ['浏览器', 'Edge']]) {
+        const value = detailDialog.getByRole('cell', { name: label, exact: true })
+          .locator('xpath=following-sibling::td[1]')
+        if (await value.innerText() !== expected) {
+          throw new Error(`后台留言详情未显示正确的${label}`)
+        }
+      }
+      await page.keyboard.press('Escape')
+      await detailDialog.waitFor({ state: 'hidden' })
       await page.getByRole('button', { name: '回复', exact: true }).click()
       const replyDialog = page.getByRole('dialog', { name: '回复留言', exact: true })
       await replyDialog.waitFor()
-      await page.waitForFunction(() => !document.querySelector('.el-dialog .captcha-controls input').disabled)
+      if (await replyDialog.locator('.captcha-field').count()
+        || await replyDialog.getByLabel('六位数字验证码', { exact: true }).count()) {
+        throw new Error('后台留言回复仍要求验证码')
+      }
       await checkDiscussionInputs(replyDialog, '后台留言回复框')
-      await replyDialog.getByRole('button', { name: '取消', exact: true }).click()
+      await replyDialog.getByRole('textbox', { name: '回复内容', exact: true }).fill('无需验证码的后台回复')
+      await replyDialog.getByRole('button', { name: '发送回复', exact: true }).click()
+      await replyDialog.waitFor({ state: 'hidden' })
+      const sent = writes.findLast((write) => write.path === '/admin/messages/1/replies')
+      if (sent?.body.content !== '无需验证码的后台回复') {
+        throw new Error('后台回复未成功发送')
+      }
     }
+  }
+  await page.getByRole('columnheader', { name: '浏览时间', exact: true }).waitFor()
+  const viewHeaders = await page.locator('.el-table__header-wrapper th .cell').allTextContents()
+  if (JSON.stringify(viewHeaders.filter(Boolean)) !== JSON.stringify([
+    '页面标题', '页面路径', '访客 IP', '来源', '浏览时间', '操作',
+  ])) {
+    throw new Error(`浏览记录列顺序不正确：${JSON.stringify(viewHeaders)}`)
   }
   await page.getByRole('button', { name: '详情', exact: true }).click()
   const viewDialog = page.getByRole('dialog', { name: '浏览记录详情', exact: true })
@@ -599,10 +633,20 @@ async function smoke(page) {
   await page.getByRole('cell', { name: '192.0.2.42', exact: true }).waitFor()
   await page.getByRole('cell', { name: '江苏省 南京市', exact: true }).waitFor()
   await page.locator('nav a[href="/statistics/visitors"]').click()
+  await page.getByRole('heading', { name: '访客管理', exact: true }).waitFor()
+  await page.getByRole('columnheader', { name: '浏览次数', exact: true }).waitFor()
+  const visitorHeaders = await page.locator('.el-table__header-wrapper th .cell').allTextContents()
+  if (JSON.stringify(visitorHeaders.filter(Boolean)) !== JSON.stringify([
+    'IP 地址', '国家', '省份', '城市', '浏览次数', '状态', '首次访问', '最近访问', '封禁到期', '操作',
+  ])) {
+    throw new Error(`访客列顺序不正确：${JSON.stringify(visitorHeaders)}`)
+  }
+  await page.getByRole('cell', { name: '24', exact: true }).waitFor()
   await page.getByRole('button', { name: '详情', exact: true }).click()
   const visitorDialog = page.getByRole('dialog', { name: '访客详情', exact: true })
   await visitorDialog.getByText('192.0.2.42', { exact: true }).waitFor()
   await visitorDialog.getByText('中国 / 浙江 / 杭州', { exact: true }).waitFor()
+  await visitorDialog.getByText('24', { exact: true }).waitFor()
   await page.keyboard.press('Escape')
   await visitorDialog.waitFor({ state: 'hidden' })
   const editPages = [

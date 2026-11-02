@@ -4,10 +4,12 @@ import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessagePublicQueryDTO;
+import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IMessageService;
 import com.xuan.store.CaptchaStore;
+import com.xuan.utils.IpUtils;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,6 +33,7 @@ public class MessageController {
 
     private final IMessageService messages;
     private final CaptchaStore captchas;
+    private final AuthProperties auth;
 
     /** 默认根节点，每次只展开一层，total不计不可见内容。 */
     @GetMapping
@@ -45,6 +48,7 @@ public class MessageController {
     public ResponseEntity<Result<MessagePrivateVO>> create(@Valid @RequestBody MessageCreateDTO request,
             HttpServletRequest httpRequest) {
         captchas.verify(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
-        return ResponseEntity.status(201).body(Result.ok(messages.create(request)));
+        return ResponseEntity.status(201).body(Result.ok(messages.create(request,
+                IpUtils.clientIp(httpRequest, auth.getTrustedProxies()), httpRequest.getHeader("User-Agent"))));
     }
 }

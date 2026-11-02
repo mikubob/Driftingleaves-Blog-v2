@@ -113,7 +113,7 @@ npx --yes --package @playwright/cli playwright-cli -s=charts close
 
 浏览器检查还覆盖登录页设计保留、侧栏图标唯一性、折叠与展开、keepAlive 状态，以及未知路由、429、503、网络异常的全屏 404 与返回入口。
 
-图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言和后台留言回复同样校验。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
+图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言及本人留言编辑同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
 
 
 ## 批量选择交互
@@ -125,3 +125,11 @@ npx --yes --package @playwright/cli playwright-cli -s=charts close
 共用实现为 `src/components/BatchActions.vue` 和 `src/batch.js`。单元测试使用 `pnpm test`；浏览器夹具 `tests/batch-selection-smoke.mjs` 使用虚构HTTP数据驱动18个真实Vue页面，不连接业务服务，可经Playwright CLI的 `run-code --filename` 执行。
 
 2026-11-01 批量选择验收：`pnpm test` 24项通过，`pnpm build`成功；Playwright虚构HTTP夹具验证18个真实页面、47项检查通过，覆盖当前页全选/取消、翻页清空、取消确认不写入、多项单次请求、版本冲突不重试、文件失败明细、永久限制明确选择和权限隐藏。桌面/手机截图位于仓库`output/playwright/batch-selection.png`及`batch-selection-mobile.png`；静态核对18页覆盖全部26个统一入口。本次未修改后端或连接业务库。
+
+## 评论与留言的列表和详情
+
+列表按内容、昵称、回复目标 ID、所属文章（评论）或可见性（留言）、状态、发表时间和操作分列，正文只预览一行，点击内容或详情查看全文。回复目标使用现有 V2 的 parentId，不额外请求或推测被回复者资料。
+
+两类详情共用 DiscussionDetail：桌面双列、手机单列，展示当前接口已有的账号、记录 ID、状态、属地、系统、浏览器和时间；留言另含可见性、内容格式及通知意愿。正文置于带边框的内容区，纯文本保留换行，Markdown 沿用后端安全 HTML 与私密图片读取。SafeHtml 等待容器挂载后填入内容，修复首次打开详情时 Markdown 正文为空的问题。接口和数据库不变，后台回复继续无需验证码。
+
+新增浏览器检查可通过 Playwright CLI 的 `run-code --filename Front/Front-Admin/tests/discussion-layout-smoke.mjs` 执行，覆盖 1440/1280/390 像素下的两类页面、长正文、纯文本转义、Markdown、历史未知字段、大整数 ID 及打开期间调整窗口。HTTP 边界使用虚构数据，截图位于仓库的 `output/playwright/comments-detail-*.png` 和 `messages-detail-*.png`。

@@ -19,6 +19,9 @@ public class BlogMessage {
     private Long userId;
     private Long parentId;
     private String content;
+    private String location;
+    private String userAgentOs;
+    private String userAgentBrowser;
     private Integer contentFormat;
     private Integer isSecret;
     private Integer notifyReply;

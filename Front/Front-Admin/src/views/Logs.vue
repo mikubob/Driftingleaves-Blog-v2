@@ -27,6 +27,28 @@ const busy = ref(false)
 const detail = ref(null)
 const visible = ref(false)
 
+const operationTypes = {
+  create: { label: '新增', type: 'success' },
+  update: { label: '更新', type: 'primary' },
+  delete: { label: '删除', type: 'danger' },
+  status: { label: '更新状态', type: 'primary' },
+  review: { label: '审核', type: 'warning' },
+  restore: { label: '恢复', type: 'success' },
+  purge: { label: '永久删除', type: 'danger' },
+  block: { label: '封禁', type: 'warning' },
+  unblock: { label: '解封', type: 'success' },
+  grant: { label: '授权', type: 'primary' },
+  reply: { label: '回复', type: 'primary' },
+  upload: { label: '上传', type: 'success' },
+  'batch-status': { label: '批量更新状态', type: 'primary' },
+  'batch-review': { label: '批量审核', type: 'warning' },
+  'batch-restore': { label: '批量恢复', type: 'success' },
+  'batch-delete': { label: '批量删除', type: 'danger' },
+  'batch-purge': { label: '批量永久删除', type: 'danger' },
+  'batch-block': { label: '批量封禁', type: 'warning' },
+  'batch-unblock': { label: '批量解封', type: 'success' },
+}
+
 async function view(row) {
   try {
     detail.value = (await request(`/admin/operation-logs/${row.logId}`)).data
@@ -159,12 +181,19 @@ const batchActions = computed(() => {
         empty-text="暂无记录"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column
-          prop="operationType"
-          label="操作类型"
-          min-width="120"
-          show-overflow-tooltip
-        />
+        <el-table-column prop="logId" label="ID" min-width="100" align="center" show-overflow-tooltip />
+        <el-table-column label="操作类型" width="150" align="center">
+          <template #default="{ row }">
+            <el-tag
+              class="operation-type"
+              :type="operationTypes[row.operationType]?.type || 'info'"
+              :title="row.operationType"
+              size="small"
+            >
+              {{ operationTypes[row.operationType]?.label || row.operationType }}
+            </el-tag>
+          </template>
+        </el-table-column>
         <el-table-column
           prop="operationTarget"
           label="操作目标"
@@ -230,3 +259,11 @@ const batchActions = computed(() => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.operation-type.el-tag--primary {
+  --el-tag-text-color: #409eff;
+  --el-tag-bg-color: #ecf5ff;
+  --el-tag-border-color: #b3d8ff;
+}
+</style>
