@@ -48,7 +48,7 @@ public class DisplayRequestAdvice {
     public void parameters(HttpServletRequest request) {
         if (("GET".equals(request.getMethod()) || "DELETE".equals(request.getMethod()))
                 && (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
+            throw new BusinessException(400, "VALIDATION_ERROR", "当前操作不需要提交内容，请刷新页面后重试。");
         }
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         Set<String> allowed = switch (route) {
@@ -61,7 +61,7 @@ public class DisplayRequestAdvice {
             case "GET /admin/statistics/articles" -> Set.of("begin", "end", "limit");
             case "GET /blog/messages" -> Set.of("page", "pageSize", "parentId");
             case "GET /blog/me/messages" -> Set.of("page", "pageSize", "status");
-            case "GET /admin/messages" -> Set.of("page", "pageSize", "status", "userId", "isSecret", "begin", "end");
+            case "GET /admin/messages" -> Set.of("page", "pageSize", "status", "userId", "isSecret", "begin", "end", "parentId");
             case "GET /blog/sitemap.xml" -> Set.of("page");
             case "GET /admin/rss-subscriptions" -> Set.of("page", "pageSize", "email", "userId", "status");
             case "GET /admin/operation-logs" ->
@@ -76,7 +76,7 @@ public class DisplayRequestAdvice {
         };
         request.getParameterMap().forEach((name, values) -> {
             if (!allowed.contains(name) || values.length != 1 || values[0].isBlank()) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "请求含未声明、重复或空白的查询参数");
+                throw new BusinessException(400, "VALIDATION_ERROR", "筛选条件包含不支持、重复或空白的项目，请清空筛选后重新选择。");
             }
         });
     }

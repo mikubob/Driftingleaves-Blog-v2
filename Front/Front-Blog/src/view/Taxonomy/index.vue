@@ -38,7 +38,10 @@ const articles = computed(() => listing.data?.records.map(articleView) || [])
 const loading = computed(() => listing.loading)
 function handlePageChange(page) {
   router.push({ query: { ...route.query, page: String(page) } })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  })
 }
 </script>
 

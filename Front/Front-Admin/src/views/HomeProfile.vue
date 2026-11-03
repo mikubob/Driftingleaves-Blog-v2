@@ -89,9 +89,7 @@ onMounted(load)
   <section v-loading="loading">
     <div class="page-header">
       <div>
-        <p class="eyebrow">HOME / PROFILE</p>
         <h1>主页资料</h1>
-        <p class="muted-text">维护主页与简历使用的公开身份和联系信息。</p>
       </div>
     </div>
     <RequestError :message="error" @retry="load" />

@@ -1,5 +1,6 @@
 <script setup>
 import ImagePreview from '../components/ImagePreview.vue'
+import UserDetail from '../components/UserDetail.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOptions, request } from '../api.js'
@@ -42,6 +43,7 @@ const batchActions = computed(() => {
   }
   return actions
 })
+const detailUserId = ref('')
 const dialog = ref(false)
 const roleDialog = ref(false)
 const saving = ref(false)
@@ -208,9 +210,7 @@ onMounted(async () => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">SYSTEM / USERS</p>
         <h1>用户管理</h1>
-        <p class="muted-text">管理本站账号、启用状态与角色分配。</p>
       </div>
       <el-button v-if="can('sys:user:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />
@@ -303,8 +303,15 @@ onMounted(async () => {
         <el-table-column label="最近登录地域" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.lastLoginLocation || '未知' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="220">
+        <el-table-column label="操作" width="280">
           <template #default="{ row }">
+            <el-button
+              v-if="can('sys:user:query')"
+              type="primary"
+              link
+              :disabled="deleting || batch?.busy"
+              @click="detailUserId = row.userId"
+            >详情</el-button>
             <el-button
               type="primary"
               v-if="can('sys:user:update')"
@@ -341,6 +348,12 @@ onMounted(async () => {
         @size-change="changePageSize"
       />
     </el-card>
+    <UserDetail
+      v-if="detailUserId"
+      :key="detailUserId"
+      :user-id="detailUserId"
+      @close="detailUserId = ''"
+    />
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑用户' : '创建用户'"

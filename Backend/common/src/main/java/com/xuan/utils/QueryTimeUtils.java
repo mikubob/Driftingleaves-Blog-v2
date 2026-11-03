@@ -31,14 +31,14 @@ public final class QueryTimeUtils {
             }
             return result;
         } catch (IllegalArgumentException | DateTimeException error) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "时间须为合法UTC毫秒时间");
+            throw new BusinessException(400, "VALIDATION_ERROR", "时间格式无效，请重新选择日期和时间。");
         }
     }
 
     /** 检查查询时间范围，包含开始时刻、不包含结束时刻，可以只传一端。 */
     public static void requireRange(LocalDateTime begin, LocalDateTime end) {
         if (ObjectUtil.isNotNull(begin) && ObjectUtil.isNotNull(end) && !begin.isBefore(end)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "begin须早于end");
+            throw new BusinessException(400, "VALIDATION_ERROR", "开始时间必须早于结束时间，请调整时间范围。");
         }
     }
 }

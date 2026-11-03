@@ -1,4 +1,5 @@
 <script setup>
+import ResourceDetail from '../components/ResourceDetail.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -16,6 +17,7 @@ const {
   '/admin/tags',
   { keyword: '' },
 )
+const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const formError = ref('')
@@ -100,9 +102,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / TAGS</p>
         <h1>标签管理</h1>
-        <p class="muted-text">用标签串联想法，让文章更容易被发现。</p>
       </div>
       <el-button v-if="can('blog:tag:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />
@@ -126,7 +126,6 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>标签列表</h2>
-        <span class="muted-text">文章的另一种索引</span>
       </div>
             <BatchActions
         ref="batch" resource="/admin/tags" id-key="tagId"
@@ -154,8 +153,15 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" min-width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" width="200">
           <template #default="{ row }">
+            <el-button
+              v-if="can('blog:tag:query')"
+              type="primary"
+              link
+              :disabled="batch?.busy"
+              @click="detailId = row.tagId"
+            >详情</el-button>
             <el-button type="primary" v-if="can('blog:tag:update')" link @click="edit(row)">编辑</el-button>
             <el-button type="danger" v-if="can('blog:tag:delete')" link @click="remove(row)">删除</el-button>
           </template>
@@ -171,6 +177,21 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
+    <ResourceDetail
+      v-if="detailId"
+      :key="detailId"
+      :path="`/admin/tags/${detailId}`"
+      title="标签详情"
+      @close="detailId = ''"
+    >
+      <template #default="{ detail }">
+        <el-descriptions-item label="标签 ID">{{ detail.tagId }}</el-descriptions-item>
+        <el-descriptions-item label="标签名称">{{ detail.tagName }}</el-descriptions-item>
+        <el-descriptions-item label="URL 标识">{{ detail.slug }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
+      </template>
+    </ResourceDetail>
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑标签' : '新建标签'"

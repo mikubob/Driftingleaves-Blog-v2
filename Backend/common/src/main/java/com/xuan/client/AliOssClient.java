@@ -40,7 +40,7 @@ public class AliOssClient {
      */
     public String upload(byte[] bytes, String extension) {
         if (bytes == null || bytes.length == 0 || bytes.length > FileUtils.maxBytes(extension)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "文件大小或扩展名不符合要求");
+            throw new BusinessException(400, "VALIDATION_ERROR", "无法上传此文件，请确认文件非空且格式受支持；图片限10 MiB、音频限60 MiB、歌词限1 MiB。");
         }
         String key = prefix + FileUtils.getFileCategory(extension) + "/" + TokenUtils.random() + "." + extension;
         ObjectMetadata metadata = new ObjectMetadata();

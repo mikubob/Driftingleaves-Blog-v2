@@ -46,7 +46,6 @@ onMounted(async () => {
 
 <template>
   <section class="panel auth-panel">
-    <p class="eyebrow">OAUTH / SIGN IN</p>
     <h2>第三方授权</h2>
     <p :role="failed ? 'alert' : 'status'">{{ message }}</p>
     <router-link v-if="failed" to="/login" class="button">重新登录 →</router-link>

@@ -162,7 +162,10 @@ const scrollActiveIntoView = (containerRef) => {
     if (!container || !activeId.value) return
 
     const activeItem = container.querySelector('.toc-item.active')
-    activeItem?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+    activeItem?.scrollIntoView({
+      block: 'nearest',
+      behavior: 'smooth',
+    })
   })
 }
 

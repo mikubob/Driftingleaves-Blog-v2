@@ -114,8 +114,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </div>
 
           <template v-if="resources.profile.loading">
-            <h1 class="loading-title">正在加载主页</h1>
-            <p class="tagline" role="status">很快就好，请稍候…</p>
+            <h1 class="loading-title" role="status">正在加载主页</h1>
           </template>
           <div v-else-if="resources.profile.error" class="feedback" role="status">
             <h1>{{ displayName }}</h1>
@@ -124,10 +123,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </div>
           <template v-else-if="profile">
             <h1>{{ profile.nickname }}</h1>
-            <p class="tagline">
-              <span v-if="profile.tagline">{{ profile.tagline }}<span class="tagline-divider"> · </span></span>
-              <span>欢迎来到我的主页</span>
-            </p>
+            <p v-if="profile.tagline" class="tagline">{{ profile.tagline }}</p>
             <p v-if="profile.description" class="description">{{ profile.description }}</p>
             <p v-if="profile.location" class="location">
               <HomeIcon name="location" />{{ profile.location }}
@@ -146,7 +142,6 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </template>
           <template v-else>
             <h1>{{ displayName }}</h1>
-            <p class="tagline">欢迎来到我的主页</p>
             <p class="empty-state" role="status">主页资料暂未配置。</p>
           </template>
         </section>

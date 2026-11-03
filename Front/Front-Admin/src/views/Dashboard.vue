@@ -63,7 +63,7 @@ async function load() {
       request(`/admin/statistics/articles${articleQuery}`, { signal: current.signal }),
     ])
     if (!results[0].data || !results.slice(1).every((result) => Array.isArray(result.data))) {
-      throw new Error('统计响应格式不正确。')
+      throw new Error('统计数据加载异常，请刷新页面后重试。')
     }
     overview.value = results[0].data
     views.value = results[1].data
@@ -88,12 +88,10 @@ onBeforeUnmount(() => controller?.abort())
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">OVERVIEW</p>
         <h1>
           你好，{{ session.user?.nickname }}
           <span class="greeting-dot">.</span>
         </h1>
-        <p class="muted-text">每一篇内容，每一次访问，都在这里留下记录。</p>
       </div>
       <span class="date-caption">站点数据概览</span>
     </div>
@@ -132,13 +130,6 @@ onBeforeUnmount(() => controller?.abort())
           <div class="stat-info">
             <strong class="stat-value">{{ formatCount(overview?.[card.key]) }}</strong>
             <p class="stat-label">{{ card.label }}</p>
-            <span class="stat-card-caption">
-              {{
-                card.key.includes('Visitor') || ['visitorCount', 'pageViewCount'].includes(card.key)
-                  ? '所选日期区间'
-                  : '当前内容状态'
-              }}
-            </span>
           </div>
         </article>
       </div>
@@ -147,7 +138,6 @@ onBeforeUnmount(() => controller?.abort())
           <div class="card-heading">
             <div>
               <h2>浏览趋势</h2>
-              <p class="muted-text">保留的每日访问明细</p>
             </div>
             <span class="chart-legend">
               <i></i>
@@ -160,7 +150,6 @@ onBeforeUnmount(() => controller?.abort())
           <div class="card-heading">
             <div>
               <h2>新访客趋势</h2>
-              <p class="muted-text">区间内首次访问的读者</p>
             </div>
             <span class="chart-legend is-visitors">
               <i></i>
@@ -192,7 +181,6 @@ onBeforeUnmount(() => controller?.abort())
         <el-card shadow="never">
           <div class="card-heading">
             <h2>访客省份分布</h2>
-            <span class="muted-text">按当前地域归类</span>
           </div>
           <ReportChart v-if="provinces.length" :option="provinceOption" label="访客省份分布环形图" />
           <details v-if="provinces.length" class="chart-details">

@@ -9,6 +9,6 @@ import java.util.List;
 public record UserAdminVO(Long userId, String username, String nickname, String email, String avatar,
                           String intro, Integer status, boolean hasPassword, LocalDateTime lastLoginTime,
                           LocalDateTime createTime, LocalDateTime updateTime, List<Long> roleIds,
-                          String lastLoginIp, String lastLoginLocation) {
+                          String lastLoginIp, String lastLoginLocation, List<UserRoleVO> roles) {
 
 }

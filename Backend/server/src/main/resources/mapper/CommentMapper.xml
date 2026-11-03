@@ -6,6 +6,14 @@
         c.*, u.nickname AS author_nickname, u.avatar AS author_avatar, a.title AS article_title
     </sql>
 
+    <!-- 后台和本人列表共用筛选，后台的文章作者范围不能被评论者筛选扩大。 -->
+    <sql id="pageFilters">
+        <if test="article != null">AND c.article_id = #{article}</if>
+        <if test="user != null">AND c.user_id = #{user}</if>
+        <if test="status != null">AND c.status = #{status}</if>
+        <if test="author != null">AND a.author_id = #{author}</if>
+    </sql>
+
     <!-- 配置最先锁，配置关闭与评论写入才有明确的提交顺序。 -->
     <select id="lockConfig" resultType="com.xuan.entity.BlogSiteConfig">
         SELECT * FROM blog_site_config WHERE config_key = 'comment' FOR UPDATE
@@ -33,10 +41,25 @@
         FROM blog_comment c
         JOIN blog_article a ON a.article_id = c.article_id JOIN sys_user u ON u.user_id = c.user_id
         <where>
-            <if test="article != null">AND c.article_id = #{article}</if>
-            <if test="user != null">AND c.user_id = #{user}</if>
-            <if test="status != null">AND c.status = #{status}</if>
-            <if test="author != null">AND a.author_id = #{author}</if>
+            <include refid="pageFilters"/>
+        </where>
+        ORDER BY c.create_time DESC, c.comment_id DESC
+    </select>
+
+    <!-- 每次只查一层，不按前台审核状态隐藏回复；列表与分页总数共用相同条件。 -->
+    <select id="adminPage" resultType="com.xuan.model.CommentRow">
+        SELECT <include refid="columns"/>,
+        EXISTS (SELECT 1 FROM blog_comment r WHERE r.parent_id = c.comment_id
+            AND r.article_id = c.article_id) AS has_children
+        FROM blog_comment c
+        JOIN blog_article a ON a.article_id = c.article_id
+        JOIN sys_user u ON u.user_id = c.user_id
+        <where>
+            <include refid="pageFilters"/>
+            <choose>
+                <when test="parent != null and parent == 0">AND c.parent_id IS NULL</when>
+                <when test="parent != null">AND c.parent_id = #{parent}</when>
+            </choose>
         </where>
         ORDER BY c.create_time DESC, c.comment_id DESC
     </select>

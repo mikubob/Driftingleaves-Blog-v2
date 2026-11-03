@@ -20,9 +20,9 @@ public final class IdUtils {
             try {
                 return Long.valueOf(value);
             } catch (NumberFormatException exception) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "ID超出范围");
+                throw new BusinessException(400, "VALIDATION_ERROR", "所选记录的编号超出范围，请从列表重新进入或选择。");
             }
         }
-        throw new BusinessException(400, "VALIDATION_ERROR", "ID须为正十进制字符串");
+        throw new BusinessException(400, "VALIDATION_ERROR", "所选记录的编号无效，请从列表重新进入或选择。");
     }
 }

@@ -15,4 +15,5 @@ public class CommentRow extends BlogComment {
     private String authorAvatar;
     private String articleTitle;
     private Long replyCount;
+    private Boolean hasChildren;
 }

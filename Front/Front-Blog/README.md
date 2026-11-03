@@ -91,3 +91,25 @@ OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_C
 文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过 Bearer 读取并在切换/卸载时释放临时 URL。详见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
 
 阅读主题选择复用 Element Plus 并跟随网站明暗配色；正文背景透明，夜间不再嵌套纯黑内容块。Markdown 与旧 HTML 文章都使用相同的代码工具栏和本地高亮配色，保留行号、复制和折叠。
+
+## 导航与登录回归
+
+博客导航、主题开关和播放列表支持键盘操作；动画、过渡和平滑滚动始终启用，不受 Windows 动画效果或系统“减少动态效果”设置影响。
+
+在博客目录启动 `pnpm dev --port 5180`，在管理端目录启动 `pnpm dev --port 5178`，然后从仓库根目录执行：
+
+```powershell
+npx --no-install --package @playwright/cli playwright-cli -s=frontend-polish open about:blank
+npx --no-install --package @playwright/cli playwright-cli -s=frontend-polish run-code --filename Front/Front-Blog/tests/navigation.cjs
+```
+
+覆盖桌面与窄屏键盘导航、主题切换、选曲、搜索、验证码失败恢复、登录平台失败重试和动效偏好。截图保存在忽略的 `output/playwright/frontend-polish/`。HTTP 与音频播放使用替身，不验证真实登录、OAuth、音频解码或后端写入。
+
+`tests/ui-actions.cjs` 复用博客 5180 端口，验证窄屏长昵称取消回复、正文保留、长词清除搜索、取消喜欢，以及个人中心和侧栏订阅弹窗的只读邮箱与缺失提示：
+
+```powershell
+npx --no-install --package @playwright/cli playwright-cli -s=ui-actions open about:blank
+npx --no-install --package @playwright/cli playwright-cli -s=ui-actions run-code --filename Front/Front-Blog/tests/ui-actions.cjs
+```
+
+仅使用虚构 HTTP 数据，不提交真实评论、修改订阅或连接业务库。

@@ -20,9 +20,7 @@ function changePage(page) {
 
 <template>
   <section class="panel directory-panel">
-    <p class="eyebrow">EXPLORE THE JOURNAL</p>
     <h2>{{ route.meta.title }}</h2>
-    <p class="muted">{{ type === 'links' ? '互联网很大，去朋友的世界里走走。' : '沿着不同的线索，翻阅过去的记录。' }}</p>
     <ResourceState :resource="listing" />
     <template v-if="listing.data">
       <div v-if="type === 'archives'" class="archive-list">
@@ -48,7 +46,7 @@ function changePage(page) {
           </span>
           <div>
             <h3>{{ item.linkName }} ↗</h3>
-            <p>{{ item.description || '去看看这个小站。' }}</p>
+            <p v-if="item.description">{{ item.description }}</p>
           </div>
         </a>
       </div>
@@ -75,7 +73,6 @@ function changePage(page) {
           :to="`/${type === 'categories' ? 'category' : 'tag'}/${item.slug}`"
           class="taxonomy-card"
         >
-          <span class="muted">{{ type === 'categories' ? 'COLLECTION' : 'TAG' }}</span>
           <h3>
             {{ type === 'categories' ? item.categoryName : `# ${item.tagName}` }}
             <span>↗</span>
@@ -83,7 +80,7 @@ function changePage(page) {
           <p v-if="item.description" class="muted">{{ item.description }}</p>
         </router-link>
       </div>
-      <p v-if="!listing.data.records.length" class="empty-state">这里还没有内容，过些日子再来看看。</p>
+      <p v-if="!listing.data.records.length" class="empty-state">暂无{{ route.meta.title }}</p>
       <ListPager :data="listing.data" @change="changePage" />
     </template>
   </section>

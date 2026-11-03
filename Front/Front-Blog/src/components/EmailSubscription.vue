@@ -19,7 +19,7 @@ const submitLabel = computed(() => {
   if (busy.value) {
     return '处理中…'
   }
-  return subscription.data?.status === 0 ? '申请 / 重发确认邮件' : '申请订阅'
+  return subscription.data?.status === 0 ? '重发确认邮件' : '申请订阅'
 })
 
 async function update(cancel = false) {
@@ -52,9 +52,7 @@ async function update(cancel = false) {
 
 <template>
   <section class="panel">
-    <p class="eyebrow">LETTERS FROM THE JOURNAL</p>
-    <h2>订阅新的记录</h2>
-    <p class="muted">有新文章时，让它去你的邮箱里坐坐。</p>
+    <h2>邮件订阅</h2>
     <ResourceState :resource="subscription" />
     <template v-if="!subscription.loading && !subscription.error">
       <p v-if="subscription.data">
@@ -65,7 +63,7 @@ async function update(cancel = false) {
       </p>
       <form v-if="can('blog:rss:subscribe')" @submit.prevent="update(false)">
         <fieldset :disabled="busy">
-          <label for="subscription-email">订阅邮箱</label>
+          <label for="subscription-email">账号邮箱</label>
           <input
             id="subscription-email"
             :value="email"
@@ -74,11 +72,9 @@ async function update(cancel = false) {
             autocomplete="email"
             required
             readonly
-            aria-describedby="subscription-email-hint"
+            :aria-describedby="email ? undefined : 'subscription-email-hint'"
           />
-          <p id="subscription-email-hint" class="form-hint">
-            {{ email ? '仅使用当前登录账号邮箱，不能在此修改。' : '请先在个人资料中设置账号邮箱。' }}
-          </p>
+          <p v-if="!email" id="subscription-email-hint" class="form-hint">请先在个人资料中设置账号邮箱。</p>
           <div class="row">
             <button class="primary" :disabled="busy || !email">{{ submitLabel }}</button>
             <button
@@ -97,9 +93,7 @@ async function update(cancel = false) {
     <p v-if="error" class="error-text" role="alert">{{ error }}</p>
     <p v-if="feedback" class="success-text" role="status">{{ feedback }}</p>
     <p class="form-hint">
-      也可以用阅读器订阅
       <a :href="`${apiRoot}/blog/rss.xml`" target="_blank" rel="noopener noreferrer" class="text-button">RSS Feed ↗</a>
-      。
     </p>
   </section>
 </template>

@@ -6,6 +6,15 @@
         m.*,u.nickname AS author_nickname,u.avatar AS author_avatar
     </sql>
 
+    <!-- 后台和本人列表共用原有筛选条件，不按公开父链隐藏后台审核记录。 -->
+    <sql id="pageFilters">
+        <if test="user != null">AND m.user_id=#{user}</if>
+        <if test="status != null">AND m.status=#{status}</if>
+        <if test="secret != null">AND m.is_secret=#{secret}</if>
+        <if test="begin != null">AND m.create_time &gt;= #{begin}</if>
+        <if test="end != null">AND m.create_time &lt; #{end}</if>
+    </sql>
+
     <select id="nodes" resultType="com.xuan.model.MessageNode">SELECT
         message_id,user_id,parent_id,status,is_secret,create_time FROM blog_message ORDER BY create_time,message_id
     </select>
@@ -34,13 +43,24 @@
         <include refid="columns"/>
         FROM blog_message m JOIN sys_user u ON u.user_id=m.user_id
         <where>
-            <if test="user != null">AND m.user_id=#{user}</if>
-            <if test="status != null">AND m.status=#{status}</if>
-            <if test="secret != null">AND m.is_secret=#{secret}</if>
-            <if test="begin != null">AND m.create_time &gt;= #{begin}</if>
-            <if test="end != null">AND m.create_time &lt; #{end}</if>
+            <include refid="pageFilters"/>
         </where>
         ORDER BY m.create_time DESC,m.message_id DESC
+    </select>
+
+    <!-- 调用前已检查后台ALL权限；每页只读当前层，直接回复标记包含待审、驳回和私密回复。 -->
+    <select id="adminPage" resultType="com.xuan.model.MessageRow">
+        SELECT <include refid="columns"/>,
+        EXISTS (SELECT 1 FROM blog_message r WHERE r.parent_id = m.message_id) AS has_children
+        FROM blog_message m JOIN sys_user u ON u.user_id = m.user_id
+        <where>
+            <include refid="pageFilters"/>
+            <choose>
+                <when test="parent != null and parent == 0">AND m.parent_id IS NULL</when>
+                <when test="parent != null">AND m.parent_id = #{parent}</when>
+            </choose>
+        </where>
+        ORDER BY m.create_time DESC, m.message_id DESC
     </select>
 
     <update id="change">UPDATE blog_message SET

@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
-import { useList } from '../composables/useList.js'
+import { useDiscussionTree } from '../composables/useDiscussionTree.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
@@ -13,8 +13,10 @@ import DiscussionDetail from '../components/DiscussionDetail.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
-} = useList(
+  table: batchTable, tableKey, filtered, repliesLoading, loadReplies, loadMore,
+} = useDiscussionTree(
   '/admin/comments',
+  'commentId',
   { articleId: '', userId: '', status: '' },
   20,
 )
@@ -72,7 +74,6 @@ async function remove(row) {
 onMounted(load)
 
 const batch = ref(null)
-const batchTable = ref(null)
 const batchActions = computed(() => {
   const actions = []
   if (can('blog:comment:review')) {
@@ -110,9 +111,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / COMMENTS</p>
         <h1>评论管理</h1>
-        <p class="muted-text">认真对待每一次交流，审核与管理文章评论。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
@@ -144,65 +143,77 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>评论列表</h2>
-        <span class="muted-text">删除将同时移除全部子回复</span>
       </div>
-            <BatchActions
+      <BatchActions
         ref="batch" resource="/admin/comments" id-key="commentId"
         :rows="rows" :table="batchTable" :actions="batchActions"
         :disabled="loading || busy || !!error" @completed="load()"
+        :selectable="row => !row.replyPager"
       />
       <el-table
         ref="batchTable"
+        :key="tableKey"
         @selection-change="batch?.select"
         v-if="!error"
         v-loading="loading || busy || batch?.busy"
         :data="rows"
         row-key="commentId"
+        :lazy="!filtered"
+        :load="loadReplies"
+        :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
         border
         stripe
         empty-text="暂无评论"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column label="评论内容" min-width="280">
+        <el-table-column label="评论内容" min-width="280" class-name="discussion-content">
           <template #default="{ row }">
-            <button class="table-title discussion-preview" :title="row.content" @click="view(row)">{{ row.content }}</button>
+            <template v-if="row.replyPager">
+              <span v-if="row.error" role="alert" class="error-text">{{ row.error }}</span>
+              <el-button type="primary" link :disabled="loading || busy || repliesLoading || batch?.busy" @click="loadMore(row)">
+                {{ row.error ? '重试加载回复' : '加载更多回复' }}
+              </el-button>
+            </template>
+            <button v-else class="table-title discussion-preview" :title="row.content" @click="view(row)">{{ row.content }}</button>
           </template>
         </el-table-column>
         <el-table-column label="昵称" width="140" show-overflow-tooltip>
-          <template #default="{ row }">{{ row.author?.nickname || '已删除用户' }}</template>
+          <template #default="{ row }"><span v-if="!row.replyPager">{{ row.author?.nickname || '已删除用户' }}</span></template>
         </el-table-column>
-        <el-table-column prop="parentId" label="回复目标 ID" width="190">
+        <el-table-column v-if="filtered" prop="parentId" label="回复目标 ID" width="190">
           <template #default="{ row }">{{ row.parentId || '—' }}</template>
         </el-table-column>
         <el-table-column prop="articleTitle" label="所属文章" min-width="240" show-overflow-tooltip />
         <el-table-column label="状态" width="110">
-          <template #default="{ row }"><StatusTag :value="row.status" kind="review" /></template>
+          <template #default="{ row }"><StatusTag v-if="!row.replyPager" :value="row.status" kind="review" /></template>
         </el-table-column>
         <el-table-column label="发表时间" width="180">
-          <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
+          <template #default="{ row }"><span v-if="!row.replyPager">{{ formatTime(row.createTime) }}</span></template>
         </el-table-column>
         <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
-            <el-button type="primary" link @click="view(row)">详情</el-button>
-            <el-button
-              type="success"
-              v-if="can('blog:comment:review') && row.status !== 1"
-              link
-              @click="review(row, 1)"
-            >
-              通过
-            </el-button>
-            <el-button
-              type="warning"
-              v-if="can('blog:comment:review') && row.status !== 2"
-              link
-              @click="review(row, 2)"
-            >
-              驳回
-            </el-button>
-            <el-button type="danger" v-if="can('blog:comment:moderate')" link @click="remove(row)">
-              删除
-            </el-button>
+            <template v-if="!row.replyPager">
+              <el-button type="primary" link @click="view(row)">详情</el-button>
+              <el-button
+                type="success"
+                v-if="can('blog:comment:review') && row.status !== 1"
+                link
+                @click="review(row, 1)"
+              >
+                通过
+              </el-button>
+              <el-button
+                type="warning"
+                v-if="can('blog:comment:review') && row.status !== 2"
+                link
+                @click="review(row, 2)"
+              >
+                驳回
+              </el-button>
+              <el-button type="danger" v-if="can('blog:comment:moderate')" link @click="remove(row)">
+                删除
+              </el-button>
+            </template>
           </template>
         </el-table-column>
       </el-table>

@@ -74,7 +74,7 @@ public final class UrlPolicy {
      */
     public static void requireValid(String value) {
         if (!valid(value)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "avatar须为合法的公开HTTP(S)地址");
+            throw new BusinessException(400, "VALIDATION_ERROR", "头像地址无效，请填写以 http:// 或 https:// 开头的公开图片地址。");
         }
     }
 }

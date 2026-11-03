@@ -10,7 +10,9 @@ export const useArticleAnchors = (contentRef) => {
   let active = true
   const scrollToFragment = (hash, behavior = 'smooth') => {
     const target = findFragmentTarget(contentRef.value, hash)
-    if (!target) return false
+    if (!target) {
+      return false
+    }
     target.scrollIntoView({ block: 'start', behavior })
     return true
   }

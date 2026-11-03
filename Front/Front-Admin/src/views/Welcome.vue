@@ -12,9 +12,7 @@ const pages = computed(() =>
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">WORKSPACE</p>
         <h1>你好，{{ session.user?.nickname }}</h1>
-        <p class="muted-text">从这里开始，打理属于你的内容与站点。</p>
       </div>
     </div>
     <div v-if="pages.length" class="shortcut-grid">

@@ -2,7 +2,7 @@
 export function validateOnlineTicket(data) {
   if (!data || typeof data.ticket !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(data.ticket)
     || data.expiresIn !== 30) {
-    throw Object.assign(new Error('在线票据响应格式不正确。'), { code: 'VALIDATION_ERROR' })
+    throw Object.assign(new Error('暂时无法连接在线服务，请稍后刷新页面重试。'), { code: 'VALIDATION_ERROR' })
   }
   return data
 }
@@ -21,7 +21,7 @@ function snapshot(data) {
     || BigInt(data.onlineCount) !== BigInt(data.userCount) + BigInt(data.guestCount)
     || typeof data.serverTime !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(data.serverTime)
     || Number.isNaN(Date.parse(data.serverTime))) {
-    throw new Error('在线快照格式不正确。')
+    throw new Error('在线状态加载异常，请稍后刷新页面重试。')
   }
   return data
 }
@@ -118,7 +118,7 @@ export function createOnlineConnection({ apiRoot, requestTicket, payload, onStat
           const message = JSON.parse(event.data)
           if (typeof message.msg !== 'string' || !Array.isArray(message.errors)
             || !Object.hasOwn(message, 'data')) {
-            throw new Error('在线消息格式不正确。')
+            throw new Error('在线状态更新异常，请稍后刷新页面重试。')
           }
           if (message.type === 'error') {
             if (['UNAUTHENTICATED', 'ACCOUNT_DISABLED'].includes(message.code)) {
@@ -134,7 +134,7 @@ export function createOnlineConnection({ apiRoot, requestTicket, payload, onStat
             return
           }
           if (message.code !== 'OK') {
-            throw new Error('在线消息状态不正确。')
+            throw new Error('在线状态更新异常，请稍后刷新页面重试。')
           }
           if (message.type === 'online.count') {
             const data = snapshot(message.data)

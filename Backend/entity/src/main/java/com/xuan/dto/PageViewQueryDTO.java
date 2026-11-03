@@ -11,7 +11,7 @@ import jakarta.validation.constraints.Pattern;
  */
 public record PageViewQueryDTO(@Min(1) @Max(100000) Integer page, @Min(1) @Max(100) Integer pageSize,
                                String visitorId, String userId, String articleId,
-                               @Pattern(regexp = "home|blog|cv") String siteCode,
+                               @Pattern(regexp = "home|blog|cv", message = "请选择主页、博客或简历站点") String siteCode,
                                @TextLength(min = 1, max = 2048) String pagePath,
                                @TextLength(min = 1, max = 2048) String referer,
                                String begin, String end) {

@@ -16,7 +16,7 @@ public class PermissionCreateDTO {
 
     @NotNull
     @TextLength(min = 1, max = 100)
-    @Pattern(regexp = "admin:access|[a-z][a-z0-9]*:[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9]*")
+    @Pattern(regexp = "admin:access|[a-z][a-z0-9]*:[a-z][A-Za-z0-9]*:[a-z][A-Za-z0-9]*", message = "须使用模块:资源:操作格式，例如blog:article:query")
     private String permissionCode;
 
     @NotNull
@@ -24,7 +24,7 @@ public class PermissionCreateDTO {
     private String permissionName;
 
     @NotNull
-    @Pattern(regexp = "[a-z][a-z0-9_]{0,31}")
+    @Pattern(regexp = "[a-z][a-z0-9_]{0,31}", message = "须以小写字母开头，只能包含小写字母、数字或下划线，最多32位")
     private String module;
 
     @TextLength(max = 255)

@@ -118,8 +118,11 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
 
     /** 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。 */
     private void validateUrls(LinkWriteDTO request) {
-        if (!UrlPolicy.valid(request.getUrl()) || !UrlPolicy.valid(request.getAvatar())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "url和avatar须为合法的外部HTTP(S)地址");
+        if (!UrlPolicy.valid(request.getUrl())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "友链地址无效，请填写以 http:// 或 https:// 开头的外部地址。");
+        }
+        if (!UrlPolicy.valid(request.getAvatar())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "友链头像地址无效，请填写以 http:// 或 https:// 开头的外部图片地址。");
         }
     }
 
@@ -151,10 +154,10 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     /** 持有友链锁时先核对版本；缺失、格式不对、过期分别返回 428、400、412。 */
     private void checkRevision(BlogFriendLink row, String revision) {
         if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!revision.equals(profile(row).revision())) {
             throw new BusinessException(412, "REVISION_CONFLICT", "友链已修改，请重新获取");

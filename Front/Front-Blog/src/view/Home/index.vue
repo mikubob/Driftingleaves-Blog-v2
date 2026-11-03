@@ -58,7 +58,10 @@ const total = computed(() => listing.data?.total || '0')
 const loading = computed(() => listing.loading)
 function handlePageChange(page) {
   router.push({ query: { ...route.query, page: String(page) } })
-  window.scrollTo({ top: 0, behavior: 'smooth' })
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  })
 }
 </script>
 
@@ -75,7 +78,7 @@ function handlePageChange(page) {
             <strong>{{ searchKeyword }}</strong>
           </span>
           <span class="search-count">{{ total }} 篇结果</span>
-          <a class="clear-search" @click="router.push('/')">&times; 清除</a>
+          <button type="button" class="clear-search" @click="router.push('/')">清除搜索</button>
         </div>
         <p v-if="listing.error" role="alert">
           {{ listing.error }}
@@ -139,8 +142,16 @@ function handlePageChange(page) {
   border: 1px solid #ebeef5;
   margin-bottom: 16px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+.search-result-tip > span:first-child {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .search-count {
@@ -149,7 +160,14 @@ function handlePageChange(page) {
 }
 
 .clear-search {
-  color: #303133;
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--blog-border);
+  border-radius: 4px;
+  background: var(--blog-card);
+  font: inherit;
+  white-space: nowrap;
+  color: var(--blog-text);
   cursor: pointer;
   font-weight: 600;
   margin-left: auto;

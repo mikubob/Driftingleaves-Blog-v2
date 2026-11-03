@@ -57,7 +57,7 @@ public class ProfilePatchDTO {
         intro = normalize(value);
     }
 
-    @AssertTrue(message = "至少提供一项资料，nickname不能为null")
+    @AssertTrue(message = "请至少修改一项个人资料，昵称不能为空。")
     public boolean isValidPatch() {
         return (nicknamePresent || emailPresent || avatarPresent || introPresent)
                 && (!nicknamePresent || nickname != null);

@@ -96,6 +96,10 @@ async function contentRendered() {
   box-shadow: 0 0 0 1px var(--blog-border-light) inset;
 }
 
+.reader-theme-select :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1px var(--blog-text) inset;
+}
+
 /* 正文融入文章卡片，六种主题只改变排版和强调样式。 */
 .reader-markdown :deep(.md-editor) {
   background: transparent;

@@ -17,7 +17,7 @@ import lombok.Setter;
 public class AdminUserCreateDTO {
 
     @NotNull
-    @Pattern(regexp = "[A-Za-z0-9_]{3,64}")
+    @Pattern(regexp = "[A-Za-z0-9_]{3,64}", message = "须为3至64位字母、数字或下划线")
     private String username;
 
     @NotNull

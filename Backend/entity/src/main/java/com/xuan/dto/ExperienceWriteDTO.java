@@ -90,13 +90,13 @@ public class ExperienceWriteDTO {
     }
 
     /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
-    @AssertTrue(message = "必须提供全部可写字段，可空字段可为null")
+    @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
         return present.size() == 8;
     }
 
     /** DATE 不能越过数据库范围，正文按 UTF-8 字节数限制。 */
-    @AssertTrue(message = "经历日期或正文长度不合法")
+    @AssertTrue(message = "经历日期须在1000至9999年之间，结束日期不能早于开始日期，正文不能超过65,535字节。")
     public boolean isValidContent() {
         return (startDate == null || startDate.getYear() >= 1000 && startDate.getYear() <= 9999)
                 && (endDate == null || endDate.getYear() >= 1000 && endDate.getYear() <= 9999

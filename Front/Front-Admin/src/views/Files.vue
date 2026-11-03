@@ -125,21 +125,21 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / FILES</p>
         <h1>文件管理</h1>
-        <p class="muted-text">管理图片、音频和歌词，文件访问由后端核验授权。</p>
       </div>
       <div>
         <input ref="input" type="file" :accept="Object.values(fileAccept).join(',')" hidden @change="upload" />
-        <el-button
+        <el-tooltip
           v-if="can('blog:file:upload')"
-          type="primary"
-          :loading="busy"
-          @click="input.click()"
+          :trigger="['hover', 'focus']"
+          content="图片 ≤10 MiB；MP3/WAV/OGG/FLAC ≤60 MiB；UTF-8 LRC/TXT/JSON ≤1 MiB"
+          placement="bottom"
         >
-          <AdminIcon name="plus" />
-          上传文件
-        </el-button>
+          <el-button type="primary" :loading="busy" @click="input.click()">
+            <AdminIcon name="plus" />
+            上传文件
+          </el-button>
+        </el-tooltip>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
@@ -181,7 +181,6 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>文件列表</h2>
-        <span class="muted-text">图片 ≤10 MiB · MP3/WAV/OGG/FLAC ≤60 MiB · UTF-8 LRC/TXT/JSON ≤1 MiB</span>
       </div>
             <BatchActions
         ref="batch" resource="/admin/files" id-key="fileId"

@@ -26,7 +26,7 @@ public class FileRequestAdvice {
         }
         if ("POST /admin/files".equals(route)) {
             if (request.getContentLengthLong() > 61 * 1024 * 1024) {
-                throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "multipart请求超过61MiB");
+                throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "单次上传不能超过61 MiB，请缩小文件后重试。");
             }
             if (request.getQueryString() != null || !(request instanceof MultipartHttpServletRequest multipart)
                     || !multipart.getParameterMap().isEmpty() || multipart.getMultiFileMap().size() != 1
@@ -54,6 +54,6 @@ public class FileRequestAdvice {
 
     /** 返回文件参数错误，不带文件名、存储路径或多余字段的内容。 */
     private BusinessException invalid() {
-        return new BusinessException(400, "VALIDATION_ERROR", "请求含未声明、重复的字段或不支持的请求体");
+        return new BusinessException(400, "VALIDATION_ERROR", "文件请求无效，请刷新页面后重试；上传时请每次选择一个文件。");
     }
 }

@@ -18,7 +18,7 @@ public class BatchRevisionDTO {
     private List<@NotNull @Valid BatchItemDTO> items;
 
     /** 重复目标会使版本和结果对应不清，因此在入口拒绝。 */
-    @AssertTrue(message = "items不能包含重复ID")
+    @AssertTrue(message = "同一条记录不能重复选择，请取消重复项后重试。")
     public boolean isUnique() {
         if (items == null) {
             return true;

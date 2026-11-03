@@ -50,7 +50,7 @@ public class MessageEditDTO {
     }
 
     /** 可空parentId也必须显式出现。 */
-    @AssertTrue(message = "须提供全部声明字段")
+    @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 3;
     }

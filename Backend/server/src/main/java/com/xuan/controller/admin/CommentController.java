@@ -33,7 +33,7 @@ public class CommentController {
 
     private final ICommentService comments;
 
-    /** 分页查询评论，列表不带每条记录的版本，编辑前先查询详情。 */
+    /** 分页查询评论或一层回复，parentId为0查根节点，未传保留平铺；编辑前先查询详情版本。 */
     @GetMapping
     @SaCheckPermission("blog:comment:query")
     public Result<PageResult<CommentAdminVO>> list(@Valid @ModelAttribute CommentAdminQueryDTO query) {

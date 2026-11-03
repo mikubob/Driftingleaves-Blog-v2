@@ -64,6 +64,6 @@ public class MusicAttachmentPolicy {
 
     /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
     private BusinessException invalid() {
-        return new BusinessException(400, "VALIDATION_ERROR", "附件引用或封面URL不符合本站上下文约束");
+        return new BusinessException(400, "VALIDATION_ERROR", "音乐文件地址无效，请从本站文件列表重新选择，或填写有效的外部 HTTP(S) 地址。");
     }
 }

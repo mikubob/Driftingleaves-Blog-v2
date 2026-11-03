@@ -73,7 +73,7 @@ async function loadSession(accessToken) {
       !capabilities.data?.dataScopes ||
       !Array.isArray(menus.data)
     ) {
-      throw new Error('登录资料或权限响应格式不正确。')
+      throw new Error('登录资料或权限加载异常，请重新登录后重试。')
     }
     if (!capabilities.data.permissionCodes.includes('admin:access')) {
       throw new Error('当前账号没有进入管理后台的权限。')

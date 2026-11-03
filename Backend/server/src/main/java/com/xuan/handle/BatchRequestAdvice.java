@@ -15,7 +15,7 @@ public class BatchRequestAdvice {
         String pattern = String.valueOf(request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE));
         if (pattern.contains("/batch-")
                 && (request.getHeader("If-Revision") != null || request.getQueryString() != null)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "批量操作只接受请求体中的目标和逐条版本");
+            throw new BusinessException(400, "VALIDATION_ERROR", "批量操作信息无效，请刷新列表、重新选择记录后再操作。");
         }
     }
 }

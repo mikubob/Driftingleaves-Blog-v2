@@ -236,18 +236,29 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     private void validateFields(SysMenu menu) {
         boolean button = "B".equals(menu.getMenuType());
         boolean directory = "D".equals(menu.getMenuType());
-        if (button ? menu.getRouteName() != null || menu.getPath() != null || menu.getComponent() != null
-                || menu.getIsVisible() != 0 : menu.getRouteName() == null || menu.getPath() == null
-                || !COMPONENTS.contains(menu.getComponent() == null ? "" : menu.getComponent())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "菜单路由、组件或可见性不符合类型约束");
+        if (button && (menu.getRouteName() != null || menu.getPath() != null || menu.getComponent() != null)) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "按钮不能配置路由名称、路由路径或页面组件，请清空这些设置。");
         }
-        if ((!"M".equals(menu.getMenuType()) && menu.getKeepAlive() != 0)
-                || (menu.getIcon() != null && !ICONS.contains(menu.getIcon()))) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "缓存或图标不符合菜单约束");
+        if (button && menu.getIsVisible() != 0) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "按钮不能显示在导航菜单中，请关闭显示设置。");
         }
-        if (directory ? menu.getPermissionId() != null : menu.getPermissionId() == null
-                || permissions.selectById(menu.getPermissionId()) == null) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "目录门禁必须为空，页面和按钮须引用已存在权限");
+        if (!button && (menu.getRouteName() == null || menu.getPath() == null)) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "目录和页面必须填写路由名称及路由路径。");
+        }
+        if (!button && !COMPONENTS.contains(menu.getComponent() == null ? "" : menu.getComponent())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "页面组件无效，请从组件列表重新选择。");
+        }
+        if (!"M".equals(menu.getMenuType()) && menu.getKeepAlive() != 0) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "只有页面支持缓存，目录和按钮请关闭缓存设置。");
+        }
+        if (menu.getIcon() != null && !ICONS.contains(menu.getIcon())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "菜单图标无效，请从图标列表重新选择。");
+        }
+        if (directory && menu.getPermissionId() != null) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "目录不需要绑定权限，请清空权限设置。");
+        }
+        if (!directory && (menu.getPermissionId() == null || permissions.selectById(menu.getPermissionId()) == null)) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "页面和按钮必须绑定有效权限，请重新选择权限。");
         }
         if (!button) {
             validatePath(menu.getPath());
@@ -265,13 +276,13 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         try {
             decoded = URI.create(path).getPath();
         } catch (IllegalArgumentException exception) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "内部路由格式无效");
+            throw new BusinessException(400, "VALIDATION_ERROR", "路由路径格式无效，请填写以 / 开头的站内路径，例如 /articles。");
         }
         for (String value : Arrays.asList(path, decoded)) {
             if (value == null || !value.startsWith("/") || value.startsWith("//") || value.contains("..")
                     || value.contains("\\") || value.contains(":") || value.contains("?") || value.contains("#")
                     || value.chars().anyMatch(character -> character < 33 || character > 126)) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "必须为合法 ASCII 内部路由");
+                throw new BusinessException(400, "VALIDATION_ERROR", "路由路径须以 / 开头，只能使用英文字符，不能包含空格、查询参数、锚点或上级目录。");
             }
         }
     }
@@ -345,10 +356,10 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      */
     private void checkRevision(SysMenu menu, String revision) {
         if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!revision.equals(profile(menu).revision())) {
             throw new BusinessException(412, "REVISION_CONFLICT", "菜单已修改，请重新获取");

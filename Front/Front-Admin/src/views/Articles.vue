@@ -195,9 +195,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / ARTICLES</p>
         <h1>文章管理</h1>
-        <p class="muted-text">记录、整理与发布，让每一个想法有所归处。</p>
       </div>
       <el-button
         v-if="can('blog:article:create')"

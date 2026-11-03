@@ -55,7 +55,7 @@ onBeforeUnmount(() => {
 const providers = useResource(() => true, async (signal) => {
   const { data } = await request('/blog/auth/oauth/providers', { signal })
   if (!Array.isArray(data) || !data.every((item) => typeof item.source === 'string' && typeof item.displayName === 'string')) {
-    throw new Error('登录平台响应格式不正确。')
+    throw new Error('登录平台列表加载异常，请刷新页面后重试，或使用邮箱登录。')
   }
   return data
 })
@@ -221,7 +221,7 @@ async function authorize(provider) {
         <button class="primary full-width" :disabled="busy || !captcha?.ready">{{ submitLabel }}</button>
       </fieldset>
     </form>
-    <div v-if="!register">
+    <div v-if="!register && (providers.loading || providers.error || providers.data?.length)">
       <div class="auth-divider">或使用已绑定的第三方账号</div>
       <ResourceState :resource="providers" />
       <div class="provider-buttons">
@@ -235,8 +235,6 @@ async function authorize(provider) {
           ↗
         </button>
       </div>
-      <p v-if="providers.data && !providers.data.length" class="muted">本站暂未启用第三方登录。</p>
     </div>
-    <p class="form-hint">登录状态仅保存在当前页面，刷新后需要重新登录。</p>
   </div>
 </template>

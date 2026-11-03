@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Pattern;
 public record PermissionQueryDTO(@Min(1) @Max(100000) Integer page,
                                  @Min(1) @Max(100) Integer pageSize,
                                  @TextLength(min = 1, max = 100) String keyword,
-                                 @Pattern(regexp = "[a-z][a-z0-9_]{0,31}") String module,
+                                 @Pattern(regexp = "[a-z][a-z0-9_]{0,31}", message = "须以小写字母开头，只能包含小写字母、数字或下划线，最多32位") String module,
                                  @Min(0) @Max(1) Integer status) {
 
     public PermissionQueryDTO {

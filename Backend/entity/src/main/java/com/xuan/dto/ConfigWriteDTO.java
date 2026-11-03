@@ -39,7 +39,7 @@ public class ConfigWriteDTO {
     }
 
     /** description 可清空，但不能漏传。 */
-    @AssertTrue(message = "description必须显式提供，可为null")
+    @AssertTrue(message = "描述未完整提交，请重新打开编辑窗口后重试；描述留空可清除已有内容。")
     public boolean isCompleteReplace() {
         return descriptionPresent;
     }

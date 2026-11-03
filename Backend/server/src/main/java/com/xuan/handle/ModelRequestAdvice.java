@@ -39,7 +39,7 @@ public class ModelRequestAdvice {
                 || "DELETE /blog/me/oauth-bindings/{source}".equals(route)
                 || "DELETE /admin/me/oauth-bindings/{source}".equals(route);
         if (noBody && (request.getContentLengthLong() > 0 || request.getHeader("Transfer-Encoding") != null)) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
+            throw new BusinessException(400, "VALIDATION_ERROR", "当前操作不需要提交内容，请刷新页面后重试。");
         }
         Set<String> allowed = switch (route) {
             case "GET /admin/users" -> Set.of("page", "pageSize", "keyword", "status", "roleId");
@@ -58,7 +58,7 @@ public class ModelRequestAdvice {
         };
         request.getParameterMap().forEach((name, values) -> {
             if (!allowed.contains(name) || values.length != 1 || values[0].isBlank()) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "请求含未声明、重复或空白的查询参数");
+                throw new BusinessException(400, "VALIDATION_ERROR", "筛选条件包含不支持、重复或空白的项目，请清空筛选后重新选择。");
             }
         });
     }

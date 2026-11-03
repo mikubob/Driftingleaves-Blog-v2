@@ -8,7 +8,7 @@ import jakarta.validation.constraints.Pattern;
 /**
  * UTC自然日区间由业务层成对检查，排行入口仅接收limit而不接收siteCode。
  */
-public record StatisticsQueryDTO(String begin, String end, @Pattern(regexp = "home|blog|cv") String siteCode,
+public record StatisticsQueryDTO(String begin, String end, @Pattern(regexp = "home|blog|cv", message = "请选择主页、博客或简历站点") String siteCode,
                                  @Min(1) @Max(100) Integer limit) {
 
     public StatisticsQueryDTO {

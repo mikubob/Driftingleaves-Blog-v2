@@ -19,7 +19,7 @@ public class MenuCreateDTO {
     private Long parentId;
 
     @NotNull
-    @Pattern(regexp = "[A-Za-z0-9:_-]{1,64}")
+    @Pattern(regexp = "[A-Za-z0-9:_-]{1,64}", message = "只能包含字母、数字、冒号、下划线或连字符，最多64位")
     private String menuCode;
 
     @NotNull
@@ -27,10 +27,10 @@ public class MenuCreateDTO {
     private String menuName;
 
     @NotNull
-    @Pattern(regexp = "D|M|B")
+    @Pattern(regexp = "D|M|B", message = "请选择目录、页面或按钮")
     private String menuType;
 
-    @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,63}")
+    @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,63}", message = "须以字母开头，只能包含字母、数字或下划线，最多64位")
     private String routeName;
 
     @TextLength(max = 255)
@@ -114,7 +114,7 @@ public class MenuCreateDTO {
         return visiblePresent ? isVisible : defaultVisibility;
     }
 
-    @AssertTrue(message = "parentId必须显式提供，isVisible不可为null")
+    @AssertTrue(message = "上级菜单和显示设置未完整提交，请重新打开菜单编辑窗口后重试。")
     public boolean isCompleteCreate() {
         return parentPresent && (!visiblePresent || isVisible != null);
     }

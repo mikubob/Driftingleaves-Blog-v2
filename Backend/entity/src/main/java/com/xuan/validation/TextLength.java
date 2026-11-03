@@ -20,7 +20,7 @@ public @interface TextLength {
 
     int max();
 
-    String message() default "字符长度不符合要求";
+    String message() default "字符数应在 {min} 到 {max} 之间";
 
     Class<?>[] groups() default {};
 

@@ -12,7 +12,7 @@ import java.util.List;
  */
 public record UserRolesDTO(@NotNull @Size(max = 100) List<@NotNull Long> roleIds) {
 
-    @AssertTrue(message = "roleIds不能重复")
+    @AssertTrue(message = "同一角色不能重复选择。")
     public boolean isUnique() {
         return roleIds == null || new HashSet<>(roleIds).size() == roleIds.size();
     }

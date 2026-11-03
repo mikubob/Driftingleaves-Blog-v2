@@ -126,9 +126,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">HOME / SOCIAL-LINKS</p>
         <h1>社交链接管理</h1>
-        <p class="muted-text">SUB社交链接</p>
       </div>
       <el-button v-if="can('home:social:create', true)" type="primary" @click="edit()">
         <AdminIcon name="plus" />

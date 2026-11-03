@@ -81,9 +81,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">ANALYTICS / PAGE VIEWS</p>
         <h1>浏览记录</h1>
-        <p class="muted-text">查看页面浏览明细、访客 IP 与访问来源。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">

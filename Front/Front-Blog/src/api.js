@@ -41,11 +41,11 @@ function validateFields(value, key = '') {
     return
   }
   if (/(?:Id)$/.test(key) && !isId(value)) {
-    throw new Error('接口返回的 ID 格式不正确。')
+    throw new Error('服务器返回的记录信息异常，请刷新页面后重试；仍失败时请联系站点管理员。')
   }
   if (/(?:Count|Bytes|hotValue)$/.test(key)
     && (typeof value !== 'string' || !/^\d+$/.test(value))) {
-    throw new Error('接口返回的计数格式不正确。')
+    throw new Error('服务器返回的统计数据异常，请刷新页面后重试。')
   }
   if (['avatar', 'coverUrl', 'audioUrl', 'lyricUrl', 'originalUrl', 'website', 'githubUrl', 'authorizationUrl', 'url'].includes(key)
     && !isWebUrl(value)
@@ -200,7 +200,7 @@ function validateData(path, data, method) {
     check = (items) => Array.isArray(items) && items.every((item) => model(item, { socialId: isId, name: text, url: text }))
   }
   if (check && !check(data)) {
-    throw new Error('接口数据格式不正确，请重新加载或联系站点管理员。')
+    throw new Error('数据加载异常，请重新加载或联系站点管理员。')
   }
 }
 
@@ -270,15 +270,12 @@ export async function request(path, { body, revision, captcha, ...options } = {}
       message = '内容已更新，请保留当前输入，重新加载详情后合并修改。'
     } else if (response.status === 428) {
       message = '缺少编辑版本，请重新加载详情后操作。'
-    } else if (result?.code !== 'UNIQUE_CONFLICT' && Array.isArray(result?.errors) && result.errors.length) {
-      const errors = result.errors.filter((item) => typeof item.message === 'string')
-      message += `：${errors.map((item) => item.message).join('；')}`
     }
     const error = new ApiError(message, response.status, result?.code)
     throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED' ? reportRequestFailure(error, path) : error
   }
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
-    throw new Error('接口响应格式不正确。')
+    throw new Error('服务器返回的数据异常，请刷新页面后重试；仍失败时请联系站点管理员。')
   }
   if (path === '/blog/auth/captcha') {
     validateCaptcha(result.data)
@@ -308,7 +305,7 @@ export async function getPage(path, params = {}, signal) {
     || !Number.isInteger(data.pageSize) || data.page < 1 || data.pageSize < 1
     || typeof data.total !== 'string' || !/^\d+$/.test(data.total)
     || typeof data.totalPages !== 'string' || !/^\d+$/.test(data.totalPages)) {
-    throw new Error('分页响应格式不正确。')
+    throw new Error('列表数据加载异常，请刷新列表后重试。')
   }
   return data
 }

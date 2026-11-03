@@ -12,7 +12,7 @@ import jakarta.validation.constraints.Pattern;
 public record FileQueryDTO(@Min(1) @Max(100000) Integer page,
                            @Min(1) @Max(100) Integer pageSize,
                            @TextLength(min = 1, max = 100) String keyword,
-                           @Pattern(regexp = "[1-9][0-9]{0,18}") String uploaderId,
+                           @Pattern(regexp = "[1-9][0-9]{0,18}", message = "所选记录无效，请刷新页面后重新选择") String uploaderId,
                            @TextLength(min = 1, max = 100) String mimeType) {
 
     public FileQueryDTO {

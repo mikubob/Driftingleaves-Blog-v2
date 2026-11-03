@@ -6,9 +6,10 @@ fieldset {
   border: 0;
 }
 
-:focus-visible {
+/* 下拉框由外层边框显示焦点，避免内部输入再画一圈。 */
+:focus-visible:not(:where(.el-select__input)) {
   outline: 2px solid var(--blog-text);
-  outline-offset: 3px;
+  outline-offset: -1px;
 }
 
 .v2-pager {

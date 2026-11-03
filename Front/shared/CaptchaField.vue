@@ -64,14 +64,19 @@ onBeforeUnmount(() => controller?.abort())
         :placeholder="arithmetic ? '输入计算结果' : '六位数字'"
         :disabled="disabled || loading || !challenge"
       />
-      <button type="button" :disabled="disabled || loading" aria-label="刷新验证码" @click="refresh">
+      <button
+        type="button"
+        :disabled="disabled || loading"
+        aria-label="刷新验证码"
+        title="两分钟内有效，点击刷新验证码"
+        @click="refresh"
+      >
         <span v-if="challenge && arithmetic" class="captcha-question">{{ challenge.question }}</span>
         <img v-else-if="challenge" :src="challenge.imageBase64" alt="六位数字图形验证码，点击刷新" width="200" height="80" />
         <span v-else>{{ loading ? '加载中…' : '重新获取' }}</span>
       </button>
     </div>
     <p v-if="error" class="captcha-error" role="alert">{{ error }}</p>
-    <small>{{ arithmetic ? '两分钟内有效，点击题目可换一题。' : '两分钟内有效，点击图片可换一张。' }}</small>
   </div>
 </template>
 
@@ -99,7 +104,8 @@ onBeforeUnmount(() => controller?.abort())
   border-radius: 6px;
   font: inherit;
 }
-.captcha-controls input:focus {
+.captcha-controls input:focus,
+.captcha-controls button:focus-visible {
   border-color: currentColor;
   outline: none;
 }
@@ -121,9 +127,6 @@ onBeforeUnmount(() => controller?.abort())
   display: block;
   width: 125px;
   height: 50px;
-}
-.captcha-field small {
-  color: #6b7280;
 }
 .captcha-error {
   margin: 0;

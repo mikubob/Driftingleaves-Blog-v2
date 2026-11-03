@@ -102,9 +102,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">SYSTEM / AUDIT LOGS</p>
         <h1>操作日志</h1>
-        <p class="muted-text">查看后台操作记录、执行结果与操作数据。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">

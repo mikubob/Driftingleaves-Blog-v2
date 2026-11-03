@@ -9,7 +9,7 @@ import java.util.List;
 /** 不要求编辑版本的清理动作，只接收显式选择的ID。 */
 public record BatchIdsDTO(@NotNull @Size(min = 1, max = 100) List<String> ids) {
     /** 逐项检查范围和唯一性，不接受数字、空值或前导零。 */
-    @AssertTrue(message = "ids须为合法且不重复的正十进制ID字符串")
+    @AssertTrue(message = "所选记录无效或重复，请刷新列表后重新选择。")
     public boolean isValidIds() {
         if (ids == null) {
             return true;

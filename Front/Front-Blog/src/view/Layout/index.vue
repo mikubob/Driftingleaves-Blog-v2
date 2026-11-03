@@ -47,7 +47,12 @@ watch([pageTitle, () => blogStore.site.title], () => {
 const onScroll = () => {
   showBackTop.value = window.scrollY > 400
 }
-const scrollToTop = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+const scrollToTop = () => {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  })
+}
 onMounted(() => {
   themeStore.applyTheme()
   blogStore.init()

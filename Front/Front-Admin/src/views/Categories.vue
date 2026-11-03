@@ -1,4 +1,5 @@
 <script setup>
+import ResourceDetail from '../components/ResourceDetail.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { request } from '../api.js'
@@ -19,6 +20,7 @@ const {
   '/admin/categories',
   { keyword: '', status: '' },
 )
+const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const changingStatus = ref(false)
@@ -153,9 +155,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / CATEGORIES</p>
         <h1>分类管理</h1>
-        <p class="muted-text">让内容井然有序，管理文章的分类与展示顺序。</p>
       </div>
       <el-button v-if="can('blog:category:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />
@@ -214,8 +214,15 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="260" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="can('blog:category:query')"
+              type="primary"
+              link
+              :disabled="changingStatus || batch?.busy"
+              @click="detailId = row.categoryId"
+            >详情</el-button>
             <el-button type="primary" v-if="can('blog:category:update')" link @click="edit(row)">编辑</el-button>
             <el-button
               v-if="can('blog:category:update')"
@@ -240,6 +247,26 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
+    <ResourceDetail
+      v-if="detailId"
+      :key="detailId"
+      :path="`/admin/categories/${detailId}`"
+      title="分类详情"
+      @close="detailId = ''"
+    >
+      <template #default="{ detail }">
+        <el-descriptions-item label="分类 ID">{{ detail.categoryId }}</el-descriptions-item>
+        <el-descriptions-item label="分类名称">{{ detail.categoryName }}</el-descriptions-item>
+        <el-descriptions-item label="URL 标识">{{ detail.slug }}</el-descriptions-item>
+        <el-descriptions-item label="描述">
+          <p class="detail-text">{{ detail.description || '未填写' }}</p>
+        </el-descriptions-item>
+        <el-descriptions-item label="排序">{{ detail.sortOrder }}</el-descriptions-item>
+        <el-descriptions-item label="展示状态"><StatusTag :value="detail.status" /></el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
+      </template>
+    </ResourceDetail>
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑分类' : '新建分类'"

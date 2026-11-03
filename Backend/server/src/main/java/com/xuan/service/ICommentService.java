@@ -36,7 +36,7 @@ public interface ICommentService extends IService<BlogComment> {
     /** 根据id删除本人评论及全部子回复，不要求版本；即使有 ALL 范围，也只能选择自己的评论。 */
     void deleteOwn(long id);
 
-    /** 分页查询后台评论，SELF 只允许查询本人文章下的评论，不是本人发表的所有评论。 */
+    /** 分页查询后台评论或一层回复，未传parentId保留平铺；SELF按所属文章作者限定。 */
     PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query);
 
     /** 根据id查询评论详情及版本，按评论查询权限限定范围。 */

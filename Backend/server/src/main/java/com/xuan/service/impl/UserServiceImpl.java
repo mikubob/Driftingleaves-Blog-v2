@@ -45,6 +45,7 @@ import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserAdminVO;
 import com.xuan.vo.UserProfileVO;
+import com.xuan.vo.UserRoleVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
@@ -380,10 +381,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     private void checkRevision(SysUser user, String revision) {
         if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!revision.equals(profile(user).revision())) {
             throw new BusinessException(412, "REVISION_CONFLICT", "资料已修改，请重新获取");
@@ -407,10 +408,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @return 不含密码哈希、第三方身份和 Token 的后台资料
      */
     private UserAdminVO adminView(SysUser user) {
+        List<UserRoleVO> roles = users.assignedRoles(user.getUserId());
+        List<Long> roleIds = roles.stream().map(UserRoleVO::roleId).toList();
         return new UserAdminVO(user.getUserId(), user.getUsername(), user.getNickname(), user.getEmail(),
                 user.getAvatar(), user.getIntro(), user.getStatus(), user.getPasswordHash() != null,
                 user.getLastLoginTime(), user.getCreateTime(), user.getUpdateTime(),
-                authorization.roleIds(user.getUserId()), user.getLastLoginIp(), user.getLastLoginLocation());
+                roleIds, user.getLastLoginIp(), user.getLastLoginLocation(), roles);
     }
 
     /**
@@ -594,7 +597,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 2. 按原来有没有密码分别检查，已有密码时不能靠漏传旧密码绕过验证。
         if (user.getPasswordHash() == null) {
             if (request.hasCurrentPassword()) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "无密码账号必须省略currentPassword");
+                throw new BusinessException(400, "VALIDATION_ERROR", "当前账号尚未设置密码，请清空当前密码后再设置新密码。");
             }
         } else {
             verifyPassword(user, request.getCurrentPassword());

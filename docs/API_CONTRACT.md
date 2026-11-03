@@ -26,7 +26,7 @@
 - 字符串长度按 Unicode 字符计数，密码另按 UTF-8 字节约束。除密码/Markdown 外，文本先去首尾空白；可空字符串的空串归一为 null，非空字段拒绝空白。简介/描述为纯文本。未知 JSON 字段、无效枚举、错误类型、重复 JSON 属性均返回 `400/VALIDATION_ERROR`，禁止把 DTO 直接批量映射到实体。
 - `S(n)` 表示长度 1..n 的非空字符串，`S0(n)` 表示长度 0..n；`?` 表示可为 null；`[]` 表示数组。模型表内未标 `?` 的响应字段必有且非 null；列表无数据为 `[]`，不为 null。
 - `URL?` 最大 2048 字符；外部 URL 默认只接受绝对 http/https（社交mailto链接的明确例外见12.9），不接受 userinfo、控制字符、javascript/data/file 协议。本站文件 URL 仅接受[文件与附件](API.md#group-11)生成的路径。写 URL 不触发服务端抓取。头像/封面只能使用已公开的资源，不能借展示字段公开私密附件。
-- `slug` 为 ASCII `[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`，文章最长 200，分类/标签最长 100；区分大小写，不自动转小写。名称/username/email 按库 `utf8mb4_0900_ai_ci` 唯一性判断，可能连重音差异也视为相等；不能仅靠前端查重。
+- `slug` 为 ASCII `[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`，文章最长 200，分类/标签最长 100；区分大小写，不自动转小写。分类名/标签名/username/email 按库 `utf8mb4_0900_ai_ci` 唯一性判断，可能连重音差异也视为相等；不能仅靠前端查重。文章标题允许重复。
 - 本文所有“必填”字段均不允许缺失或 null，除非显式写 `?`。PUT 是完整替换该请求模型，可空字段也必须出现；POST 的可选默认值逐项列出。PATCH 仅用于本人资料，缺失保持、null 清空可空字段。
 - 查询参数仅接受各接口声明的字段，每个字段只传一个非空白值；未知、重复或空白参数返回400，不静默忽略或套用默认值。未声明请求体的入口拒绝实际内容；OAuth回调允许平台错误说明，但不回显、不参与身份判断。JSON字段白名单、查询参数白名单与业务权限/SQL范围各自生效。
 
@@ -39,7 +39,9 @@
 | code | string | 成功固定 `OK`；失败为第 14 节错误码，与旧项目整数 1/0 不同 |
 | msg | string | 成功固定 `成功`；失败供人阅读，前端以 code 分支 |
 | data | T 或 null | 错误和无返回值操作均为 null |
-| errors | `{field:string,message:string}[]` | 固定存在；字段校验失败或账号用户名/邮箱唯一冲突时非空，不回显密码等输入 |
+| errors | `{field:string,message:string}[]` | 固定存在；字段校验或已识别的唯一字段冲突时非空，field 保留请求字段名，不回显密码等输入 |
+
+错误 `msg` 直接提供可展示的中文说明。字段校验包含中文字段名、限制或修正方式；唯一冲突指出具体字段。各端直接展示 `msg`，不再追加英文字段名或重复的 `errors` 文案；`errors` 可用于关联表单字段。状态码、错误码、鉴权失败的隐私限制、事务回滚和版本检查保持不变。数据库错误只匹配已声明的唯一键，不将 SQL、约束名或冲突值作为用户提示。
 
 `Page<T>` 使用旧分页命名：`{page:number,pageSize:number,total:string,totalPages:string,records:T[]}`。`page` 默认 1、范围 1..100000；`pageSize` 默认 10、范围 1..100，评论上限 50；越界报 400，不静默纠正。`totalPages=ceil(total/pageSize)`；零记录为 `"0"`，超末页 records 为空但保留请求页码。查询与 total 使用同一过滤/数据范围。分页不承诺跨请求快照；相同排序值追加主键确定顺序。
 
@@ -416,7 +418,7 @@ UserCreate 分配空角色；需要角色时再调用 UserRoles，必须另有 a
 
 | 模型/字段 | 类型/必填/约束 |
 | --- | --- |
-| ArticleWrite.title | S(200)，必填 |
+| ArticleWrite.title | S(200)，必填，允许重复 |
 | ArticleWrite.slug | S(200)，必填，同通用 slug；回收站仍占唯一键 |
 | ArticleWrite.summary | S0(500)，POST可选默认空串；PUT必填，不能null |
 | ArticleWrite.categoryId | ID?，POST默认null；PUT必填；非null必须存在（后台可选择隐藏分类） |
@@ -482,7 +484,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | CommentCreate | content:string 必填，trim 后1..2000字符纯文本；parentId:ID? 可选默认null；articleId仅取路径，userId取会话 |
 | CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；未知时可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1、replyCount:string、createTime/updateTime:Time |
 | CommentOwn | location:string?、userAgentOs:string?、userAgentBrowser:string?（同公开评论）；commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2、createTime/updateTime:Time；不含其他用户私人信息 |
-| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string；作者关联保留 |
+| CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string、hasChildren:boolean/null（后台列表的直接回复标记，详情为null）；作者关联保留 |
 | CommentReview | `{status:1或2}` 必填；1通过，2驳回，无审核备注字段 |
 | LikeState | `{liked:boolean,likeCount:string}` |
 
@@ -575,6 +577,8 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 | `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
 
 留言状态0待审核、1通过、2驳回，与评论一致。公开查询使用parentId逐层分页，每页1..50；默认根节点，不自动展开整棵树。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
+
+后台评论和留言列表增加可选parentId：未传保留所有层级平铺分页，字符串0仅查根节点，正ID只查直接回复；每层按createTime DESC、ID DESC排序，总数只统计当前层。保留原文章、作者、状态、私密和时间筛选，并按记录本身做AND匹配。管理端提交任意筛选时使用平铺结果，避免父节点未命中导致回复漏审；重置恢复根记录分页与多层懒加载。后台列表hasChildren包含待审、驳回及适用的私密回复，不能套用公开父链过滤；MessagePrivate新增的hasChildren在本人接口、详情和写入响应中为null，避免透露私密回复关系。后台评论仍按当前query权限的ALL/SELF文章作者范围，留言仍要求query的ALL；父节点不存在或超出查询范围返回404。现有审核版本、独立操作权限和整分支删除规则不变，无数据库迁移。
 
 悄悄话归属从父链推导：根私密留言的线程接收者是该根user_id；在公开线程新建私密分支时，接收者是最早私密节点的user_id。前台读取私密节点及其后代仅允许该接收者与节点作者本人，父链仍需逐层可见；管理者必须通过后台入口，满足admin:access及当前query/review/moderate权限的ALL范围后读取或操作，不因携带管理员Token放宽前台过滤。后台回复的user_id始终是实际操作人，不冒用原作者；原私密发起者可以沿同一私密祖先读取审核通过的后台回复。回复不能借isSecret=0放宽祖先私密限制；前台发起的回复统一继承私密祖先标记。本人待审/驳回记录可从本人列表读取，不代表匿名可见，不能借可见后代泄露隐藏祖先原文。
 

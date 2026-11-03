@@ -125,34 +125,39 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     /** 整理配置字段，按固定顺序生成对象，避免 MySQL 调整 JSON 属性顺序后版本无故改变。 */
     private Map<String, Object> policy(String key, Map<String, Object> value, int isPublic) {
         if (json.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length > 16 * 1024) {
-            throw invalid();
+            throw new BusinessException(400, "VALIDATION_ERROR", "配置内容不能超过 16 KiB，请缩短后重试。");
         }
         Map<String, Object> result = new LinkedHashMap<>();
         if ("site".equals(key)) {
             if (!value.keySet().equals(Set.of("title", "description", "icp", "publicSecurityRecord", "startDate"))) {
                 throw invalid();
             }
-            result.put("title", text(value.get("title"), 1, 100));
-            result.put("description", text(value.get("description"), 0, 500));
-            result.put("icp", text(value.get("icp"), 0, 100));
-            result.put("publicSecurityRecord", text(value.get("publicSecurityRecord"), 0, 100));
+            result.put("title", text("站点标题", value.get("title"), 1, 100));
+            result.put("description", text("站点描述", value.get("description"), 0, 500));
+            result.put("icp", text("ICP备案号", value.get("icp"), 0, 100));
+            result.put("publicSecurityRecord", text("公安备案号", value.get("publicSecurityRecord"), 0, 100));
             Object date = value.get("startDate");
             if (date != null) {
-                String parsed = text(date, 10, 10);
+                String parsed = text("建站日期", date, 10, 10);
                 try {
                     if (!parsed.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}") || LocalDate.parse(parsed).getYear() < 1) {
-                        throw invalid();
+                        throw new BusinessException(400, "VALIDATION_ERROR", "建站日期无效，请选择有效日期，格式为年-月-日。");
                     }
                 } catch (DateTimeParseException exception) {
-                    throw invalid();
+                    throw new BusinessException(400, "VALIDATION_ERROR", "建站日期无效，请选择真实存在的日期。");
                 }
                 date = parsed;
             }
             result.put("startDate", date);
         } else {
-            if (isPublic != 0 || !value.keySet().equals(Set.of("enabled", "reviewRequired"))
-                    || !(value.get("enabled") instanceof Boolean) || !(value.get("reviewRequired") instanceof Boolean)) {
+            if (isPublic != 0) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "评论和留言配置不能公开，请关闭公开设置。");
+            }
+            if (!value.keySet().equals(Set.of("enabled", "reviewRequired"))) {
                 throw invalid();
+            }
+            if (!(value.get("enabled") instanceof Boolean) || !(value.get("reviewRequired") instanceof Boolean)) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "启用和审核设置必须为开启或关闭，请重新选择。");
             }
             result.put("enabled", value.get("enabled"));
             result.put("reviewRequired", value.get("reviewRequired"));
@@ -161,14 +166,14 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     }
 
     /** 内层文本同样按 Unicode 字符校验，不让数字或 null 冒充字符串。 */
-    private String text(Object value, int min, int max) {
+    private String text(String name, Object value, int min, int max) {
         if (!(value instanceof String text)) {
-            throw invalid();
+            throw new BusinessException(400, "VALIDATION_ERROR", name + "必须填写文本，请重新输入。");
         }
         String clean = text.strip();
         int length = clean.codePointCount(0, clean.length());
         if (length < min || length > max) {
-            throw invalid();
+            throw new BusinessException(400, "VALIDATION_ERROR", name + "应为 " + min + " 至 " + max + " 个字符。");
         }
         return clean;
     }
@@ -198,10 +203,10 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     /** 权限和目标检查后再查版本，同目标更新也不能绕过旧版本。 */
     private void checkRevision(BlogSiteConfig row, String revision) {
         if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!revision.equals(profile(row).revision())) {
             throw new BusinessException(412, "REVISION_CONFLICT", "配置已修改，请重新获取");
@@ -210,6 +215,6 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
 
     /** 配置字段错误只返回通用提示，不回显可能误填的敏感值。 */
     private BusinessException invalid() {
-        return new BusinessException(400, "VALIDATION_ERROR", "配置须符合白名单字段、类型和长度要求");
+        return new BusinessException(400, "VALIDATION_ERROR", "配置项目不完整或包含不支持的设置，请刷新设置页面后重新填写。");
     }
 }

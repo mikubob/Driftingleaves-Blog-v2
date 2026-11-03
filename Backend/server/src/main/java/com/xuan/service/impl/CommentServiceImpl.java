@@ -163,13 +163,22 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         deleteTree(row, true);
     }
 
-    /** 分页查询后台评论，按本次查询权限计算文章作者范围，评论者筛选只能缩小结果。 */
+    /** 分页查询后台评论或一层回复，先按本次查询权限检查父评论的文章范围。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query) {
         Long author = requireAdmin("query");
-        return PageResult.from(comments.commentPage(new Page<>(query.page(), query.pageSize()),
-                        IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author)
+        Long parent;
+        if ("0".equals(query.parentId())) {
+            parent = 0L;
+        } else {
+            parent = IdUtils.parse(query.parentId());
+        }
+        if (parent != null && parent != 0L) {
+            requireComment(comments.scoped(parent, author, null, false));
+        }
+        return PageResult.from(comments.adminPage(new Page<>(query.page(), query.pageSize()),
+                        IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author, parent)
                 .convert(this::adminView));
     }
 
@@ -304,10 +313,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     /** 范围确认后才报版本错误，旧版本不能借同目标审核绕过检查。 */
     private void checkRevision(BlogComment row, String expected) {
         if (expected == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!expected.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!revision(row).equals(expected)) {
             throw new BusinessException(412, "REVISION_CONFLICT", "评论已修改，请重新获取");
@@ -346,6 +355,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         CommentAdminVO value = ownView(row, new CommentAdminVO());
         value.setAuthor(author(row));
         value.setArticleTitle(row.getArticleTitle());
+        value.setHasChildren(row.getHasChildren());
         return value;
     }
 

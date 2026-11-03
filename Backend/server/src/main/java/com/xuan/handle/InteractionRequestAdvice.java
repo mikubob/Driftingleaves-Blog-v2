@@ -20,18 +20,18 @@ public class InteractionRequestAdvice {
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
         if ("GET".equals(request.getMethod()) && request.getContentLengthLong() > 0) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "本接口不接受请求体");
+            throw new BusinessException(400, "VALIDATION_ERROR", "当前操作不需要提交内容，请刷新页面后重试。");
         }
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         Set<String> allowed = switch (route) {
             case "GET /blog/articles/{articleId}/comments" -> Set.of("page", "pageSize", "parentId");
             case "GET /blog/me/comments" -> Set.of("page", "pageSize", "articleId", "status");
-            case "GET /admin/comments" -> Set.of("page", "pageSize", "articleId", "userId", "status");
+            case "GET /admin/comments" -> Set.of("page", "pageSize", "articleId", "userId", "status", "parentId");
             default -> Set.of();
         };
         request.getParameterMap().forEach((name, values) -> {
             if (!allowed.contains(name) || values.length != 1 || values[0].isBlank()) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "请求含未声明或重复的查询参数");
+                throw new BusinessException(400, "VALIDATION_ERROR", "筛选条件包含不支持、重复或空白的项目，请清空筛选后重新选择。");
             }
         });
     }

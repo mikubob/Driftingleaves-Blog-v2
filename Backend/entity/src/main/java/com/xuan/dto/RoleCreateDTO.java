@@ -15,7 +15,7 @@ import lombok.Setter;
 public class RoleCreateDTO {
 
     @NotNull
-    @Pattern(regexp = "[a-z][a-z0-9_]{0,63}")
+    @Pattern(regexp = "[a-z][a-z0-9_]{0,63}", message = "须以小写字母开头，只能包含小写字母、数字或下划线，最多64位")
     private String roleCode;
 
     @NotNull
@@ -26,7 +26,7 @@ public class RoleCreateDTO {
     private String description;
 
     @NotNull
-    @Pattern(regexp = "ALL|SELF")
+    @Pattern(regexp = "ALL|SELF", message = "请选择全部数据或本人数据")
     private String dataScope = "SELF";
 
     @NotNull

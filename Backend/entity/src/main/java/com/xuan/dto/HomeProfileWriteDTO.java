@@ -95,7 +95,7 @@ public class HomeProfileWriteDTO {
     }
 
     /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
-    @AssertTrue(message = "必须提供全部可写字段，可空字段可为null")
+    @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
         return present.size() == 9;
     }

@@ -187,9 +187,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">MUSIC</p>
         <h1>音乐管理</h1>
-        <p class="muted-text">支持上传音频、封面和歌词，也可继续使用外部 HTTP(S) 地址。</p>
       </div>
       <el-button v-if="can('blog:music:create', true)" type="primary" @click="edit()">
         <AdminIcon name="plus" />

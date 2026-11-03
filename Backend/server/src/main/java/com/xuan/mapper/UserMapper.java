@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.entity.SysRole;
 import com.xuan.entity.SysUser;
+import com.xuan.vo.UserRoleVO;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
@@ -32,6 +33,9 @@ public interface UserMapper extends BaseMapper<SysUser> {
      */
     IPage<SysUser> adminPage(IPage<SysUser> page, @Param("query") AdminUserQueryDTO query,
             @Param("roleId") Long roleId);
+
+    /** 查询用户全部已分配角色，按id升序返回，保留禁用角色供后台展示。 */
+    List<UserRoleVO> assignedRoles(@Param("userId") long userId);
 
     /**
      * 所有管理写事务先锁初始化角色这一行，串行检查最后管理员。

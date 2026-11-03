@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
@@ -17,9 +17,10 @@ const scrolled = ref(false)
 const handleScroll = () => {
   scrolled.value = window.scrollY > 60
 }
-onMounted(() =>
+onMounted(() => {
+  handleScroll()
   window.addEventListener('scroll', handleScroll, { passive: true })
-)
+})
 
 /* 搜索 */
 const searchVisible = ref(false)
@@ -109,7 +110,9 @@ const syncHeaderLayout = () => {
       return
     }
 
-    if (!siteTitleEl) return
+    if (!siteTitleEl) {
+      return
+    }
 
     const leftGap = parseFloat(getComputedStyle(headerLeftEl).gap || '0')
     const rightGap = parseFloat(
@@ -154,7 +157,9 @@ const syncHeaderLayout = () => {
 }
 
 const togglePlay = async () => {
-  if (!audioRef.value || !currentTrack.value) return
+  if (!audioRef.value || !currentTrack.value) {
+    return
+  }
   if (isPlaying.value) {
     audioRef.value.pause()
   } else {
@@ -185,7 +190,9 @@ const playTrack = (index) => {
 }
 
 const nextTrack = () => {
-  if (!blogStore.musics.length) return
+  if (!blogStore.musics.length) {
+    return
+  }
   playTrack((musicIndex.value + 1) % blogStore.musics.length)
 }
 
@@ -217,7 +224,9 @@ const navItems = computed(() => [
 
 const doSearch = () => {
   const kw = keyword.value.trim()
-  if (!kw) return
+  if (!kw) {
+    return
+  }
   searchVisible.value = false
   keyword.value = ''
   router.push({ path: '/', query: { search: kw } })
@@ -312,7 +321,7 @@ onUnmounted(() => {
                   d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
                 />
               </svg>
-              <i v-else :class="['iconfont', item.icon]" /> {{ item.label }}
+              <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
             </a>
             <router-link v-else :to="item.to" class="nav-link">
               <svg
@@ -329,7 +338,7 @@ onUnmounted(() => {
                   d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
                 />
               </svg>
-              <i v-else :class="['iconfont', item.icon]" /> {{ item.label }}
+              <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
             </router-link>
           </template>
         </nav>
@@ -341,23 +350,31 @@ onUnmounted(() => {
           ref="miniPlayerWrapRef"
           class="mini-player-wrap"
         >
-          <div class="mini-player" @click="toggleMusicList">
+          <button
+            type="button"
+            class="mini-player"
+            aria-label="播放列表"
+            :aria-expanded="musicListVisible"
+            @click="toggleMusicList"
+          >
             <img
               v-if="currentTrack.coverImage"
               :src="currentTrack.coverImage"
+              alt=""
               class="player-cover"
               :class="{ spinning: isPlaying }"
             />
             <span class="player-title">{{ currentTrack.title }}</span>
-          </div>
+          </button>
           <button class="player-btn" @click.stop="togglePlay" title="播放/暂停">
             <i
+              aria-hidden="true"
               class="iconfont"
               :class="isPlaying ? 'icon-zanting' : 'icon-play-full'"
             />
           </button>
           <button class="player-btn" @click.stop="nextTrack" title="下一首">
-            <i class="iconfont icon-next" />
+            <i aria-hidden="true" class="iconfont icon-next" />
           </button>
           <audio
             ref="audioRef"
@@ -372,7 +389,7 @@ onUnmounted(() => {
           <transition name="fade">
             <div v-show="musicListVisible" class="music-panel">
               <div class="music-panel-header">
-                <span><i class="iconfont icon-yinle" /> 播放列表</span>
+                <span><i aria-hidden="true" class="iconfont icon-yinle" /> 播放列表</span>
                 <span class="music-panel-count">
                   {{ blogStore.musics.length }} 首
                 </span>
@@ -390,23 +407,31 @@ onUnmounted(() => {
                 <li
                   v-for="(m, idx) in blogStore.musics"
                   :key="m.id"
-                  class="music-panel-item"
-                  :class="{ active: idx === musicIndex }"
-                  @click="playTrack(idx)"
                 >
-                  <img
-                    v-if="m.coverImage"
-                    :src="m.coverImage"
-                    class="music-panel-cover"
-                  />
-                  <div class="music-panel-info">
-                    <span class="music-panel-name">{{ m.title }}</span>
-                    <span class="music-panel-artist">{{ m.artist }}</span>
-                  </div>
-                  <i
-                    v-if="idx === musicIndex && isPlaying"
-                    class="iconfont icon-yinle playing-icon"
-                  />
+                  <button
+                    type="button"
+                    class="music-panel-item"
+                    :class="{ active: idx === musicIndex }"
+                    :aria-label="`播放 ${m.title}`"
+                    :aria-pressed="idx === musicIndex && isPlaying"
+                    @click="playTrack(idx)"
+                  >
+                    <img
+                      v-if="m.coverImage"
+                      :src="m.coverImage"
+                      alt=""
+                      class="music-panel-cover"
+                    />
+                    <span class="music-panel-info">
+                      <span class="music-panel-name">{{ m.title }}</span>
+                      <span class="music-panel-artist">{{ m.artist }}</span>
+                    </span>
+                    <i
+                      aria-hidden="true"
+                      v-if="idx === musicIndex && isPlaying"
+                      class="iconfont icon-yinle playing-icon"
+                    />
+                  </button>
                 </li>
               </ul>
             </div>
@@ -472,8 +497,14 @@ onUnmounted(() => {
               @blur="searchVisible = false"
             />
           </div>
-          <button class="search-toggle" @click="toggleSearch" title="搜索">
-            <i class="iconfont icon-sousuo" />
+          <button
+            class="search-toggle"
+            aria-label="搜索"
+            :aria-expanded="searchVisible"
+            title="搜索"
+            @click="toggleSearch"
+          >
+            <i aria-hidden="true" class="iconfont icon-sousuo" />
           </button>
         </div>
 
@@ -505,12 +536,12 @@ onUnmounted(() => {
             d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
           />
         </svg>
-        <i v-else :class="['iconfont', item.icon]" /> {{ item.label }}
+        <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
       </a>
-      <a class="nav-mobile-link" @click="toggleSearch">
-        <i class="iconfont icon-sousuo" /> 搜索
-      </a>
-      <a class="nav-mobile-link" @click="themeStore.toggle">
+      <button type="button" class="nav-mobile-link" @click="toggleSearch">
+        <i aria-hidden="true" class="iconfont icon-sousuo" /> 搜索
+      </button>
+      <button type="button" class="nav-mobile-link" @click="themeStore.toggle">
         <template v-if="isDark">
           <svg
             viewBox="0 0 24 24"
@@ -551,7 +582,7 @@ onUnmounted(() => {
           </svg>
           深色模式
         </template>
-      </a>
+      </button>
     </nav>
   </header>
 </template>
@@ -666,7 +697,7 @@ onUnmounted(() => {
   gap: 12px;
 }
 
-/* 杩蜂綘鎾斁鍣?*/
+/* 迷你播放器 */
 .mini-player-wrap {
   display: flex;
   align-items: center;
@@ -674,6 +705,7 @@ onUnmounted(() => {
   position: relative;
 }
 .mini-player {
+  font: inherit;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -771,7 +803,7 @@ onUnmounted(() => {
   color: #fff;
 }
 
-/* 闊充箰鍒楄〃 */
+/* 音乐列表 */
 .music-panel {
   display: flex;
   flex-direction: column;
@@ -835,6 +867,11 @@ onUnmounted(() => {
   font: inherit;
 }
 .music-panel-item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -974,7 +1011,15 @@ onUnmounted(() => {
   border-radius: var(--container-radius);
 }
 .theme-switch__checkbox {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.theme-switch__checkbox:focus-visible + .theme-switch__container {
+  outline: 2px solid currentColor;
+  outline-offset: -1px;
 }
 .theme-switch__circle-container {
   width: var(--circle-container-diameter);
@@ -1240,6 +1285,11 @@ onUnmounted(() => {
   border-top-color: #333;
 }
 .nav-mobile-link {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
   display: flex;
   align-items: center;
   gap: 6px;

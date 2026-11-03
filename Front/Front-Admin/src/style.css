@@ -36,7 +36,7 @@ button:disabled {
 /* 下拉框由外层显示焦点，排除内部输入且不提高全局规则的优先级。 */
 :focus-visible:not(:where(.el-select__input)) {
   outline: 2px solid var(--el-color-primary);
-  outline-offset: 3px;
+  outline-offset: -1px;
 }
 
 h1,
@@ -165,14 +165,6 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.eyebrow {
-  margin-bottom: 8px;
-  color: #909399;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 1.8px;
-}
-
 .page-header {
   display: flex;
   align-items: center;
@@ -284,9 +276,23 @@ h2 {
   text-decoration: underline;
 }
 
+/* 保留树表的逐层缩进，让展开箭头和正文处于同一行。 */
+.discussion-content .cell {
+  display: flex;
+  align-items: center;
+}
+
+.discussion-content .el-table__indent,
+.discussion-content .el-table__expand-icon,
+.discussion-content .el-table__placeholder {
+  flex-shrink: 0;
+}
+
 /* 评论和留言列表只预览一行，完整正文在详情中查看。 */
 .discussion-preview {
   display: block;
+  flex: 1;
+  min-width: 0;
   width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -851,13 +857,6 @@ h2 {
   overflow-wrap: anywhere;
 }
 
-.stat-card-caption {
-  display: block;
-  margin-top: 4px;
-  color: #909399;
-  font-size: 11px;
-}
-
 @media (max-width: 768px) {
   .stats-grid {
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -965,15 +964,6 @@ h2 {
   transform: translate(-50px, 40px);
 }
 
-.login-decoration small {
-  position: absolute;
-  bottom: 45px;
-  left: 40px;
-  color: #a1a1aa;
-  font-size: 10px;
-  letter-spacing: 2.5px;
-}
-
 .login-panel {
   display: flex;
   flex-direction: column;
@@ -999,13 +989,6 @@ h2 {
   margin-top: 12px;
   font-size: 30px;
   font-weight: 600;
-}
-
-.login-subtitle {
-  margin-top: 12px;
-  color: #909399;
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .login-methods {
@@ -1071,10 +1054,9 @@ h2 {
   color: #a8abb2;
 }
 
-.login-page .login-form .captcha-controls input:focus-visible {
+.login-page .login-form .captcha-controls input:focus,
+.login-page .login-form .captcha-controls button:focus-visible {
   border-color: #18181b;
-  outline: 2px solid #d1d1d5;
-  outline-offset: 2px;
 }
 
 .login-page .login-form .captcha-controls button {
@@ -1088,12 +1070,6 @@ h2 {
   width: 100%;
   height: 100%;
   object-fit: contain;
-}
-
-.login-page .login-form .captcha-field small {
-  color: #909399;
-  font-size: 12px;
-  line-height: 1.6;
 }
 
 .login-form > .el-button {
@@ -1110,18 +1086,6 @@ h2 {
   display: flex;
   justify-content: space-between;
   width: 100%;
-}
-
-.login-note {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 29px;
-  color: #a1a1aa;
-  font-size: 11px;
-  line-height: 1.6;
-  text-align: center;
 }
 
 .login-panel > footer {

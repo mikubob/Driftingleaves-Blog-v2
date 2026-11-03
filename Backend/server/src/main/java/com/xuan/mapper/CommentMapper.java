@@ -26,6 +26,11 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
             @Param("user") Long user, @Param("status") Integer status,
             @Param("author") Long author);
 
+    /** 分页查询后台评论及直接回复标记；parent为0查根节点，null保留平铺，author始终限定文章范围。 */
+    IPage<CommentRow> adminPage(IPage<CommentRow> page, @Param("article") Long article,
+            @Param("user") Long user, @Param("status") Integer status,
+            @Param("author") Long author, @Param("parent") Long parent);
+
     /** 查询、审核、管理删除分别传自己的 author 范围；本人删除额外固定 user。 */
     CommentRow scoped(@Param("id") long id, @Param("author") Long author,
             @Param("user") Long user, @Param("lock") boolean lock);

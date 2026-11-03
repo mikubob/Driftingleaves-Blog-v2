@@ -10,8 +10,8 @@ import jakarta.validation.constraints.Pattern;
  */
 public record OperationLogQueryDTO(@Min(1) @Max(100000) Integer page,
         @Min(1) @Max(100) Integer pageSize, String userId, String targetId,
-        @Pattern(regexp = "[A-Za-z0-9:_-]{1,32}") String operationType,
-        @Pattern(regexp = "[A-Za-z0-9:_-]{1,100}") String operationTarget,
+        @Pattern(regexp = "[A-Za-z0-9:_-]{1,32}", message = "只能包含字母、数字、冒号、下划线或连字符，最多32位") String operationType,
+        @Pattern(regexp = "[A-Za-z0-9:_-]{1,100}", message = "只能包含字母、数字、冒号、下划线或连字符，最多100位") String operationTarget,
         @Min(0) @Max(1) Integer result, String begin, String end) {
     public OperationLogQueryDTO {
         page = ObjectUtil.defaultIfNull(page, 1);

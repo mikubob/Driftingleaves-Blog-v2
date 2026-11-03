@@ -42,7 +42,7 @@ public class MusicWriteDTO {
     @TextLength(min = 1, max = 2048)
     private String lyricUrl;
 
-    @Pattern(regexp = "lrc|json|txt")
+    @Pattern(regexp = "lrc|json|txt", message = "请选择LRC、JSON或TXT歌词格式")
     private String lyricType;
 
     @NotNull
@@ -92,13 +92,13 @@ public class MusicWriteDTO {
     }
 
     /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
-    @AssertTrue(message = "必须提供全部可写字段，可空字段可为null")
+    @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
         return present.size() == 8;
     }
 
     /** 歌词地址与类型一起出现；时长只收整数秒。 */
-    @AssertTrue(message = "歌词组合或时长不合法")
+    @AssertTrue(message = "歌词地址和格式须同时填写或同时清空，时长须为整数秒。")
     public boolean isValidLyrics() {
         return (lyricUrl == null) == (lyricType == null)
                 && (durationSeconds == null || durationSeconds.scale() <= 0);

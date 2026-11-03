@@ -138,9 +138,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">PERMISSIONS</p>
         <h1>权限管理</h1>
-        <p class="muted-text">SUB权限</p>
       </div>
       <el-button v-if="can('sys:permission:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />

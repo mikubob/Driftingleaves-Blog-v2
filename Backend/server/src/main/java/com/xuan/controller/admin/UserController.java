@@ -54,7 +54,7 @@ public class UserController {
      * 根据id查询用户详情及版本，禁用用户也能查看。
      *
      * @param userId 正十进制用户 ID
-     * @return 资料、完整角色集合和 X-Revision；不存在返回 404
+     * @return 资料、完整角色及其名称和状态、X-Revision；不存在返回 404
      */
     @GetMapping("/{userId}")
     @SaCheckPermission("sys:user:query")

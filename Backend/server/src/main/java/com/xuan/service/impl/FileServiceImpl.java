@@ -114,12 +114,12 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         String name = upload.getOriginalFilename();
         name = name == null ? "" : name.replaceAll("[/\\\\\\p{Cc}]", "").strip();
         if (name.isEmpty() || name.codePointCount(0, name.length()) > 255 || upload.isEmpty()) {
-            throw invalid();
+            throw new BusinessException(400, "VALIDATION_ERROR", "文件不能为空，文件名须为 1 至 255 个字符，请重新选择文件。");
         }
         String extension = name.substring(name.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
         int limit = FileUtils.maxBytes(extension);
         if (name.lastIndexOf('.') < 0 || limit == 0) {
-            throw invalid();
+            throw new BusinessException(400, "VALIDATION_ERROR", "不支持此文件类型，请选择 PNG/JPEG 图片、MP3/WAV/OGG/FLAC 音频或 LRC/JSON/TXT 歌词。");
         }
         if (upload.getSize() > limit) {
             throw tooLarge();
@@ -441,7 +441,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
 
     /** 内容校验失败不回显文件内容、名称或解析器异常。 */
     private BusinessException invalid() {
-        return new BusinessException(400, "VALIDATION_ERROR", "文件名称、类型或内容不符合要求");
+        return new BusinessException(400, "VALIDATION_ERROR", "文件内容无法识别，请确认文件未损坏且与扩展名一致，重新选择后上传。");
     }
 
     /** 总请求上限之外，每种类型仍执行自己的字节上限。 */

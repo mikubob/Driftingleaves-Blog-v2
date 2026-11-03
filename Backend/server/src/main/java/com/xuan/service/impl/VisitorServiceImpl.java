@@ -123,7 +123,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         sessions.requireActive(sessions.currentToken(), actor);
         authorization.requireScope(actor, "admin:access");
         if (!"ALL".equals(authorization.requireScope(actor, "blog:visitor:" + operation))) {
-            throw new BusinessException(403, "FORBIDDEN", "此操作需要ALL范围");
+            throw new BusinessException(403, "FORBIDDEN", "当前账号没有管理全部记录的权限，请联系管理员授权。");
         }
     }
 

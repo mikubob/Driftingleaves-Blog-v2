@@ -55,7 +55,7 @@ public class AdminUserUpdateDTO {
         intro = value == null || value.strip().isEmpty() ? null : value.strip();
     }
 
-    @AssertTrue(message = "email、avatar和intro必须显式提供，可为null")
+    @AssertTrue(message = "邮箱、头像或简介未完整提交，请重新打开用户编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return emailPresent && avatarPresent && introPresent;
     }

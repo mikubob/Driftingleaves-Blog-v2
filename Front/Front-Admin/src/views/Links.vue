@@ -1,4 +1,5 @@
 <script setup>
+import ResourceDetail from '../components/ResourceDetail.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -20,6 +21,7 @@ const {
   '/admin/links',
   { keyword: '', status: '' },
 )
+const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const formError = ref('')
@@ -143,9 +145,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">LINKS</p>
         <h1>友链管理</h1>
-        <p class="muted-text">维护友链资料和审核状态。</p>
       </div>
       <el-button v-if="can('blog:link:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />
@@ -204,8 +204,15 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="290" fixed="right">
+        <el-table-column label="操作" width="340" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="can('blog:link:query')"
+              type="primary"
+              link
+              :disabled="batch?.busy"
+              @click="detailId = row.linkId"
+            >详情</el-button>
             <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('blog:link:update')" link @click="edit(row)">编辑</el-button>
             <el-button type="danger" v-if="can('blog:link:delete')" link @click="remove(row)">删除</el-button>
@@ -222,6 +229,30 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
+    <ResourceDetail
+      v-if="detailId"
+      :key="detailId"
+      :path="`/admin/links/${detailId}`"
+      title="友链详情"
+      @close="detailId = ''"
+    >
+      <template #default="{ detail }">
+        <el-descriptions-item label="友链 ID">{{ detail.linkId }}</el-descriptions-item>
+        <el-descriptions-item label="站点名称">{{ detail.linkName }}</el-descriptions-item>
+        <el-descriptions-item label="站点地址">{{ detail.url }}</el-descriptions-item>
+        <el-descriptions-item label="头像">
+          <ImagePreview v-if="detail.avatar" :src="detail.avatar" alt="友链头像" />
+          <span v-else>未填写</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="站点介绍">
+          <p class="detail-text">{{ detail.description || '未填写' }}</p>
+        </el-descriptions-item>
+        <el-descriptions-item label="排序">{{ detail.sortOrder }}</el-descriptions-item>
+        <el-descriptions-item label="审核状态"><StatusTag :value="detail.status" kind="link" /></el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
+      </template>
+    </ResourceDetail>
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑友链' : '新建友链'"

@@ -220,9 +220,7 @@ onBeforeUnmount(() => {
   <section v-loading="loading">
     <div class="page-header">
       <div>
-        <p class="eyebrow">ACCOUNT / SECURITY</p>
         <h1>个人资料与安全</h1>
-        <p class="muted-text">管理当前账号的联系资料、密码与第三方绑定。</p>
       </div>
     </div>
     <RequestError :message="error" @retry="load" />

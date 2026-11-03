@@ -25,9 +25,7 @@ watch(() => session.user?.userId, (userId) => {
 
 <template>
   <section class="panel auth-panel">
-    <p class="eyebrow">WELCOME TO THE JOURNAL</p>
-    <h2>很高兴，又见到你</h2>
-    <p class="muted">登录后，可以点赞、评论，和这里保持联系。</p>
+    <h2>账号登录</h2>
     <div v-if="session.user">
       <p>已登录为 {{ session.user.nickname }}。</p>
       <router-link to="/account" class="button primary">进入个人中心 →</router-link>

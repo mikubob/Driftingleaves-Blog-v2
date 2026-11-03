@@ -13,7 +13,7 @@ public record ArticleQueryDTO(@Min(1) @Max(100000) Integer page,
                               @Min(1) @Max(100) Integer pageSize,
                               @TextLength(min = 1, max = 100) String keyword,
                               String categoryId, String tagId, String authorId,
-                              @Pattern(regexp = "[1-9][0-9]{3}-(0[1-9]|1[0-2])") String month) {
+                              @Pattern(regexp = "[1-9][0-9]{3}-(0[1-9]|1[0-2])", message = "月份格式须为年-月，例如2026-11") String month) {
 
     public ArticleQueryDTO {
         page = ObjectUtil.defaultIfNull(page, 1);

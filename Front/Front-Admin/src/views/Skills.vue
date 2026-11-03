@@ -126,9 +126,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CV / SKILLS</p>
         <h1>简历技能管理</h1>
-        <p class="muted-text">SUB简历技能</p>
       </div>
       <el-button v-if="can('cv:skill:create', true)" type="primary" @click="edit()">
         <AdminIcon name="plus" />

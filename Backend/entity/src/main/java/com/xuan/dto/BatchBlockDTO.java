@@ -17,7 +17,7 @@ public class BatchBlockDTO extends BatchRevisionDTO {
     }
 
     /** 防止漏填结束时间被误当作永久封禁。 */
-    @AssertTrue(message = "blockedUntil必须显式出现")
+    @AssertTrue(message = "请选择封禁结束时间，或明确勾选永久封禁。")
     public boolean isComplete() {
         return supplied;
     }

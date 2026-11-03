@@ -14,10 +14,10 @@ public final class RevisionUtils {
     /** 检查版本，分别处理未传、格式错误和版本过期，不用审计时间充当版本。 */
     public static void check(String expected, String supplied) {
         if (ObjectUtil.isNull(supplied)) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "缺少If-Revision");
+            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!supplied.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "If-Revision格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
         if (!expected.equals(supplied)) {
             throw new BusinessException(412, "REVISION_CONFLICT", "资料已修改，请重新获取");

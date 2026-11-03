@@ -203,17 +203,26 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         deleteTree(id, true);
     }
 
-    /** 分页查询后台留言。 */
+    /** 分页查询后台留言或一层回复，保留ALL及私密查询要求。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query) {
         long actor = requireAdmin("query");
+        Long parent;
+        if ("0".equals(query.parentId())) {
+            parent = 0L;
+        } else {
+            parent = IdUtils.parse(query.parentId());
+        }
+        if (parent != null && parent != 0L) {
+            required(messages.scoped(parent, null));
+        }
         LocalDateTime begin = QueryTimeUtils.parse(query.begin());
         LocalDateTime end = QueryTimeUtils.parse(query.end());
         QueryTimeUtils.requireRange(begin, end);
         return PageResult.from(
-                messages.messagePage(new Page<>(query.page(), query.pageSize()), IdUtils.parse(query.userId()),
-                                query.status(), query.isSecret(), begin, end)
+                messages.adminPage(new Page<>(query.page(), query.pageSize()), IdUtils.parse(query.userId()),
+                                query.status(), query.isSecret(), begin, end, parent)
                         .convert(row -> privateView(row, actor)));
     }
 
@@ -374,7 +383,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         long actor = requireMember(null);
         authorization.requireScope(actor, "admin:access");
         if (!"ALL".equals(authorization.requireScope(actor, "blog:message:" + operation))) {
-            throw new BusinessException(403, "FORBIDDEN", "此操作需要ALL范围");
+            throw new BusinessException(403, "FORBIDDEN", "当前账号没有管理全部记录的权限，请联系管理员授权。");
         }
         return actor;
     }
@@ -417,7 +426,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 value.htmlContent(), value.contentFormat(),
                 value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
                 value.updateTime(), row.getNotifyReply(), value.location(),
-                value.userAgentOs(), value.userAgentBrowser());
+                value.userAgentOs(), value.userAgentBrowser(), row.getHasChildren());
     }
 
     /** 组装留言展示内容，纯文本转义并保留换行。 */

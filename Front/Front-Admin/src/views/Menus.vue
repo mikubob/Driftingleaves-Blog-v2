@@ -66,7 +66,7 @@ async function load() {
   try {
     const result = await request('/admin/menus')
     if (!Array.isArray(result.data)) {
-      throw new Error('菜单树响应格式不正确。')
+      throw new Error('菜单加载异常，请刷新页面后重试；仍失败时请联系管理员。')
     }
     rows.value = result.data
     if (can('sys:permission:query')) {
@@ -236,9 +236,8 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">SYSTEM / MENUS</p>
         <h1>菜单管理</h1>
-        <p class="muted-text">组织目录、页面和按钮；菜单隐藏不会撤销接口权限。</p>
+        <p class="muted-text">隐藏菜单不会撤销接口权限。</p>
       </div>
       <el-button v-if="can('sys:menu:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />

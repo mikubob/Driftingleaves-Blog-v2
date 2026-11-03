@@ -34,7 +34,7 @@ public class ArticleWriteDTO {
 
     @NotNull
     @Size(max = 200)
-    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", message = "只能使用字母、数字及分隔词语的单个连字符，不能包含空格或连续连字符")
     private String slug;
 
     @NotNull
@@ -136,13 +136,13 @@ public class ArticleWriteDTO {
     }
 
     /** PUT 的默认字段和可空字段也要传，避免漏传后悄悄覆盖原资料。 */
-    @AssertTrue(groups = Replace.class, message = "PUT必须提供全部可写字段，可空字段可为null")
+    @AssertTrue(groups = Replace.class, message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return present.size() == 9;
     }
 
     /** 标签不能重复；没传和传 null 由字段上的校验处理。 */
-    @AssertTrue(message = "tagIds不能重复")
+    @AssertTrue(message = "同一标签不能重复选择。")
     public boolean isUniqueTags() {
         return tagIds == null || new HashSet<>(tagIds).size() == tagIds.size();
     }

@@ -74,7 +74,7 @@
 - `S(n)`：1..n 个 Unicode 字符；`S0(n)`：0..n；`?`/`null`：可空；`[]`：数组。除密码/Markdown 外文本去首尾空白，可空文本的空串归一为 null。
 - 必填不得缺失或 null，显式声明可 null 的字段除外。PUT 为完整替换，可空字段也须出现；PATCH 缺失保持、null 清空可空字段；POST 默认值见参数表。
 - 查询参数每项仅传一个非空值；未知、重复或空白参数以及未知 JSON 字段、重复 JSON 属性、错误类型或枚举均返回 400，不静默忽略。
-- slug 区分大小写，仅允许 `[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`；文章最长 200，分类/标签最长 100。名称、用户名、邮箱按数据库排序规则判断唯一。
+- slug 区分大小写，仅允许 `[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*`；文章最长 200，分类/标签最长 100。分类名、标签名、用户名、邮箱按数据库排序规则判断唯一，文章标题允许重复。
 - URL 最长 2048，外部资源只接受合法 HTTP(S)，社交 mailto 的例外见对应模型；本站附件仅接受指定的文章上下文路径，见 [13.4](#file-consistency)。
 - JSON 请求体上限 8MiB；Markdown 解码后最多 1MiB；文件限制见上传接口。审计时间、发布时间及操作者身份由服务端生成。
 
@@ -1399,7 +1399,7 @@ Authorization: Bearer <site-token>
 | 接口路径 | `GET /api/v1/admin/users/{userId}` |
 | 接口描述 | 查询用户详情 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`sys:user:query` |
+| 访问要求 | 已登录且账号启用，具有 `admin:access` 和 `sys:user:query`；全局查询，SELF 不缩小范围 |
 
 ##### 请求参数
 
@@ -1416,7 +1416,7 @@ Authorization: Bearer <site-token>
 
 ##### 响应参数
 
-`data`：[UserAdmin](#response-useradmin)。
+`data`：[UserAdmin](#response-useradmin)。包含账号资料、密码设置状态、最近登录信息、创建及更新时间、完整角色 ID 与角色展示信息；禁用用户也可查看。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -1432,13 +1432,36 @@ X-Revision: "<current-revision>"
   "code": "OK", "msg": "成功",
   "data": {
     "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
-    "status": 1
+    "status": 1, "hasPassword": true,
+    "lastLoginTime": "2026-11-01T14:03:00.000Z",
+    "lastLoginIp": "198.51.100.8", "lastLoginLocation": "江苏省 南京市",
+    "createTime": "2026-10-01T00:00:00.000Z", "updateTime": "2026-11-01T14:03:00.000Z",
+    "roleIds": ["2", "3"],
+    "roles": [
+      { "roleId": "2", "roleCode": "member", "roleName": "普通用户", "status": 1 },
+      { "roleId": "3", "roleCode": "author", "roleName": "作者", "status": 0 }
+    ]
   },
   "errors": []
 }
 ```
 
-详情返回完整 roleIds（包含已分配但禁用的角色）和与本人资料共用的 X-Revision；不存在返回 404。密码、登录时间及审计时间不参与版本。
+`roleIds` 与 `roles` 都按角色 ID 升序返回，包含已分配但禁用的角色；未分配角色时均为 `[]`。`roles[]` 仅含 `roleId`、`roleCode`、`roleName`、`status`（0 禁用、1 启用），供用户管理详情展示，不要求额外的 `sys:role:query`，也不能据此判断当前有效权限。列表、创建和更新用户响应同步增加 `roles`，原有字段保留。
+
+详情返回与本人资料共用的 X-Revision；版本仍只由原有用户业务字段和完整 roleIds 生成。角色名称和启用状态、密码、登录信息及审计时间不参与该版本。不返回密码哈希、第三方身份凭据或会话 Token。联系邮箱不代表已完成邮箱验证。
+
+##### 错误响应
+
+| HTTP 状态 | code | 说明 |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | userId 格式无效或超出 Long 范围，不接受前导零、符号或空白 |
+| 401 | `UNAUTHENTICATED` | 未登录或当前会话失效 |
+| 403 | `FORBIDDEN` | 缺少后台入口、用户查询权限，或使用非后台登录会话 |
+| 403 | `ACCOUNT_DISABLED` | 当前操作者账号已禁用；目标账号禁用不影响查询 |
+| 404 | `NOT_FOUND` | 目标用户不存在 |
+| 503 | `SERVICE_UNAVAILABLE` | 数据库或会话服务不可用 |
+
+后台用户列表提供“详情”操作，点击后请求本接口并在只读弹窗展示最新资料；加载期间显示进度，失败显示错误及重试入口，不以列表行或上一次详情冒充当前结果。
 
 ---
 
@@ -2604,7 +2627,7 @@ sortOrder ASC,categoryId ASC；全局字典，不使用 SELF 本人过滤。keyw
 | 接口路径 | `GET /api/v1/admin/categories/{categoryId}` |
 | 接口描述 | 查询分类详情 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:category:query` |
+| 访问要求 | 使用后台登录会话，账号启用且具有 `admin:access` 和 `blog:category:query`；全局查询，SELF 不缩小范围 |
 
 ##### 请求参数
 
@@ -2621,7 +2644,7 @@ Authorization: Bearer <site-token>
 
 ##### 响应参数
 
-`data`：[Category](#response-category)。
+`data` 返回 categoryId、categoryName、slug、description、sortOrder、status、createTime、updateTime，字段定义见 [Category](#response-category)。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -2636,13 +2659,27 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "categoryId": "1", "categoryName": "技术", "slug": "tech", "description": null, "sortOrder": 0, "status": 1
+    "categoryId": "1", "categoryName": "技术", "slug": "tech", "description": null, "sortOrder": 0, "status": 1,
+    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z"
   },
   "errors": []
 }
 ```
 
-后台(blog:category:query)
+隐藏分类也能查看，status 为 0 隐藏、1 展示。详情与 X-Revision 在同一只读事务中读取；ID 保留十进制字符串，时间使用 UTC 毫秒格式。详情查询不修改资源或文章关联，编辑、批量操作继续使用原有版本规则。
+
+管理列表提供“详情”按钮，只需查询权限，不要求编辑或删除权限。点击后请求本接口，在只读弹窗展示最新资料；支持加载提示、错误重试、关闭时取消请求，不使用列表行或上一次结果替代当前详情。描述按文本展示，可空描述显示未填写。
+
+##### 错误响应
+
+| HTTP 状态 | code | 说明 |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | ID 格式无效或超出 Long 范围，不接受前导零、符号或空白 |
+| 401 | `UNAUTHENTICATED` | 未登录或会话失效 |
+| 403 | `ACCOUNT_DISABLED` | 当前操作者账号已禁用 |
+| 403 | `FORBIDDEN` | 缺少后台入口或本接口查询权限，或使用非后台登录会话 |
+| 404 | `NOT_FOUND` | 目标分类不存在 |
+| 503 | `SERVICE_UNAVAILABLE` | 数据库或会话服务不可用 |
 
 ---
 
@@ -2832,7 +2869,7 @@ tagId ASC；全局字典，不使用 SELF 本人过滤。keyword 去首尾空白
 | 接口路径 | `GET /api/v1/admin/tags/{tagId}` |
 | 接口描述 | 查询标签详情 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:tag:query` |
+| 访问要求 | 使用后台登录会话，账号启用且具有 `admin:access` 和 `blog:tag:query`；全局查询，SELF 不缩小范围 |
 
 ##### 请求参数
 
@@ -2849,7 +2886,7 @@ Authorization: Bearer <site-token>
 
 ##### 响应参数
 
-`data`：[Tag](#response-tag)。
+`data` 返回 tagId、tagName、slug、createTime、updateTime，字段定义见 [Tag](#response-tag)。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -2871,7 +2908,20 @@ X-Revision: "<current-revision>"
 }
 ```
 
-后台(blog:tag:query)
+标签没有展示状态、描述或排序字段。详情与 X-Revision 在同一只读事务中读取；ID 保留十进制字符串，时间使用 UTC 毫秒格式。详情查询不修改资源或文章关联，编辑、批量操作继续使用原有版本规则。
+
+管理列表提供“详情”按钮，只需查询权限，不要求编辑或删除权限。点击后请求本接口，在只读弹窗展示最新资料；支持加载提示、错误重试、关闭时取消请求，不使用列表行或上一次结果替代当前详情。
+
+##### 错误响应
+
+| HTTP 状态 | code | 说明 |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | ID 格式无效或超出 Long 范围，不接受前导零、符号或空白 |
+| 401 | `UNAUTHENTICATED` | 未登录或会话失效 |
+| 403 | `ACCOUNT_DISABLED` | 当前操作者账号已禁用 |
+| 403 | `FORBIDDEN` | 缺少后台入口或本接口查询权限，或使用非后台登录会话 |
+| 404 | `NOT_FOUND` | 目标标签不存在 |
+| 503 | `SERVICE_UNAVAILABLE` | 数据库或会话服务不可用 |
 
 ---
 
@@ -3019,6 +3069,7 @@ X-Revision: "<current-revision>"
 | `articleId` | ID | 否 | 可选，文章筛选 |
 | `userId` | ID | 否 | 可选，评论者筛选，不扩大评论管理范围 |
 | `status` | integer | 否 | 可选，0/1/2；含义见该业务状态约定 |
+| `parentId` | string | 否 | 未传：保留所有层级的平铺分页；`"0"`：仅根评论；正十进制 ID：仅该评论的直接回复，父评论不存在或超出查询范围返回404 |
 
 ##### 请求示例
 
@@ -3050,6 +3101,10 @@ Authorization: Bearer <site-token>
 ```
 
 每页最多 50；SELF 为本人文章下的评论，非“评论本人”；createTime DESC,commentId DESC。
+
+树表先请求 `?parentId=0&page=1&pageSize=20`，展开时请求 `?parentId=201&page=1&pageSize=20`。每次只分页当前层，`total/totalPages` 只统计该层；继续翻页直到当前层结束，不递归返回全部后代。后台查询不使用前台的审核通过或公开文章过滤，`hasChildren` 包含待审和驳回的直接回复。
+
+所有筛选按当前记录本身做 AND 匹配，不把祖先或后代当作命中。管理端提交任意筛选时省略 `parentId`，平铺展示全部层级的命中项并保留回复目标 ID，防止父节点未命中时漏掉待审核回复；清空筛选恢复根节点树表。树表表头全选只选择本页根记录，子回复单独勾选，最多100条；根与回复按各自 ID 独立选择，加载按钮不参与批量操作；审核或删除后重新查询并清空展开缓存和选择。
 
 ---
 
@@ -3137,6 +3192,8 @@ X-Revision: "<current-revision>"
 | `begin` | Time | 否 | createTime含下界 |
 | `end` | Time | 否 | createTime不含上界 |
 
+`parentId`（可选 string）：未传时保留所有层级的平铺分页；`"0"` 仅查询根留言；正十进制 ID 仅查询该留言的直接回复，父留言不存在返回404。只有本参数允许 `"0"` 表示根节点，其余 ID 参数仍为正十进制字符串。
+
 ##### 请求示例
 
 ```http
@@ -3171,6 +3228,10 @@ Authorization: Bearer <site-token>
 ```
 
 筛选AND组合；begin<end；createTime DESC,messageId DESC。后台可读私密内容，不向前台公开后台投影。
+
+根留言请求示例：`?parentId=0&page=1&pageSize=10`；展开示例：`?parentId=301&page=1&pageSize=20`。每次只分页当前层，`total/totalPages` 只统计该层，`hasChildren` 包含待审、驳回及私密直接回复；列表与总数使用同样条件。每次请求仍须具有 `blog:message:query` 的 ALL 范围，不复用公开留言的审核或私密父链过滤。
+
+管理端每层先加载20条，通过“加载更多回复”逐页追加，支持继续展开任意层级；失败保留已加载记录并可重试。提交作者、状态、私密或时间筛选时省略 `parentId`，平铺展示所有层级命中项，父节点未命中不影响回复出现；重置后恢复树表。详情、审核、批量操作、分支删除及后台回复接口保持原有版本与权限规则，写入后清空展开缓存和选择并刷新。
 
 ---
 
@@ -3361,7 +3422,7 @@ sortOrder ASC,linkId ASC。
 | 接口路径 | `GET /api/v1/admin/links/{linkId}` |
 | 接口描述 | 查询友链详情 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`blog:link:query` |
+| 访问要求 | 使用后台登录会话，账号启用且具有 `admin:access` 和 `blog:link:query`；全局查询，SELF 不缩小范围 |
 
 ##### 请求参数
 
@@ -3378,7 +3439,7 @@ Authorization: Bearer <site-token>
 
 ##### 响应参数
 
-`data`：[Link](#response-link)。
+`data` 返回 linkId、linkName、url、avatar、description、sortOrder、status、createTime、updateTime，字段定义见 [Link](#response-link)。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -3394,13 +3455,27 @@ X-Revision: "<current-revision>"
   "code": "OK", "msg": "成功",
   "data": {
     "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
-    "sortOrder": 0, "status": 1
+    "sortOrder": 0, "status": 1,
+    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z"
   },
   "errors": []
 }
 ```
 
-后台(blog:link:query)
+待审核、展示中和驳回/下架的友链均可查看，status 分别为 0、1、2。详情与 X-Revision 在同一只读事务中读取；ID 保留十进制字符串，时间使用 UTC 毫秒格式。详情查询不修改资源或文章关联，编辑、批量操作继续使用原有版本规则。
+
+管理列表提供“详情”按钮，只需查询权限，不要求编辑或删除权限。点击后请求本接口，在只读弹窗展示最新资料；支持加载提示、错误重试、关闭时取消请求，不使用列表行或上一次结果替代当前详情。描述按文本展示，可空字段显示未填写；友链头像复用图片预览组件，地址只展示，不由服务端抓取。
+
+##### 错误响应
+
+| HTTP 状态 | code | 说明 |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | ID 格式无效或超出 Long 范围，不接受前导零、符号或空白 |
+| 401 | `UNAUTHENTICATED` | 未登录或会话失效 |
+| 403 | `ACCOUNT_DISABLED` | 当前操作者账号已禁用 |
+| 403 | `FORBIDDEN` | 缺少后台入口或本接口查询权限，或使用非后台登录会话 |
+| 404 | `NOT_FOUND` | 目标友链不存在 |
+| 503 | `SERVICE_UNAVAILABLE` | 数据库或会话服务不可用 |
 
 ---
 
@@ -10296,6 +10371,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 | `roleIds` | ID[] | 已分配角色 ID 集合，包含禁用角色 |
+| `roles` | object[] | 按角色 ID 升序的已分配角色，包含禁用角色；每项仅含 roleId（ID）、roleCode、roleName（string）、status（0/1），无角色为 [] |
 
 <a id="response-useradmin-2"></a>
 
@@ -10317,6 +10393,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 | `roleIds` | ID[] | 已分配角色 ID 集合，包含禁用角色 |
+| `roles` | object[] | 按角色 ID 升序的已分配角色，包含禁用角色；每项仅含 roleId（ID）、roleCode、roleName（string）、status（0/1），无角色为 [] |
 
 <a id="response-role"></a>
 
@@ -10672,6 +10749,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
 | `articleTitle` | string | 所属文章标题 |
+| `hasChildren` | boolean&#124;null | 后台列表是否存在直接回复，不限审核状态；详情未查询此标记时为null |
 
 <a id="response-likestate"></a>
 
@@ -10918,6 +10996,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `createTime` | Time | 创建时间，UTC |
 | `updateTime` | Time | 最后更新时间，UTC |
 | `notifyReply` | integer | 0不通知 1请求回复通知；不是邮箱验证凭据 |
+| `hasChildren` | boolean&#124;null | 后台列表是否存在直接回复，包含私密及未通过审核的回复；本人接口、详情及写入响应为null，不据此透露私密回复关系 |
 
 <a id="response-musicpublic"></a>
 
@@ -11261,7 +11340,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 403 | FORBIDDEN | 权限不足；全局操作拒绝 |
 | 403 | REAUTH_REQUIRED | 安全操作需最近 5 分钟内重新登录 |
 | 404 | NOT_FOUND | 不存在、非公开文章、SELF 不可访问的他人资源；不泄露目标存在性 |
-| 409 | UNIQUE_CONFLICT | username/email/slug/编码/路由唯一键冲突；已回滚；账号字段按[重复情况](#user-unique-conflict)返回明确提示及字段明细 |
+| 409 | UNIQUE_CONFLICT | 唯一键冲突时 msg 指出具体字段及修改方式，errors 保留对应请求字段；涵盖文章 URL 标识、分类名称/URL 标识、标签名称/URL 标识、角色编码、权限编码、菜单编码/路由名称/路由路径、账号和订阅等全部已声明唯一键。账号多字段冲突仍按[重复情况](#user-unique-conflict)返回；文章标题允许重复；未识别的内部冲突提示刷新并编辑已有记录，不回显 SQL、约束名或冲突值 |
 | 409 | OAUTH_BIND_CONFLICT | 身份已属他人或本站用户同平台已绑定其他身份 |
 | 409 | LAST_LOGIN_METHOD | 清除密码/解绑会失去最后一种可用登录方式 |
 | 409 | LAST_ADMIN | 会使最后一个有效管理员失效 |

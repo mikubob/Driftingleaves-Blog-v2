@@ -19,7 +19,7 @@ public class CategoryUpdateDTO {
     private String categoryName;
 
     @NotNull
-    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", message = "只能使用字母、数字及分隔词语的单个连字符，不能包含空格或连续连字符")
     @TextLength(max = 100)
     private String slug;
 
@@ -46,7 +46,7 @@ public class CategoryUpdateDTO {
         description = value == null || value.strip().isEmpty() ? null : value.strip();
     }
 
-    @AssertTrue(message = "description必须显式提供，可为null")
+    @AssertTrue(message = "描述未完整提交，请重新打开编辑窗口后重试；描述留空可清除已有内容。")
     public boolean isCompleteReplace() {
         return descriptionPresent;
     }

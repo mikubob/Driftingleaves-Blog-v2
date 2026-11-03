@@ -19,7 +19,7 @@ public class CategoryCreateDTO {
     private String categoryName;
 
     @NotNull
-    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*")
+    @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", message = "只能使用字母、数字及分隔词语的单个连字符，不能包含空格或连续连字符")
     @TextLength(max = 100)
     private String slug;
 

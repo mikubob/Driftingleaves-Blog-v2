@@ -2,6 +2,15 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 用户行锁必须由业务事务持有，权限和版本仍由业务层检查，不能靠 Mapper 代替。 -->
 <mapper namespace="com.xuan.mapper.UserMapper">
+    <!-- 只查角色展示字段，不按启用状态过滤，禁用用户和禁用角色的关联都要保留。 -->
+    <select id="assignedRoles" resultType="com.xuan.vo.UserRoleVO">
+        SELECT r.role_id, r.role_code, r.role_name, r.status
+        FROM sys_user_role ur
+        JOIN sys_role r ON r.role_id = ur.role_id
+        WHERE ur.user_id = #{userId}
+        ORDER BY r.role_id
+    </select>
+
     <!-- 一次查出两个字段的冲突，不能只按数据库首先报出的唯一键提示。 -->
     <select id="findIdentityConflicts" resultType="string">
         SELECT 'username' WHERE EXISTS (

@@ -39,7 +39,7 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 根据id删除本人留言及全部子回复，只能选择自己的留言。 */
     void deleteOwn(long id);
 
-    /** 分页查询后台留言，需要独立的查询权限及 ALL 范围；前台接口不会因此公开私密留言。 */
+    /** 分页查询后台留言或一层回复，未传parentId保留平铺；查询权限须有ALL，不放宽前台私密限制。 */
     PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query);
 
     /** 根据id查询后台留言及版本，需要 ALL 范围，详情和版本在同一个只读事务中读取。 */

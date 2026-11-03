@@ -177,8 +177,7 @@ async function saveMessage() {
 
 <template>
   <section v-if="!session.user" class="panel empty-state">
-    <h2>登录后，和这里保持联系</h2>
-    <p class="muted">管理资料、回看互动和订阅新的文章。</p>
+    <h2>请先登录</h2>
     <router-link :to="{ path: '/login', query: { redirect: '/account' } }" class="button primary">去登录 →</router-link>
   </section>
   <template v-else>
@@ -186,9 +185,8 @@ async function saveMessage() {
     <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
     <OAuthBindings />
     <section class="panel">
-      <p class="eyebrow">MY CORNER</p>
       <h2>你好，{{ session.user.nickname }}</h2>
-      <button class="text-button" @click="signOut">退出登录</button>
+      <button @click="signOut">退出登录</button>
       <ResourceState :resource="me" />
       <form v-if="me.data" @submit.prevent="saveProfile">
         <fieldset :disabled="busy">
@@ -264,7 +262,7 @@ async function saveMessage() {
           <template v-if="tab === 'liked-articles'">
             <ArticleCard :article="articleView(item.article)" />
             <p class="muted">喜欢于 {{ formatDate(item.likedAt) }}</p>
-            <button v-if="can('blog:article:like')" class="text-button" @click="deleting = item">取消喜欢</button>
+            <button v-if="can('blog:article:like')" @click="deleting = item">取消喜欢</button>
           </template>
           <template v-else>
             <p class="prose-text">{{ item.content }}</p>

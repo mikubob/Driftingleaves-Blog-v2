@@ -40,14 +40,14 @@ function validateNumbers(value, key = '') {
   if (key === 'id' || /(?:Id|Ids)$/.test(key)) {
     const values = Array.isArray(value) ? value : [value]
     if (!values.every(isId)) {
-      throw new Error('接口返回的 ID 格式不正确。')
+      throw new Error('服务器返回的记录信息异常，请刷新页面后重试；仍失败时请联系站点管理员。')
     }
   }
   if (
     (/(?:Count|Bytes)$/.test(key) || key === 'totalViews') &&
     (typeof value !== 'string' || !/^\d+$/.test(value))
   ) {
-    throw new Error('接口返回的计数格式不正确。')
+    throw new Error('服务器返回的统计数据异常，请刷新页面后重试。')
   }
   if (value && typeof value === 'object') {
     for (const [field, item] of Object.entries(value)) {
@@ -99,7 +99,7 @@ export async function request(path, { body, revision, captcha, blob = false, ...
     const file = await response.blob()
     if (!['image/png', 'image/jpeg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac',
       'text/plain', 'application/json'].includes(file.type.split(';')[0])) {
-      throw new Error('文件响应类型不受支持。')
+      throw new Error('暂时无法读取此文件，请重新选择文件后重试。')
     }
     return { data: file }
   }
@@ -121,9 +121,6 @@ export async function request(path, { body, revision, captcha, blob = false, ...
           (item) => typeof item?.field === 'string' && typeof item.message === 'string',
         )
       : []
-    if (response.status === 400 && errors.length) {
-      message += `：${errors.map((item) => `${item.field} ${item.message}`).join('；')}`
-    }
     if (response.status === 401 && result?.code === 'UNAUTHENTICATED') {
       accessToken = ''
       onUnauthenticated()
@@ -138,7 +135,7 @@ export async function request(path, { body, revision, captcha, blob = false, ...
     throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED' ? reportRequestFailure(error, path) : error
   }
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
-    throw new Error('接口响应格式不正确。')
+    throw new Error('服务器返回的数据异常，请刷新页面后重试；仍失败时请联系站点管理员。')
   }
   if (path === '/admin/auth/captcha') {
     validateCaptcha(result.data)
@@ -175,7 +172,7 @@ export async function getPage(path, params, signal) {
     typeof data.totalPages !== 'string' ||
     !/^\d+$/.test(data.totalPages)
   ) {
-    throw new Error('分页响应格式不正确。')
+    throw new Error('列表数据加载异常，请刷新列表后重试。')
   }
   return data
 }
@@ -202,7 +199,7 @@ export async function getFile(path, signal) {
       path,
     )
   ) {
-    throw new Error('不支持的后台文件地址。')
+    throw new Error('文件地址无效，请从文件列表重新选择。')
   }
   const { data } = await request(path.slice(prefix.length), { blob: true, signal })
   return data

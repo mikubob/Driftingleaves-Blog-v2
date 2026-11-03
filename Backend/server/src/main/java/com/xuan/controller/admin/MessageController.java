@@ -38,7 +38,7 @@ public class MessageController {
     private final IMessageService messages;
     private final AuthProperties auth;
 
-    /** 分页查询后台留言，列表和总数使用相同筛选条件。 */
+    /** 分页查询后台留言或一层回复，parentId为0查根节点，未传保留平铺；总数使用相同筛选。 */
     @GetMapping
     @SaCheckPermission("blog:message:query")
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageAdminQueryDTO query) {

@@ -13,11 +13,11 @@ import java.util.Locale;
 /**
  * 公开注册只收这些字段，角色和启用状态由服务端决定。
  */
-public record RegisterDTO(@NotNull @Pattern(regexp = "[A-Za-z0-9_]{3,64}") String username,
+public record RegisterDTO(@NotNull @Pattern(regexp = "[A-Za-z0-9_]{3,64}", message = "须为3至64位字母、数字或下划线") String username,
                           @NotNull @Password String password,
                           @NotNull @TextLength(min = 1, max = 64) String nickname,
                           @NotBlank @Email @Size(max = 254) String email,
-                          @NotNull @Pattern(regexp = "[0-9]{6}") String emailCode) {
+                          @NotNull @Pattern(regexp = "[0-9]{6}", message = "须为6位数字，请填写邮件中的验证码") String emailCode) {
 
     public RegisterDTO {
         username = username == null ? null : username.strip();

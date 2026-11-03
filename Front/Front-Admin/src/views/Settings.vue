@@ -85,9 +85,7 @@ onMounted(load)
   <section v-loading="loading">
     <div class="page-header">
       <div>
-        <p class="eyebrow">SYSTEM / CONFIGURATION</p>
         <h1>站点配置</h1>
-        <p class="muted-text">维护站点信息、互动开关与审核规则。</p>
       </div>
     </div>
     <div class="page-tabs">
@@ -147,7 +145,6 @@ onMounted(load)
           <div class="switch-row">
             <div>
               <strong>新内容需要审核</strong>
-              <p class="muted-text">开启后先进入待审核状态。</p>
             </div>
             <el-switch v-model="form.reviewRequired" />
           </div>

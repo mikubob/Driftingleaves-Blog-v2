@@ -16,10 +16,10 @@ import java.util.Set;
  */
 @Getter
 public class PageViewCreateDTO {
-    @NotNull @Pattern(regexp = "[A-Za-z0-9-]{16,150}")
+    @NotNull @Pattern(regexp = "[A-Za-z0-9-]{16,150}", message = "访客标识无效，请刷新页面后重试")
     private String fingerprint;
 
-    @NotNull @Pattern(regexp = "home|blog|cv")
+    @NotNull @Pattern(regexp = "home|blog|cv", message = "请选择主页、博客或简历站点")
     private String siteCode;
 
     @NotNull @TextLength(min = 1, max = 2048)
@@ -68,7 +68,7 @@ public class PageViewCreateDTO {
     }
 
     /** 可空字段必须显式出现。 */
-    @AssertTrue(message = "须提供全部声明字段")
+    @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 6;
     }

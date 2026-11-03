@@ -119,9 +119,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">CONTENT / SUBSCRIPTIONS</p>
         <h1>邮件订阅</h1>
-        <p class="muted-text">管理经过邮箱确认的内容订阅，保持与读者的连接。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
@@ -153,7 +151,6 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>订阅列表</h2>
-        <span class="muted-text">待验证邮箱需要用户自行确认</span>
       </div>
             <BatchActions
         ref="batch" resource="/admin/rss-subscriptions" id-key="subscriptionId"

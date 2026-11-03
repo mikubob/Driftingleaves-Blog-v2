@@ -176,9 +176,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">SYSTEM / ROLES</p>
         <h1>角色管理</h1>
-        <p class="muted-text">明确每个角色的权限、菜单与数据访问范围。</p>
       </div>
       <el-button v-if="can('sys:role:create')" type="primary" @click="edit()">
         <AdminIcon name="plus" />

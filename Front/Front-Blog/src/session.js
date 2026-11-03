@@ -63,7 +63,7 @@ async function loadSession(accessToken) {
       request('/blog/me/capabilities'),
     ])
     if (!isId(me.data?.userId) || !Array.isArray(capabilities.data?.permissionCodes)) {
-      throw new Error('用户资料或权限响应格式不正确。')
+      throw new Error('用户资料或权限加载异常，请重新登录后重试。')
     }
     session.user = me.data
     session.permissions = capabilities.data.permissionCodes

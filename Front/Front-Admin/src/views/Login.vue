@@ -92,7 +92,6 @@ async function sendEmailCode() {
     <div class="login-decoration" aria-hidden="true">
       <span>D</span>
       <span class="decoration-line"></span>
-      <small>A SPACE FOR YOUR IDEAS.</small>
     </div>
     <section class="login-panel">
       <div class="login-box">
@@ -100,9 +99,7 @@ async function sendEmailCode() {
           D
           <span>↗</span>
         </div>
-        <p class="eyebrow">DRIFTING LEAVES / ADMIN</p>
         <h1>管理控制台</h1>
-        <p class="login-subtitle">选择账号密码或邮箱验证码登录，并完成图形验证。</p>
         <el-radio-group v-model="emailLogin" class="login-methods" size="large" :disabled="busy" aria-label="登录方式">
           <el-radio-button :value="false">账号密码</el-radio-button>
           <el-radio-button :value="true">邮箱验证码</el-radio-button>
@@ -158,10 +155,6 @@ async function sendEmailCode() {
             <el-icon aria-hidden="true"><ArrowRight /></el-icon>
           </el-button>
         </form>
-        <p class="login-note">
-          <el-icon aria-hidden="true"><Lock /></el-icon>
-          登录后可保持七天，刷新时核验身份和权限
-        </p>
       </div>
       <footer>© {{ new Date().getFullYear() }} Drifting Leaves</footer>
     </section>

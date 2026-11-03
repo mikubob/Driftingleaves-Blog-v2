@@ -33,7 +33,6 @@ async function submit() {
 
 <template>
   <section class="panel auth-panel">
-    <p class="eyebrow">EMAIL SUBSCRIPTION</p>
     <h2>{{ confirm ? '确认邮箱订阅' : '取消邮件订阅' }}</h2>
     <p v-if="!valid" class="error-text" role="alert">链接缺少有效票据，请重新打开完整邮件链接。</p>
     <p v-else-if="done" class="success-text" role="status">{{ confirm ? '邮箱验证成功，已开启邮件订阅。' : '已取消邮件订阅。' }}</p>

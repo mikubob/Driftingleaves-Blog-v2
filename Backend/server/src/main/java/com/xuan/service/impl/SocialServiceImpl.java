@@ -112,7 +112,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
             throw new BusinessException(400, "VALIDATION_ERROR", "图标须为外部URL或注册图标键");
         }
         if (!UrlPolicy.validSocial(request.getUrl())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "社交地址格式错误");
+            throw new BusinessException(400, "VALIDATION_ERROR", "社交地址无效，请填写有效的网站链接、邮件地址或电话号码。");
         }
     }
 
@@ -139,7 +139,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
         sessions.requireActive(sessions.currentToken(), actor);
         authorization.requireScope(actor, "admin:access");
         if (!"ALL".equals(authorization.requireScope(actor, "home:social:" + operation))) {
-            throw new BusinessException(403, "FORBIDDEN", "此操作需要ALL范围");
+            throw new BusinessException(403, "FORBIDDEN", "当前账号没有管理全部记录的权限，请联系管理员授权。");
         }
     }
 

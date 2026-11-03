@@ -23,7 +23,6 @@ const loading = ref(true)
 const saving = ref(false)
 const uploading = ref(false)
 const error = ref('')
-const formError = ref('')
 const categories = ref([])
 const tags = ref([])
 const preview = ref('')
@@ -119,21 +118,24 @@ async function save(publish = false, { navigate = true } = {}) {
   if (saving.value || uploading.value || !editable.value) {
     return false
   }
-  formError.value = ''
-  if (!form.title.trim() || !/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(form.slug)) {
-    formError.value = '请输入文章标题和有效的 URL 标识（字母、数字及单个连字符）。'
+  if (!form.title.trim()) {
+    ElMessage.warning('请输入文章标题。')
+    return false
+  }
+  if (!/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/.test(form.slug)) {
+    ElMessage.warning('请输入有效的 URL 标识（字母、数字及单个连字符）。')
     return false
   }
   if (publish && !form.markdownContent.trim()) {
-    formError.value = '发布前请输入文章正文。'
+    ElMessage.warning('发布前请输入文章正文。')
     return false
   }
   if (markdownBytes.value > 1048576) {
-    formError.value = 'Markdown 正文不能超过 1 MiB。'
+    ElMessage.warning('Markdown 正文不能超过 1 MiB。')
     return false
   }
   if (form.articleType !== 1 && !form.originalUrl.trim()) {
-    formError.value = '转载或翻译文章必须填写原文地址。'
+    ElMessage.warning('转载或翻译文章必须填写原文地址。')
     return false
   }
 
@@ -165,7 +167,7 @@ async function save(publish = false, { navigate = true } = {}) {
     }
     ElMessage.success(publish ? '文章已保存并发布' : '文章已保存')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
     return false
   } finally {
     saving.value = false
@@ -331,7 +333,6 @@ onBeforeUnmount(() => {
       type="warning"
       :closable="false"
     />
-    <p v-if="formError" role="alert" class="error-text editor-error">{{ formError }}</p>
     <div class="title-row">
       <el-input
         v-model="form.title"
@@ -374,8 +375,8 @@ onBeforeUnmount(() => {
           <EmojiPicker @select="insertEmoji" />
         </div>
         <p class="editor-hint">
-          {{ markdownBytes.toLocaleString() }} / 1,048,576 字节 · 实时预览仅用于编辑，
-          已保存预览展示上次保存的原文 · 先保存草稿再上传图片
+          {{ markdownBytes.toLocaleString() }} / 1,048,576 字节
+          <template v-if="!id"> · 保存草稿后可上传图片</template>
         </p>
       </div>
       <aside class="edit-aside">
@@ -384,7 +385,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="edit-form">
           <label>
-            URL 标识
+            URL 标识（唯一）
             <el-input
               v-model="form.slug"
               aria-label="URL 标识"
@@ -552,11 +553,6 @@ onBeforeUnmount(() => {
 
 .editor-hint {
   padding: 6px 12px;
-  background: #fff;
-}
-
-.editor-error {
-  padding: 8px 16px;
   background: #fff;
 }
 

@@ -138,9 +138,7 @@ const batchActions = computed(() => {
   <section>
     <div class="page-header">
       <div>
-        <p class="eyebrow">ANALYTICS / VISITORS</p>
         <h1>访客管理</h1>
-        <p class="muted-text">查看访客地域与访问时间，管理统计标识的采集限制。</p>
       </div>
     </div>
     <el-card class="filter-card" shadow="never">

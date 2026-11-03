@@ -67,7 +67,7 @@ public class LinkWriteDTO {
     }
 
     /** 可空字段也得显式传入，防止漏传时把现有资料覆盖掉。 */
-    @AssertTrue(groups = Replace.class, message = "PUT必须提供全部可写字段，可空字段可为null")
+    @AssertTrue(groups = Replace.class, message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return present.size() == 3;
     }
