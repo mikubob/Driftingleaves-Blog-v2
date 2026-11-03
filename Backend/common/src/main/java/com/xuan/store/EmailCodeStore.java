@@ -3,6 +3,7 @@ package com.xuan.store;
 import com.xuan.client.MailClient;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
+import com.xuan.utils.EmailTemplateUtils;
 import com.xuan.utils.TokenUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,7 +46,8 @@ public class EmailCodeStore {
                 default -> throw new IllegalArgumentException("未知邮件验证码用途");
             };
             mail.send(email, "Drifting Leaves - " + action + "验证码",
-                    "您正在" + action + "，验证码：" + code + "。五分钟内有效，请勿向他人透露。若非本人操作，请忽略。后台验证码仅用于后台登录。");
+                    "您正在" + action + "，验证码：" + code + "。五分钟内有效，请勿向他人透露。若非本人操作，请忽略。后台验证码仅用于后台登录。",
+                    EmailTemplateUtils.verificationCode(action, code));
         } catch (RuntimeException exception) {
             redis.delete(key);
             throw exception;

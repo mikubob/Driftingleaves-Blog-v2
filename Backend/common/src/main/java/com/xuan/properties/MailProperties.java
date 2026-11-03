@@ -15,6 +15,10 @@ public class MailProperties {
 
     private boolean enabled;
     private String from;
+
+    /** 收件人看到的发件人名称，与 SMTP 发件地址分开配置。 */
+    private String fromName = "DriftingLeaves";
+
     private String confirmUrl;
     private String unsubscribeUrl;
 

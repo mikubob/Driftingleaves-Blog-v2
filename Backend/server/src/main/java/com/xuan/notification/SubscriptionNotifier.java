@@ -12,6 +12,7 @@ import com.xuan.policy.MessageVisibilityPolicy;
 import com.xuan.properties.MailProperties;
 import com.xuan.properties.PublicSiteProperties;
 import com.xuan.store.SubscriptionTicketStore;
+import com.xuan.utils.EmailTemplateUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -130,7 +131,8 @@ public class SubscriptionNotifier {
                 || !Objects.equals(current.getSubscribeTime(), candidate.getSubscribeTime())) {
             return;
         }
-        send(current, "新文章发布", row.getTitle() + "\n" + sites.articleUrl(row.getSlug()));
+        send(current, "新文章发布", "您订阅的博客有新文章发布了：", row.getTitle(), "阅读全文 →",
+                sites.articleUrl(row.getSlug()));
     }
 
     /** 限制文章和留言通知的总并发，单封失败不影响其他收件人，中断时恢复标记。 */
@@ -167,12 +169,14 @@ public class SubscriptionNotifier {
         }
         BlogRssSubscription current = subscriptions.confirmed(parent.getUserId());
         if (current != null) {
-            send(current, "留言收到新回复", "你的留言收到新回复，请登录查看：\n" + sites.base("blog") + "/messages");
+            send(current, "留言收到新回复", "你的留言收到新回复，请登录查看：", "登录后查看留言回复", "查看回复 →",
+                    sites.base("blog") + "/messages");
         }
     }
 
     /** 发送订阅邮件，并生成本轮退订票据，重复退订也返回成功。 */
-    private void send(BlogRssSubscription row, String subject, String text) {
+    private void send(BlogRssSubscription row, String subject, String description, String detail, String buttonText,
+            String url) {
         String round = tickets.deliveryRound(row.getSubscriptionId());
         if (round == null) {
             throw new IllegalStateException("订阅邮件轮次缺失");
@@ -180,8 +184,9 @@ public class SubscriptionNotifier {
         String ticket = tickets.unsubscribeTicket(json.writeValueAsString(
                 new SubscriptionUnsubscribe(row.getSubscriptionId(), row.getEmail(), row.getVerifiedAt(),
                         row.getSubscribeTime(), round)));
-        mail.send(row.getEmail(), subject,
-                text + "\n退订：" + properties.getUnsubscribeUrl() + "#unsubscribeTicket=" + ticket);
+        String unsubscribeUrl = properties.getUnsubscribeUrl() + "#unsubscribeTicket=" + ticket;
+        mail.send(row.getEmail(), subject, description + "\n" + detail + "\n" + url + "\n退订：" + unsubscribeUrl,
+                EmailTemplateUtils.notification(subject + "通知", description, detail, buttonText, url, unsubscribeUrl));
     }
 
     /** 记录发信失败，不保存邮箱、原文、票据或 SMTP 异常详情。 */

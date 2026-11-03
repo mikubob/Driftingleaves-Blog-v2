@@ -4,14 +4,17 @@ import com.xuan.client.MailClient;
 import com.xuan.exception.BusinessException;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.MailProperties;
+import jakarta.mail.MessagingException;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.mail.MailException;
-import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 
+import java.io.UnsupportedEncodingException;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -35,19 +38,35 @@ public class MailConfig {
                 .isBlank() || senders.getIfAvailable() == null)) {
             throw new IllegalArgumentException("启用邮件须配置SMTP、发件地址与固定完成页");
         }
-        return (to, subject, text) -> {
-            if (!properties.isEnabled()) {
-                throw unavailable();
+        return new MailClient() {
+            /** 发送纯文本邮件，保留现有调用方式。 */
+            @Override
+            public void send(String to, String subject, String text) {
+                send(to, subject, text, null);
             }
-            try {
-                SimpleMailMessage message = new SimpleMailMessage();
-                message.setFrom(properties.getFrom());
-                message.setTo(to);
-                message.setSubject(subject);
-                message.setText(text);
-                senders.getObject().send(message);
-            } catch (MailException error) {
-                throw unavailable();
+
+            /** 发送 UTF-8 邮件，HTML 和纯文本作为两种正文供客户端选择。 */
+            @Override
+            public void send(String to, String subject, String text, String html) {
+                if (!properties.isEnabled()) {
+                    throw unavailable();
+                }
+                try {
+                    JavaMailSender sender = senders.getObject();
+                    MimeMessageHelper message = new MimeMessageHelper(sender.createMimeMessage(),
+                            html != null, StandardCharsets.UTF_8.name());
+                    message.setFrom(properties.getFrom(), properties.getFromName());
+                    message.setTo(to);
+                    message.setSubject(subject);
+                    if (html == null) {
+                        message.setText(text);
+                    } else {
+                        message.setText(text, html);
+                    }
+                    sender.send(message.getMimeMessage());
+                } catch (MailException | MessagingException | UnsupportedEncodingException error) {
+                    throw unavailable();
+                }
             }
         };
     }

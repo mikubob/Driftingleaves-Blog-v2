@@ -22,6 +22,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.store.SubscriptionTicketStore;
 import com.xuan.utils.BatchUtils;
+import com.xuan.utils.EmailTemplateUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
@@ -126,8 +127,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
 
         // 3. 待确认记录提交后再发邮件，SMTP 失败返回 503，用户可以重新申请确认信。
         if (application.ticket() != null) {
+            String url = properties.getConfirmUrl() + "#confirmTicket=" + application.ticket();
             mail.send(application.row().getEmail(), "确认邮件订阅", "请登录发起申请的本站账号，并在固定完成页确认：\n"
-                    + properties.getConfirmUrl() + "#confirmTicket=" + application.ticket() + "\n链接24小时内有效。未申请可忽略。");
+                    + url + "\n链接24小时内有效。未申请可忽略。", EmailTemplateUtils.subscriptionConfirmation(url));
         }
         return view(application.row());
     }
