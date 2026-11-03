@@ -267,15 +267,13 @@ function goTag(slug) {
           maxlength="254"
           :value="rssEmail"
           readonly
-          aria-describedby="rss-email-hint"
-          aria-label="订阅邮箱"
+          :aria-describedby="rssEmail ? undefined : 'rss-email-hint'"
+          aria-label="账号邮箱"
           type="email"
           placeholder="邮箱 *"
           class="rss-form-input"
         />
-        <p id="rss-email-hint" class="form-hint">
-          {{ rssEmail ? '仅使用当前登录账号邮箱，不能在此修改。' : '请先在个人资料中设置账号邮箱。' }}
-        </p>
+        <p v-if="!rssEmail" id="rss-email-hint" class="form-hint">请先在个人资料中设置账号邮箱。</p>
         <div class="rss-form-btns">
           <button
             class="rss-submit-btn"

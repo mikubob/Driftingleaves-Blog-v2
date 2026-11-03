@@ -262,7 +262,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
 /* focus */
 .hot-filter-switch:focus-within {
   outline: 2px solid var(--blog-text2);
-  outline-offset: 2px;
+  outline-offset: -1px;
 }
 
 /* hover opacity on the side that will be selected */

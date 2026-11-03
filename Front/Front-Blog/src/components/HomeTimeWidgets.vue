@@ -636,7 +636,7 @@ onUnmounted(() => {
 
 .time-progress-card:focus-visible {
   outline: 2px solid rgba(73, 166, 255, 0.28);
-  outline-offset: 3px;
+  outline-offset: -1px;
 }
 
 .time-progress-panel {

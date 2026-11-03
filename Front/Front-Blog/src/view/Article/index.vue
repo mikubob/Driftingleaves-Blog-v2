@@ -266,9 +266,9 @@ onUnmounted(() => {
             <p v-else-if="!can('blog:comment:create')">当前账号没有评论权限。</p>
             <fieldset v-else class="comment-form" :disabled="submitting">
               <div v-if="replyTarget" class="reply-hint">
-                回复
+                <span class="reply-label">回复</span>
                 <strong>{{ replyTarget.nickname }}</strong>
-                <a class="cancel-reply" @click="cancelReply">&times;</a>
+                <button type="button" class="cancel-reply" @click="cancelReply">取消回复</button>
               </div>
               <div class="textarea-wrap">
                 <textarea
@@ -647,6 +647,9 @@ onUnmounted(() => {
   margin-bottom: 24px;
 }
 .reply-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: #606266;
   margin-bottom: 8px;
@@ -654,11 +657,26 @@ onUnmounted(() => {
   background: #f5f7fa;
   border-radius: 6px;
 }
+.reply-label {
+  flex-shrink: 0;
+}
+.reply-hint strong {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .cancel-reply {
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-left: auto;
+  padding: 3px 8px;
+  border: 1px solid var(--blog-border);
+  border-radius: 4px;
+  background: var(--blog-card);
+  color: var(--blog-text2);
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  margin-left: 6px;
-  color: #909399;
-  font-size: 16px;
 }
 .form-row {
   display: flex;

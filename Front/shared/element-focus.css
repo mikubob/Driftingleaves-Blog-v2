@@ -1,0 +1,13 @@
+/* 焦点轮廓覆盖原边框，保留键盘提示且不再画分离的外框。 */
+.el-button:focus-visible,
+.el-button.is-text:not(.is-disabled):focus-visible,
+.el-checkbox input:focus-visible + .el-checkbox__inner,
+.el-radio__original:focus-visible + .el-radio__inner,
+.el-radio-button__original-radio:focus-visible + .el-radio-button__inner,
+.el-switch__input:focus-visible ~ .el-switch__core,
+.el-date-table td.current:not(.disabled):focus-visible .el-date-table-cell__text,
+.el-month-table td:focus-visible .el-date-table-cell__text,
+.el-quarter-table td:focus-visible .el-date-table-cell__text,
+.el-year-table td:focus-visible .el-date-table-cell__text {
+  outline-offset: -1px;
+}

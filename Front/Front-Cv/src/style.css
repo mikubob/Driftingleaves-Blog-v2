@@ -80,7 +80,7 @@ a:hover {
 
 :focus-visible {
   outline: 2px solid var(--cv-text);
-  outline-offset: 4px;
+  outline-offset: -1px;
 }
 
 svg {
@@ -205,6 +205,16 @@ h1 {
 
 .contact-list a:hover {
   text-decoration: underline;
+}
+
+/* 联系方式由外层标签显示焦点，内部链接不再叠加一圈。 */
+.contact-list li:has(a:focus-visible) {
+  outline: 2px solid var(--cv-text);
+  outline-offset: -1px;
+}
+
+.contact-list a:focus-visible {
+  outline: none;
 }
 
 .contact-list svg,

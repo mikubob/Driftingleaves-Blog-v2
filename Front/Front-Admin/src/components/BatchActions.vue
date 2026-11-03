@@ -138,8 +138,7 @@ defineExpose({ select, selectable, busy, execute })
         :disabled="blocked || !selected.length"
         @click="choose(action)"
       >{{ action.label }}</el-button>
-      <el-button v-if="selected.length" text :disabled="blocked" @click="clear">取消选择</el-button>
-      <span class="batch-hint">表头全选当前页，最多 100 条</span>
+      <el-button v-if="selected.length" plain :disabled="blocked" @click="clear">取消选择</el-button>
     </div>
     <el-alert v-if="failures.length" type="warning" title="部分文件未删除" :closable="false" show-icon>
       <ul class="batch-failures">
@@ -172,7 +171,6 @@ defineExpose({ select, selectable, busy, execute })
 }
 .batch-toolbar .el-button + .el-button { margin-left: 0; }
 .batch-count { color: var(--el-text-color-regular); font-size: 13px; white-space: nowrap; }
-.batch-hint { color: var(--el-text-color-secondary); font-size: 12px; }
 .batch-actions > .el-alert { margin-bottom: 16px; }
 .batch-failures { margin: 4px 0; padding-left: 18px; overflow-wrap: anywhere; }
 .el-date-editor { max-width: 100%; margin: 12px 0; }
