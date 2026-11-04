@@ -14,4 +14,5 @@ public class MessageRow extends BlogMessage {
     private String authorNickname;
     private String authorAvatar;
     private Boolean hasChildren;
+    private Long replyCount;
 }

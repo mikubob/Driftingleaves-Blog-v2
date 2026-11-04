@@ -12,7 +12,6 @@ import EmailSubscription from '../components/EmailSubscription.vue'
 import OAuthBindings from '../components/OAuthBindings.vue'
 import ListPager from '../components/ListPager.vue'
 import ResourceState from '../components/ResourceState.vue'
-import CaptchaField from '../../../shared/CaptchaField.vue'
 const router = useRouter()
 const form = reactive({ nickname: '', email: '', avatar: '', intro: '' })
 const password = reactive({ current: '', next: '' })
@@ -22,9 +21,6 @@ const error = ref('')
 const feedback = ref('')
 const busy = ref(false)
 const deleting = ref(null)
-const editing = ref(null)
-const messageCaptcha = ref(null)
-const editForm = reactive({ content: '', contentFormat: 0, notifyReply: false, revision: null })
 
 async function signOut() {
   try {
@@ -55,7 +51,6 @@ const activity = useResource(() => [session.user?.userId, tab.value, page.value]
 })
 watch(tab, () => {
   page.value = 1
-  editing.value = null
   deleting.value = null
 })
 
@@ -128,51 +123,6 @@ async function remove() {
   }
 }
 
-async function editMessage(item) {
-  error.value = ''
-  busy.value = true
-  try {
-    const result = await request(`/blog/me/messages/${item.messageId}`)
-    editForm.content = result.data.content
-    editForm.contentFormat = result.data.contentFormat
-    editForm.notifyReply = result.data.notifyReply === 1
-    editForm.revision = result.revision
-    editing.value = item.messageId
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    busy.value = false
-  }
-}
-
-async function saveMessage() {
-  error.value = ''
-  if (!editForm.content.trim() || [...editForm.content.trim()].length > 2000) {
-    error.value = '留言需为 1–2000 个字符。'
-    return
-  }
-  busy.value = true
-  try {
-    await request(`/blog/me/messages/${editing.value}`, {
-      method: 'PUT', revision: editForm.revision,
-      captcha: messageCaptcha.value.getValue(),
-      body: {
-        content: editForm.content.trim(), contentFormat: editForm.contentFormat,
-        notifyReply: editForm.notifyReply ? 1 : 0,
-      },
-    })
-    editing.value = null
-    feedback.value = '留言已更新，审核状态以服务端处理为准。'
-    await activity.reload()
-  } catch (failure) {
-    error.value = failure.message
-  } finally {
-    if (editing.value) {
-      messageCaptcha.value?.refresh()
-    }
-    busy.value = false
-  }
-}
 </script>
 
 <template>
@@ -280,50 +230,8 @@ async function saveMessage() {
               >
                 删除
               </button>
-              <button
-                v-if="tab === 'messages' && can('blog:message:updateOwn')"
-                class="text-button"
-                :disabled="busy"
-                @click="editMessage(item)"
-              >
-                编辑留言
-              </button>
             </div>
           </template>
-          <form
-            v-if="editing === item.messageId && tab === 'messages'"
-            class="edit-message"
-            @submit.prevent="saveMessage"
-          >
-            <fieldset :disabled="busy">
-              <label for="edit-content">编辑留言</label>
-              <textarea id="edit-content" v-model="editForm.content" rows="4" maxlength="2000" required></textarea>
-              <CaptchaField
-                :ref="field => messageCaptcha = field"
-                :request="request"
-                endpoint="/blog/auth/math-captcha" arithmetic
-                :disabled="busy"
-              />
-              <div class="message-options">
-                <label>
-                  格式
-                  <select v-model="editForm.contentFormat">
-                    <option :value="0">纯文本</option>
-                    <option :value="1">Markdown</option>
-                  </select>
-                </label>
-                <label class="checkbox">
-                  <input v-model="editForm.notifyReply" type="checkbox" />
-                  请求回复通知
-                </label>
-              </div>
-              <div class="row">
-                <button class="primary" :disabled="busy || !messageCaptcha?.ready">保存修改</button>
-                <button type="button" :disabled="busy" @click="editing = null">取消</button>
-                <button type="button" :disabled="busy" @click="editMessage(item)">重新获取详情</button>
-              </div>
-            </fieldset>
-          </form>
         </div>
         <p v-if="!activity.data.records.length" class="empty-state muted">这里还没有你的记录。</p>
         <ListPager :data="activity.data" @change="page = $event" />

@@ -18,6 +18,7 @@ import com.xuan.mapper.CommentMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.model.CommentRow;
+import com.xuan.model.ResourceVersion;
 import com.xuan.policy.CommentVisibilityPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
@@ -79,9 +80,15 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @PublicCacheRead("comments")
     public PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query) {
         requirePublic(article);
+        Long viewer = sessions.currentToken() == null ? null : requireMember(null);
         Long parent = IdUtils.parse(query.parentId());
-        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parent)) {
+        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article), viewer).contains(parent)) {
             throw missing();
+        }
+        // 本人待审内容不能进入共享缓存，匿名查询仍复用公开缓存。
+        if (viewer != null) {
+            return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, parent, viewer)
+                    .convert(this::publicView));
         }
         return self.getObject().cachedPublicComments(article, query);
     }
@@ -90,7 +97,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Cacheable(cacheNames = "comments", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
-        return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, IdUtils.parse(query.parentId()))
+        return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, IdUtils.parse(query.parentId()), null)
                 .convert(this::publicView));
     }
 
@@ -139,7 +146,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         comment.setLocation(locations.getIpLocation(ip));
         comment.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
         comment.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
-        comment.setStatus(policy.get("reviewRequired").asBoolean() ? 0 : 1);
+        List<String> roles = authorization.getRoleList(actor, null);
+        boolean reviewRequired = policy.get("reviewRequired").asBoolean()
+                && !roles.contains("admin")
+                && !(roles.contains("author") && current.getAuthorId() == actor);
+        comment.setStatus(reviewRequired ? 0 : 1);
         comments.insert(comment);
         return ownView(comments.scoped(comment.getCommentId(), null, actor, false), new CommentOwnVO());
     }
@@ -152,6 +163,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return PageResult.from(comments.commentPage(new Page<>(query.page(), query.pageSize()),
                         IdUtils.parse(query.articleId()), actor, query.status(), null)
                 .convert(row -> ownView(row, new CommentOwnVO())));
+    }
+
+    /** 根据id查询本人评论及版本，不受文章公开状态影响。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public ResourceVersion<CommentOwnVO> ownDetail(long id) {
+        CommentRow row = requireComment(comments.scoped(id, null, requireMember(null), false));
+        return new ResourceVersion<>(ownView(row, new CommentOwnVO()), revision(row));
     }
 
     /** 本人删除整条分支不要求版本，ALL 也不能把别人评论变成本人。 */
@@ -205,15 +224,15 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         long actor = sessions.currentUserId();
         users.lockById(actor);
         Long author = own ? null : requireAdmin(operation);
-        Long user = own ? requireMember("blog:comment:deleteOwn") : null;
+        Long user = own ? requireMember("blog:comment:" + operation) : null;
         CommentRow located = requireComment(comments.scoped(id, author, user, false));
         lockConfig();
         articles.scoped(located.getArticleId(), null, true);
         author = own ? null : requireAdmin(operation);
-        user = own ? requireMember("blog:comment:deleteOwn") : null;
+        user = own ? requireMember("blog:comment:" + operation) : null;
         comments.scoped(id, author, user, true);
         author = own ? null : requireAdmin(operation);
-        user = own ? requireMember("blog:comment:deleteOwn") : null;
+        user = own ? requireMember("blog:comment:" + operation) : null;
         return requireComment(comments.scoped(id, author, user, false));
     }
 

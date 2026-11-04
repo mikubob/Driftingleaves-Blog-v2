@@ -1,5 +1,5 @@
 -- DriftingLeavesV2 全新数据库设计，MySQL >= 8.0.16（CHECK 约束必须生效）。
--- 2026-10-30；参考来源、权限规则及导入方法见同目录 README.md。
+-- 上线前统一在此维护表结构和基础种子，不单独执行升级脚本；导入方法见同目录 README.md。
 -- 在空库中执行；不迁移旧数据，不包含 DROP DATABASE/TABLE，包含指定的初始管理员账号。
 CREATE DATABASE IF NOT EXISTS driftingleaves
   CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -380,7 +380,7 @@ CREATE TABLE blog_message (
   is_secret TINYINT NOT NULL DEFAULT 0 COMMENT '0公开 1悄悄话；仅本人及获授ALL管理权限者可读，回复继承私密范围',
   notify_reply TINYINT NOT NULL DEFAULT 0 COMMENT '是否请求回复邮件通知；应用另行验证收件邮箱',
   status TINYINT NOT NULL DEFAULT 0 COMMENT '0待审核 1通过 2驳回',
-  edited_at DATETIME(3) DEFAULT NULL COMMENT '作者最近编辑时间；编辑后重新审核',
+  edited_at DATETIME(3) DEFAULT NULL COMMENT '历史作者编辑时间；新留言不再支持编辑',
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
   PRIMARY KEY (message_id),
@@ -594,7 +594,6 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (161, 'blog:message:review', '审核留言', 'blog'),
   (162, 'blog:message:moderate', '管理删除留言', 'blog'),
   (163, 'blog:message:create', '前台发表或回复留言', 'blog'),
-  (164, 'blog:message:updateOwn', '编辑本人留言', 'blog'),
   (165, 'blog:message:deleteOwn', '删除本人留言', 'blog'),
   (170, 'blog:music:query', '查询管理音乐', 'blog'),
   (171, 'blog:music:create', '创建音乐', 'blog'),
@@ -620,9 +619,9 @@ INSERT INTO sys_role_permission (role_id, permission_id)
   SELECT 1, permission_id FROM sys_permission;
 INSERT INTO sys_role_permission (role_id, permission_id)
   SELECT 2, permission_id FROM sys_permission
-  WHERE permission_id IN (1, 10, 11, 12, 13, 14, 15, 20, 30, 43, 44, 45, 60, 61, 62, 163, 164, 165, 183, 184);
+  WHERE permission_id IN (1, 10, 11, 12, 13, 14, 15, 20, 30, 43, 44, 45, 60, 61, 62, 163, 165, 183, 184);
 INSERT INTO sys_role_permission (role_id, permission_id)
-  SELECT 3, permission_id FROM sys_permission WHERE permission_id IN (43, 44, 45, 163, 164, 165, 183, 184);
+  SELECT 3, permission_id FROM sys_permission WHERE permission_id IN (43, 44, 45, 163, 165, 183, 184);
 
 -- component均为未来前端的约定键，当前工作区没有对应组件实现。
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route_name, path, component, icon, permission_id, sort_order) VALUES

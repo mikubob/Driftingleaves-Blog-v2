@@ -197,7 +197,8 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.comment-item:hover .c-actions {
+.comment-item:hover .c-actions,
+.msg-item-card:hover .c-actions {
   opacity: 1;
 }
 .c-actions a {
@@ -380,23 +381,6 @@
 .msg-body :deep(img) {
   max-width: 100%;
   border-radius: 4px;
-}
-
-/* 底部：hover操作在右下角 */
-.msg-footer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-.msg-actions {
-  display: flex;
-  gap: 12px;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.msg-item-card:hover .msg-actions,
-.msg-child:hover > .msg-main > .msg-footer > .msg-actions {
-  opacity: 1;
 }
 
 /* 子留言 */

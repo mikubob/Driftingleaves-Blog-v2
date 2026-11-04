@@ -60,7 +60,7 @@ onMounted(() => {
   display: inline-block;
   padding: 10px 32px;
   font-size: 14px;
-  color: #fff;
+  color: var(--blog-bg, #fff);
   background: var(--blog-text, #303133);
   border-radius: 6px;
   text-decoration: none;
@@ -68,7 +68,7 @@ onMounted(() => {
   transition: background 0.2s;
 }
 .error-btn:hover {
-  background: #000;
+  background: var(--blog-text2, #000);
 }
 
 @media (max-width: 480px) {

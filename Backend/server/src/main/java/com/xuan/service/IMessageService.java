@@ -24,7 +24,7 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 分页查询留言及直接回复，未登录和已登录用户都只统计自己能看到的留言。 */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
 
-    /** 发表留言，作者取当前登录用户，是否私密受全部上级留言限制；只保存发布时的属地、系统和浏览器类型。 */
+    /** 发表留言，作者取当前登录用户，有效管理员免审，其他用户按配置审核；私密性受全部上级限制，只保存发布时的属地和设备类型。 */
     MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent);
 
     /** 分页查询本人留言，只使用当前登录用户的id。 */
@@ -32,9 +32,6 @@ public interface IMessageService extends IService<BlogMessage> {
 
     /** 根据id查询本人留言及版本，查询他人留言返回 404。 */
     ResourceVersion<MessagePrivateVO> ownDetail(long id);
-
-    /** 修改本人留言，保留私密设置和回复关系，记录编辑时间并重新审核。 */
-    ResourceVersion<MessagePrivateVO> edit(long id, MessageEditDTO request, String revision);
 
     /** 根据id删除本人留言及全部子回复，只能选择自己的留言。 */
     void deleteOwn(long id);

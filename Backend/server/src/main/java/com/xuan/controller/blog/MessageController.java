@@ -41,7 +41,7 @@ public class MessageController {
         return Result.ok(messages.publicMessages(query));
     }
 
-    /** 发表留言，每用户和可信 IP 每分钟最多十次，管理员不自动免审。 */
+    /** 发表留言，每用户和可信 IP 每分钟最多十次，有效管理员直接通过审核。 */
     @PostMapping
     @SaCheckPermission("blog:message:create")
     @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)

@@ -10,8 +10,14 @@ import ListPager from './ListPager.vue'
 import ResourceState from './ResourceState.vue'
 import SafeHtml from './SafeHtml.vue'
 import DiscussionMeta from './DiscussionMeta.vue'
-const props = defineProps({ kind: String, articleId: String, parentId: { type: String, default: null }, allowReply: { type: Boolean, default: true } })
-const emit = defineEmits(['reply', 'edit', 'total'])
+const props = defineProps({
+  kind: String,
+  articleId: String,
+  parentId: { type: String, default: null },
+  allowReply: { type: Boolean, default: true },
+  replyableParent: { type: Boolean, default: true },
+})
+const emit = defineEmits(['reply', 'total'])
 const page = ref(1)
 const expanded = ref([])
 const error = ref('')
@@ -29,9 +35,6 @@ const isOwn = (item) => session.user && item.author?.userId === session.user.use
 const isMine = isOwn
 function startReply(item) {
   emit('reply', item)
-}
-function startEdit(item) {
-  emit('edit', item)
 }
 function toggleReplies(item) {
   if (expanded.value.includes(item.id)) {
@@ -89,7 +92,7 @@ const handleDelete = doDelete
             <div class="c-footer">
               <div class="c-actions">
                 <a
-                  v-if="allowReply && c.status === 1 && can('blog:comment:create')"
+                  v-if="allowReply && replyableParent && c.status === 1 && can('blog:comment:create')"
                   role="button"
                   tabindex="0"
                   @keydown.enter="startReply(c)"
@@ -109,8 +112,9 @@ const handleDelete = doDelete
                   {{ c.replyCount }}
                   )
                 </a>
-                <template v-if="isOwn(c) && can('blog:comment:deleteOwn')">
+                <template v-if="isOwn(c)">
                   <a
+                    v-if="can('blog:comment:deleteOwn')"
                     class="danger"
                     role="button"
                     tabindex="0"
@@ -130,8 +134,8 @@ const handleDelete = doDelete
                 :article-id="articleId"
                 :parent-id="c.id"
                 :allow-reply="allowReply"
+                :replyable-parent="replyableParent && c.status === 1"
                 @reply="emit('reply', $event)"
-                @edit="emit('edit', $event)"
               />
             </div>
           </div>
@@ -155,19 +159,9 @@ const handleDelete = doDelete
               <span class="msg-date">{{ fmtDate(c.createTime) }}</span>
             </div>
             <SafeHtml class="msg-body" :html="c.contentHtml" />
-            <div class="msg-footer">
-              <div class="msg-actions">
-                <span
-                  class="act"
-                  role="button"
-                  tabindex="0"
-                  @keydown.enter="toggleReplies(c)"
-                  @click="toggleReplies(c)"
-                >
-                  {{ expanded.includes(c.id) ? '收起回复' : '查看回复' }}
-                </span>
-                <span
-                  class="act"
+            <div class="c-footer">
+              <div class="c-actions">
+                <a
                   v-if="allowReply && c.status === 1 && can('blog:message:create')"
                   role="button"
                   tabindex="0"
@@ -175,20 +169,22 @@ const handleDelete = doDelete
                   @click="startReply(c)"
                 >
                   回复
-                </span>
+                </a>
+                <a
+                  v-if="c.replyCount !== '0'"
+                  role="button"
+                  tabindex="0"
+                  @keydown.enter="toggleReplies(c)"
+                  @click="toggleReplies(c)"
+                >
+                  {{ expanded.includes(c.id) ? '收起回复' : '查看回复' }}
+                  (
+                  {{ c.replyCount }}
+                  )
+                </a>
                 <template v-if="isMine(c)">
-                  <span
-                    class="act"
-                    v-if="can('blog:message:updateOwn')"
-                    role="button"
-                    tabindex="0"
-                    @keydown.enter="startEdit(c)"
-                    @click="startEdit(c)"
-                  >
-                    编辑
-                  </span>
-                  <span
-                    class="act del"
+                  <a
+                    class="danger"
                     v-if="can('blog:message:deleteOwn')"
                     role="button"
                     tabindex="0"
@@ -196,7 +192,7 @@ const handleDelete = doDelete
                     @click="handleDelete(c)"
                   >
                     删除
-                  </span>
+                  </a>
                 </template>
               </div>
             </div>
@@ -208,7 +204,6 @@ const handleDelete = doDelete
                 :parent-id="c.id"
                 :allow-reply="allowReply"
                 @reply="emit('reply', $event)"
-                @edit="emit('edit', $event)"
               />
             </div>
           </div>

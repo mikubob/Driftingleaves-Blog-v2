@@ -85,14 +85,14 @@ async function handleSubmitComment() {
   }
   submitting.value = true
   try {
-    const { data } = await request('/blog/articles/' + article.value.id + '/comments', {
-      method: 'POST', body: { content: commentForm.value.content.trim(), parentId: replyTarget.value?.id || null },
-      captcha: captcha.value.getValue(),
+    const body = { content: commentForm.value.content.trim(), parentId: replyTarget.value?.id || null }
+    const result = await request('/blog/articles/' + article.value.id + '/comments', {
+      method: 'POST', body, captcha: captcha.value.getValue(),
     })
     resetForm()
     replyTarget.value = null
     refresh.value += 1
-    ElMessage.success(data.status === 0 ? '评论已提交，审核通过后公开显示' : '评论已发表')
+    ElMessage.success(result.data.status === 0 ? '评论已提交，正在等待审核' : '评论已发表')
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
@@ -294,7 +294,8 @@ onUnmounted(() => {
                 <div class="form-actions">
                   <EmojiPicker @select="insertCommentEmoji" />
                   <button class="form-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmitComment">
-                    {{ submitting ? '提交中...' : '发表评论' }}
+                    <span v-if="submitting">提交中...</span>
+                    <span v-else>发表评论</span>
                   </button>
                 </div>
               </div>

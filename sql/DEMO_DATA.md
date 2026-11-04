@@ -5,7 +5,7 @@
 ## 导入前提
 
 - 目标为 MySQL 8.0.16+ 的 V2 开发/测试库，已有完整表结构与基础 author/member 角色。
-- 旧库须先补齐 [评论与登录地域升级](migrations/20261101_client_location.sql) 和 [留言地域升级](migrations/20261102_message_client_location.sql) 中缺少的列。已经升级的库不要重复执行迁移。
+- 先使用当前 [初始化脚本](drifting_leaves_v2.sql) 在空库创建完整表结构、地域/设备字段及基础权限，不需要额外升级脚本。已有开发数据需要保留时，不要直接重复导入初始化脚本。
 - 导入前备份目标库。脚本不包含 `USE`，在数据库工具中选择正确的 V2 库后执行整份文件。
 - 连接账号需要相关表的 SELECT、INSERT 以及 CREATE TEMPORARY TABLES 权限；脚本中的 UPDATE 只更新本连接的临时映射表。
 
@@ -19,8 +19,8 @@
 | 分类 / 标签 | 4 / 6 | 分类展示/隐藏、未分类文章、多标签 |
 | 文章 / 正文 | 24 / 24 | 公开、草稿、下架、私密、回收站、未来发布时间、置顶、关闭评论、原创/转载/翻译 |
 | 文章标签关联 / 点赞 | 48 / 48 | 多标签筛选、点赞数与本人点赞关联 |
-| 评论 | 36 | 根评论、两层回复、四种审核/历史状态、长文本、换行、Emoji、属地和设备未知 |
-| 留言 | 32 | 公开/私密、私密回复继承、两层回复、Markdown/纯文本、编辑时间、通知意愿 |
+| 评论 | 36 | 根评论、两层回复、待审、通过、驳回三种审核状态、长文本、换行、Emoji、属地和设备未知 |
+| 留言 | 32 | 公开/私密、私密回复继承、两层回复、Markdown/纯文本、通知意愿；编辑时间为空 |
 | 友链 | 6 | 展示、待审核、下架 |
 | 音乐 | 3 | 隐藏的后台占位记录，音频 URL 需自行替换 |
 | 邮件订阅 | 6 | 4 条待验证、2 条已退订；不生成激活订阅或邮件票据 |
@@ -53,12 +53,10 @@ SOURCE D:/CodingFiles/Blog/DriftingLeavesV2/sql/demo_data.sql;
 
 同一份脚本连续导入不会增加重复记录，也不会重置已修改的文章标题、审核状态、访客限制等。它按演示用户名、slug、正文标识、指纹和日志 demoKey 判断记录；手动改掉这些匹配字段或删掉记录后，再导入可能重新补入原始样例。时间锚点沿用本批首个演示访客，因此再次导入不会自动刷新图表日期。
 
-`DemoDataIntegrationTest` 使用仓库既有隔离设施，新建临时 MySQL/Redis，在初始化基线上连续导入两次，核对数量、关联、私密继承、不重复及已有记录/后续编辑的保留。它不连接现有业务服务：
+当前使用 `CommentOwnCheck` 中的演示数据检查：在全新临时目录、随机端口的 MySQL 中导入初始化脚本，再连续导入 `demo_data.sql` 和 `cv_demo_data.sql` 两次，核对数量、状态、回复关系、私密继承及不覆盖已有修改。它不连接现有数据库，不依赖 Redis。
 
-```powershell
-mvn -B -ntp -f Backend/pom.xml -pl server -am test `
-  '-Dtest=DemoDataIntegrationTest' `
-  '-Dsurefire.failIfNoSpecifiedTests=false' `
-  '-Dtest.mysql.bin=D:/CodeEnvironment/MySQL/mysql-8.0.34-winx64/bin/mysqld.exe' `
-  '-Dtest.redis.bin=D:/CodeEnvironment/Redis/redis-server.exe'
-```
+验证入口位于 `Backend/server/src/test/java/com/xuan/CommentOwnCheck.java`；运行时通过 `-Dtest.mysql.bin` 指定 MySQL 的 bin 目录，未指定则明确跳过。SQL 由 MySQL 整体解析，Markdown 正文中的分号不会被检查工具误拆成 SQL。
+
+评论和留言不再生成 `status=3` 的删除占位；删除由应用物理移除记录。演示留言按当前不可二次编辑的规则创建，`edited_at` 保持 NULL。
+
+2026-11-04 实际验证：在当前初始化基线上复现原脚本的 `ck_comment_status` 约束错误；修正后两份演示脚本各连续导入两次通过，数量、三种审核状态、留言编辑时间为空、私密回复继承、已有内容与后续修改保留均通过。未连接现有数据库。

@@ -64,7 +64,7 @@
     </select>
 
     <update id="change">UPDATE blog_message SET
-        content=#{row.content},content_format=#{row.contentFormat},notify_reply=#{row.notifyReply},status=#{row.status},edited_at=#{row.editedAt}
+        status=#{row.status}
         WHERE message_id=#{row.messageId}
         <if test="user != null">AND user_id=#{user}</if>
     </update>

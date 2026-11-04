@@ -1,5 +1,28 @@
 # 后端 Maven 依赖与模块规划
 
+## 2026-11-04 老项目依赖复查与落实
+
+本次只读检查 `D:/CodingFiles/Blog/DriftingLeaves/` 的根 POM、`DL-common`、`DL-pojo`、`DL-server` 三个子 POM，以及连接池配置和相关实现；对照 V2 当前四份 POM 与实际源码后，只补足明确需要的 Druid 接入。下文早期规划及测试记录保留为历史，不代表当前所有依赖和功能状态。
+
+| 老项目经验 | V2 当前处理及原因 |
+| --- | --- |
+| Druid 连接池，初始/最少 5、最多 20、等待 60000 毫秒 | 已接入 `com.alibaba:druid-spring-boot-4-starter:1.2.28`；父 POM 统一版本，server 声明依赖并排除 MyBatis-Plus 路径带入的 HikariCP。保留 UTC 连接初始化和 READ COMMITTED，不复制旧 JDBC 地址、凭据与时区 |
+| 三模块分工、父 POM 管版本 | 保留 `server → common/entity`；entity 只引持久化注解，common 只引实际 API，避免把旧 Web/数据库 starter 带进模型和公共模块 |
+| MyBatis-Plus、MySQL、Redis | 已使用对应 Boot 4 starter、BOM 管理的 MySQL 驱动和 Lettuce；保留分页解析组件及事务，不降级为旧版本 |
+| CommonMark 四组件及 jsoup | 已按同一家族版本保留 Markdown 扩展，并实际清理 HTML；无需新增解析器 |
+| OSS、IP2Region、Hutool、Lombok | 已有 OSS 客户端与关闭流程、双协议地域查询、按需 Hutool 模块及与 BOM 同版的 Lombok 处理器；不引入 hutool-all 或另锁处理器版本 |
+| 邮件、WebSocket、Spring Cache、AspectJ | 当前已用于 SMTP/订阅、在线人数、Redis 公开缓存、限流和事务审计；均复用现有实现，不再按早期“省略”记录重复添加 |
+| Thumbnailator、两个 WebP provider | 当前 PNG/JPEG 压缩已由 JDK ImageIO 实现，保留格式、尺寸和大小校验；没有 WebP 转码需求，不重复增加依赖 |
+| Bucket4j、Caffeine | 限流和公开缓存已使用 Redis，保持多实例共享计数和失效处理，不叠加旧本地缓存/令牌桶 |
+| JJWT、业务 Fastjson2 | 本站身份沿用 Sa-Token，业务 JSON 沿用 Jackson 3；JustAuth 仅使用现有 Fastjson 1.x 兼容包，不恢复旧 Token 或 JSON 方案 |
+| OSHI | 当前没有服务器监控需求，不引入机器信息采集依赖 |
+
+截图中的 `druid-spring-boot-3-starter` 适用于老项目，V2 的 Boot 4 使用对应的 `druid-spring-boot-4-starter`。版本与支持范围依据 [官方 1.2.28 发行说明](https://github.com/alibaba/druid/releases/tag/1.2.28) 和 [发布 POM](https://central.sonatype.com/artifact/com.alibaba/druid-spring-boot-4-starter/1.2.28) 核实。连接参数仍来自本地环境文件；监控 Servlet 和 Web 请求统计默认关闭，不新增 SQL 参数日志或 WallFilter。
+
+连接池配置、隔离自检命令及实际验证结果见[后端运行说明的 Druid 接入](后端运行说明.md#druid-连接池接入2026-11-04)。更换连接池需要重新打包并重启后端；外部旧 `spring.datasource.hikari.*` 调参应迁移到 Druid 对应属性，不会继续生效。
+
+以下为历史规划与核查记录。
+
 > 当前项目已按要求移除全部后端测试类及辅助类、前端测试源码和浏览器检查脚本，同时移除专用测试依赖与执行入口。下文测试类名、测试命令和验收数量仅作历史记录，当前不再提供这些测试；现有备份、验收日志及业务 SQL 保留。
 
 核查日期：2026-10-29（Asia/Shanghai）。适用项目：`D:/CodingFiles/Blog/DriftingLeavesV2`。
@@ -52,7 +75,7 @@ Backend/
 | --- | --- | --- |
 | Boot Web、Validation、Test | `DL-server/controller`、DTO 的 `jakarta.validation`、`DL-server/src/test` | 保留功能，升级为 Boot 4 对应 starter；Web 只放 server |
 | MyBatis-Plus Boot 3 starter 3.5.7，在三个模块均声明 | pojo 实体表注解；common 的 `result/PageResult.java` 引用 `IPage`；server 的 Mapper、Service、`config/MybatisPlusConfig.java` 分页插件 | 按实际 API 依赖缩小：新 entity 用 annotation，common 用 core，server 用 Boot 4 starter + 独立分页依赖 |
-| MySQL Connector/J 8.0.33、Druid 1.2.23 | server POM、数据源模板指定 `DruidDataSource` | Connector/J 跟随新 Boot BOM；连接池使用 JDBC starter 的 HikariCP，去掉 Druid |
+| MySQL Connector/J 8.0.33、Druid 1.2.23 | server POM、数据源模板指定 `DruidDataSource` | Connector/J 跟随新 Boot BOM；2026-11-04 按明确需求接入 Druid Boot 4 starter 1.2.28，排除 HikariCP |
 | JJWT 0.12.5 三件套 | common `utils/JwtUtil.java`；server 的管理员拦截器、访客 Token、RSS 订阅等 | 本站登录改 Sa-Token Session；旧管理员/访客/RSS Token 体系不移植，不直接引入 JJWT |
 | Redis、Spring Cache | `RedisConfiguration.java`；会话/验证码/计数/业务缓存及监控采集使用 Redis；多个 Service 使用缓存注解 | 保留 Redis 客户端，供 Sa-Token/state/限流；首期不复制业务缓存和计数同步体系 |
 | Fastjson2 2.0.54，在三个模块声明 | pojo 的 `JSONField`，server 的日志/RSS JSON 处理；common 的 JSON 配置实际使用 Jackson | API JSON 统一 Boot 的 Jackson 3；不把旧 Fastjson 注解带入新 DTO。JustAuth 的内部兼容依赖单独处理 |
@@ -79,7 +102,7 @@ Backend/
 
 模板表明老项目使用 Druid、MySQL、Redis、SMTP、JWT Cookie、OSS、WebP、虚拟线程；日志使用 Boot/Logback。主模板默认激活 prod，开启循环引用；prod 模板仍有 `feitwnd` 前缀，与主模板的 `dl` 引用不一致。示例 properties 与 YAML 模板的上传限制、Cookie 名称也不同。这些是仓库模板证据，**不是正在运行环境的配置证明**，新项目不照搬。
 
-新项目以后仅在 server 配置 MySQL/Hikari、Redis、Sa-Token、第三方平台白名单/App ID/Secret/回调地址、上传根目录及大小限制。使用环境变量或外部配置保存凭据；不复制旧 `dl.jwt.*`、Druid 参数、固定 prod profile、循环引用开关或开发用 JDBC TLS 参数。数据库时间按 SQL README 约定统一；API 的 Long ID 字符串输出与 Jackson 配置也放 server。
+新项目仅在 server 配置 MySQL/Druid、Redis、Sa-Token、第三方平台白名单/App ID/Secret/回调地址、上传根目录及大小限制。使用环境变量或外部配置保存凭据；Druid 只迁移初始/最少/最大连接数及等待时间，不复制旧 `dl.jwt.*`、固定 prod profile、循环引用开关或开发用 JDBC TLS 参数。数据库时间按 SQL README 约定统一；API 的 Long ID 字符串输出与 Jackson 配置也放 server。
 
 ## 3. 对照当前 18 张表划定范围
 
@@ -163,7 +186,8 @@ Hutool core 在直接使用它的模块声明：对象判空及缺省值使用 O
 | org.springframework.boot | spring-boot-starter-aspectj | 4.1.2 | Redis注解限流与业务写事务审计 | server | B |
 | org.springframework.boot | spring-boot-starter-webmvc | 4.1.2 | Servlet MVC、REST、文件上传、内嵌服务器及默认 JSON 集成 | server | B |
 | org.springframework.boot | spring-boot-starter-validation | 4.1.2 | 实际执行请求校验，提供校验实现 | server | B |
-| com.baomidou | mybatis-plus-spring-boot4-starter | 3.5.17 | Mapper、事务/JDBC 自动配置、HikariCP 接入 | server | E |
+| com.baomidou | mybatis-plus-spring-boot4-starter | 3.5.17 | Mapper、事务/JDBC 自动配置；排除默认 HikariCP | server | E |
+| com.alibaba | druid-spring-boot-4-starter | 1.2.28 | Druid 连接池及 Boot 4 自动配置 | server | E |
 | com.baomidou | mybatis-plus-jsqlparser | 3.5.17 | PaginationInnerInterceptor 的独立支持组件 | server | E |
 | com.mysql | mysql-connector-j | 9.7.0 | JDBC 驱动，匹配 SQL 的 MySQL 8.0.16+ 基线 | server / runtime | B |
 | org.springframework.boot | spring-boot-starter-data-redis | 4.1.2 | StringRedisTemplate，用于 state、限流及缓存失效 | server | B |
@@ -190,7 +214,7 @@ CommonMark 0.31.0 的核心和表格版本由官方 README/Release 核实，自�
 | groupId | artifactId | 精确版本 | 用途 / 进入路径 | 所属模块 | 管理方式 |
 | --- | --- | --- | --- | --- | --- |
 | org.springframework.boot | spring-boot-starter-jdbc | 4.1.2 | MyBatis-Plus starter → JDBC/事务基础 | server | B；不重复直接声明 |
-| com.zaxxer | HikariCP | 7.0.2 | JDBC starter → 默认连接池 | server | B |
+| com.alibaba | druid | 1.2.28 | Druid Boot 4 starter → 连接池实现；原 HikariCP 已排除 | server | starter 发布 POM 锁定 |
 | org.springframework.data | spring-data-redis | 4.1.2 | Redis starter → Redis 操作 API | server | B |
 | io.lettuce | lettuce-core | 7.5.2.RELEASE | Redis starter → 默认 Redis 驱动 | server | B；不再引入 Jedis/Redisson |
 | tools.jackson.core | jackson-databind | 3.1.7 | Web JSON，Sa-Token Jackson 3 实现所需 API | server | B |
@@ -257,7 +281,7 @@ Redis state 在 server 通过 `AuthStateCache` 接口扩展，不能以“加了
 | --- | --- |
 | Spring Security starter、Spring OAuth2 Client/Authorization Server、Sa-Token SSO/OAuth2 Server/JWT 插件 | 既定方案是 Sa-Token 本站 Session + JustAuth 第三方客户端；crypto 仅作独立密码库 |
 | JJWT 三件套 | 旧会话方案被替换；不为未选定的特殊 OAuth 平台预装 |
-| Druid starter | 当前只需单数据源连接池，HikariCP 已由 JDBC starter 提供；没有 Druid 监控需求 |
+| Druid 监控页面、Web 请求统计、SQL 记录过滤器 | 连接池已按需求接入；未要求新增监控或记录 SQL 参数，不启用这些扩展 |
 | Hutool-all | 按当前用途只引入同版 core/crypto；随机票据仍用 SecureRandom，请求转实体仍按字段白名单赋值 |
 | 业务 Fastjson2/Web 转换器 | 业务 JSON 继续使用 Jackson；仅保留 JustAuth 所需兼容包 |
 | Thumbnailator、两套 WebP provider | 本次明确需求只有OSS客户端，无自动压缩转码要求；不引入 |

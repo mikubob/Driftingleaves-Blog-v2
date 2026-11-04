@@ -17,37 +17,17 @@ const captcha = ref(null)
 const msgTextareaRef = ref(null)
 const { form, errors, contentLength, validateField, validateForm, insertEmoji: insertMsgEmoji, resetForm: clearForm } = useDiscussionForm(msgTextareaRef)
 const replyTarget = ref(null)
-const editTarget = ref(null)
 const submitting = ref(false)
 const messageTotal = ref('0')
 const refresh = ref(0)
 function resetForm() {
   clearForm()
   replyTarget.value = null
-  editTarget.value = null
 }
 function startReply(item) {
-  editTarget.value = null
   replyTarget.value = item
   form.value.isSecret = item.isSecret === 1
   msgTextareaRef.value?.focus()
-}
-async function startEdit(item) {
-  submitting.value = true
-  try {
-    const result = await request('/blog/me/messages/' + item.id)
-    editTarget.value = { id: item.id, revision: result.revision }
-    replyTarget.value = null
-    form.value.content = result.data.content
-    form.value.isMarkdown = result.data.contentFormat === 1
-    form.value.isNotice = result.data.notifyReply === 1
-    form.value.isSecret = result.data.isSecret === 1
-    msgTextareaRef.value?.focus()
-  } catch (error) {
-    ElMessage.error(error.message)
-  } finally {
-    submitting.value = false
-  }
 }
 async function handleSubmit() {
   if (submitting.value || !validateForm()) {
@@ -55,17 +35,14 @@ async function handleSubmit() {
   }
   submitting.value = true
   try {
-    const body = { content: form.value.content.trim(), contentFormat: form.value.isMarkdown ? 1 : 0, notifyReply: form.value.isNotice ? 1 : 0 }
-    let result
-    if (editTarget.value) {
-      result = await request('/blog/me/messages/' + editTarget.value.id, {
-        method: 'PUT', revision: editTarget.value.revision, body, captcha: captcha.value.getValue(),
-      })
-    } else {
-      body.parentId = replyTarget.value?.id || null
-      body.isSecret = form.value.isSecret || replyTarget.value?.isSecret === 1 ? 1 : 0
-      result = await request('/blog/messages', { method: 'POST', body, captcha: captcha.value.getValue() })
+    const body = {
+      content: form.value.content.trim(),
+      contentFormat: form.value.isMarkdown ? 1 : 0,
+      notifyReply: form.value.isNotice ? 1 : 0,
+      parentId: replyTarget.value?.id || null,
+      isSecret: form.value.isSecret || replyTarget.value?.isSecret === 1 ? 1 : 0,
     }
+    const result = await request('/blog/messages', { method: 'POST', body, captcha: captcha.value.getValue() })
     resetForm()
     refresh.value += 1
     ElMessage.success(result.data.status === 0 ? '留言已提交，正在等待审核' : '留言已发表')
@@ -86,19 +63,15 @@ async function handleSubmit() {
         <p v-if="!session.user">
           <router-link :to="{ path: '/login', query: { redirect: route.fullPath } }">登录后留言 →</router-link>
         </p>
-        <p v-else-if="!can('blog:message:create') && !editTarget">当前账号没有留言权限。</p>
+        <p v-else-if="!can('blog:message:create')">当前账号没有留言权限。</p>
         <fieldset v-else class="msg-form form-card" :disabled="submitting">
           <h3 class="form-title">
             <i class="iconfont icon-liuyan" />
-            {{ editTarget ? '修改留言' : '写留言' }}
+            写留言
           </h3>
           <div v-if="replyTarget" class="reply-tip">
             回复
             <strong>{{ replyTarget.nickname }}</strong>
-            <span class="cancel" @click="resetForm">&times;</span>
-          </div>
-          <div v-if="editTarget" class="reply-tip">
-            修改留言
             <span class="cancel" @click="resetForm">&times;</span>
           </div>
           <div class="textarea-wrap">
@@ -126,7 +99,7 @@ async function handleSubmit() {
               <input
                 type="checkbox"
                 v-model="form.isSecret"
-                :disabled="!!editTarget || replyTarget?.isSecret === 1"
+                :disabled="replyTarget?.isSecret === 1"
               />
               悄悄话
             </label>
@@ -141,7 +114,7 @@ async function handleSubmit() {
             <div class="form-actions">
               <EmojiPicker @select="insertMsgEmoji" />
               <button class="btn-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmit">
-                {{ editTarget ? '修改' : '留言' }}
+                留言
               </button>
             </div>
           </div>
@@ -156,7 +129,6 @@ async function handleSubmit() {
           kind="messages"
           :allow-reply="!submitting"
           @reply="startReply"
-          @edit="startEdit"
           @total="messageTotal = $event"
         />
       </div>

@@ -2,6 +2,8 @@
 
 先选择端，再按业务或完整路径查找。参数、响应、示例和特殊规则见 [接口文档](API.md)。
 
+评论和留言创建时的管理员、作者免审条件及状态说明见[审核规则](API.md#discussion-review)，根内容与回复使用同一规则。
+
 当前共 207 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
 
 **38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项；另增未知路由上报2项及音乐文件读取1项，当前共 207 个路由（Admin 134 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
@@ -325,6 +327,7 @@
 | 接口 | 方法与完整路径 |
 | --- | --- |
 | [分页查询本人评论](API.md#api-61) | `GET /api/v1/blog/me/comments` |
+| [查询本人评论详情](API.md#本人评论详情) | `GET /api/v1/blog/me/comments/{commentId}` |
 | [删除本人评论](API.md#api-62) | `DELETE /api/v1/blog/me/comments/{commentId}` |
 
 ### 2.8 本人留言
@@ -333,7 +336,6 @@
 | --- | --- |
 | [分页查询本人留言](API.md#api-111) | `GET /api/v1/blog/me/messages` |
 | [查询本人留言详情](API.md#api-112) | `GET /api/v1/blog/me/messages/{messageId}` |
-| [编辑本人留言](API.md#api-113) | `PUT /api/v1/blog/me/messages/{messageId}` |
 | [删除本人留言](API.md#api-114) | `DELETE /api/v1/blog/me/messages/{messageId}` |
 
 ### 2.9 本人点赞记录

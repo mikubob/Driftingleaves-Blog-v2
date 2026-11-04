@@ -224,7 +224,7 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
             @Param("now") LocalDateTime now, @Param("likes") boolean likes, @Param("limit") int limit);
 
     /**
-     * 这里只取当前文章评论的父子关系和状态，应用逐层查祖先，不受 SQL 递归深度限制。
+     * 查询当前文章评论的作者、父子关系和状态，逐层检查当前读者能否查看祖先。
      *
      * @param id 当前文章ID
      * @return 完整评论链结构，不含正文和私人资料
@@ -232,12 +232,13 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     List<CommentNode> commentNodes(@Param("id") long id);
 
     /**
-     * 计数只要父子关系和状态，不带评论正文或作者私人资料。
+     * 可见性检查只需作者id、父子关系和状态，不带正文或私人资料。
      */
     @Data
     class CommentNode {
 
         private Long commentId;
+        private Long userId;
         private Long parentId;
         private Integer status;
     }

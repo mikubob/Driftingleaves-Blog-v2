@@ -100,8 +100,10 @@ onBeforeUnmount(() => controller?.abort())
   min-width: 100px;
   width: 120px;
   padding: 10px 12px;
-  border: 1px solid #c5c8ce;
+  border: 1px solid var(--el-border-color, #c5c8ce);
   border-radius: 6px;
+  color: var(--el-text-color-primary, #303133);
+  background: var(--el-bg-color, #fff);
   font: inherit;
 }
 .captcha-controls input:focus,
@@ -113,9 +115,10 @@ onBeforeUnmount(() => controller?.abort())
   padding: 0;
   min-width: 125px;
   min-height: 50px;
-  border: 1px solid #c5c8ce;
+  border: 1px solid var(--el-border-color, #c5c8ce);
   border-radius: 6px;
-  background: #fff;
+  color: var(--el-text-color-primary, #303133);
+  background: var(--el-bg-color, #fff);
   cursor: pointer;
   overflow: hidden;
 }

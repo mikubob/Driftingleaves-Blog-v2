@@ -70,7 +70,6 @@ public class AuthorizationProvider implements StpInterface {
             "blog:message:review",
             "blog:message:moderate",
             "blog:message:create",
-            "blog:message:updateOwn",
             "blog:message:deleteOwn",
             "blog:music:query",
             "blog:music:create",

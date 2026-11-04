@@ -58,10 +58,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
-        <!-- 接入 Boot 4 的 MyBatis-Plus，同时带入 JDBC、事务和 HikariCP。 -->
+        <!-- 接入 Boot 4 的 MyBatis-Plus，保留 JDBC 和事务，连接池统一使用 Druid。 -->
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.zaxxer</groupId>
+                    <artifactId>HikariCP</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- 沿用老项目的 Druid 连接池，使用 Boot 4 对应的自动配置。 -->
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>druid-spring-boot-4-starter</artifactId>
         </dependency>
         <!-- 分页拦截器需要这套 SQL 解析支持，应用里还要注册分页插件。 -->
         <dependency>

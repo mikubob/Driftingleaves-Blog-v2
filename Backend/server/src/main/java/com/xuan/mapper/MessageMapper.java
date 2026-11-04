@@ -32,6 +32,6 @@ public interface MessageMapper extends BaseMapper<BlogMessage> {
             @Param("status") Integer status, @Param("secret") Integer secret,
             @Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
             @Param("parent") Long parent);
-    /** 更新留言正文、回复通知、审核状态和编辑时间，不修改作者、回复关系或私密范围。 */
+    /** 更新留言审核状态，保留正文、通知设置、编辑时间、作者、回复关系和私密范围。 */
     int change(@Param("row") BlogMessage row, @Param("user") Long user);
 }

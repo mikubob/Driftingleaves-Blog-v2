@@ -19,14 +19,16 @@
         SELECT * FROM blog_site_config WHERE config_key = 'comment' FOR UPDATE
     </select>
 
-    <!-- 已确认全部上级评论可见，当前层及回复计数只查询审核通过的记录。 -->
+    <!-- 已确认全部上级评论可见，当前层及回复计数额外保留当前用户自己的待审和驳回评论。 -->
     <select id="publicPage" resultType="com.xuan.model.CommentRow">
         SELECT<include refid="columns"/>,
         (SELECT COUNT(*) FROM blog_comment r WHERE r.article_id = c.article_id
-        AND r.parent_id = c.comment_id AND r.status = 1) AS reply_count
+        AND r.parent_id = c.comment_id AND (r.status = 1
+        <if test="viewer != null">OR r.user_id = #{viewer}</if>)) AS reply_count
         FROM blog_comment c JOIN blog_article a ON a.article_id = c.article_id
         JOIN sys_user u ON u.user_id = c.user_id
-        WHERE c.article_id = #{article} AND c.status = 1
+        WHERE c.article_id = #{article} AND (c.status = 1
+        <if test="viewer != null">OR c.user_id = #{viewer}</if>)
         <choose>
             <when test="parent != null">AND c.parent_id = #{parent}</when>
             <otherwise>AND c.parent_id IS NULL</otherwise>
@@ -82,9 +84,9 @@
         <if test="lock">FOR UPDATE</if>
     </select>
 
-    <!-- 审核只更新正文和状态，保留当前操作范围。 -->
+    <!-- 审核只更新状态，保留原文和当前操作范围。 -->
     <update id="change">
-        UPDATE blog_comment c SET c.content = #{comment.content}, c.status = #{comment.status}
+        UPDATE blog_comment c SET c.status = #{comment.status}
         WHERE c.comment_id = #{comment.commentId}
         <if test="author != null">AND EXISTS (SELECT 1 FROM blog_article a WHERE a.article_id = c.article_id AND
             a.author_id = #{author})

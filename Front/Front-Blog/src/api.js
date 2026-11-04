@@ -128,7 +128,7 @@ function validateData(path, data, method) {
       musicId: isId, title: text, artist: nullableText, audioUrl: text, lyricUrl: nullableText,
       lyricType: (type) => type === null || ['lrc', 'txt', 'json'].includes(type),
     }) && (item.lyricUrl === null) === (item.lyricType === null),
-    '/blog/messages': message,
+    '/blog/messages': (item) => message(item) && count(item.replyCount),
     '/blog/me/messages': message,
     '/blog/me/comments': comment,
     '/blog/me/liked-articles': (item) => model(item, { article, likedAt: time }),
@@ -175,6 +175,8 @@ function validateData(path, data, method) {
     check = (value) => value === null || subscription(value)
   } else if (read && /^\/blog\/me\/messages\/[1-9]\d*$/.test(route)) {
     check = message
+  } else if (['GET', 'PUT'].includes(method) && /^\/blog\/me\/comments\/[1-9]\d*$/.test(route)) {
+    check = comment
   } else if (route === '/blog/messages' && method === 'POST') {
     check = message
   } else if (method === 'POST' && /^\/blog\/articles\/[1-9]\d*\/comments$/.test(route)) {

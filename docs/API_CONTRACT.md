@@ -1,6 +1,6 @@
 # 接口开发约定
 
-本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 190 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；独立验证结果及恢复步骤见运行说明，既有路由数本身不代表缓存验收。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
+本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 207 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；独立验证结果及恢复步骤见运行说明，既有路由数本身不代表缓存验收。历史验收和部署配置见 [后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
 - [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口规划.md)
@@ -90,7 +90,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Authorization、OAuth code/state/ticket 或第三方 Token。跨域只允许明确前端 origin，预检允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code，暴露 X-Revision/Location/Retry-After；带 OAuth Cookie 请求允许 credentials，不能使用通配 origin。非白名单业务路由默认拒绝匿名。
 
-全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，创建/编辑留言共享窗口按表中要求扩展。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
+全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，留言创建窗口按表中要求执行。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
 
 初始角色按当前 SQL 显式授权；匿名访客不对应数据库角色：
 
@@ -98,9 +98,9 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 | --- | --- |
 | admin | 全部初始接口权限及后台菜单，ALL；新增权限仍需显式授予 |
 | author | 后台入口、本人文章创建/查询/编辑/发布/回收/恢复、分类/标签只读、本人文件管理、前台评论/点赞、本人留言与邮件订阅，SELF；无评论审核或系统授权管理权限 |
-| member | 前台评论、删除本人评论、点赞/取消点赞、发表/编辑/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
+| member | 前台评论、删除本人评论、点赞/取消点赞、发表/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
 
-图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言及本人留言编辑改用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
+图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言创建和回复使用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
 
 ### 0.7 鉴权组件落地要求
 
@@ -482,20 +482,22 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | 模型 | 字段与约束 |
 | --- | --- |
 | CommentCreate | content:string 必填，trim 后1..2000字符纯文本；parentId:ID? 可选默认null；articleId仅取路径，userId取会话 |
-| CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；未知时可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:1、replyCount:string、createTime/updateTime:Time |
+| CommentPublic | location:string?、userAgentOs:string?、userAgentBrowser:string?（发布时地域、系统、浏览器，不含原始 IP/UA；未知时可空）；commentId/articleId:ID、parentId:ID?、author:{userId:ID,nickname:string,avatar:URL?}?、content:string、status:0/1/2（待审和驳回仅本人可见）、replyCount:string、createTime/updateTime:Time |
 | CommentOwn | location:string?、userAgentOs:string?、userAgentBrowser:string?（同公开评论）；commentId/articleId/userId:ID、parentId:ID?、content:string、status:0/1/2、createTime/updateTime:Time；不含其他用户私人信息 |
 | CommentAdmin | CommentOwn + author:{userId:ID,nickname:string,avatar:URL?}?、articleTitle:string、hasChildren:boolean/null（后台列表的直接回复标记，详情为null）；作者关联保留 |
 | CommentReview | `{status:1或2}` 必填；1通过，2驳回，无审核备注字段 |
 | LikeState | `{liked:boolean,likeCount:string}` |
 
 
-前台评论只读取 PUBLIC 文章。节点自身及所有祖先须为 status=1 或3；祖先0/2时整个分支不可见。status=3 时 content 固定为“该评论已删除”、author=null，不泄露原内容和作者，replyCount只算当前可见直接子节点。status=0/2 的内容仅本人列表和有相应范围的后台可见；前台公开列表即使带 Token 也不混入自己的待审评论。
+前台评论只读取 PUBLIC 文章。节点自身及所有祖先均须审核通过，或由当前有效会话用户本人发表；待审、驳回内容仅该节点作者本人可见，不因管理员身份放宽。列表、total、replyCount 按当前读者的可见范围计算，replyCount 仅计直接回复。祖先属于他人且未通过审核时，整支仍隐藏；本人可在“我的评论”查看自己的所有记录。匿名结果可使用共享公开缓存，带有效会话的列表直接查询，不将本人待审、驳回内容写入共享缓存。删除为物理删除，不生成占位。
 
 设计决定：采用**逐层分页**，不一次返回无限回复树。GET comments 不传parentId时仅根节点；传parentId时仅其直接回复，返回相同 Page。parentId 必须是该文章的可见节点，其他情况404。前端逐层加载；回复任意已通过节点，保留真实parentId，不把深层回复扁平重挂。replyCount用于展开按钮。
 
-创建须同时满足：账号/权限有效、文章 PUBLIC、站点comment.enabled=true、文章allowComment=1；关闭评论返回409/STATE_CONFLICT，非PUBLIC文章返回404。parentId非null时要求同篇文章、节点status=1且祖先可见；跨文章/不存在父节点404，已变成不可回复状态409。已关闭评论仅禁止新增，不隐藏已有可见评论。待审或驳回评论无公开回复入口。parentId/articleId/userId创建后不可修改，故不能移动评论或构造环。
+创建须同时满足：账号/权限有效、文章 PUBLIC、站点comment.enabled=true、文章allowComment=1；关闭评论返回409/STATE_CONFLICT，非PUBLIC文章返回404。parentId非null时要求同篇文章、节点status=1且祖先可见；跨文章/不存在父节点404，已变成不可回复状态409。已关闭评论禁止新增，不隐藏已有可见评论。待审或驳回评论无公开回复入口。parentId/articleId/userId创建后不可修改，故不能移动评论或构造环。
 
-状态：创建由服务端读取 reviewRequired 决定0待审或1通过；管理员/作者回复同样走评论创建，不默认免审。后台可将0/1/2审核为1或2，同目标幂等。本人删除仅能选择自己的目标，后台管理删除按moderate独立范围检查；两者均在同一事务内物理删除目标及全部层级子回复，包括其他作者和任意审核状态的后代。按子到父顺序删除以满足现有RESTRICT外键，不改挂回复；祖先和兄弟分支保留。成功200，目标不存在或重复删除404。审核驳回已通过父评论时隐藏整分支；恢复通过后重新计算可见回复。
+评论发表后不可修改，待审、通过和驳回均相同。原本人评论PUT接口已移除，详情路径PUT返回405。本人详情保留X-Revision响应头且不要求额外查询权限，非本人404；文章下架后仍可查询和删除。后台审核只改变状态，不修改原文。
+
+状态：创建由服务端确定0待审或1通过：有效admin角色直接通过，有效author角色仅在评论自己的文章时直接通过，其余按reviewRequired决定；回复同样走评论创建并使用相同规则。免审不绕过发表权限、开关和父链可见性检查。后台可将0/1/2审核为1或2，同目标幂等。本人删除仅能选择自己的目标，后台管理删除按moderate独立范围检查；两者均在同一事务内物理删除目标及全部层级子回复，包括其他作者和任意审核状态的后代。按子到父顺序删除以满足现有RESTRICT外键，不改挂回复；祖先和兄弟分支保留。成功200，目标不存在或重复删除404。审核驳回已通过父评论时隐藏整分支；恢复通过后重新计算可见回复。
 
 <a id="model-12-7"></a>
 
@@ -516,6 +518,8 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | site | `{title:S(100),description:S0(500),icp:S0(100),publicSecurityRecord:S0(100),startDate:date?}`，五项必填；startDate为合法YYYY-MM-DD或null | isPublic可为0/1；初始为1 |
 | comment | `{enabled:boolean,reviewRequired:boolean}`，两项必填 | isPublic必须0；初始true/true，不向前端公开审核策略 |
 | message | `{enabled:boolean,reviewRequired:boolean}`，两项必填 | isPublic必须0；初始true/true，关闭后保留历史查询、本人删除和后台审核 |
+
+`reviewRequired=true` 表示默认待审（status=0），`false` 表示直接通过（status=1）。有效admin发表或回复评论、留言均免审；有效author仅在自己的文章下评论或回复时免审。角色已禁用时不参与免审判断，文章归属不能替代有效author角色。免审不放宽enabled、文章allowComment、发表权限、验证码、限流、父链可回复性和留言私密范围。客户端按创建响应的status展示结果；历史待审记录不自动变更，接口路径和请求/响应结构不变。规则对照见[接口文档](API.md#discussion-review)。
 
 不存数据库、Redis、SMTP、第三方App Secret或对象存储凭据；未知键404。不提供任意新增/删除配置键接口。comment/message.enabled关闭后保留历史内容；message开关规则见12.10。前台通过文章allowComment及新增失败反馈交互；服务端仍检查站点开关，不依赖前端按钮是否显示。
 
@@ -567,26 +571,28 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 ### 12.10 留言模型、父链与悄悄话
 
-实施状态：第16章11个入口与message配置行锁、完整祖先链、最早私密祖先接收者、本人归属SQL、编辑重新待审及分支物理删除已接通。通过提交后的提醒只取启用用户当前已确认激活的订阅邮箱，不含任何私密原文。公开逐层分页沿用轻量父链读取方式，数据量使扫描不可接受时再演进查询。
+实施状态：第16章10个入口与message配置行锁、完整祖先链、最早私密祖先接收者、本人归属SQL及分支物理删除已接通，发表后不支持编辑。通过提交后的提醒只取启用用户当前已确认激活的订阅邮箱，不含任何私密原文。公开逐层分页沿用轻量父链读取方式，数据量使扫描不可接受时再演进查询。
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | `MessageCreate` | `parentId`:ID&#124;null（直接回复目标；根留言为null，回复创建后不可改）；`content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话；私密回复必须继承完整父链限制）；`notifyReply`:integer（0/1；见留言通知边界） |
-| `MessageEdit` | `content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`notifyReply`:integer（0/1；见留言通知边界） |
-| `MessagePublic` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
-| `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（最近作者编辑时间，未编辑为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
+| `MessageEdit`（仅后台创建回复使用） | `content`:S(2000)（去首尾空白后非空；Markdown保留原文内部空白）；`contentFormat`:integer（0纯文本 1Markdown）；`notifyReply`:integer（0/1；见留言通知边界） |
+| `MessagePublic` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`replyCount`:string（当前读者可见的直接回复数）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（历史作者编辑时间，新留言为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
+| `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（历史作者编辑时间，新留言为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
 
-留言状态0待审核、1通过、2驳回，与评论一致。公开查询使用parentId逐层分页，每页1..50；默认根节点，不自动展开整棵树。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
+MessagePublic另含replyCount:string，表示当前读者可见的直接回复数量，无回复为"0"；与展开该留言后的分页total一致，不包含更深层回复、不可见私密回复或他人未通过审核的回复。本人和后台的MessagePrivate保持原字段，不新增该公开计数。
+
+留言状态0待审核、1通过、2驳回，与评论一致。前台创建根留言和回复时，有效admin角色直接通过，其余按message.reviewRequired决定；免审不绕过发表权限、开关、私密范围和父链检查。公开查询使用parentId逐层分页，每页1..50；默认根节点，不自动展开整棵树。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
 
 后台评论和留言列表增加可选parentId：未传保留所有层级平铺分页，字符串0仅查根节点，正ID只查直接回复；每层按createTime DESC、ID DESC排序，总数只统计当前层。保留原文章、作者、状态、私密和时间筛选，并按记录本身做AND匹配。管理端提交任意筛选时使用平铺结果，避免父节点未命中导致回复漏审；重置恢复根记录分页与多层懒加载。后台列表hasChildren包含待审、驳回及适用的私密回复，不能套用公开父链过滤；MessagePrivate新增的hasChildren在本人接口、详情和写入响应中为null，避免透露私密回复关系。后台评论仍按当前query权限的ALL/SELF文章作者范围，留言仍要求query的ALL；父节点不存在或超出查询范围返回404。现有审核版本、独立操作权限和整分支删除规则不变，无数据库迁移。
 
 悄悄话归属从父链推导：根私密留言的线程接收者是该根user_id；在公开线程新建私密分支时，接收者是最早私密节点的user_id。前台读取私密节点及其后代仅允许该接收者与节点作者本人，父链仍需逐层可见；管理者必须通过后台入口，满足admin:access及当前query/review/moderate权限的ALL范围后读取或操作，不因携带管理员Token放宽前台过滤。后台回复的user_id始终是实际操作人，不冒用原作者；原私密发起者可以沿同一私密祖先读取审核通过的后台回复。回复不能借isSecret=0放宽祖先私密限制；前台发起的回复统一继承私密祖先标记。本人待审/驳回记录可从本人列表读取，不代表匿名可见，不能借可见后代泄露隐藏祖先原文。
 
-编辑只允许content/contentFormat/notifyReply，保留私密性和父关系，写editedAt并重新审核。本人删除先核对目标归属，后台删除要求moderate的ALL；均在同一事务内按子到父顺序物理删除目标及全部层级子回复，包括其他作者、私密和任意审核状态的后代。祖先和兄弟分支保留，不改挂父节点；成功200，目标不存在或重复删除404。通过私密节点不将其改成公开。
+留言发表后不可修改，正文、格式、通知意愿、私密性和父关系均保留创建时的值；待审、通过和驳回状态一视同仁。原本人留言PUT接口已移除，详情路径PUT返回405；editedAt只保留历史值，新留言为null。本人删除先核对目标归属，后台删除要求moderate的ALL；均在同一事务内按子到父顺序物理删除目标及全部层级子回复，包括其他作者、私密和任意审核状态的后代。祖先和兄弟分支保留，不改挂父节点；成功200，目标不存在或重复删除404。通过私密节点不将其改成公开。
 
 notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前账号体系没有登录邮箱验证状态；只有该用户存在status=1且verifiedAt非空的邮件订阅时，才能使用其已确认邮箱发送不含私密原文的回复提醒，否则跳过，不把登录邮箱当收件地址。审核实际转为通过并提交后再发送；发送失败不回滚已发布留言，不声称邮件与MySQL同事务。新文章邮件仅向启用用户的已激活订阅发送，首次发布提交后触发；下架后重发、普通编辑不重复推送。
 
-留言版本只包含userId、parentId、content、contentFormat、isSecret、notifyReply、status、editedAt；排除展示用户资料与审计时间。创建/编辑/后台回复先锁message配置，再按祖先至目标顺序锁留言，锁后重查完整可见性与版本；同一线程的审核/删除采用相同父链锁顺序；删除还锁住全部待删后代并复核原会话和权限。message.enabled=false拒绝新增/编辑/回复，保留历史阅读、本人删除及后台审核。
+留言版本只包含userId、parentId、content、contentFormat、isSecret、notifyReply、status、editedAt；排除展示用户资料与审计时间。创建/后台回复先锁message配置，再按祖先至目标顺序锁留言，锁后重查完整可见性与版本；同一线程的审核/删除采用相同父链锁顺序；删除还锁住全部待删后代并复核原会话和权限。message.enabled=false拒绝新增/回复，保留历史阅读、本人删除及后台审核。
 
 <a id="model-12-11"></a>
 
@@ -765,7 +771,7 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 | 点赞 | 文章锁+复合主键插入/删除；COUNT读已提交明细，无Redis点赞副本；并发其他用户变化时响应计数仅代表本次读取时刻 |
 | 上传/删除 | 按[文件与附件](API.md#group-11)顺序与补偿；存储非数据库事务资源，不使用虚构的分布式事务 |
 | 主页/社交/简历/音乐 | ALL范围与指定权限；可变资源按详情X-Revision锁定后完整替换，时间由数据库维护 |
-| 留言 | message配置锁→祖先链→目标；锁后校验父链可见性/私密性/版本；新增、编辑、审核与分支删除规则见12.10 |
+| 留言 | message配置锁→祖先链→目标；锁后校验父链可见性/私密性/版本；新增、回复、审核与分支删除规则见12.10 |
 | 邮件订阅 | 用户锁→订阅锁；邮箱/用户唯一约束，确认票据与状态匹配；Redis消费和MySQL无共同事务，失败边界见12.12 |
 | 访问采集 | 同事务写访客及一次浏览明细；已登录userId从服务端确认；不修改文章累计view_count |
 | 操作日志 | 成功日志随业务数据库事务提交；失败日志在回滚后单独记录，不将敏感请求体落库 |
@@ -816,7 +822,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | Visitor/View/Report控制器、ReportServiceImpl与Mapper | 第19章；统计标识不作为身份，明细与PV/UV分开，数组报表替代逗号字符串；区间累计新访客明确定义 |
 | OperationLogController与旧操作日志模型 | 第20章；本站用户与权限码快照，日志只读及显式清理，无任意请求体落库 |
 | 旧管理员登录、验证码、Cookie/JWT和游客角色 | 沿用第1..4章本站Bearer与JustAuth，不新增平行鉴权；不复制旧账号或默认密码 |
-| 旧评论的Markdown、悄悄话、邮件提醒和本人编辑 | 现有blog_comment没有相应格式/私密/通知字段，仍采用第9章纯文本评论，删除同步移除整条分支；这些旧能力没有被默认为已承诺，留言采用新增表的独立功能 |
+| 旧评论的Markdown、悄悄话和邮件提醒 | 现有blog_comment没有相应格式/私密/通知字段，仍采用第9章纯文本评论，删除同步移除整条分支；这些旧能力没有被默认为已承诺，留言采用新增表的独立功能 |
 | 旧批量审核/删除及访客封禁/解封 | [0.9](#batch-contract)已用26个支持单条/多条的V2统一入口替换旧单条管理写路由，保留逐资源权限/版本/状态校验，数据库操作整批事务、文件删除逐项事务；前端不以循环提交独立请求模拟整批原子性 |
 | 旧全文索引、计数同步、邮件系统与部署配置 | 搜索契约定义字面包含；不移植异步计数批次，不把SMTP/OAuth/存储凭据放进配置表；本轮使用Boot BOM管理的mail starter实现SMTP边界，并接入现有数据库/Redis及地域设施 |
 

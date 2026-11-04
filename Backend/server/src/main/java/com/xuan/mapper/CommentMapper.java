@@ -19,7 +19,7 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
 
     /** 分页查询直接回复，调用前先确认父评论及全部上级评论可见；父评论为 null 时查询根评论。 */
     IPage<CommentRow> publicPage(IPage<CommentRow> page, @Param("article") long article,
-            @Param("parent") Long parent);
+            @Param("parent") Long parent, @Param("viewer") Long viewer);
 
     /** 本人只按 user 筛选；后台的 author 是本次 query 独立的文章作者范围。 */
     IPage<CommentRow> commentPage(IPage<CommentRow> page, @Param("article") Long article,
@@ -31,7 +31,7 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
             @Param("user") Long user, @Param("status") Integer status,
             @Param("author") Long author, @Param("parent") Long parent);
 
-    /** 查询、审核、管理删除分别传自己的 author 范围；本人删除额外固定 user。 */
+    /** 查询、审核、管理删除分别传自己的 author 范围；本人查询和删除固定 user。 */
     CommentRow scoped(@Param("id") long id, @Param("author") Long author,
             @Param("user") Long user, @Param("lock") boolean lock);
 

@@ -12,7 +12,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * 只收声明字段，私密性和父关系不能通过编辑改写。
+ * 提交后台留言回复，只接收正文、格式和回复通知设置。
  */
 @Getter
 public class MessageEditDTO {
@@ -49,7 +49,7 @@ public class MessageEditDTO {
         notifyReply = value;
     }
 
-    /** 可空parentId也必须显式出现。 */
+    /** 检查回复字段是否完整。 */
     @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 3;

@@ -48,10 +48,7 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Clock;
 import java.time.LocalDateTime;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -77,7 +74,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final AuthorizationProvider authorization;
     private final SubscriptionNotifier notifications;
     private final JsonMapper json;
-    private final Clock clock;
     private final IpLocationResolver locations;
 
     /** 分页查询可见留言及直接回复。 */
@@ -97,8 +93,19 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 .map(MessageNode::getMessageId).toList();
         int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
         List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
+        // 只统计当前页留言的可见直接回复，避免泄露私密或他人未通过审核的回复数量。
+        Map<Long, Long> replyCounts = new HashMap<>();
+        for (MessageNode node : nodes) {
+            if (ids.contains(node.getParentId())
+                    && MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer)) {
+                replyCounts.merge(node.getParentId(), 1L, Long::sum);
+            }
+        }
         List<MessagePublicVO> rows = CollUtil.isEmpty(ids) ? List.of() : messages.visibleRows(ids).stream()
-                .map(row -> publicView(row, viewer)).toList();
+                .map(row -> {
+                    row.setReplyCount(replyCounts.getOrDefault(row.getMessageId(), 0L));
+                    return publicView(row, viewer);
+                }).toList();
         return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visible.size()),
                 Long.toString((visible.size() + (long) query.pageSize() - 1) / query.pageSize()), rows);
     }
@@ -119,7 +126,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         List<BlogMessage> path = lockPath(request.getParentId(), "create", false);
         requireReplyable(path, actor, false);
 
-        // 3. 作者取当前会话，审核状态取站点配置，不接收客户端指定的身份或状态。
+        // 3. 作者取当前会话，管理员免审，其余按站点配置决定审核状态。
         BlogMessage row = new BlogMessage();
         row.setUserId(actor);
         row.setParentId(request.getParentId());
@@ -127,7 +134,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         row.setContentFormat(request.getContentFormat());
         row.setNotifyReply(request.getNotifyReply());
         row.setIsSecret(request.getIsSecret() == 1 || secret(path) ? 1 : 0);
-        row.setStatus(policy.get("reviewRequired").asBoolean() ? 0 : 1);
+        boolean reviewRequired = policy.get("reviewRequired").asBoolean()
+                && !authorization.getRoleList(actor, null).contains("admin");
+        row.setStatus(reviewRequired ? 0 : 1);
         row.setLocation(locations.getIpLocation(ip));
         row.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
         row.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
@@ -156,35 +165,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> ownDetail(long id) {
         long actor = requireMember(null);
-        return profile(required(messages.scoped(id, actor)), actor);
-    }
-
-    /** 根据id修改本人留言。 */
-    @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
-    @RateLimit(value = "message-create", limit = 10, dimension = RateLimit.Dimension.USER)
-    public ResourceVersion<MessagePrivateVO> edit(long id, MessageEditDTO request, String revision) {
-        // 1. 先锁用户和开关，关闭留言后不能继续编辑，但仍保留查询和删除。
-        long actor = requireMember("updateOwn");
-        users.lockById(actor);
-        requireMember("updateOwn");
-        JsonNode policy = policy(lockConfig());
-        requireMember("updateOwn");
-        requireEnabled(policy);
-
-        // 2. 锁住全部上级留言后，重新检查本人范围和版本。
-        required(messages.scoped(id, actor));
-        lockPath(id, "updateOwn", false);
-        MessageRow row = required(messages.scoped(id, requireMember("updateOwn")));
-        RevisionUtils.check(revision(row), revision);
-
-        // 3. 只修改可编辑内容，保留父关系和私密性，并重新进入待审状态。
-        row.setContent(request.getContent());
-        row.setContentFormat(request.getContentFormat());
-        row.setNotifyReply(request.getNotifyReply());
-        row.setEditedAt(now());
-        row.setStatus(0);
-        messages.change(row, actor);
         return profile(required(messages.scoped(id, actor)), actor);
     }
 
@@ -361,7 +341,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 关闭只限制新增、编辑和回复。 */
+    /** 关闭只限制新增和回复。 */
     private void requireEnabled(JsonNode policy) {
         if (!policy.get("enabled").asBoolean()) {
             throw new BusinessException(409, "STATE_CONFLICT", "留言已关闭");
@@ -441,7 +421,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 content, html, format, row.getIsSecret(), row.getStatus(), row.getEditedAt(),
                 Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime(),
                 row.getLocation(), row.getUserAgentOs(),
-                row.getUserAgentBrowser());
+                row.getUserAgentBrowser(), row.getReplyCount());
     }
 
     /** 返回当前留言资料及对应版本。 */
@@ -455,11 +435,6 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             throw missing();
         }
         return row;
-    }
-
-    /** UTC毫秒时间与数据库精度一致。 */
-    private LocalDateTime now() {
-        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
     /** 不向前台区分私密、隐藏或不存在。 */

@@ -31,6 +31,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
+        <druid.version>1.2.28</druid.version>
         <sa-token.version>1.46.0</sa-token.version>
         <justauth.version>1.16.7</justauth.version>
         <fastjson-compatible.version>2.0.66</fastjson-compatible.version>
@@ -44,6 +45,12 @@
     <!-- 这里只管理版本，不会自动给子模块加运行依赖。 -->
     <dependencyManagement>
         <dependencies>
+            <!-- 使用适配 Boot 4 的 Druid，连接池由 server 装配。 -->
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>druid-spring-boot-4-starter</artifactId>
+                <version>${druid.version}</version>
+            </dependency>
             <!-- Hutool 按需引入核心、摘要和验证码模块，共用一个版本。 -->
             <dependency>
                 <groupId>cn.hutool</groupId>

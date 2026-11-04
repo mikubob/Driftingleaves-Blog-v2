@@ -8,7 +8,7 @@ SET NAMES utf8mb4;
 SET @dl_demo_previous_time_zone = @@SESSION.time_zone;
 SET SESSION time_zone = '+00:00';
 
--- 提前检查最近新增的列；旧库先执行 sql/migrations 下缺少的升级脚本。
+-- 导入前确认目标库具备当前初始化脚本中的地域和设备字段。
 SELECT location, user_agent_os, user_agent_browser FROM blog_comment LIMIT 0;
 SELECT location, user_agent_os, user_agent_browser FROM blog_message LIMIT 0;
 SELECT last_login_ip, last_login_location FROM sys_user LIMIT 0;
@@ -141,53 +141,53 @@ FROM dl_demo_article_seed a CROSS JOIN dl_demo_user_seed u
 WHERE a.seed_key <= 12 AND u.seed_key BETWEEN 3 AND 6
   AND NOT EXISTS (SELECT 1 FROM blog_article_like l WHERE l.article_id = a.article_id AND l.user_id = u.user_id);
 
--- 四、36 条评论和 32 条留言，包含根节点、两层回复、审核状态、私密继承和历史空标识。
+-- 四、36 条评论和 32 条留言，状态仅为待审、通过、驳回；包含两层回复、私密继承和未知设备。
 CREATE TEMPORARY TABLE dl_demo_discussion_seed (
   kind CHAR(1), seed_key INT, parent_key INT, depth INT, user_seed INT, article_seed INT,
   content_format TINYINT, is_secret TINYINT, notify_reply TINYINT, status TINYINT,
   content TEXT, location VARCHAR(192), agent_os VARCHAR(64), agent_browser VARCHAR(64),
-  created_days INT, edited_days INT, PRIMARY KEY (kind, seed_key)
+  created_days INT, PRIMARY KEY (kind, seed_key)
 );
 
-INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_seed, article_seed, content_format, is_secret, notify_reply, status, content, location, agent_os, agent_browser, created_days, edited_days) VALUES
-  ('C', 1, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C01] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 2, NULL),
-  ('C', 2, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C02] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 3, NULL),
-  ('C', 3, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C03] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 4, NULL),
-  ('C', 4, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C04] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 5, NULL),
-  ('C', 5, NULL, 0, 8, 5, 0, 0, 0, 3, '[V2 演示 C05] 该评论已删除', '本地', 'Linux', 'Firefox', 6, NULL),
-  ('C', 6, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C06] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 7, NULL),
+INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_seed, article_seed, content_format, is_secret, notify_reply, status, content, location, agent_os, agent_browser, created_days) VALUES
+  ('C', 1, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C01] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 2),
+  ('C', 2, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C02] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 3),
+  ('C', 3, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C03] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 4),
+  ('C', 4, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C04] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 5),
+  ('C', 5, NULL, 0, 8, 5, 0, 0, 0, 2, '[V2 演示 C05] 这条评论未通过审核，用于检查隐藏父节点及回复。', '本地', 'Linux', 'Firefox', 6),
+  ('C', 6, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C06] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 7),
   ('C', 7, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C07] 长评论换行示例：
 第一段记录想法。
-希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。', '湖南省 长沙市', 'Windows', 'Edge', 8, NULL),
-  ('C', 8, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C08] 搜索字符示例：O''Reilly、100%、下划线 _，以及 <b>按文字展示</b>。', '浙江省 杭州市', 'macOS', 'Safari', 9, NULL),
-  ('C', 9, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C09] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 10, NULL),
-  ('C', 10, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C10] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 11, NULL),
-  ('C', 11, NULL, 0, 8, 5, 0, 0, 0, 3, '[V2 演示 C11] 该评论已删除', '本地', 'Linux', 'Firefox', 12, NULL),
-  ('C', 12, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C12] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 13, NULL),
-  ('C', 13, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C13] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 14, NULL),
-  ('C', 14, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C14] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 15, NULL),
-  ('C', 15, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C15] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 16, NULL),
-  ('C', 16, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C16] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 17, NULL),
-  ('C', 17, NULL, 0, 8, 5, 0, 0, 0, 3, '[V2 演示 C17] 该评论已删除', '本地', 'Linux', 'Firefox', 18, NULL),
-  ('C', 18, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C18] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 19, NULL),
-  ('C', 19, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C19] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 20, NULL),
-  ('C', 20, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C20] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 1, NULL),
-  ('C', 21, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C21] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 2, NULL),
-  ('C', 22, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C22] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 3, NULL),
-  ('C', 23, NULL, 0, 8, 5, 0, 0, 0, 3, '[V2 演示 C23] 该评论已删除', '本地', 'Linux', 'Firefox', 4, NULL),
-  ('C', 24, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C24] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 5, NULL),
-  ('C', 25, 1, 1, 5, 1, 0, 0, 0, 1, '[V2 演示 C25] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '浙江省 杭州市', 'macOS', 'Safari', 0, NULL),
-  ('C', 26, 25, 2, 6, 1, 0, 0, 0, 1, '[V2 演示 C26] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '广东省 深圳市', 'Android', 'Chrome', 0, NULL),
-  ('C', 27, 3, 1, 7, 3, 0, 0, 0, 1, '[V2 演示 C27] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '江苏省 南京市', 'iOS', 'Safari', 0, NULL),
-  ('C', 28, 4, 1, 1, 4, 0, 0, 0, 1, '[V2 演示 C28] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '本地', 'Linux', 'Firefox', 0, NULL),
-  ('C', 29, 5, 1, 2, 5, 0, 0, 0, 1, '[V2 演示 C29] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', NULL, NULL, NULL, 0, NULL),
-  ('C', 30, 6, 1, 3, 6, 0, 0, 0, 1, '[V2 演示 C30] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '湖南省 长沙市', 'Windows', 'Edge', 0, NULL),
-  ('C', 31, 1, 1, 4, 1, 0, 0, 0, 1, '[V2 演示 C31] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '浙江省 杭州市', 'macOS', 'Safari', 0, NULL),
-  ('C', 32, 2, 1, 5, 2, 0, 0, 0, 1, '[V2 演示 C32] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '广东省 深圳市', 'Android', 'Chrome', 0, NULL),
-  ('C', 33, 3, 1, 6, 3, 0, 0, 0, 1, '[V2 演示 C33] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '江苏省 南京市', 'iOS', 'Safari', 0, NULL),
-  ('C', 34, 4, 1, 7, 4, 0, 0, 0, 1, '[V2 演示 C34] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '本地', 'Linux', 'Firefox', 0, NULL),
-  ('C', 35, 5, 1, 1, 5, 0, 0, 0, 1, '[V2 演示 C35] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', NULL, NULL, NULL, 0, NULL),
-  ('C', 36, 6, 1, 2, 6, 0, 0, 0, 1, '[V2 演示 C36] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '湖南省 长沙市', 'Windows', 'Edge', 0, NULL),
+希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。希望每一个后来阅读代码的人，都能顺着步骤理解这里的设计。', '湖南省 长沙市', 'Windows', 'Edge', 8),
+  ('C', 8, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C08] 搜索字符示例：O''Reilly、100%、下划线 _，以及 <b>按文字展示</b>。', '浙江省 杭州市', 'macOS', 'Safari', 9),
+  ('C', 9, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C09] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 10),
+  ('C', 10, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C10] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 11),
+  ('C', 11, NULL, 0, 8, 5, 0, 0, 0, 2, '[V2 演示 C11] 这条评论未通过审核，用于检查隐藏父节点及回复。', '本地', 'Linux', 'Firefox', 12),
+  ('C', 12, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C12] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 13),
+  ('C', 13, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C13] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 14),
+  ('C', 14, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C14] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 15),
+  ('C', 15, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C15] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 16),
+  ('C', 16, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C16] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 17),
+  ('C', 17, NULL, 0, 8, 5, 0, 0, 0, 2, '[V2 演示 C17] 这条评论未通过审核，用于检查隐藏父节点及回复。', '本地', 'Linux', 'Firefox', 18),
+  ('C', 18, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C18] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 19),
+  ('C', 19, NULL, 0, 4, 1, 0, 0, 0, 1, '[V2 演示 C19] 写得很清楚，特别是失败路径的处理，感谢分享。', '湖南省 长沙市', 'Windows', 'Edge', 20),
+  ('C', 20, NULL, 0, 5, 2, 0, 0, 0, 1, '[V2 演示 C20] 读完之后把自己的实现又整理了一遍，确实更容易维护了。', '浙江省 杭州市', 'macOS', 'Safari', 1),
+  ('C', 21, NULL, 0, 6, 3, 0, 0, 0, 0, '[V2 演示 C21] 这是一条等待审核的评论，用来检查审核筛选。', '广东省 深圳市', 'Android', 'Chrome', 2),
+  ('C', 22, NULL, 0, 7, 4, 0, 0, 0, 2, '[V2 演示 C22] 这条评论已被驳回，用于检查后台详情和状态。', '江苏省 南京市', 'iOS', 'Safari', 3),
+  ('C', 23, NULL, 0, 8, 5, 0, 0, 0, 2, '[V2 演示 C23] 这条评论未通过审核，用于检查隐藏父节点及回复。', '本地', 'Linux', 'Firefox', 4),
+  ('C', 24, NULL, 0, 3, 6, 0, 0, 0, 1, '[V2 演示 C24] 中文、标点与 Emoji 都能正常显示：你好，世界！🍂', NULL, NULL, NULL, 5),
+  ('C', 25, 1, 1, 5, 1, 0, 0, 0, 1, '[V2 演示 C25] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '浙江省 杭州市', 'macOS', 'Safari', 0),
+  ('C', 26, 25, 2, 6, 1, 0, 0, 0, 1, '[V2 演示 C26] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '广东省 深圳市', 'Android', 'Chrome', 0),
+  ('C', 27, 3, 1, 7, 3, 0, 0, 0, 1, '[V2 演示 C27] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '江苏省 南京市', 'iOS', 'Safari', 0),
+  ('C', 28, 4, 1, 1, 4, 0, 0, 0, 1, '[V2 演示 C28] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '本地', 'Linux', 'Firefox', 0),
+  ('C', 29, 5, 1, 2, 5, 0, 0, 0, 1, '[V2 演示 C29] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', NULL, NULL, NULL, 0),
+  ('C', 30, 6, 1, 3, 6, 0, 0, 0, 1, '[V2 演示 C30] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '湖南省 长沙市', 'Windows', 'Edge', 0),
+  ('C', 31, 1, 1, 4, 1, 0, 0, 0, 1, '[V2 演示 C31] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '浙江省 杭州市', 'macOS', 'Safari', 0),
+  ('C', 32, 2, 1, 5, 2, 0, 0, 0, 1, '[V2 演示 C32] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '广东省 深圳市', 'Android', 'Chrome', 0),
+  ('C', 33, 3, 1, 6, 3, 0, 0, 0, 1, '[V2 演示 C33] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '江苏省 南京市', 'iOS', 'Safari', 0),
+  ('C', 34, 4, 1, 7, 4, 0, 0, 0, 1, '[V2 演示 C34] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '本地', 'Linux', 'Firefox', 0),
+  ('C', 35, 5, 1, 1, 5, 0, 0, 0, 1, '[V2 演示 C35] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', NULL, NULL, NULL, 0),
+  ('C', 36, 6, 1, 2, 6, 0, 0, 0, 1, '[V2 演示 C36] 回复上一条评论：补充一个实际使用中的细节，欢迎继续交流。', '湖南省 长沙市', 'Windows', 'Edge', 0),
   ('M', 1, NULL, 0, 4, NULL, 1, 0, 1, 1, '[V2 演示 M01] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -195,9 +195,9 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 2, NULL),
+> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 2),
   ('M', 2, NULL, 0, 5, NULL, 0, 1, 0, 1, '[V2 演示 M02] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 3, NULL),
+这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 3),
   ('M', 3, NULL, 0, 6, NULL, 1, 0, 1, 0, '[V2 演示 M03] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -205,12 +205,12 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '广东省 深圳市', 'Android', 'Chrome', 4, NULL),
+> 一条虚构的 Markdown 留言。', '广东省 深圳市', 'Android', 'Chrome', 4),
   ('M', 4, NULL, 0, 7, NULL, 0, 0, 0, 2, '[V2 演示 M04] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 5, NULL),
-  ('M', 5, NULL, 0, 8, NULL, 1, 0, 1, 3, '[V2 演示 M05] 该留言已删除', '本地', 'Linux', 'Firefox', 6, NULL),
+这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 5),
+  ('M', 5, NULL, 0, 8, NULL, 1, 0, 1, 2, '[V2 演示 M05] 这条留言未通过审核，用于检查隐藏父节点及回复。', '本地', 'Linux', 'Firefox', 6),
   ('M', 6, NULL, 0, 3, NULL, 0, 0, 0, 1, '[V2 演示 M06] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 7, 1),
+这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 7),
   ('M', 7, NULL, 0, 4, NULL, 1, 1, 1, 1, '[V2 演示 M07] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -218,13 +218,13 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 8, NULL),
+> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 8),
   ('M', 8, NULL, 0, 5, NULL, 0, 0, 0, 0, '[V2 演示 M08] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 9, NULL),
+这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 9),
   ('M', 9, NULL, 0, 6, NULL, 1, 0, 1, 2, '[V2 演示 M09] 长留言示例：
-把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。', '广东省 深圳市', 'Android', 'Chrome', 10, NULL),
-  ('M', 10, NULL, 0, 7, NULL, 0, 0, 0, 3, '[V2 演示 M10] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 11, NULL),
+把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。把普通的日子写下来，回头看时就有了新的意义。', '广东省 深圳市', 'Android', 'Chrome', 10),
+  ('M', 10, NULL, 0, 7, NULL, 0, 0, 0, 2, '[V2 演示 M10] 欢迎来小站坐坐。
+这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 11),
   ('M', 11, NULL, 0, 8, NULL, 1, 0, 1, 1, '[V2 演示 M11] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -232,9 +232,9 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '本地', 'Linux', 'Firefox', 12, 1),
+> 一条虚构的 Markdown 留言。', '本地', 'Linux', 'Firefox', 12),
   ('M', 12, NULL, 0, 3, NULL, 0, 1, 0, 1, '[V2 演示 M12] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 13, NULL),
+这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 13),
   ('M', 13, NULL, 0, 4, NULL, 1, 0, 1, 0, '[V2 演示 M13] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -242,19 +242,19 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 14, NULL),
+> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 14),
   ('M', 14, NULL, 0, 5, NULL, 0, 0, 0, 2, '[V2 演示 M14] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 15, NULL),
-  ('M', 15, NULL, 0, 6, NULL, 1, 0, 1, 3, '[V2 演示 M15] **留言的重点**
+这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 15),
+  ('M', 15, NULL, 0, 6, NULL, 1, 0, 1, 2, '[V2 演示 M15] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
 
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '广东省 深圳市', 'Android', 'Chrome', 16, NULL),
+> 一条虚构的 Markdown 留言。', '广东省 深圳市', 'Android', 'Chrome', 16),
   ('M', 16, NULL, 0, 7, NULL, 0, 0, 0, 1, '[V2 演示 M16] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 17, NULL),
+这一条用于检查纯文本换行和留言详情。', '江苏省 南京市', 'iOS', 'Safari', 17),
   ('M', 17, NULL, 0, 8, NULL, 1, 1, 1, 1, '[V2 演示 M17] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -262,9 +262,9 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '本地', 'Linux', 'Firefox', 18, NULL),
+> 一条虚构的 Markdown 留言。', '本地', 'Linux', 'Firefox', 18),
   ('M', 18, NULL, 0, 3, NULL, 0, 0, 0, 0, '[V2 演示 M18] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 1, NULL),
+这一条用于检查纯文本换行和留言详情。', NULL, NULL, NULL, 1),
   ('M', 19, NULL, 0, 4, NULL, 1, 0, 1, 2, '[V2 演示 M19] **留言的重点**
 
 感谢持续记录，愿每一天都有新的收获。
@@ -272,21 +272,21 @@ INSERT INTO dl_demo_discussion_seed (kind, seed_key, parent_key, depth, user_see
 - 记录日常
 - 分享技术
 
-> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 2, NULL),
-  ('M', 20, NULL, 0, 5, NULL, 0, 0, 0, 3, '[V2 演示 M20] 欢迎来小站坐坐。
-这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 3, NULL),
-  ('M', 21, 1, 1, 1, NULL, 1, 0, 1, 1, '[V2 演示 M21] 收到你的留言了，愿这段交流带来一点新的想法。', '江苏省 南京市', 'iOS', 'Safari', 0, NULL),
-  ('M', 22, 21, 2, 2, NULL, 0, 0, 0, 1, '[V2 演示 M22] 收到你的留言了，愿这段交流带来一点新的想法。', '本地', 'Linux', 'Firefox', 0, NULL),
-  ('M', 23, 3, 1, 3, NULL, 1, 0, 1, 1, '[V2 演示 M23] 收到你的留言了，愿这段交流带来一点新的想法。', NULL, NULL, NULL, 0, NULL),
-  ('M', 24, 4, 1, 4, NULL, 0, 0, 0, 1, '[V2 演示 M24] 收到你的留言了，愿这段交流带来一点新的想法。', '湖南省 长沙市', 'Windows', 'Edge', 0, NULL),
-  ('M', 25, 5, 1, 5, NULL, 1, 0, 1, 1, '[V2 演示 M25] 收到你的留言了，愿这段交流带来一点新的想法。', '浙江省 杭州市', 'macOS', 'Safari', 0, NULL),
-  ('M', 26, 6, 1, 6, NULL, 0, 0, 0, 1, '[V2 演示 M26] 收到你的留言了，愿这段交流带来一点新的想法。', '广东省 深圳市', 'Android', 'Chrome', 0, NULL),
-  ('M', 27, 1, 1, 7, NULL, 1, 0, 1, 1, '[V2 演示 M27] 收到你的留言了，愿这段交流带来一点新的想法。', '江苏省 南京市', 'iOS', 'Safari', 0, NULL),
-  ('M', 28, 2, 1, 1, NULL, 0, 1, 0, 1, '[V2 演示 M28] 收到你的留言了，愿这段交流带来一点新的想法。', '本地', 'Linux', 'Firefox', 0, NULL),
-  ('M', 29, 3, 1, 2, NULL, 1, 0, 1, 1, '[V2 演示 M29] 收到你的留言了，愿这段交流带来一点新的想法。', NULL, NULL, NULL, 0, NULL),
-  ('M', 30, 4, 1, 3, NULL, 0, 0, 0, 1, '[V2 演示 M30] 收到你的留言了，愿这段交流带来一点新的想法。', '湖南省 长沙市', 'Windows', 'Edge', 0, NULL),
-  ('M', 31, 5, 1, 4, NULL, 1, 0, 1, 1, '[V2 演示 M31] 收到你的留言了，愿这段交流带来一点新的想法。', '浙江省 杭州市', 'macOS', 'Safari', 0, NULL),
-  ('M', 32, 6, 1, 5, NULL, 0, 0, 0, 1, '[V2 演示 M32] 收到你的留言了，愿这段交流带来一点新的想法。', '广东省 深圳市', 'Android', 'Chrome', 0, NULL);
+> 一条虚构的 Markdown 留言。', '湖南省 长沙市', 'Windows', 'Edge', 2),
+  ('M', 20, NULL, 0, 5, NULL, 0, 0, 0, 2, '[V2 演示 M20] 欢迎来小站坐坐。
+这一条用于检查纯文本换行和留言详情。', '浙江省 杭州市', 'macOS', 'Safari', 3),
+  ('M', 21, 1, 1, 1, NULL, 1, 0, 1, 1, '[V2 演示 M21] 收到你的留言了，愿这段交流带来一点新的想法。', '江苏省 南京市', 'iOS', 'Safari', 0),
+  ('M', 22, 21, 2, 2, NULL, 0, 0, 0, 1, '[V2 演示 M22] 收到你的留言了，愿这段交流带来一点新的想法。', '本地', 'Linux', 'Firefox', 0),
+  ('M', 23, 3, 1, 3, NULL, 1, 0, 1, 1, '[V2 演示 M23] 收到你的留言了，愿这段交流带来一点新的想法。', NULL, NULL, NULL, 0),
+  ('M', 24, 4, 1, 4, NULL, 0, 0, 0, 1, '[V2 演示 M24] 收到你的留言了，愿这段交流带来一点新的想法。', '湖南省 长沙市', 'Windows', 'Edge', 0),
+  ('M', 25, 5, 1, 5, NULL, 1, 0, 1, 1, '[V2 演示 M25] 收到你的留言了，愿这段交流带来一点新的想法。', '浙江省 杭州市', 'macOS', 'Safari', 0),
+  ('M', 26, 6, 1, 6, NULL, 0, 0, 0, 1, '[V2 演示 M26] 收到你的留言了，愿这段交流带来一点新的想法。', '广东省 深圳市', 'Android', 'Chrome', 0),
+  ('M', 27, 1, 1, 7, NULL, 1, 0, 1, 1, '[V2 演示 M27] 收到你的留言了，愿这段交流带来一点新的想法。', '江苏省 南京市', 'iOS', 'Safari', 0),
+  ('M', 28, 2, 1, 1, NULL, 0, 1, 0, 1, '[V2 演示 M28] 收到你的留言了，愿这段交流带来一点新的想法。', '本地', 'Linux', 'Firefox', 0),
+  ('M', 29, 3, 1, 2, NULL, 1, 0, 1, 1, '[V2 演示 M29] 收到你的留言了，愿这段交流带来一点新的想法。', NULL, NULL, NULL, 0),
+  ('M', 30, 4, 1, 3, NULL, 0, 0, 0, 1, '[V2 演示 M30] 收到你的留言了，愿这段交流带来一点新的想法。', '湖南省 长沙市', 'Windows', 'Edge', 0),
+  ('M', 31, 5, 1, 4, NULL, 1, 0, 1, 1, '[V2 演示 M31] 收到你的留言了，愿这段交流带来一点新的想法。', '浙江省 杭州市', 'macOS', 'Safari', 0),
+  ('M', 32, 6, 1, 5, NULL, 0, 0, 0, 1, '[V2 演示 M32] 收到你的留言了，愿这段交流带来一点新的想法。', '广东省 深圳市', 'Android', 'Chrome', 0);
 
 CREATE TEMPORARY TABLE dl_demo_comment_ids (seed_key INT PRIMARY KEY, comment_id BIGINT);
 CREATE TEMPORARY TABLE dl_demo_message_ids (seed_key INT PRIMARY KEY, message_id BIGINT);
@@ -308,12 +308,11 @@ WHERE s.kind = 'C' AND s.depth = 0;
 
 -- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
-  content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
+  content_format, is_secret, notify_reply, status, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
   s.content_format, s.is_secret, s.notify_reply, s.status,
-  IF(s.edited_days IS NULL, NULL, DATE_SUB(@dl_demo_anchor, INTERVAL s.edited_days DAY)),
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY),
-  DATE_SUB(@dl_demo_anchor, INTERVAL COALESCE(s.edited_days, s.created_days) DAY)
+  DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 LEFT JOIN dl_demo_message_ids p ON p.seed_key = s.parent_key
 WHERE s.kind = 'M' AND s.depth = 0 AND (s.parent_key IS NULL OR p.message_id IS NOT NULL)
@@ -340,12 +339,11 @@ WHERE s.kind = 'C' AND s.depth = 1;
 
 -- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
-  content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
+  content_format, is_secret, notify_reply, status, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
   s.content_format, s.is_secret, s.notify_reply, s.status,
-  IF(s.edited_days IS NULL, NULL, DATE_SUB(@dl_demo_anchor, INTERVAL s.edited_days DAY)),
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY),
-  DATE_SUB(@dl_demo_anchor, INTERVAL COALESCE(s.edited_days, s.created_days) DAY)
+  DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 LEFT JOIN dl_demo_message_ids p ON p.seed_key = s.parent_key
 WHERE s.kind = 'M' AND s.depth = 1 AND (s.parent_key IS NULL OR p.message_id IS NOT NULL)
@@ -372,12 +370,11 @@ WHERE s.kind = 'C' AND s.depth = 2;
 
 -- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
 INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
-  content_format, is_secret, notify_reply, status, edited_at, create_time, update_time)
+  content_format, is_secret, notify_reply, status, create_time, update_time)
 SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
   s.content_format, s.is_secret, s.notify_reply, s.status,
-  IF(s.edited_days IS NULL, NULL, DATE_SUB(@dl_demo_anchor, INTERVAL s.edited_days DAY)),
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY),
-  DATE_SUB(@dl_demo_anchor, INTERVAL COALESCE(s.edited_days, s.created_days) DAY)
+  DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 LEFT JOIN dl_demo_message_ids p ON p.seed_key = s.parent_key
 WHERE s.kind = 'M' AND s.depth = 2 AND (s.parent_key IS NULL OR p.message_id IS NOT NULL)

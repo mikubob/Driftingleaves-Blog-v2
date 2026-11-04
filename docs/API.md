@@ -1,10 +1,10 @@
 # DriftingLeavesV2 接口文档
 
-接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-03。
+接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-04。
 
 统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **207 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
 
-2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态后，按当前 Controller 的多路径映射展开统计共 207 个 HTTP 路由（Admin 134 个），详情、创建、编辑及本人接口保留。
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态。2026-11-04 移除评论和留言本人编辑接口，保留本人评论详情；按当前 Controller 的多路径映射展开统计共207个HTTP路由（Admin 134个）。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
@@ -165,7 +165,6 @@ GET /api/v1/blog/auth/captcha
 | --- | --- |
 | `POST /api/v1/blog/articles/{articleId}/comments` | 发表评论或回复 |
 | `POST /api/v1/blog/messages` | 发表留言或回复 |
-| `PUT /api/v1/blog/me/messages/{messageId}` | 编辑本人留言；仍须携带 If-Revision，修改后重新审核 |
 
 题目和图形验证码使用不同 Redis 键，不能跨用途使用；有效期均为 120 秒。后台留言回复仍不要求验证码，保留后台登录、权限与限流；后台评论管理当前只有查询、审核和删除，没有独立回复接口。
 
@@ -188,8 +187,7 @@ GET /api/v1/blog/auth/captcha
 | `PUT/DELETE /blog/me/password` | 两种方法共用60秒10次；IP、用户 | 已实现 |
 | `POST /blog/articles/{articleId}/comments` | 60秒10次；IP、用户 | 已实现 |
 | `PUT/DELETE /blog/articles/{articleId}/like` | 两种方法及所有文章共用60秒60次；IP、用户 | 已实现 |
-| `POST /blog/messages` | 60秒10次；IP、用户 | 已实现，与本人编辑共享窗口 |
-| `PUT /blog/me/messages/{messageId}` | 与创建留言共用60秒10次；IP、用户，跨留言ID累计 | 已实现，与创建共享窗口 |
+| `POST /blog/messages` | 60秒10次；IP、用户 | 已实现 |
 | `POST /admin/messages/{messageId}/replies` | 60秒10次；IP、用户，跨父留言ID累计 | 已实现，跨父留言累计 |
 | `POST /admin/files` 上传 | 60秒10次；IP、用户 | 已实现 |
 | `PUT /blog/me/rss-subscription` 申请/重发 | 共用60秒5次；IP、用户 | 已实现 |
@@ -251,7 +249,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `/blog/articles/{slug}` | 15分钟 | 只缓存公开正文、安全HTML、派生阅读信息与公开关联；缓存命中仍校验PUBLIC，并按7.2锁内成功加一次阅读；不缓存整条含副作用的Service调用 |
 | `/blog/archives` | 30分钟 | 按页码/页大小缓存月份与PUBLIC数量；发布、下架、回收、恢复、永久删除或可见性变化失效 |
 | `/blog/article-rankings` | 60秒 | period、metric、limit及UTC月份分别入键；排行次序与分数使用同一缓存快照，阅读/点赞变化最多延迟60秒；文章下架、删除、标题/slug等资料变化主动失效 |
-| `/blog/articles/{articleId}/comments` | 30秒 | 仅公开评论及完整可见父链，不含待审/驳回原文；新增、审核、本人/后台分支删除、祖先状态及文章可见性变化失效 |
+| `/blog/articles/{articleId}/comments` | 30秒 | 仅匿名查询使用公开缓存；有效会话查询保留本人待审/驳回内容并直接回源；新增、审核、本人/后台分支删除、祖先状态及文章可见性变化失效 |
 | `/blog/statistics` | 5分钟 | 公开汇总；访问PV/UV允许最多5分钟延迟，UTC日期入键；文章/分类/标签变化及后台统计清理主动失效 |
 | `/blog/rss.xml`、`/blog/sitemap.xml` | 30分钟 | 缓存XML；RSS和地图分区，地图索引与各page分别入键；依赖内容、字典、公开配置、站点基址变化主动失效；子图仍遵守50000条/50MiB及不存在页404 |
 
@@ -309,7 +307,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `POST /admin/music`；`PUT /admin/music/batch-status`；`PUT/DELETE /admin/music/{musicId}` | 整个公开播放列表域，含所有分页；显示、排序和地址变化一并生效 |
 | `POST /blog/analytics/page-views` | 不缓存写入响应，不逐次清空公开统计；PV/UV按0.7允许的5分钟TTL更新；不改变文章累计阅读量 |
 | `DELETE /admin/visitors/{visitorId}`；`DELETE /admin/page-views/{viewId}` | 公开统计域主动失效；封禁/解封统计标识仍实时读库，不创建访客身份缓存 |
-| 文件上传/删除、留言创建/编辑/审核/删除/回复、邮件订阅各类写接口、日志清理及其余身份/授权写接口 | 对应业务响应没有公共查询缓存，不机械清空整站。文件删除先按原规则拒绝仍被引用的文件；留言私密可见性、订阅轮次及会话撤销照旧执行，不能借公共缓存清理删除安全状态 |
+| 文件上传/删除、留言创建/审核/删除/回复、邮件订阅各类写接口、日志清理及其余身份/授权写接口 | 对应业务响应没有公共查询缓存，不机械清空整站。文件删除先按原规则拒绝仍被引用的文件；留言私密可见性、订阅轮次及会话撤销照旧执行，不能借公共缓存清理删除安全状态 |
 
 无实际业务变化的幂等写入可以不重复清缓存，但仍须完成鉴权、版本及状态检查；前次提交后缓存清理失败且保护尚未解除时，不能因“数据库已是目标值”跳过失效恢复。所有写入口（HTTP或现有内部调用）都在真正落库的Service负责关联清理，不能只在Controller清理。参考项目的异步摘要回填也会主动清理文章缓存；本站今后若增加内部写入，须沿用同一规则，本次不新增摘要任务。
 
@@ -931,7 +929,7 @@ Authorization: Bearer <site-token>
     ],
     "dataScopes": {
       "blog:article:like": "SELF", "blog:comment:create": "SELF", "blog:comment:deleteOwn": "SELF",
-      "blog:message:create": "SELF", "blog:message:deleteOwn": "SELF", "blog:message:updateOwn": "SELF"
+      "blog:message:create": "SELF", "blog:message:deleteOwn": "SELF"
     }
   },
   "errors": []
@@ -7107,7 +7105,7 @@ Authorization: Bearer <site-token>
     ],
     "dataScopes": {
       "blog:article:like": "SELF", "blog:comment:create": "SELF", "blog:comment:deleteOwn": "SELF",
-      "blog:message:create": "SELF", "blog:message:deleteOwn": "SELF", "blog:message:updateOwn": "SELF"
+      "blog:message:create": "SELF", "blog:message:deleteOwn": "SELF"
     }
   },
   "errors": []
@@ -7544,7 +7542,7 @@ GET /api/v1/blog/articles/101/comments?page=1&pageSize=10
 }
 ```
 
-每页最多 50；不传 parentId 为根节点，传入只查直接回复；createTime DESC,commentId DESC。祖先 0/2 隐藏整支；3 占位 content 固定且 author=null。replyCount 只计可见直接子节点，包含可展开的占位，不计更深层后代。
+每页最多50；不传parentId为根节点，传入只查直接回复；createTime DESC,commentId DESC。带有效会话时保留本人待审、驳回内容，全部祖先也须审核通过或属于本人；其他用户不能读取未通过内容。total及replyCount按当前读者的可见范围计算，replyCount只计直接回复。匿名结果使用公开缓存，有效会话查询直接回源。
 
 ---
 
@@ -7590,6 +7588,8 @@ Content-Type: application/json
 
 ##### 响应示例
 
+以下为普通用户且 `comment.reviewRequired=true` 的待审示例；符合[免审规则](#discussion-review)或关闭审核时，响应结构相同，`status` 为 `1`。
+
 ```json
 {
   "code": "OK", "msg": "成功",
@@ -7600,7 +7600,23 @@ Content-Type: application/json
 }
 ```
 
-需要 blog:comment:create；文章 PUBLIC，站点和文章评论开关均开。审核策略由服务端决定 0/1，管理员回复也不自动免审。
+需要 `blog:comment:create`；文章 PUBLIC，站点和文章评论开关均开。
+
+<a id="discussion-review"></a>
+
+##### 评论和留言审核规则
+
+以下规则同时适用于根评论、根留言和回复。身份由服务端查询当前用户的有效角色，文章归属以当前文章的 `authorId` 为准。
+
+| 当前有效身份 | 评论或回复自己的文章 | 评论或回复他人的文章 | 发表或回复留言 |
+| --- | --- | --- | --- |
+| 包含 `admin` 角色 | 直接通过，`status=1` | 直接通过，`status=1` | 直接通过，`status=1` |
+| 包含 `author`，不含 `admin` | 直接通过，`status=1` | 按 `comment.reviewRequired` 决定 | 按 `message.reviewRequired` 决定 |
+| 其他用户 | 按 `comment.reviewRequired` 决定 | 按 `comment.reviewRequired` 决定 | 按 `message.reviewRequired` 决定 |
+
+按配置审核时，`reviewRequired=true` 保存为 `status=0`（待审核），`false` 保存为 `status=1`（通过）。禁用角色不参与免审判断；仅拥有文章但没有有效 `author` 角色不自动免审。
+
+免审仍须满足账号、发表权限、验证码、限流、业务开关和父链可回复性检查；留言仍保留全部私密限制。客户端不能指定角色、作者或审核状态，前端以创建响应中的 `status` 显示结果。此规则仅影响新发表内容，已有待审记录不自动变更。
 
 ---
 
@@ -8182,7 +8198,7 @@ GET /api/v1/blog/messages?page=1&pageSize=10
           "userId": "12", "nickname": "落叶", "avatar": null
         },
         "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
-        "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1
+        "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1, "replyCount": "2"
       }
     ]
   },
@@ -8190,7 +8206,7 @@ GET /api/v1/blog/messages?page=1&pageSize=10
 }
 ```
 
-匿名只读取审核通过的公开节点；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total只计当前层可见节点。createTime ASC,messageId ASC。不可见父节点404。
+匿名只读取审核通过的公开节点；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total只计当前层可见节点。replyCount为当前读者可见的直接回复数量，以字符串返回；不包含更深层或不可见回复，与展开后该层分页的total一致。createTime ASC,messageId ASC。不可见父节点404。
 
 ---
 
@@ -8238,6 +8254,8 @@ Content-Type: application/json
 
 ##### 响应示例
 
+以下为普通用户且 `message.reviewRequired=true` 的待审示例；符合[免审规则](#discussion-review)或关闭审核时，响应结构相同，`status` 为 `1`。
+
 ```json
 {
   "code": "OK", "msg": "成功",
@@ -8255,7 +8273,7 @@ Content-Type: application/json
 
 属地、系统和浏览器由服务端从本次请求采集，不接受客户端指定；编辑保留发布时的标识，历史空值显示未知，不公开完整 IP 或原始 User-Agent。
 
-作者固定为当前用户。先锁message配置，再锁父链，检查enabled和父链可见性；按reviewRequired确定0/1，普通管理员经此前台入口也不自动免审。客户端不能写作者、昵称、rootId、status、isAdminReply或HTML。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
+作者固定为当前用户。先锁message配置，再锁父链，检查enabled和父链可见性；按[评论和留言审核规则](#discussion-review)决定初始状态：有效 `admin` 角色直接通过，`author` 和其他用户按 `message.reviewRequired` 决定0/1；免审仍需满足发表权限、开关、私密范围和父链可回复性检查。客户端不能写作者、昵称、rootId、status、isAdminReply或HTML。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
 
 ---
 
@@ -8318,6 +8336,16 @@ Authorization: Bearer <site-token>
 
 ---
 
+### 本人评论详情
+
+| 方法与路径 | 权限与返回 |
+| --- | --- |
+| `GET /api/v1/blog/me/comments/{commentId}` | 登录，仅本人；200，data为CommentOwn，保留X-Revision响应头；文章下架后仍可读取 |
+
+评论发表后不可修改，待审、通过和驳回状态均相同。本人详情只读，不要求额外查询权限，非本人返回404。原本人评论PUT接口已移除；对详情路径发送PUT返回405，不接受正文覆盖。本人仍可查询和删除，后台保留审核与删除。
+
+---
+
 <a id="api-62"></a>
 
 #### 2.7.2 删除本人评论
@@ -8361,6 +8389,8 @@ Authorization: Bearer <site-token>
 <a id="blog-group-8"></a>
 
 ### 2.8 本人留言
+
+留言发表后不可修改，待审、通过、驳回及悄悄话均相同。原本人留言PUT接口已移除；对详情路径发送PUT返回405。正文、格式、通知意愿、私密设置和父关系在发表后不能再次提交修改。保留本人查询和删除、前后台回复及后台审核。`editedAt`仅保留历史值，新留言为null。
 
 <a id="api-111"></a>
 
@@ -8475,84 +8505,13 @@ X-Revision: "<current-revision>"
 }
 ```
 
-他人留言一律404；用于编辑前取得X-Revision。
-
----
-
-<a id="api-113"></a>
-
-#### 2.8.3 编辑本人留言
-
-##### 基本信息
-
-| 项目 | 说明 |
-| --- | --- |
-| 接口路径 | `PUT /api/v1/blog/me/messages/{messageId}` |
-| 接口描述 | 编辑本人留言 |
-| Content-Type | application/json |
-| 访问要求 | 登录 + `blog:message:updateOwn`；始终限制本人归属 |
-| 并发校验 | 必填 If-Revision |
-
-##### 请求参数
-
-| 参数名 | 类型 | 必填 | 说明 |
-| --- | --- | --- | --- |
-| `messageId` | ID | 是 | Path；十进制正整数 ID 字符串 |
-| `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `X-Captcha-Id` | string | 是 | Header；见[验证码契约](#captcha) |
-| `X-Captcha-Code` | string | 是 | Header；6 位数字，提交后需重新获取 |
-| `content` | S(2000) | 是 | 去首尾空白后非空；Markdown保留原文内部空白 |
-| `contentFormat` | integer | 是 | 0纯文本 1Markdown |
-| `notifyReply` | integer | 是 | 0/1；见留言通知边界 |
-
-##### 请求示例
-
-```http
-PUT /api/v1/blog/me/messages/301
-Authorization: Bearer <site-token>
-If-Revision: "<revision-from-detail>"
-X-Captcha-Id: <captchaId>
-X-Captcha-Code: 012345
-Content-Type: application/json
-
-{"content":"你好，欢迎交流。","contentFormat":0,"notifyReply":0}
-```
-
-##### 响应参数
-
-`data`：[MessagePrivate](#response-messageprivate)。
-
-| 响应头 | 类型 | 说明 |
-| --- | --- | --- |
-| X-Revision（Header） | string | 当前业务版本；写接口原样携带 |
-
-##### 响应示例
-
-```http
-X-Revision: "<current-revision>"
-```
-```json
-{
-  "code": "OK", "msg": "成功",
-  "data": {
-    "messageId": "301", "parentId": null,
-    "author": {
-      "userId": "12", "nickname": "落叶", "avatar": null
-    },
-    "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
-    "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 0
-  },
-  "errors": []
-}
-```
-
-完整替换可编辑的content/contentFormat/notifyReply，不接受parentId、isSecret或status；私密范围和父关系创建后不可放宽。编辑写editedAt并重新审核。message.enabled=false时拒绝编辑，保留查询和删除。
+他人留言一律404；只读查询保留X-Revision响应头，不提供修改接口。
 
 ---
 
 <a id="api-114"></a>
 
-#### 2.8.4 删除本人留言
+#### 2.8.3 删除本人留言
 
 ##### 基本信息
 
@@ -10803,7 +10762,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `configValue.publicSecurityRecord` | string | site公安备案文本，可空串 |
 | `configValue.startDate` | date&#124;null | site建站日期，未设置为null |
 | `configValue.enabled` | boolean | 仅comment/message对象的业务开关 |
-| `configValue.reviewRequired` | boolean | 仅comment/message对象，是否默认审核；不向公开接口输出 |
+| `configValue.reviewRequired` | boolean | 仅comment/message对象；true默认待审，false直接通过；有效admin发表两类内容均免审，有效author仅评论本人文章免审，详见[审核规则](#discussion-review)；不向公开接口输出 |
 | `description` | string | 说明，可 null；site 内 description 可为空串 |
 | `isPublic` | integer | 0 私有、1 可公开，公开接口还校验键白名单 |
 | `updateTime` | Time | 修改 UTC 时间 |
@@ -10954,6 +10913,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `messageId` | ID | 留言ID |
 | `parentId` | ID&#124;null | 直接回复目标；根留言为null |
+| `replyCount` | string | 当前读者可见的直接回复数量；无回复为"0"，不包含更深层或不可见回复 |
 | `author` | object&#124;null | 当前用户公开资料 |
 | `author.userId` | ID | 本站用户ID |
 | `author.nickname` | string | 当前昵称 |
@@ -11264,7 +11224,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 ### 13.3 互动、订阅与统计
 
-评论为纯文本，有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取，编辑重新待审。评论与留言删除均在事务中物理移除目标及全部子回复，不生成占位。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
+评论为纯文本，有隐藏祖先的评论分支不公开。留言的悄悄话沿完整父链限制可见性，管理员通过后台读取。评论和留言发表后均不支持再次修改。评论与留言删除均在事务中物理移除目标及全部子回复，不生成占位。相关规则见 [评论](API_CONTRACT.md#comment-rules) 与 [留言](API_CONTRACT.md#message-rules)。
 
 订阅邮箱独立确认，不把账号联系邮箱当作已验证邮箱。首次公开发布及留言实际审核通过后再通知；发送失败不回滚已提交业务，进程内通知不保证跨宕机投递。RSS/站点地图公开读取，不依赖邮件订阅。
 

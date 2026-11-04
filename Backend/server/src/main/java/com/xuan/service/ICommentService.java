@@ -7,6 +7,7 @@ import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
 import com.xuan.dto.CommentPublicQueryDTO;
 import com.xuan.entity.BlogComment;
+import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CommentAdminVO;
@@ -21,17 +22,20 @@ import java.util.List;
  */
 public interface ICommentService extends IService<BlogComment> {
 
-    /** 分页查询公开文章的评论，父评论及它的全部上级评论都必须可见。 */
+    /** 分页查询公开文章的评论，保留本人待审和驳回记录，父评论及全部上级须对当前读者可见。 */
     PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query);
 
     /** 缓存公开评论列表，由 publicComments 检查文章公开状态和全部上级评论后，通过 Spring 代理调用。 */
     PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query);
 
-    /** 发表评论，作者取当前登录用户，加锁后读取最新的评论开关和审核配置，管理员也要审核。 */
+    /** 发表评论，作者取当前登录用户，加锁后读取最新开关和审核配置；有效管理员免审，有效作者评论自己的文章免审。 */
     CommentOwnVO create(long article, CommentCreateDTO request, String ip, String userAgent);
 
     /** 分页查询本人评论，只返回自己的评论，文章下架后仍能管理。 */
     PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query);
+
+    /** 根据id查询本人评论及版本，文章下架后仍可查询。 */
+    ResourceVersion<CommentOwnVO> ownDetail(long id);
 
     /** 根据id删除本人评论及全部子回复，不要求版本；即使有 ALL 范围，也只能选择自己的评论。 */
     void deleteOwn(long id);
