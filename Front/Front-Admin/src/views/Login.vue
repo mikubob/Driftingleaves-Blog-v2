@@ -1,4 +1,10 @@
 <script setup>
+import { ElButton, ElIcon, ElInput, ElRadioButton, ElRadioGroup } from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/icon/style/css'
+import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/radio-button/style/css'
+import 'element-plus/es/components/radio-group/style/css'
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from '../api.js'

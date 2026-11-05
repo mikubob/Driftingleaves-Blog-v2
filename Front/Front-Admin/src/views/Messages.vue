@@ -1,24 +1,54 @@
 <script setup>
 import { onMounted, reactive, ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ElButton,
+  ElCard,
+  ElDatePicker,
+  ElDialog,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElOption,
+  ElRadio,
+  ElRadioGroup,
+  ElSelect,
+  ElSwitch,
+} from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/date-picker/style/css'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/radio/style/css'
+import 'element-plus/es/components/radio-group/style/css'
+import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/switch/style/css'
 import { request } from '../api.js'
 import { can } from '../session.js'
-import { formatTime } from '../format.js'
-import { useDiscussionTree } from '../composables/useDiscussionTree.js'
-import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
-import BatchActions from '../components/BatchActions.vue'
-import StatusTag from '../components/StatusTag.vue'
+import { useList } from '../composables/useList.js'
+import DiscussionTable from '../components/DiscussionTable.vue'
 import DiscussionDetail from '../components/DiscussionDetail.vue'
 
-const {
-  filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
-  table: batchTable, tableKey, filtered, repliesLoading, loadReplies, loadMore,
-} = useDiscussionTree(
-  '/admin/messages',
-  'messageId',
-  { status: '', userId: '', isSecret: '', begin: '', end: '' },
-)
+const initialFilters = { status: '', userId: '', isSecret: '', begin: '', end: '' }
+const list = useList('/admin/messages', initialFilters)
+const { error, load } = list
+const filters = reactive({ ...initialFilters })
+const table = ref(null)
+
+function search() {
+  Object.assign(list.filters, filters)
+  return load(true)
+}
+
+function reset() {
+  Object.assign(filters, initialFilters)
+  return list.reset()
+}
+
 const detail = ref(null)
 const detailVisible = ref(false)
 const replyVisible = ref(false)
@@ -51,7 +81,7 @@ async function review(row, status) {
       body: { items: [{ id: row.messageId, revision: current.revision }], status },
     })
     ElMessage.success('审核状态已更新')
-    load()
+    await load()
   } catch (failure) {
     ElMessage.error(failure.message)
   } finally {
@@ -73,7 +103,7 @@ async function sendReply() {
     })
     replyVisible.value = false
     ElMessage.success('回复已提交')
-    load()
+    await load()
   } catch (failure) {
     replyError.value = failure.message
   } finally {
@@ -94,7 +124,7 @@ async function remove(row) {
   try {
     await request('/admin/messages/batch-delete', { method: 'POST', body: { ids: [row.messageId] } })
     ElMessage.success('留言已删除')
-    load()
+    await load()
   } catch (failure) {
     ElMessage.error(failure.message)
   } finally {
@@ -103,7 +133,6 @@ async function remove(row) {
 }
 onMounted(load)
 
-const batch = ref(null)
 const batchActions = computed(() => {
   const actions = []
   if (can('blog:message:review', true)) {
@@ -113,10 +142,7 @@ const batchActions = computed(() => {
       path: 'batch-review',
       method: 'PUT',
       body: { status: 1 },
-    })
-  }
-  if (can('blog:message:review', true)) {
-    actions.push({
+    }, {
       label: '批量驳回',
       type: 'warning',
       path: 'batch-review',
@@ -145,7 +171,7 @@ const batchActions = computed(() => {
       </div>
     </div>
     <el-card class="filter-card" shadow="never">
-      <form class="filter-form" @submit.prevent="load(true)">
+      <form class="filter-form" aria-label="筛选留言" @submit.prevent="search">
         <el-input
           v-model="filters.userId"
           aria-label="作者 ID"
@@ -181,106 +207,31 @@ const batchActions = computed(() => {
           aria-label="结束时间"
           value-format="YYYY-MM-DDTHH:mm:ss.SSSZ"
         />
-        <el-button native-type="submit" type="primary">查询</el-button>
-        <el-button @click="reset">重置</el-button>
+        <el-button native-type="submit" type="primary" :disabled="table?.disabled">查询</el-button>
+        <el-button :disabled="table?.disabled" @click="reset">重置</el-button>
       </form>
     </el-card>
     <RequestError :message="error" @retry="load()" />
-    <el-card shadow="never">
-      <div class="card-heading">
-        <h2>留言列表</h2>
-      </div>
-      <BatchActions
-        ref="batch" resource="/admin/messages" id-key="messageId"
-        :rows="rows" :table="batchTable" :actions="batchActions"
-        :disabled="loading || busy || !!error" @completed="load()"
-        :selectable="row => !row.replyPager"
-      />
-      <el-table
-        ref="batchTable"
-        :key="tableKey"
-        @selection-change="batch?.select"
-        v-if="!error"
-        v-loading="loading || busy || batch?.busy"
-        :data="rows"
-        row-key="messageId"
-        :lazy="!filtered"
-        :load="loadReplies"
-        :tree-props="{ children: 'children', hasChildren: 'hasChildren', checkStrictly: true }"
-        border
-        stripe
-        empty-text="暂无留言"
-      >
-        <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column label="留言内容" min-width="300" class-name="discussion-content">
-          <template #default="{ row }">
-            <template v-if="row.replyPager">
-              <span v-if="row.error" role="alert" class="error-text">{{ row.error }}</span>
-              <el-button type="primary" link :disabled="loading || busy || repliesLoading || batch?.busy" @click="loadMore(row)">
-                {{ row.error ? '重试加载回复' : '加载更多回复' }}
-              </el-button>
-            </template>
-            <button v-else class="table-title discussion-preview" :title="row.content" @click="view(row)">{{ row.content }}</button>
-          </template>
-        </el-table-column>
-        <el-table-column label="昵称" width="140" show-overflow-tooltip>
-          <template #default="{ row }"><span v-if="!row.replyPager">{{ row.author?.nickname || '已删除用户' }}</span></template>
-        </el-table-column>
-        <el-table-column v-if="filtered" prop="parentId" label="回复目标 ID" width="190">
-          <template #default="{ row }">{{ row.parentId || '—' }}</template>
-        </el-table-column>
-        <el-table-column label="可见性" width="110">
-          <template #default="{ row }">
-            <span v-if="!row.replyPager" :class="['status-tag', { 'is-purple': row.isSecret }]">{{ row.isSecret ? '悄悄话' : '公开留言' }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column label="状态" width="110">
-          <template #default="{ row }"><StatusTag v-if="!row.replyPager" :value="row.status" kind="review" /></template>
-        </el-table-column>
-        <el-table-column label="发表时间" width="175">
-          <template #default="{ row }"><span v-if="!row.replyPager">{{ formatTime(row.createTime) }}</span></template>
-        </el-table-column>
-        <el-table-column label="操作" width="250" fixed="right">
-          <template #default="{ row }">
-            <template v-if="!row.replyPager">
-              <el-button type="primary" link @click="view(row)">详情</el-button>
-              <el-button
-                type="success"
-                v-if="can('blog:message:review', true) && row.status !== 1"
-                link
-                @click="review(row, 1)"
-              >
-                通过
-              </el-button>
-              <el-button
-                type="warning"
-                v-if="can('blog:message:review', true) && row.status !== 2"
-                link
-                @click="review(row, 2)"
-              >
-                驳回
-              </el-button>
-              <el-button type="primary" v-if="can('blog:message:review', true)" link @click="view(row, true)">
-                回复
-              </el-button>
-              <el-button type="danger" v-if="can('blog:message:moderate', true)" link @click="remove(row)">
-                删除
-              </el-button>
-            </template>
-          </template>
-        </el-table-column>
-      </el-table>
-      <ListPager
-        :page="page"
-        :page-size="pageSize"
-        :total="total"
-        :total-pages="totalPages"
-        :loading="loading || busy"
-        @change="changePage"
-        @size-change="changePageSize"
-      />
-    </el-card>
-    <el-dialog v-model="detailVisible" title="留言详情" width="760px" destroy-on-close>
+    <DiscussionTable ref="table" kind="message" :list="list" :actions="batchActions" :busy="busy">
+      <template #actions="{ row, disabled }">
+        <el-button link :disabled="disabled" @click="view(row)">查看</el-button>
+        <el-button
+          v-if="can('blog:message:review', true) && row.status !== 1"
+          link type="success" :disabled="disabled" @click="review(row, 1)"
+        >通过</el-button>
+        <el-button
+          v-if="can('blog:message:review', true) && row.status !== 2"
+          link type="warning" :disabled="disabled" @click="review(row, 2)"
+        >驳回</el-button>
+        <el-button
+          v-if="can('blog:message:review', true)" link :disabled="disabled" @click="view(row, true)"
+        >回复</el-button>
+        <el-button
+          v-if="can('blog:message:moderate', true)" link type="danger" :disabled="disabled" @click="remove(row)"
+        >删除</el-button>
+      </template>
+    </DiscussionTable>
+    <el-dialog v-model="detailVisible" title="留言详情" width="580px" destroy-on-close :close-on-click-modal="false">
       <DiscussionDetail v-if="detail" kind="message" :detail="detail" />
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>

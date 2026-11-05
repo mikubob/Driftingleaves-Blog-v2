@@ -1,5 +1,7 @@
 # 博客端 Front-Blog
 
+项目尚未上线，当前说明用于本地开发与构建。
+
 文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
 
 直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [API.md](../../docs/API.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
@@ -21,7 +23,7 @@
 | `components/BlogFooter.vue` | 保留页脚布局；公开配置、版权展示名、RSS 和 Sitemap 地址来自 V2 |
 | `components/TableOfContents.vue` | 保留桌面/移动目录、阅读进度与锚点交互 |
 | `view/Home, Category, Tag, Archive, Hot, Links, About` | 分类与标签文章页合并至本项目 `view/Taxonomy/index.vue`，路由和样式保留；其余页面替换数据读取，归档按 V2 月份分页 |
-| `view/Article, Message` | 保留原正文、点赞动画、表单和布局；评论/留言行提取到 `DiscussionList.vue`，支持 V2 逐层回复分页 |
+| `view/Article, Message` | 保留正文、点赞动画、表单和布局；`DiscussionList.vue` 将整组回复平铺为一层，保留真实回复对象 |
 | `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 迁入 `src/shared/`，继续用于原表单 |
 | `assets/styles`、`assets/font`、`assets/images/bgc.webp` | 直接复用原站样式、字体和背景 |
 
@@ -61,11 +63,11 @@ pnpm preview
 
 - 文章正式地址为 `/articles/:slug`，与后端 RSS、站点地图和统计一致。搜索入口为 `/?search=`。
 - 文章、分类、标签、作者、归档、友链和回复均使用 V2 分页。字典和播放列表继续读取全部页。ID、外键、BIGINT 计数及分页总数保持字符串，不用浮点数转换；原 Element Plus 数字总数分页改为保留字符串的 `ListPager`。
-- 卡片字段通过 `articleView` 映射：`articleId → id`、`coverUrl → coverImage`、分类/标签对象转为原组件属性，正文优先使用 `markdownContent`，缺少原文时回退 `htmlContent`。不伪造缺失的地理位置、设备信息、分类计数或在线人数。
+- 卡片字段通过 `articleView` 映射：`articleId → id`、`coverUrl → coverImage`、分类/标签对象转为原组件属性，文章正文使用 `markdownContent`，评论和留言等内容继续使用各自的安全 HTML。不伪造缺失的地理位置、设备信息、分类计数或在线人数。
 - 原站访客会话、匿名昵称/邮箱输入和验证码不适用于 V2，已移除。密码与 OAuth 登录均固定有效 3 天（259200 秒）；localStorage 的 `dl-blog-session` 仅保存 Token 和固定到期时间，经 Bearer 发送给配置的 API。刷新或重新打开页面后先核验 `/blog/me`、`/blog/me/capabilities`，再恢复身份和权限，不续期；退出或核验失败清除持久凭据。浏览器禁用存储时仅本页有效。
 - 点赞、评论、留言和邮件订阅按 V2 权限操作。评论为纯文本，待审和驳回评论仅本人保留可见；发表后不可再次修改，可查询和删除本人评论。评论不支持 Markdown 或悄悄话。留言发表后同样不可再次修改，保留 Markdown、悄悄话、回复通知意愿及本人查询/删除。私密范围和审核状态始终由服务端决定。
 - 文章使用 MdPreview 展示公开详情的 Markdown，缺少原文字段时回退安全 HTML，仍保留正文上方的阅读排版选择并应用六种主题；留言继续使用后端清理后的 HTML。保留目录和锚点。公开封面/附件支持文章上下文路径，跨域时指向配置的 API，不读取后台私密文件。
-- 原在线访客 WebSocket 在 V2 没有对应接口，已移除该统计项和连接。今日浏览、总浏览、访客总量等使用真实公开统计。不把接口失败展示成空内容；读取提供加载、错误与重试。
+- 在线人数通过本端票据与 WebSocket 接入，站点统计展示 Home/Blog/Cv 合计；今日浏览、总浏览、访客总量使用公开统计接口。不把接口失败展示成空内容；读取提供加载、错误与重试。
 - 原 RSS 弹窗改为登录账号订阅，待验证邮箱不会标成已订阅。邮件确认页读取 `#confirmTicket` 后清除地址片段，登录同一账号后提交；退订页读取 `#unsubscribeTicket` 后，由用户点击确认才提交。刷新后需重新打开完整邮件链接。
 - 资料编辑原样传递详情 `X-Revision` 至 `If-Revision`。412 保留输入并提示重新获取后合并，不自动覆盖。密码不 trim、不截断，遵守 8–64 字符和 UTF-8 ≤72 字节；修改成功后重新登录。个人中心提供第三方绑定/解绑，绑定弹窗核对来源、窗口和原 Token，解绑成功后重新登录；未新增清除密码入口。
 - 浏览统计只持久化随机 `dl-blog-visitor`，不是身份。路径与来源剔除 query/fragment；文章公开详情成功后带字符串 articleId 采集，不重放写请求。
@@ -76,15 +78,18 @@ OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_C
 
 ## 构建检查
 
-项目已按要求移除自动化测试源码、浏览器检查脚本和测试执行入口；可使用 `pnpm build` 检查生产构建。
+使用 `pnpm build` 检查生产构建。
+
+评论和留言点击“查看回复”后先预览 3 条，展开后可继续分页加载。点击回复对象的昵称可查看原文摘要。删除回复后重新查询整组，避免显示已一并删除的后代。
+
+前后端需同步更新：公开列表的 `parentId` 查询和 `replyCount` 现在涵盖全部可见后代，响应新增 `replyTarget` 和 `replyable`；发表时的 `parentId` 仍是直接回复对象。后台逐层分页保持原样，无数据库迁移。
 
 ## 服务器异常与限流
 
 网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 显示参考 FeiTwnd-Website 对应端的全屏 404 样式；429 保留 Retry-After 秒数提示。请求仍失败且不自动重放，普通校验、鉴权与版本冲突沿用原逻辑。点击“返回首页”重新进入站点；如有未提交编辑，应重新加载后再操作。统计采集失败保持静默，不切换异常页。
 
-公共异常边界验证：在仓库根目录执行 `node --test Front/shared/requestFailure.test.mjs`。
 
-旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。浏览器 smoke 可分别传入 `no-preference`、`reduce`，通过真实 transitionrun / animationstart 验证两种系统偏好下的主要动效。
+旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。
 
 图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言创建和回复同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
 
@@ -92,24 +97,6 @@ OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_C
 
 阅读主题选择复用 Element Plus 并跟随网站明暗配色；正文背景透明，夜间不再嵌套纯黑内容块。Markdown 与旧 HTML 文章都使用相同的代码工具栏和本地高亮配色，保留行号、复制和折叠。
 
-## 导航与登录回归
+## 生产包体积
 
-博客导航、主题开关和播放列表支持键盘操作；动画、过渡和平滑滚动始终启用，不受 Windows 动画效果或系统“减少动态效果”设置影响。
-
-在博客目录启动 `pnpm dev --port 5180`，在管理端目录启动 `pnpm dev --port 5178`，然后从仓库根目录执行：
-
-```powershell
-npx --no-install --package @playwright/cli playwright-cli -s=frontend-polish open about:blank
-npx --no-install --package @playwright/cli playwright-cli -s=frontend-polish run-code --filename Front/Front-Blog/tests/navigation.cjs
-```
-
-覆盖桌面与窄屏键盘导航、主题切换、选曲、搜索、验证码失败恢复、登录平台失败重试和动效偏好。截图保存在忽略的 `output/playwright/frontend-polish/`。HTTP 与音频播放使用替身，不验证真实登录、OAuth、音频解码或后端写入。
-
-`tests/ui-actions.cjs` 复用博客 5180 端口，验证窄屏长昵称取消回复、正文保留、长词清除搜索、取消喜欢，以及个人中心和侧栏订阅弹窗的只读邮箱与缺失提示：
-
-```powershell
-npx --no-install --package @playwright/cli playwright-cli -s=ui-actions open about:blank
-npx --no-install --package @playwright/cli playwright-cli -s=ui-actions run-code --filename Front/Front-Blog/tests/ui-actions.cjs
-```
-
-仅使用虚构 HTTP 数据，不提交真实评论、修改订阅或连接业务库。
+Element Plus 组件、提示框和选择器在使用位置导入各自样式，入口只加载基础变量，避免完整组件库 CSS。阅读器随文章路由加载，黄历使用原有动态导入；保留全部阅读主题、动效和现有功能。

@@ -1,13 +1,6 @@
 # DriftingLeavesV2 数据库设计
 
-> 当前项目已按要求移除全部后端测试类及辅助类、前端测试源码和浏览器检查脚本，同时移除专用测试依赖与执行入口。下文测试类名、测试命令和验收数量仅作历史记录，当前不再提供这些测试；现有备份、验收日志及业务 SQL 保留。
-
-当前实现状态（2026-10-31，Asia/Shanghai）：API 中 159 个方法/路径均有实际消费者，28 张表已有实体，56 个后台写方法接入事务审计。第 22 章作者发现、公开分类/标签详情、本人点赞列表及回收站永久删除已实现，前台文章支持 authorId 组合筛选。较早分章验收为历史记录，最新验证见后端运行说明。
-
-
-适用 MySQL **8.0.16+**，InnoDB、utf8mb4。更新日期：2026-11-04。
-
-这是新项目的空库建库基线，现有 28 张表已全部映射。API 共 159 个方法/路径，56 个后台写方法接入成功同事务、失败回滚后独立审计。主页/简历、留言、音乐、订阅、访客与浏览已有真实业务消费者；文件 HTTP 与文章/存储已接通，日志有独立 ALL 查询与清理。`Front/` 尚无前端工程。第 22 章沿用现有表、约束和索引，只增加永久删除权限及菜单种子，不向业务库导入基线。分类删除 SET NULL、标签关联 CASCADE；文章永久删除按评论子到父清理，正文/标签关联/点赞级联删除，浏览关联置空，文件、字典和历史审计保留。访问 PV/UV 按保留明细，不反向扣减文章累计阅读。运行与隔离验证见[后端运行说明](../docs/后端运行说明.md)。
+项目尚未上线。适用 MySQL **8.0.16+**、InnoDB、utf8mb4；当前 28 张表已有实体和业务消费者，四个前端工程均已建立。表结构、权限、菜单和种子数据统一维护在[空库初始化基线](drifting_leaves_v2.sql)，不维护旧版本增量升级脚本。运行配置见[后端运行说明](../docs/后端运行说明.md)。
 
 ## 地域与设备字段
 
@@ -203,7 +196,7 @@ WHERE u.user_id = ? AND u.status = 1;
 - 外键使用 RESTRICT 保护作者、评论、菜单引用；纯关联表及文章正文随主记录 CASCADE 删除；分类删除后文章分类 SET NULL。文章永久清理须先按回复链从叶子清理评论，再删除文章；应用普通删除只写回收站时间。
 - 评论父节点使用 `(parent_id, article_id)` 复合外键，阻止跨文章回复；父节点写入时由服务端验证已通过审核且可见，回复关系创建后不允许修改，避免环。删除评论时物理移除目标及全部子回复；前台只展示审核通过且祖先可见的内容。
 - 点赞/用户角色/角色菜单/角色权限/文章标签都用复合主键去重；不维护易失真的点赞数和评论数副本，按明细统计。浏览数可原子递增。
-- 第9章已用真实明细实现评论/点赞：评论写入先锁操作者、comment配置、文章及评论；点赞先锁操作者再锁文章，全部写事务为 READ COMMITTED。锁后复核原Token、独立操作范围和状态。comment配置只接受不公开、最多16KiB的两项布尔值enabled/reviewRequired，缺失或格式异常返回503；第10章提供配置维护HTTP，与评论写入锁同一配置行。公开评论、回复入口和文章计数共用完整祖先链；0/2隐藏分支，计数只含审核通过且全部祖先可见的记录。本人删除固定user_id，后台query/review/moderate分别在SQL限制文章author_id。审核版本包含持久化业务字段，两种分支删除无版本要求。blog_article_like按完整复合键幂等插入/删除，文章列表、详情和热门榜实时取数，互动不改变文章X-Revision。
+- 评论与点赞使用真实明细：评论写入先锁操作者、comment配置、文章及评论；点赞先锁操作者再锁文章，全部写事务为 READ COMMITTED。锁后复核原Token、独立操作范围和状态。comment配置只接受不公开、最多16KiB的两项布尔值enabled/reviewRequired，缺失或格式异常返回503；后台提供配置维护HTTP，与评论写入锁同一配置行。公开评论、回复入口和文章计数共用完整祖先链；0/2隐藏分支，计数只含审核通过且全部祖先可见的记录。本人删除固定user_id，后台query/review/moderate分别在SQL限制文章author_id。审核版本包含持久化业务字段，两种分支删除无版本要求。blog_article_like按完整复合键幂等插入/删除，文章列表、详情和热门榜实时取数，互动不改变文章X-Revision。
 - 时间统一由应用/连接使用约定时区（建议 UTC）；DATETIME 不自动转换时区，部署时连接、应用和展示要保持一致。发布状态必须有发布时间；禁止未来发布时间的规则由发布接口验证。
 - 文章索引覆盖前台状态过滤、分类筛选、作者管理；评论覆盖文章展示、用户查询及审核队列；菜单覆盖父节点排序。新增浏览明细覆盖站点/路径、访客、用户、文章与时间查询；中文全文检索仍按实际查询选择。
 - `blog_file` 记录存储键，不保存对象存储密钥。文件类型、大小、路径安全、私密文章附件访问和“文件仍被文章引用时能否删除”由应用/存储层校验；数据库中的元数据不代表文件已经上传成功，存储删除失败需保留元数据供重试。
@@ -216,59 +209,21 @@ WHERE u.user_id = ? AND u.status = 1;
 
 暂未引入组织部门、租户、聊天、相册、文章版本、独立归档表和额外鉴权会话表；这些不属于当前项目的必需部分。第三方登录仅增加身份绑定，Session/Token 由 Sa-Token 及其存储管理。
 
-## 当前实体映射
+## 实体映射与事务
 
-第12章共享模型核对沿用现有19表实体、DTO/VO和业务转换，不新增表、列、状态枚举、引用表、版本列或缓存计数。身份/授权、菜单、文章、字典、互动、友链配置与文件的状态、输入和响应已对照API第12章逐项记录；第1..8章入口补齐严格查询及无请求体检查，未进入Service的拒绝请求不写业务或业务审计。分类/标签外键对文章版本、评论父链对公开计数、配置行锁对审核策略、文件锁对引用、授权变化对会话和成功同事务/失败回滚后审计，继续沿既有实现。
+28 张表在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射。主外键使用 Long，`view_count`、`size_bytes` 使用 BigInteger，配置 JSON 在模型中保留原始字符串。复合主键关联表不虚构单 ID，关联写入使用明确 SQL。
 
-角色/权限写入在目标行锁后重查原Token与独立权限，角色grants在权限集合锁后复核；文章创建在分类/标签锁后复核。等待期间撤销会话时整笔拒绝，不保存元数据/正文/关联或成功日志，失败日志在回滚后独立提交；没有改变固定保护锁、外键或现有事务隔离级别。
+后端依赖保持 `server → common/entity`。事务、锁后权限复核、资源归属和审计保留在业务服务中；成功审计与业务共同提交，失败审计在回滚后独立写入。MyBatis 一级缓存限定 STATEMENT，避免锁后复用锁前结果。
 
-第12章最终验收：2026-10-30 20:40:41（Asia/Shanghai），用户指定完整 Maven verify 退出0，210项全部通过（common15、server195）；其中IdentityIntegrationTest70、ArticleIntegrationTest112，共182项真实隔离MySQL/Redis集成，无失败、错误或跳过。新增7项真实行为测试，执行会话39527，日志`Backend/target/verification/verify-part12-final.log`及退出码`verify-part12-final.exit-code.txt`；历史日志保留，可执行jar已重新打包。只向新建隔离实例导入现有基线，未修改SQL结构、执行业务库迁移或连接业务库；未创建worktree、切分支、重置、提交或推送。第15..20章HTTP、真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证。
+## 初始化权限
 
-home_profile/home_social_link、cv_experience/cv_skill、blog_message、blog_music、blog_rss_subscription、blog_visitor/blog_page_view这9表均已有实体及实际消费者，28表全部映射。sys_operation_log沿用既有写入并增加独立列表/详情与清理，55个后台写方法接入事务审计。未执行业务数据库初始化或迁移。
+初始化脚本包含文章永久删除、用户删除以及当前评论/留言权限，显式授予内置角色和菜单。后续开发直接维护基线，不向已有开发库自动补权或执行删除。
 
-第11章沿用 blog_file 和既有文件权限种子，不改表结构、不增加引用表或版本列。文件元数据不可编辑，预览与删除按各自权限计算 uploader_id 范围；后台文章附件还独立限制文章作者范围，公开附件只接受当前 PUBLIC 文章的 Markdown/封面真实引用。上传先校验临时图片，再写随机存储键，最后提交元数据与成功审计；数据库失败清理新对象。删除持同一文件锁按主键每批100篇扫描全部状态文章，包括草稿、私密、下架和回收站；仍引用409，存储失败503并保留元数据。对象已删但提交失败时可重试删除，不宣称存储和MySQL共同事务。当前部署默认启用OSS，新上传使用oss；本地目录仅供临时校验及历史local兼容，不迁移历史对象，不改变已有Bucket或对象权限。
-
-全部28表在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射，不共享虚构时间基类。主外键用 Long，`view_count` / `size_bytes` 用 BigInteger 覆盖 UNSIGNED 上限，站点 `config_value` 用原始 JSON String，解析留在应用层。五类复合主键实体不声明 `@TableId`，本期不为它们建立 BaseMapper；用户角色关联通过明确 SQL 插入。OperationLogMapper保留服务端写入，并为独立权限/ALL下的后台查询和清理提供明确SQL；没有客户端创建/编辑日志。
-
-时间默认值和更新时间由 MySQL 维护，应用不做重复填充，连接初始化为 UTC。身份、文章及互动写事务使用 READ COMMITTED，授权/菜单、后台文章详情和评论分页/详情读取使用一致快照；MyBatis 一级缓存限定 STATEMENT，锁后不会复用锁前正文或授权。测试只向新建的隔离实例导入本基线，没有执行开发或业务数据库初始化。
-
-第9章验收：2026-10-30 17:27:05（Asia/Shanghai），完整verify退出0，157项通过，其中132项真实隔离MySQL/Redis集成，无失败/错误/跳过；执行会话6664，日志`Backend/target/verification/verify-part9.log`。本轮只向新建隔离实例导入现有基线，未连接业务库，未变更SQL或引入迁移；评论/点赞11接口与文章明细计数已联动，文件及站点配置HTTP仍待对应章节。
-
-
-第10章实现沿用现有 blog_friend_link/blog_site_config 和权限种子，不变更SQL结构。友链审核/排序/下架/删除直接反映到公开分页；URL和名称没有唯一限制。配置只维护site/comment/message，公开SQL同时限制site和is_public=1，值返回对象；不保存凭据或任意未知字段。写事务先锁操作者、再锁友链或配置，锁后重新检查原Token、身份、独立权限和版本；四个写方法接入既有事务审计。配置JSON按固定字段顺序生成业务版本，更新时间和JSON属性顺序不影响版本；comment配置更新与新增评论共用原配置行锁，策略立即生效，不另建缓存。
-
-
-第10章验收：2026-10-30 19:34:32（Asia/Shanghai），用户既定完整Maven verify退出0，BUILD SUCCESS。178项全部通过：common14、server164；其中IdentityIntegrationTest66、ArticleIntegrationTest87，共153项真实隔离MySQL/Redis集成，无失败、错误或跳过。本章新增21项真实行为测试，复用ArticleIntegrationTest/IsolatedServices；先完成相关87项测试，再完成全模块验证。完整执行会话22663，日志`Backend/target/verification/verify-part10.log`，退出码`Backend/target/verification/verify-part10.exit-code.txt`；相关日志`test-part10-r2.log`，首轮测试构造问题及修正前日志保留。可执行jar已重新打包。
-第1..10章累计80接口，后台30个写方法接入审计；友链与公开列表、配置HTTP与评论策略已实际连通。未修改SQL结构、依赖版本或老项目，未连接业务库、未创建worktree或切分支、未提交或推送；真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证。
-
-第11章最终验收：2026-10-30 19:58:54（Asia/Shanghai），用户指定完整 Maven verify 退出0，BUILD SUCCESS。203项全部通过：common15、server188；其中 IdentityIntegrationTest66、ArticleIntegrationTest109，共175项真实隔离MySQL/Redis集成，无失败、错误或跳过。本章新增25项测试：22项真实集成、2项实际本地/可选OSS存储接入测试、1项OSS上传失败随机键补偿测试；OSS网络仅使用SDK替身，不代表真实云验证。完整执行会话65274，日志`Backend/target/verification/verify-part11-accepted.log`，退出码`Backend/target/verification/verify-part11-accepted.exit-code.txt`；相关109项测试日志`test-part11-r2.log`。早期日志保留，首轮四处测试构造问题已修正；最后缺失子目录删除重试修正已包含在最终验收。可执行jar已重新打包。
-
-第1..11章累计87个接口，后台32个写方法接入审计。文件上传、元数据、前后台读取、文章引用和删除补偿已连通；默认local，显式启用既有OSS配置后新上传为oss，旧对象不迁移。未修改SQL结构、依赖版本或老项目，未连接业务库，未创建worktree、切分支、重置、提交或推送；既有未提交/未跟踪成果保留。第15..20章未扩展。真实OSS/OAuth、浏览器联调、独立jar HTTP冒烟及压测未验证；存储与MySQL没有共同事务，补偿失败仍需人工检查孤立对象。
-
-
-最终验收（2026-10-31 01:35:02，Asia/Shanghai）：用户指定完整Maven verify退出0、BUILD SUCCESS。244项全部通过：common15、server229；IdentityIntegrationTest70、ArticleIntegrationTest143，共213项真实隔离MySQL/Redis集成，无失败、错误或跳过。本轮新增31项真实业务集成及3项SMTP装配/错误边界测试；实际数据库验证站点地图50000条和UTF-8编码后50MiB分片，确认票据并发消费/过期、8类新资源目标锁及主页保护/所选用户/单例锁等待后的原Token撤销，全部通过。专项34项通过日志为`Backend/target/verification/test-remaining-business-r4.log`，此前夹具修正与失败日志保留。
-
-完整验收执行会话20213，日志`Backend/target/verification/verify-remaining-final.log`，退出码`Backend/target/verification/verify-remaining-final.exit-code.txt`；server可执行jar已重新打包。逐方法/路径核对153个文档声明与153个Controller声明完全对应，无缺少/额外路由，28实体、55个后台审计写方法；清单`Backend/target/verification/remaining-implementation.md`，路由证据`Backend/target/verification/remaining-route-check.txt`。4份文档UTF-8/代码块/本地链接与锚点及git diff --check检查结果见`Backend/target/verification/remaining-doc-check.txt`。
-
-只使用临时目录、随机端口的真实隔离MySQL/Redis，未连接业务库、未导入业务库基线或修改SQL结构，未创建worktree、切换分支、重置、提交、推送或覆盖既有成果。真实SMTP/OSS/OAuth、浏览器联调、独立jar HTTP冒烟和压测未验证；部署需填写明确站点/API基址、SMTP和固定前端完成页。通知及失败审计仍为进程内投递，不保证跨宕机；存储/MySQL补偿失败仍需人工处理。留言公开分页目前读取全部轻量父链节点，数量增长导致扫描不可接受时再演进查询。
-
-
-OSS默认配置验收：2026-10-31 01:49:03（Asia/Shanghai），用户既定完整Maven verify退出0、BUILD SUCCESS，245项全部通过（common15、server230），真实隔离MySQL/Redis集成仍213项，无失败、错误或跳过。新增InfrastructureConfigTest实际加载application.yml，验证默认启用OSS、缺少凭据拒绝启动、虚构边界参数可装配真实SDK；不访问云端。两类集成测试显式禁用部署OSS，继续用临时目录和隔离数据库/Redis；server可执行jar已重新打包。执行会话95436，日志`Backend/target/verification/verify-oss-default-config.log`，退出码`Backend/target/verification/verify-oss-default-config.exit-code.txt`。YAML解析、V2独立DB_URL/禁止初始化/上传限制/Bearer保留及git diff --check通过。
-
-当前默认配置参考老项目非秘密参数，OSS上传需要运行环境提供OSS_ACCESS_KEY_ID和OSS_ACCESS_KEY_SECRET；未把旧密码或AccessKey写入仓库。未启动生产应用、连接业务库或向真实Bucket/SMTP发送请求，未修改老项目、提交或推送。历史local只保留读取兼容和临时校验；此前默认local的分章验收为历史记录，以本轮默认OSS配置为准。
-
-## 第 22 章权限初始化与验收（2026-10-31）
-
-初始化脚本已包含 `blog:article:purge` 及文章管理按钮，显式授予内置管理员角色，不授予作者或会员；表结构与外键保持不变。项目尚未上线，权限与菜单统一随空库初始化，不再维护单独的权限增量脚本。初始化脚本不执行文章删除。
-
-历史验收：完整 Maven verify 于 2026-10-31 03:24:43（Asia/Shanghai）通过，258 项无失败、错误或跳过，其中 226 项真实隔离 MySQL/Redis 集成。当时覆盖权限增量实际插入、重复执行和已有数字 ID 保留，以及永久删除深层评论、级联清理、历史浏览保留、文件/字典不删除、审计失败回滚。当前已将增量测试改为初始化权限与菜单授权验证；历史记录不代表本次验证结果。未向业务库执行基线、增量或数据删除；完整历史日志及部署说明见[后端运行说明](../docs/后端运行说明.md)。
-
-
-用户批量管理：新增固定权限 `sys:user:delete`（初始化 ID=84）及用户页删除按钮，显式授予内置 admin，不授予 author/member；不扩大最后有效管理员的固定权限名单。批量启停继续复用 `sys:user:update`。删除用户遵循现有外键：文章、评论、文件、主页资料、留言引用时拒绝；角色/OAuth/点赞/订阅级联清理，浏览记录及日志保留并将 user_id 置 null。表结构不变，沿用当前未上线项目的空库初始化策略，不执行业务库变更。
+用户删除遵循外键：文章、评论、文件、主页资料、留言引用时拒绝；角色、OAuth、点赞和订阅关联级联清理，浏览记录及日志保留并将 user_id 置 null。保留最后一个有效管理员。
 
 ### 邮箱登录与后台认证
 
-注册保存验证过的 `sys_user.email`，沿用已有唯一键，不修改表结构或迁移存量数据。后台仅接受账密、账号当前邮箱的邮件验证码和图形验证码组合认证；初始管理员与历史管理员必须预先配置可收信的账号邮箱及本站密码。未配置邮箱的旧账号可先使用前台账密或已有第三方绑定登录维护资料，再重新登录后台。不要重新导入建库基线或将订阅邮箱直接覆盖到账号邮箱。
+注册保存验证过的 `sys_user.email`。后台仅接受账密、账号当前邮箱的邮件验证码和图形验证码组合认证；初始管理员需先维护可收信的账号邮箱及本站密码。账号邮箱与订阅邮箱各自验证，不相互覆盖。
 
 ### 评论和留言权限（2026-11-04）
 

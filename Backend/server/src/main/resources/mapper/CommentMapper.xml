@@ -3,7 +3,7 @@
 <!-- 只取作者公开展示字段，后台 SELF 始终限制所属文章作者。 -->
 <mapper namespace="com.xuan.mapper.CommentMapper">
     <sql id="columns">
-        c.*, u.nickname AS author_nickname, u.avatar AS author_avatar, a.title AS article_title
+        c.*, u.nickname AS author_nickname, u.avatar AS author_avatar, a.title AS article_title, c.user_id = a.author_id AS article_author
     </sql>
 
     <!-- 后台和本人列表共用筛选，后台的文章作者范围不能被评论者筛选扩大。 -->
@@ -19,21 +19,21 @@
         SELECT * FROM blog_site_config WHERE config_key = 'comment' FOR UPDATE
     </select>
 
-    <!-- 已确认全部上级评论可见，当前层及回复计数额外保留当前用户自己的待审和驳回评论。 -->
-    <select id="publicPage" resultType="com.xuan.model.CommentRow">
-        SELECT<include refid="columns"/>,
-        (SELECT COUNT(*) FROM blog_comment r WHERE r.article_id = c.article_id
-        AND r.parent_id = c.comment_id AND (r.status = 1
-        <if test="viewer != null">OR r.user_id = #{viewer}</if>)) AS reply_count
+    <!-- 调用方已检查全部祖先可见，回复对象摘要只取已确认可见的父评论。 -->
+    <select id="publicRows" resultType="com.xuan.model.CommentRow">
+        SELECT <include refid="columns"/>,
+            <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
+            ru.nickname AS reply_to_nickname, LEFT(p.content, 120) AS reply_to_content
         FROM blog_comment c JOIN blog_article a ON a.article_id = c.article_id
         JOIN sys_user u ON u.user_id = c.user_id
-        WHERE c.article_id = #{article} AND (c.status = 1
-        <if test="viewer != null">OR c.user_id = #{viewer}</if>)
+        LEFT JOIN blog_comment p ON p.comment_id = c.parent_id AND p.article_id = c.article_id
+        LEFT JOIN sys_user ru ON ru.user_id = p.user_id
+        WHERE c.article_id = #{article} AND c.comment_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
         <choose>
-            <when test="parent != null">AND c.parent_id = #{parent}</when>
-            <otherwise>AND c.parent_id IS NULL</otherwise>
+            <when test="replies">ORDER BY c.create_time, c.comment_id</when>
+            <otherwise>ORDER BY c.create_time DESC, c.comment_id DESC</otherwise>
         </choose>
-        ORDER BY c.create_time DESC, c.comment_id DESC
     </select>
 
     <!-- total 和列表共用过滤；非公开文章不影响本人和后台处理历史评论。 -->
@@ -48,14 +48,18 @@
         ORDER BY c.create_time DESC, c.comment_id DESC
     </select>
 
-    <!-- 每次只查一层，不按前台审核状态隐藏回复；列表与分页总数共用相同条件。 -->
+    <!-- 按记录分页，不按前台审核状态隐藏回复；parent仅用于兼容直接回复查询。 -->
     <select id="adminPage" resultType="com.xuan.model.CommentRow">
         SELECT <include refid="columns"/>,
+        <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
+        ru.nickname AS reply_to_nickname, LEFT(p.content, 120) AS reply_to_content,
         EXISTS (SELECT 1 FROM blog_comment r WHERE r.parent_id = c.comment_id
             AND r.article_id = c.article_id) AS has_children
         FROM blog_comment c
         JOIN blog_article a ON a.article_id = c.article_id
         JOIN sys_user u ON u.user_id = c.user_id
+        LEFT JOIN blog_comment p ON p.comment_id = c.parent_id AND p.article_id = c.article_id
+        LEFT JOIN sys_user ru ON ru.user_id = p.user_id
         <where>
             <include refid="pageFilters"/>
             <choose>
@@ -71,9 +75,13 @@
         <choose>
             <when test="lock">SELECT c.* FROM blog_comment c</when>
             <otherwise>SELECT
-                <include refid="columns"/>
+                <include refid="columns"/>,
+                <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
+                ru.nickname AS reply_to_nickname, LEFT(p.content, 120) AS reply_to_content
                 FROM blog_comment c
                 JOIN sys_user u ON u.user_id = c.user_id JOIN blog_article a ON a.article_id = c.article_id
+                LEFT JOIN blog_comment p ON p.comment_id = c.parent_id AND p.article_id = c.article_id
+                LEFT JOIN sys_user ru ON ru.user_id = p.user_id
             </otherwise>
         </choose>
         WHERE c.comment_id = #{id}

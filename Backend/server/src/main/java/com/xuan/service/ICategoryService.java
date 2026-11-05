@@ -8,7 +8,6 @@ import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogCategory;
 import com.xuan.result.PageResult;
-import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CategoryProfileVO;
 import com.xuan.vo.CategoryPublicDetailVO;
@@ -21,7 +20,7 @@ import java.util.List;
 public interface ICategoryService extends IService<BlogCategory> {
 
     /** 获取展示中的分类，只返回前台需要的资料。 */
-    PageResult<Category> publicCategories(PageQueryDTO query);
+    PageResult<CategoryPublicDetailVO> publicCategories(PageQueryDTO query);
 
     /** 按大小写敏感 slug 查询展示中的分类，计数只含公开文章。 */
     CategoryPublicDetailVO publicDetail(String slug);

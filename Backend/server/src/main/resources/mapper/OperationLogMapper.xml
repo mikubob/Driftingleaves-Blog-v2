@@ -4,7 +4,8 @@
 <mapper namespace="com.xuan.mapper.OperationLogMapper">
     <select id="logPage" resultType="com.xuan.vo.OperationLogVO">
         SELECT
-        log_id,user_id,operation_type,operation_target,target_id,permission_code,result,error_message,ip_address,operation_time
+        log_id,user_id,operation_type,operation_target,target_id,permission_code,result,error_message,ip_address,operation_time,
+        JSON_UNQUOTE(JSON_EXTRACT(operation_data, '$.selectedCount')) AS selected_count
         FROM sys_operation_log
         <where>
             <if test="user != null">AND user_id=#{user}</if>

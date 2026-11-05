@@ -5,9 +5,13 @@ export function setRequestFailureHandler(handler = () => {}) {
   onFailure = handler
 }
 
-/** 报告请求错误，统计请求失败时不弹出错误页，不中断已加载的公开内容。 */
+/** 报告请求错误，统计及后台对话分页失败由原界面处理，保留已加载内容。 */
 export function reportRequestFailure(error, path) {
-  if (!/^\/(home|blog|cv)\/analytics\/(page-views|online\/tickets)$/.test(path.split('?')[0])) {
+  const route = path.split('?')[0]
+  if (/^\/admin\/(comments|messages)\/[1-9]\d*\/conversation$/.test(route)) {
+    return error
+  }
+  if (!/^\/(home|blog|cv)\/analytics\/(page-views|online\/tickets)$/.test(route)) {
     onFailure(error)
   }
   return error

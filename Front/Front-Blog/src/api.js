@@ -80,6 +80,8 @@ function model(value, fields) {
 const author = (value) => model(value, { userId: isId, nickname: text, avatar: nullableText })
 const category = (value) => model(value, { categoryId: isId, categoryName: text, slug })
 const tag = (value) => model(value, { tagId: isId, tagName: text, slug })
+const categoryWithCount = (value) => category(value) && count(value.articleCount)
+const tagWithCount = (value) => tag(value) && count(value.articleCount)
 const navigation = (value) => model(value, { articleId: isId, title: text, slug })
 const article = (value) => model(value, {
   articleId: isId, title: text, slug, summary: text, author,
@@ -108,6 +110,12 @@ const comment = (value) => model(value, {
   location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
   status: (item) => [0, 1, 2].includes(item),
 })
+const discussionDetails = (value) => model(value, {
+  siteAuthor: (item) => item === undefined || typeof item === 'boolean',
+  siteAdmin: (item) => item === undefined || typeof item === 'boolean',
+  replyable: (item) => typeof item === 'boolean',
+  replyTarget: (item) => item === null || model(item, { nickname: nullableText, content: text }),
+})
 const session = (value) => model(value, {
   tokenType: (item) => item === 'Bearer', accessToken: (item) => text(item) && !!item, user: me,
 })
@@ -119,8 +127,8 @@ function validateData(path, data, method) {
   let check
   const pageModels = {
     '/blog/articles': article,
-    '/blog/categories': category,
-    '/blog/tags': tag,
+    '/blog/categories': categoryWithCount,
+    '/blog/tags': tagWithCount,
     '/blog/authors': (item) => author(item) && count(item.articleCount),
     '/blog/archives': (item) => model(item, { month: (month) => /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month), articleCount: count }),
     '/blog/links': (item) => model(item, { linkId: isId, linkName: text, url: text, avatar: nullableText, description: nullableText }),
@@ -128,14 +136,14 @@ function validateData(path, data, method) {
       musicId: isId, title: text, artist: nullableText, audioUrl: text, lyricUrl: nullableText,
       lyricType: (type) => type === null || ['lrc', 'txt', 'json'].includes(type),
     }) && (item.lyricUrl === null) === (item.lyricType === null),
-    '/blog/messages': (item) => message(item) && count(item.replyCount),
+    '/blog/messages': (item) => message(item) && count(item.replyCount) && discussionDetails(item),
     '/blog/me/messages': message,
     '/blog/me/comments': comment,
     '/blog/me/liked-articles': (item) => model(item, { article, likedAt: time }),
   }
   if (read && (pageModels[route] || /^\/blog\/articles\/[1-9]\d*\/comments$/.test(route))) {
     const itemCheck = pageModels[route] || ((item) => comment(item)
-      && count(item.replyCount) && (item.author === null || author(item.author)))
+      && count(item.replyCount) && (item.author === null || author(item.author)) && discussionDetails(item))
     check = (value) => model(value, {
       page: Number.isInteger, pageSize: Number.isInteger, total: count, totalPages: count,
       records: (items) => Array.isArray(items) && items.every(itemCheck),
@@ -151,9 +159,9 @@ function validateData(path, data, method) {
   } else if (route.endsWith('/like')) {
     check = (value) => model(value, { liked: (item) => typeof item === 'boolean', likeCount: count })
   } else if (read && route.startsWith('/blog/categories/')) {
-    check = (value) => category(value) && count(value.articleCount)
+    check = categoryWithCount
   } else if (read && route.startsWith('/blog/tags/')) {
-    check = (value) => tag(value) && count(value.articleCount)
+    check = tagWithCount
   } else if (read && route.startsWith('/blog/authors/')) {
     check = (value) => author(value) && count(value.articleCount)
   } else if (route === '/blog/me' || route === '/blog/me/profile' || route === '/blog/auth/register') {

@@ -20,7 +20,6 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.CategoryProfileVO;
 import com.xuan.vo.CategoryPublicDetailVO;
@@ -59,10 +58,9 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "categories", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
-    public PageResult<Category> publicCategories(PageQueryDTO query) {
-        return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), null, true)
-                .convert(row -> new Category(row.getCategoryId(), row.getCategoryName(), row.getSlug(),
-                        row.getDescription(), row.getSortOrder())));
+    public PageResult<CategoryPublicDetailVO> publicCategories(PageQueryDTO query) {
+        return PageResult.from(categories.publicPage(new Page<>(query.page(), query.pageSize()),
+                LocalDateTime.now(ZoneOffset.UTC)));
     }
 
     /** 公开入口不因后台 Token 放宽分类状态，也不返回业务版本。 */
@@ -82,7 +80,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogCategory> listCategories(CategoryQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), query, false));
+        return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), query));
     }
 
     /** 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。 */

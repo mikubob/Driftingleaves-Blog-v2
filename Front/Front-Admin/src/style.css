@@ -276,29 +276,6 @@ h2 {
   text-decoration: underline;
 }
 
-/* 保留树表的逐层缩进，让展开箭头和正文处于同一行。 */
-.discussion-content .cell {
-  display: flex;
-  align-items: center;
-}
-
-.discussion-content .el-table__indent,
-.discussion-content .el-table__expand-icon,
-.discussion-content .el-table__placeholder {
-  flex-shrink: 0;
-}
-
-/* 评论和留言列表只预览一行，完整正文在详情中查看。 */
-.discussion-preview {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .table-secondary {
   margin-top: 5px;
   color: #909399;
@@ -388,6 +365,11 @@ h2 {
   flex-wrap: wrap;
   gap: 6px;
   max-width: 100%;
+}
+
+.discussion-list .el-pagination__sizes,
+.conversation-drawer .el-pagination__sizes {
+  min-width: 100px;
 }
 
 .page-tabs {

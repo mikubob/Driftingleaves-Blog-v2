@@ -26,6 +26,7 @@ public class InteractionRequestAdvice {
         Set<String> allowed = switch (route) {
             case "GET /blog/articles/{articleId}/comments" -> Set.of("page", "pageSize", "parentId");
             case "GET /blog/me/comments" -> Set.of("page", "pageSize", "articleId", "status");
+            case "GET /admin/comments/{commentId}/conversation" -> Set.of("page", "pageSize");
             case "GET /admin/comments" -> Set.of("page", "pageSize", "articleId", "userId", "status", "parentId");
             default -> Set.of();
         };

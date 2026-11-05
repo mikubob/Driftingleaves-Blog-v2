@@ -1,4 +1,6 @@
 <script setup>
+import { ElEmpty } from 'element-plus'
+import 'element-plus/es/components/empty/style/css'
 import { computed } from 'vue'
 import { formatCount } from '../format.js'
 import { makeTrendOption } from '../chartOptions.js'

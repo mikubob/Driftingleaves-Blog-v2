@@ -1,4 +1,7 @@
 <script setup>
+import { ElAlert, ElButton } from 'element-plus'
+import 'element-plus/es/components/alert/style/css'
+import 'element-plus/es/components/button/style/css'
 defineProps({ message: String })
 defineEmits(['retry'])
 </script>

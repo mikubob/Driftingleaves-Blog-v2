@@ -5,6 +5,8 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.annotation.PublicCacheRead;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
@@ -14,6 +16,7 @@ import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.ArticleMapper;
+import com.xuan.mapper.ArticleMapper.CommentNode;
 import com.xuan.mapper.CommentMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
@@ -35,6 +38,7 @@ import com.xuan.vo.CommentAdminVO;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
+import com.xuan.vo.DiscussionReplyTargetVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
@@ -52,6 +56,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -74,7 +79,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private final JsonMapper json;
     private final IpLocationResolver locations;
 
-    /** 分页查询评论及直接回复，在同一个只读事务中检查文章和全部上级评论；关闭评论不隐藏历史记录。 */
+    /** 分页查询根评论或整组回复，在同一只读事务中检查文章和全部上级评论。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @PublicCacheRead("comments")
@@ -82,13 +87,12 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         requirePublic(article);
         Long viewer = sessions.currentToken() == null ? null : requireMember(null);
         Long parent = IdUtils.parse(query.parentId());
-        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article), viewer).contains(parent)) {
-            throw missing();
-        }
         // 本人待审内容不能进入共享缓存，匿名查询仍复用公开缓存。
         if (viewer != null) {
-            return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, parent, viewer)
-                    .convert(this::publicView));
+            return readPublicComments(article, query, viewer);
+        }
+        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parent)) {
+            throw missing();
         }
         return self.getObject().cachedPublicComments(article, query);
     }
@@ -97,8 +101,65 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Cacheable(cacheNames = "comments", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
-        return PageResult.from(comments.publicPage(new Page<>(query.page(), query.pageSize()), article, IdUtils.parse(query.parentId()), null)
-                .convert(this::publicView));
+        return readPublicComments(article, query, null);
+    }
+
+    /** 整理可见回复与整组计数，只分页读取正文，保留真实的直接回复关系。 */
+    private PageResult<CommentPublicVO> readPublicComments(long article, CommentPublicQueryDTO query, Long viewer) {
+        Long parent = IdUtils.parse(query.parentId());
+        List<CommentNode> nodes = articles.commentNodes(article);
+        Set<Long> visible = CommentVisibilityPolicy.visible(nodes, viewer);
+        Set<Long> replyable = viewer == null ? visible : CommentVisibilityPolicy.visible(nodes);
+        if (parent != null && !visible.contains(parent)) {
+            throw missing();
+        }
+
+        Map<Long, List<CommentNode>> children = new HashMap<>();
+        for (CommentNode node : nodes) {
+            if (visible.contains(node.getCommentId())) {
+                children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node);
+            }
+        }
+        List<CommentNode> ordered = new ArrayList<>(children.getOrDefault(null, List.of()));
+        for (int index = 0; index < ordered.size(); index++) {
+            ordered.addAll(children.getOrDefault(ordered.get(index).getCommentId(), List.of()));
+        }
+        Map<Long, Long> replyCounts = new HashMap<>();
+        // 从最深层向上累计，回复数量包含全部可见后代。
+        for (int index = ordered.size() - 1; index >= 0; index--) {
+            CommentNode node = ordered.get(index);
+            if (node.getParentId() != null) {
+                replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getCommentId(), 0L) + 1, Long::sum);
+            }
+        }
+        List<CommentNode> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
+        if (parent != null) {
+            for (int index = 0; index < selected.size(); index++) {
+                selected.addAll(children.getOrDefault(selected.get(index).getCommentId(), List.of()));
+            }
+        }
+        Set<Long> selectedIds = new HashSet<>();
+        for (CommentNode node : selected) {
+            selectedIds.add(node.getCommentId());
+        }
+        // 先按时间选出当前页，再查正文，避免把整组回复 ID 传进 SQL。
+        List<Long> visibleIds = nodes.stream().map(CommentNode::getCommentId).filter(selectedIds::contains).toList();
+        if (parent == null) {
+            visibleIds = visibleIds.reversed();
+        }
+        int from = Math.min(visibleIds.size(), (query.page() - 1) * query.pageSize());
+        List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.pageSize()));
+        List<CommentPublicVO> records = new ArrayList<>();
+        if (!pageIds.isEmpty()) {
+            for (CommentRow row : comments.publicRows(article, pageIds, parent != null)) {
+                row.setReplyCount(replyCounts.getOrDefault(row.getCommentId(), 0L));
+                CommentPublicVO value = publicView(row);
+                value.setReplyable(replyable.contains(row.getCommentId()));
+                records.add(value);
+            }
+        }
+        return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visibleIds.size()),
+                Long.toString((visibleIds.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
     }
 
     /** 配置和文章锁内重新检查开关、审核策略和父节点，不把锁前的公开检查当成写入依据。 */
@@ -199,6 +260,53 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return PageResult.from(comments.adminPage(new Page<>(query.page(), query.pageSize()),
                         IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author, parent)
                 .convert(this::adminView));
+    }
+
+    /** 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public DiscussionConversationVO<CommentAdminVO> conversation(long id, DiscussionConversationQueryDTO query) {
+        Long author = requireAdmin("query");
+        var target = requireComment(comments.scoped(id, author, null, false));
+        List<CommentNode> nodes = articles.commentNodes(target.getArticleId());
+        Map<Long, CommentNode> byId = new HashMap<>();
+        Map<Long, List<Long>> children = new HashMap<>();
+        for (CommentNode node : nodes) {
+            byId.put(node.getCommentId(), node);
+            children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getCommentId());
+        }
+
+        // 先找到主记录，缺失父节点或循环不能拼成另一组对话。
+        long root = id;
+        Set<Long> ancestors = new HashSet<>();
+        while (true) {
+            CommentNode node = byId.get(root);
+            if (node == null || !ancestors.add(root)) {
+                throw missing();
+            }
+            if (node.getParentId() == null) {
+                break;
+            }
+            root = node.getParentId();
+        }
+        Set<Long> selected = new HashSet<>();
+        List<Long> descendants = new ArrayList<>(children.getOrDefault(root, List.of()));
+        for (int index = 0; index < descendants.size(); index++) {
+            long current = descendants.get(index);
+            if (selected.add(current)) {
+                descendants.addAll(children.getOrDefault(current, List.of()));
+            }
+        }
+        // nodes已按时间和id正序排列，正文分页前先确定选中记录的位置。
+        List<Long> ordered = nodes.stream().map(CommentNode::getCommentId).filter(selected::contains).toList();
+        int page = query.page() == null ? Math.max(0, ordered.indexOf(id)) / query.pageSize() + 1 : query.page();
+        int from = Math.min(ordered.size(), (page - 1) * query.pageSize());
+        List<Long> ids = ordered.subList(from, Math.min(ordered.size(), from + query.pageSize()));
+        List<CommentAdminVO> records = ids.isEmpty() ? List.of()
+                : comments.publicRows(target.getArticleId(), ids, true).stream().map(this::adminView).toList();
+        return new DiscussionConversationVO<>(adminView(requireComment(comments.scoped(root, author, null, false))),
+                page, query.pageSize(), Integer.toString(ordered.size()),
+                Long.toString((ordered.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
     }
 
     /** 根据id查询评论详情及版本，在同一个只读事务中读取，非公开文章的评论也能查询。 */
@@ -375,6 +483,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         value.setAuthor(author(row));
         value.setArticleTitle(row.getArticleTitle());
         value.setHasChildren(row.getHasChildren());
+        value.setReplyTarget(row.getParentId() == null ? null
+                : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()));
+        value.setArticleAuthor(row.isArticleAuthor());
+        value.setSiteAuthor(row.isSiteAuthor());
+        value.setSiteAdmin(row.isSiteAdmin());
         return value;
     }
 
@@ -395,6 +508,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         value.setUpdateTime(row.getUpdateTime());
         value.setAuthor(author(row));
         value.setReplyCount(row.getReplyCount());
+        value.setSiteAuthor(row.isSiteAuthor());
+        value.setSiteAdmin(row.isSiteAdmin());
+        value.setReplyTarget(row.getParentId() == null ? null
+                : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()));
         return value;
     }
 

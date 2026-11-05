@@ -1,4 +1,6 @@
 <script setup>
+import { ElEmpty } from 'element-plus'
+import 'element-plus/es/components/empty/style/css'
 import { computed } from 'vue'
 import { session } from '../session.js'
 import { allowedPages } from '../navigation.js'

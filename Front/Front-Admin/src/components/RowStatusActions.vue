@@ -1,4 +1,6 @@
 <script setup>
+import { ElButton } from 'element-plus'
+import 'element-plus/es/components/button/style/css'
 import { computed } from 'vue'
 
 const props = defineProps({

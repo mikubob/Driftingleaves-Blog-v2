@@ -22,8 +22,11 @@
 .comment-item {
   display: flex;
   gap: 12px;
-  padding: 16px 0;
-  border-bottom: 1px solid #ebeef5;
+  padding: 18px 22px;
+  margin-bottom: 12px;
+  background: var(--blog-card);
+  border: 1px solid var(--blog-border-light);
+  border-radius: 8px;
 }
 .comment-item.child {
   padding: 12px 0;
@@ -31,8 +34,8 @@
 }
 .comment-children {
   margin-top: 8px;
-  padding-left: 4px;
-  border-left: 2px solid #ebeef5;
+  padding-left: 6px;
+  border-left: 2px solid var(--blog-border-light);
 }
 
 /* 头像 */
@@ -86,12 +89,21 @@
   color: #303133;
 }
 .c-badge {
-  font-size: 10px;
-  background: #303133;
+  font-size: 11px;
   color: #fff;
-  padding: 1px 5px;
+  padding: 1px 6px;
   border-radius: 3px;
   font-weight: 600;
+  white-space: nowrap;
+}
+.badge-article-author {
+  background: #17655a;
+}
+.badge-site-author {
+  background: #34578b;
+}
+.badge-site-admin {
+  background: #814265;
 }
 .c-reply-to {
   font-size: 12px;
@@ -194,23 +206,28 @@
 .c-actions {
   display: flex;
   gap: 10px;
-  opacity: 0;
+  opacity: 1;
+  flex-wrap: wrap;
   transition: opacity 0.15s;
 }
 .comment-item:hover .c-actions,
 .msg-item-card:hover .c-actions {
   opacity: 1;
 }
-.c-actions a {
+.c-actions button {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   cursor: pointer;
   text-decoration: none;
+  font-family: inherit;
+  padding: 0;
+  background: none;
+  border: 0;
 }
-.c-actions a:hover {
-  color: #303133;
+.c-actions button:hover {
+  color: var(--blog-text);
 }
-.c-actions a.danger:hover {
+.c-actions button.danger:hover {
   color: #c00;
 }
 .c-edit-wrap {
@@ -386,8 +403,8 @@
 /* 子留言 */
 .msg-children {
   margin-top: 8px;
-  padding-left: 4px;
-  border-left: 2px solid #ebeef5;
+  padding-left: 6px;
+  border-left: 2px solid var(--blog-border-light);
 }
 .msg-child {
   display: flex;
@@ -399,10 +416,111 @@
 }
 @media (max-width: 600px) {
   .form-card,
+  .comment-item,
   .msg-item-card {
     padding: 14px 16px;
   }
   .msg-child {
     gap: 8px;
+  }
+}
+
+/* 回复统一对齐，只用分隔线区分，不再叠加卡片。 */
+.discussion-reply {
+  gap: 10px;
+  padding: 14px 0;
+  margin: 0;
+  border: 0;
+  border-bottom: 1px dashed var(--blog-border);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.discussion-reply:last-of-type {
+  border-bottom: 0;
+}
+.discussion-reply .c-avatar,
+.discussion-reply .msg-avatar {
+  width: 32px;
+  height: 32px;
+}
+.c-nick,
+.msg-nick,
+.c-body,
+.msg-body {
+  overflow-wrap: anywhere;
+}
+.reply-target,
+.replies-more {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--blog-text2);
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.reply-target {
+  text-align: left;
+  overflow-wrap: anywhere;
+  color: inherit;
+}
+.reply-icon {
+  display: inline-block;
+  transform: scaleX(-1);
+  font-size: 12px;
+}
+.reply-target:hover,
+.replies-more:hover {
+  color: var(--blog-text);
+}
+.reply-quote {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 2px solid var(--blog-border);
+  border-radius: 4px;
+  background: var(--blog-hover);
+  color: var(--blog-text2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.replies-more {
+  margin: 8px 0;
+  font-size: 12px;
+}
+.c-actions button:disabled,
+.replies-more:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+.c-actions button:focus-visible,
+.reply-target:focus-visible,
+.replies-more:focus-visible {
+  outline: 2px solid var(--blog-text2);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+@media (max-width: 600px) {
+  .comment-item,
+  .msg-item-card {
+    gap: 10px;
+  }
+  .comment-children,
+  .msg-children {
+    padding-left: 4px;
+  }
+  .discussion-reply {
+    padding: 12px 0;
+    gap: 8px;
+  }
+  .discussion-reply .c-avatar,
+  .discussion-reply .msg-avatar {
+    width: 28px;
+    height: 28px;
+  }
+  .discussion-reply :deep(.discussion-meta-item[aria-label='操作系统']),
+  .discussion-reply :deep(.discussion-meta-item[aria-label='浏览器']) {
+    display: none;
   }
 }

@@ -3,6 +3,7 @@ import RequestFailure from './components/RequestFailure.vue'
 import { setRequestFailureHandler } from '../../shared/requestFailure.mjs'
 import { onBeforeUnmount, ref } from 'vue'
 import { ElConfigProvider } from 'element-plus'
+import 'element-plus/es/components/config-provider/style/css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 const requestFailure = ref(false)
 setRequestFailureHandler(() => {

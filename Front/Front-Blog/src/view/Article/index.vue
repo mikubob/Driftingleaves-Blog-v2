@@ -2,6 +2,7 @@
 import { computed, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { request } from '@/api.js'
 import { articleView } from '@/shared/presentation.js'
 import { session, can } from '@/session.js'
@@ -306,6 +307,7 @@ onUnmounted(() => {
               :key="refresh"
               kind="comments"
               :article-id="article.id"
+              :article-author-id="article.author.userId"
               :allow-reply="article.allowComment === 1 && !submitting"
               @reply="startReply"
             />

@@ -2,6 +2,8 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.BatchIdsDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.BatchStatusDTO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.result.PageResult;
@@ -38,6 +40,14 @@ public class CommentController {
     @SaCheckPermission("blog:comment:query")
     public Result<PageResult<CommentAdminVO>> list(@Valid @ModelAttribute CommentAdminQueryDTO query) {
         return Result.ok(comments.adminComments(query));
+    }
+
+    /** 查询整组对话，未传页码时定位当前记录。 */
+    @GetMapping("/{commentId}/conversation")
+    @SaCheckPermission("blog:comment:query")
+    public Result<DiscussionConversationVO<CommentAdminVO>> conversation(@PathVariable String commentId,
+            @Valid @ModelAttribute DiscussionConversationQueryDTO query) {
+        return Result.ok(comments.conversation(IdUtils.parse(commentId), query));
     }
 
     /** 根据id查询评论详情，按查询权限限定范围，支持待审、驳回和非公开文章的评论。 */

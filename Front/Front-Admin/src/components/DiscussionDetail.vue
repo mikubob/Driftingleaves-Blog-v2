@@ -1,7 +1,11 @@
 <script setup>
+import { ElDescriptions, ElDescriptionsItem } from 'element-plus'
+import 'element-plus/es/components/descriptions/style/css'
+import 'element-plus/es/components/descriptions-item/style/css'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatTime } from '../format.js'
 import SafeHtml from './SafeHtml.vue'
+import DiscussionAuthor from './DiscussionAuthor.vue'
 import StatusTag from './StatusTag.vue'
 
 // 评论和留言共用详情布局，手机上将信息表改为单列。
@@ -18,7 +22,7 @@ onBeforeUnmount(() => media.removeEventListener('change', updateColumns))
 
 <template>
   <el-descriptions class="discussion-detail" :column="columns" border>
-    <el-descriptions-item label="昵称">{{ detail.author?.nickname || '已删除用户' }}</el-descriptions-item>
+    <el-descriptions-item label="昵称"><DiscussionAuthor :record="detail" /></el-descriptions-item>
     <el-descriptions-item label="用户 ID">{{ detail.author?.userId || detail.userId || '—' }}</el-descriptions-item>
     <el-descriptions-item v-if="isComment" label="所属文章" :span="columns">
       {{ detail.articleTitle || '—' }}

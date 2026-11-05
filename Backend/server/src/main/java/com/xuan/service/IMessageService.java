@@ -2,6 +2,8 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -21,7 +23,7 @@ import java.util.List;
  */
 public interface IMessageService extends IService<BlogMessage> {
 
-    /** 分页查询留言及直接回复，未登录和已登录用户都只统计自己能看到的留言。 */
+    /** 分页查询根留言或整组回复，未登录和已登录用户都只统计自己能看到的留言。 */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
 
     /** 发表留言，作者取当前登录用户，有效管理员免审，其他用户按配置审核；私密性受全部上级限制，只保存发布时的属地和设备类型。 */
@@ -38,6 +40,9 @@ public interface IMessageService extends IService<BlogMessage> {
 
     /** 分页查询后台留言或一层回复，未传parentId保留平铺；查询权限须有ALL，不放宽前台私密限制。 */
     PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query);
+
+    /** 查询主记录及整组回复，按当前查询权限限定范围。 */
+    DiscussionConversationVO<MessagePrivateVO> conversation(long id, DiscussionConversationQueryDTO query);
 
     /** 根据id查询后台留言及版本，需要 ALL 范围，详情和版本在同一个只读事务中读取。 */
     ResourceVersion<MessagePrivateVO> adminDetail(long id);

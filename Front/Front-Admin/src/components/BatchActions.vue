@@ -1,6 +1,21 @@
 <script setup>
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ElAlert,
+  ElButton,
+  ElCheckbox,
+  ElDatePicker,
+  ElDialog,
+  ElMessage,
+  ElMessageBox,
+} from 'element-plus'
+import 'element-plus/es/components/alert/style/css'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/checkbox/style/css'
+import 'element-plus/es/components/date-picker/style/css'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
 import { prepareBatch } from '../batch.js'
 import { request } from '../api.js'
 
@@ -11,10 +26,12 @@ const props = defineProps({
   table: { type: Object, default: null },
   actions: { type: Array, required: true },
   disabled: Boolean,
+  selectedRows: Array,
   selectable: { type: Function, default: () => true },
 })
-const emit = defineEmits(['completed'])
-const selected = ref([])
+const emit = defineEmits(['completed', 'clear'])
+const tableSelection = ref([])
+const selected = computed(() => props.selectedRows ?? tableSelection.value)
 const busy = ref(false)
 const failures = ref([])
 const blockVisible = ref(false)
@@ -27,17 +44,23 @@ let generation = 0
 
 /** 翻页、筛选或刷新时清空当前页的选择，避免把旧id带到新的查询结果。 */
 function clear() {
-  selected.value = []
+  if (props.selectedRows) {
+    emit('clear')
+    return
+  }
+  tableSelection.value = []
   props.table?.clearSelection()
 }
 watch(() => [props.rows, props.disabled], () => {
   generation += 1
-  clear()
+  if (!props.selectedRows) {
+    clear()
+  }
 }, { flush: 'post' })
 onBeforeUnmount(() => { generation += 1 })
 
 function select(rows) {
-  selected.value = rows
+  tableSelection.value = rows
 }
 
 function selectable(row) {
@@ -128,7 +151,7 @@ defineExpose({ select, selectable, busy, execute })
 
 <template>
   <div v-if="actions.length" class="batch-actions">
-    <div class="batch-toolbar" role="group" aria-label="批量操作">
+    <div v-if="!selectedRows || selected.length" class="batch-toolbar" role="group" aria-label="批量操作">
       <span class="batch-count" aria-live="polite">已选 {{ selected.length }} 条</span>
       <el-button
         v-for="action in actions"

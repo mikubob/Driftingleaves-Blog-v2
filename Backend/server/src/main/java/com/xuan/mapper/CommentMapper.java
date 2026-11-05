@@ -8,6 +8,8 @@ import com.xuan.model.CommentRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.List;
+
 /**
  * 评论数据接口，SQL 限制操作范围，写入时依次锁住配置、文章和评论。
  */
@@ -17,9 +19,9 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
     /** 只锁 comment 配置，不顺带实现站点配置管理；锁保持到事务结束。 */
     BlogSiteConfig lockConfig();
 
-    /** 分页查询直接回复，调用前先确认父评论及全部上级评论可见；父评论为 null 时查询根评论。 */
-    IPage<CommentRow> publicPage(IPage<CommentRow> page, @Param("article") long article,
-            @Param("parent") Long parent, @Param("viewer") Long viewer);
+    /** 读取已确认可见的当前页评论，根评论倒序、整组回复正序。 */
+    List<CommentRow> publicRows(@Param("article") long article,
+            @Param("ids") List<Long> ids, @Param("replies") boolean replies);
 
     /** 本人只按 user 筛选；后台的 author 是本次 query 独立的文章作者范围。 */
     IPage<CommentRow> commentPage(IPage<CommentRow> page, @Param("article") Long article,

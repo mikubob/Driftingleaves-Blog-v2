@@ -2,7 +2,30 @@
 import ImagePreview from '../components/ImagePreview.vue'
 import UserDetail from '../components/UserDetail.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ElButton,
+  ElCard,
+  ElDialog,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElOption,
+  ElSelect,
+  ElSwitch,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/switch/style/css'
+import 'element-plus/es/components/table/style/css'
+import 'element-plus/es/components/table-column/style/css'
 import { getOptions, request } from '../api.js'
 import { can } from '../session.js'
 import { prepareBatch } from '../batch.js'
@@ -30,7 +53,7 @@ const batchActions = computed(() => {
     actions.push(
       { label: '批量启用', type: 'success', path: 'batch-enable', method: 'PUT' },
       {
-        label: '批量禁用', path: 'batch-disable', method: 'PUT', danger: true,
+        label: '批量禁用', type: 'warning', path: 'batch-disable', method: 'PUT',
         warning: '将撤销所选账号的全部会话，必须保留至少一个有效管理员。',
       },
     )

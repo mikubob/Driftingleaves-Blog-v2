@@ -61,6 +61,7 @@ public class DisplayRequestAdvice {
             case "GET /admin/statistics/articles" -> Set.of("begin", "end", "limit");
             case "GET /blog/messages" -> Set.of("page", "pageSize", "parentId");
             case "GET /blog/me/messages" -> Set.of("page", "pageSize", "status");
+            case "GET /admin/messages/{id}/conversation" -> Set.of("page", "pageSize");
             case "GET /admin/messages" -> Set.of("page", "pageSize", "status", "userId", "isSecret", "begin", "end", "parentId");
             case "GET /blog/sitemap.xml" -> Set.of("page");
             case "GET /admin/rss-subscriptions" -> Set.of("page", "pageSize", "email", "userId", "status");

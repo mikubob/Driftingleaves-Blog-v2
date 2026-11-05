@@ -17,6 +17,9 @@ public interface TagMapper extends BaseMapper<BlogTag> {
     /** 文章按关联表复合键计数，不存在的 slug 返回 null。 */
     TagPublicDetailVO publicBySlug(@Param("slug") String slug, @Param("now") LocalDateTime now);
 
+    /** 分页查询标签和公开文章数。 */
+    IPage<TagPublicDetailVO> publicPage(IPage<TagPublicDetailVO> page, @Param("now") LocalDateTime now);
+
     /** 按名称字面查找并按 ID 升序分页，总数也用同一条件。 */
     IPage<BlogTag> tagPage(IPage<BlogTag> page, @Param("query") TagQueryDTO query);
 

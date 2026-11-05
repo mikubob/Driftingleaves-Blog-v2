@@ -2,6 +2,8 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.BatchIdsDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.BatchStatusDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -43,6 +45,14 @@ public class MessageController {
     @SaCheckPermission("blog:message:query")
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageAdminQueryDTO query) {
         return Result.ok(messages.adminMessages(query));
+    }
+
+    /** 查询整组对话，未传页码时定位当前记录。 */
+    @GetMapping("/{id}/conversation")
+    @SaCheckPermission("blog:message:query")
+    public Result<DiscussionConversationVO<MessagePrivateVO>> conversation(@PathVariable String id,
+            @Valid @ModelAttribute DiscussionConversationQueryDTO query) {
+        return Result.ok(messages.conversation(IdUtils.parse(id), query));
     }
 
     /** 根据id查询留言详情，查询权限不能代替审核权限。 */

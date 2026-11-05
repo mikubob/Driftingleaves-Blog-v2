@@ -14,4 +14,8 @@ public class CommentAdminVO extends CommentOwnVO {
     private String articleTitle;
     /** 后台列表是否有直接回复，详情未查询时为null。 */
     private Boolean hasChildren;
+    private DiscussionReplyTargetVO replyTarget;
+    private boolean articleAuthor;
+    private boolean siteAuthor;
+    private boolean siteAdmin;
 }

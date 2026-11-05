@@ -26,6 +26,7 @@ import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -372,6 +373,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     @OperationLog(type = "batch-status", target = "sys:role", permission = "sys:role:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         if (users.lockAdminGuard() == null) {

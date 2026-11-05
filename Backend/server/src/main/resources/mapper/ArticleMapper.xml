@@ -269,5 +269,6 @@
     <!-- 一次取出当前文章的整条评论链，后面要查全部祖先，不能只看直接父节点而漏掉隐藏后代。 -->
     <select id="commentNodes" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
         SELECT comment_id, user_id, parent_id, status FROM blog_comment WHERE article_id = #{id}
+        ORDER BY create_time, comment_id
     </select>
 </mapper>

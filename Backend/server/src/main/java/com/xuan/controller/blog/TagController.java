@@ -4,7 +4,6 @@ import com.xuan.dto.PageQueryDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ITagService;
-import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagPublicDetailVO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -28,7 +27,7 @@ public class TagController {
 
     /** 分页查询标签，没有数据时 records 返回空数组。 */
     @GetMapping
-    public Result<PageResult<Tag>> list(@Valid @ModelAttribute PageQueryDTO query) {
+    public Result<PageResult<TagPublicDetailVO>> list(@Valid @ModelAttribute PageQueryDTO query) {
         return Result.ok(tags.publicTags(query));
     }
 

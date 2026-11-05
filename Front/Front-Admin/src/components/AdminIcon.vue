@@ -1,4 +1,6 @@
 <script setup>
+import { ElIcon } from 'element-plus'
+import 'element-plus/es/components/icon/style/css'
 import { computed } from 'vue'
 import {
   Document,

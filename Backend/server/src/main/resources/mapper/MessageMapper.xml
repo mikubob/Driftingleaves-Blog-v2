@@ -20,8 +20,12 @@
     </select>
 
     <select id="visibleRows" resultType="com.xuan.model.MessageRow">SELECT
-        <include refid="columns"/>
-        FROM blog_message m JOIN sys_user u ON u.user_id=m.user_id WHERE m.message_id IN <foreach collection="ids"
+        <include refid="columns"/>, <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
+        ru.nickname AS reply_to_nickname, LEFT(p.content, 120) AS reply_to_content
+        FROM blog_message m JOIN sys_user u ON u.user_id=m.user_id
+        LEFT JOIN blog_message p ON p.message_id=m.parent_id
+        LEFT JOIN sys_user ru ON ru.user_id=p.user_id
+        WHERE m.message_id IN <foreach collection="ids"
                                                                                                   item="id" open="("
                                                                                                   separator=","
                                                                                                   close=")">#{id}
@@ -48,11 +52,15 @@
         ORDER BY m.create_time DESC,m.message_id DESC
     </select>
 
-    <!-- 调用前已检查后台ALL权限；每页只读当前层，直接回复标记包含待审、驳回和私密回复。 -->
+    <!-- 调用前已检查后台ALL权限；按记录分页，包含待审、驳回和私密回复。 -->
     <select id="adminPage" resultType="com.xuan.model.MessageRow">
         SELECT <include refid="columns"/>,
+        <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
+        ru.nickname AS reply_to_nickname, LEFT(p.content, 120) AS reply_to_content,
         EXISTS (SELECT 1 FROM blog_message r WHERE r.parent_id = m.message_id) AS has_children
         FROM blog_message m JOIN sys_user u ON u.user_id = m.user_id
+        LEFT JOIN blog_message p ON p.message_id = m.parent_id
+        LEFT JOIN sys_user ru ON ru.user_id = p.user_id
         <where>
             <include refid="pageFilters"/>
             <choose>

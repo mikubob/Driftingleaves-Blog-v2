@@ -21,7 +21,19 @@ export default defineConfig(({ mode }) => {
     build: {
       rollupOptions: {
         output: {
-          manualChunks: { 'element-plus': ['element-plus'] },
+          onlyExplicitManualChunks: true,
+          // 编辑器核心与图表只随对应路由加载，语言包保留按需导入。
+          manualChunks(id) {
+            if (id.includes('/node_modules/') && /\/@codemirror\/(?:state|view)\//.test(id)) {
+              return 'editor-core'
+            }
+            if (id.includes('/node_modules/zrender/')) {
+              return 'chart-renderer'
+            }
+            if (id.includes('/node_modules/echarts/')) {
+              return 'charts'
+            }
+          },
         },
       },
     },

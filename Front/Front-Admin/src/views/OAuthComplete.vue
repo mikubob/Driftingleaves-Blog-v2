@@ -1,4 +1,7 @@
 <script setup>
+import { ElButton, ElResult } from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/result/style/css'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from '../api.js'

@@ -4,9 +4,9 @@
 
 评论和留言创建时的管理员、作者免审条件及状态说明见[审核规则](API.md#discussion-review)，根内容与回复使用同一规则。
 
-当前共 207 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
+当前共 209 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
 
-**38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项；另增未知路由上报2项及音乐文件读取1项，当前共 207 个路由（Admin 134 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
+**38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项；另增未知路由上报2项及音乐文件读取1项，当前共 209 个路由（Admin 136 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
@@ -21,6 +21,8 @@
 | --- | --- |
 | [注册账号](API.md#admin-api-1) | `POST /api/v1/admin/auth/register` |
 | [获取图形验证码](API.md#captcha) | `GET /api/v1/admin/auth/captcha` |
+| [发送后台邮箱验证码](API.md#admin-auth-email-code) | `POST /api/v1/admin/auth/email-code` |
+| [后台邮箱验证码登录](API.md#admin-auth-email-login) | `POST /api/v1/admin/auth/email-login` |
 | [账号密码登录](API.md#admin-api-2) | `POST /api/v1/admin/auth/login` |
 | [退出当前登录](API.md#admin-api-3) | `POST /api/v1/admin/auth/logout` |
 | [查询可用第三方平台](API.md#admin-api-4) | `GET /api/v1/admin/auth/oauth/providers` |
@@ -124,6 +126,7 @@
 | --- | --- |
 | [分页查询后台评论](API.md#api-63) | `GET /api/v1/admin/comments` |
 | [查询后台评论详情](API.md#api-64) | `GET /api/v1/admin/comments/{commentId}` |
+| [查询后台评论对话](API.md#admin-comments-conversation) | `GET /api/v1/admin/comments/{commentId}/conversation` |
 | [批量审核评论](API.md#batch-comment-review) | `PUT /api/v1/admin/comments/batch-review` |
 | [批量删除评论分支](API.md#batch-comment-delete) | `POST /api/v1/admin/comments/batch-delete` |
 
@@ -133,6 +136,7 @@
 | --- | --- |
 | [分页查询后台留言](API.md#api-115) | `GET /api/v1/admin/messages` |
 | [查询后台留言详情](API.md#api-116) | `GET /api/v1/admin/messages/{messageId}` |
+| [查询后台留言对话](API.md#admin-messages-conversation) | `GET /api/v1/admin/messages/{messageId}/conversation` |
 | [后台回复留言](API.md#api-119) | `POST /api/v1/admin/messages/{messageId}/replies` |
 | [批量审核留言](API.md#batch-message-review) | `PUT /api/v1/admin/messages/batch-review` |
 | [批量删除留言分支](API.md#batch-message-delete) | `POST /api/v1/admin/messages/batch-delete` |
@@ -263,6 +267,9 @@
 | --- | --- |
 | [注册账号](API.md#api-1) | `POST /api/v1/blog/auth/register` |
 | [获取图形验证码](API.md#captcha) | `GET /api/v1/blog/auth/captcha` |
+| [获取评论和留言数字题目](API.md#blog-auth-math-captcha) | `GET /api/v1/blog/auth/math-captcha` |
+| [发送博客邮箱验证码](API.md#blog-auth-email-code) | `POST /api/v1/blog/auth/email-code` |
+| [博客邮箱验证码登录](API.md#blog-auth-email-login) | `POST /api/v1/blog/auth/email-login` |
 | [账号密码登录](API.md#api-2) | `POST /api/v1/blog/auth/login` |
 | [退出当前登录](API.md#api-3) | `POST /api/v1/blog/auth/logout` |
 | [查询可用第三方平台](API.md#api-4) | `GET /api/v1/blog/auth/oauth/providers` |

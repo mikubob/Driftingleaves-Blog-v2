@@ -19,7 +19,6 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.vo.ArticlePublicVO.Tag;
 import com.xuan.vo.TagProfileVO;
 import com.xuan.vo.TagPublicDetailVO;
 import lombok.RequiredArgsConstructor;
@@ -53,10 +52,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
-    public PageResult<Tag> publicTags(PageQueryDTO query) {
-        return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()),
-                        new TagQueryDTO(query.page(), query.pageSize(), null))
-                .convert(row -> new Tag(row.getTagId(), row.getTagName(), row.getSlug())));
+    public PageResult<TagPublicDetailVO> publicTags(PageQueryDTO query) {
+        return PageResult.from(tags.publicPage(new Page<>(query.page(), query.pageSize()),
+                LocalDateTime.now(ZoneOffset.UTC)));
     }
 
     /** 根据slug查询标签及公开文章数，在同一个只读事务中读取，不增加文章阅读量。 */

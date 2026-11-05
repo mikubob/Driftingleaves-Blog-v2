@@ -4,6 +4,18 @@
 <mapper namespace="com.xuan.mapper.AuthorizationMapper">
     <!-- 授权实时查库，不用旧缓存，下次请求马上能看到用户、角色或权限禁用。 -->
 
+    <!-- 公开讨论仅展示这两种身份，管理员同时显示本站作者。 -->
+    <sql id="discussionBadges">
+        (u.status = 1 AND EXISTS (
+            SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.role_id = ur.role_id
+            WHERE ur.user_id = u.user_id AND r.status = 1 AND r.role_code IN ('author', 'admin')
+        )) AS site_author,
+        (u.status = 1 AND EXISTS (
+            SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.role_id = ur.role_id
+            WHERE ur.user_id = u.user_id AND r.status = 1 AND r.role_code = 'admin'
+        )) AS site_admin
+    </sql>
+
     <!-- 查启用用户的启用角色码，按字典序返回，不用显示名称或角色权重推算权限。 -->
     <select id="roleCodes" resultType="string">
         SELECT r.role_code FROM sys_user u

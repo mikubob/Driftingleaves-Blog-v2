@@ -1,4 +1,7 @@
 <script setup>
+import { ElOption, ElSelect } from 'element-plus'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/select/style/css'
 import { computed } from 'vue'
 import { MdPreview, MdCatalog } from 'md-editor-v3'
 import { getImage } from '../api.js'

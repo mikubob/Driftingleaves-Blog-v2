@@ -1,14 +1,14 @@
 # DriftingLeavesV2 接口文档
 
-接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-04。
+接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-05。
 
-统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **207 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **209 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
 
-2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态。2026-11-04 移除评论和留言本人编辑接口，保留本人评论详情；按当前 Controller 的多路径映射展开统计共207个HTTP路由（Admin 134个）。
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态。2026-11-04 移除评论和留言本人编辑接口，保留本人评论详情；按当前 Controller 的多路径映射展开统计共209个HTTP路由（Admin 136个）。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
-| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 134 |
+| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 136 |
 | [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 61 |
 | [Home 主页端](#client-home) | `/api/v1/home` | 主人资料、社交、配置与统计 | 5 |
 | [Cv 简历端](#client-cv) | `/api/v1/cv` | 主人资料、社交、简历、配置与统计 | 7 |
@@ -94,7 +94,7 @@
 - [文章场景速查](#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
 - 当前 **192 个 HTTP 路由及 3 个 WebSocket 入口**，按下方四端分区查找。
 - [后台统一操作（38 个入口）](#admin-batch)：参数、响应、权限和整批失败规则集中在 1.22，单个目标也走同一协议。
-- 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，部署与历史验收见 [后端运行说明](后端运行说明.md)。
+- 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，配置与当前检查入口见 [后端运行说明](后端运行说明.md)。
 
 <a id="request-protection"></a>
 
@@ -680,6 +680,155 @@ BIND 成功（200，原 Token 必须有效，不返回新 Session）：
 ```
 
 必须携带同浏览器 Cookie 及发起时已完成后台完整认证的原 Token，仅返回 binding，不切换账号；禁止通过 LOGIN 票据获取后台会话。票据有效期 60 秒且仅消费一次。
+
+---
+
+<a id="admin-auth-email-code"></a>
+
+#### 1.1.8 发送后台登录邮箱验证码
+
+##### 基本信息
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/auth/email-code` |
+| Content-Type | application/json |
+| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 成功状态 | 200 OK |
+
+##### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `X-Captcha-Id` | string | 是 | Header；当前端图形验证码的随机标识 |
+| `X-Captcha-Code` | string | 是 | Header；图形验证码的6位数字，保留前导零 |
+| `email` | string | 是 | JSON；非空合法邮箱，最多254字符；服务端去首尾空白并转小写 |
+
+JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或重复JSON属性。图形验证码与邮件验证码是两项独立校验，不可互换。
+
+##### 请求示例
+
+```http
+POST /api/v1/admin/auth/email-code
+X-Captcha-Id: <captchaId>
+X-Captcha-Code: 012345
+Content-Type: application/json
+
+{"email":"leaf@example.test"}
+```
+
+##### 响应参数
+
+`data=null`。只有 SMTP 接受发送后才返回成功，不返回邮件验证码或会话。
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": null,
+  "errors": []
+}
+```
+
+##### 处理与失败
+
+先检查登录失败限额，再消费图形验证码和检查发送频率；锁定邮箱所属账号，确认账号启用且拥有 `admin:access` 后，向当前账号邮箱发送 ADMIN_LOGIN 用途验证码。不要求用户名或本站密码，不创建会话。 邮件验证码五分钟有效，按邮箱和用途隔离；所有用途与端共享每邮箱每60秒1次、每可信IP每60秒5次的发送预算。
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
+| 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
+| 401 / AUTH_FAILED | 邮箱未对应本站账号 |
+| 403 / ACCOUNT_DISABLED | 账号已禁用 |
+| 403 / FORBIDDEN | 账号没有有效的 admin:access 权限 |
+| 429 / RATE_LIMITED | 邮件发送限额超出；后台还受登录入口和失败限额限制，返回 Retry-After |
+| 503 / SERVICE_UNAVAILABLE | 邮件未启用、SMTP发送失败或依赖不可用；发送失败清理已生成验证码 |
+
+每次发送或登录结束后重新获取图形验证码；业务失败保留输入，不自动重放请求。通用响应与安全边界见[邮箱验证与登录方式](#captcha)。
+
+---
+
+<a id="admin-auth-email-login"></a>
+
+#### 1.1.9 邮箱验证码登录后台
+
+##### 基本信息
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/auth/email-login` |
+| Content-Type | application/json |
+| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 成功状态 | 200 OK |
+
+##### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `X-Captcha-Id` | string | 是 | Header；当前端图形验证码的随机标识 |
+| `X-Captcha-Code` | string | 是 | Header；图形验证码的6位数字，保留前导零 |
+| `email` | string | 是 | JSON；非空合法邮箱，最多254字符；服务端去首尾空白并转小写 |
+| `emailCode` | string | 是 | JSON；邮件中的6位纯数字字符串，保留前导零 |
+
+JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或重复JSON属性。图形验证码与邮件验证码是两项独立校验，不可互换。
+
+##### 请求示例
+
+```http
+POST /api/v1/admin/auth/email-login
+X-Captcha-Id: <captchaId>
+X-Captcha-Code: 012345
+Content-Type: application/json
+
+{"email":"leaf@example.test","emailCode":"012345"}
+```
+
+##### 响应参数
+
+`data` 为 [Session](#response-session)，`expiresIn=604800`（7天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": {
+    "tokenType": "Bearer",
+    "accessToken": "<site-token>",
+    "expiresIn": 604800,
+    "user": {
+      "userId": "12",
+      "username": "leaf",
+      "nickname": "落叶",
+      "email": "leaf@example.test",
+      "avatar": null,
+      "intro": null,
+      "status": 1,
+      "hasPassword": false,
+      "lastLoginTime": "2026-11-05T13:00:00.000Z",
+      "createTime": "2026-11-01T00:00:00.000Z",
+      "updateTime": "2026-11-01T00:00:00.000Z"
+    }
+  },
+  "errors": []
+}
+```
+
+##### 处理与失败
+
+先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号，消费 ADMIN_LOGIN 用途邮件验证码；不接受注册或另一端登录的验证码。邮件验证码正确后检查账号存在与启用状态以及有效的 `admin:access` 权限，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
+| 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
+| 400 / EMAIL_CODE_INVALID | 邮件验证码错误、过期、用途不符或已消费 |
+| 401 / AUTH_FAILED | 邮件验证码通过后，邮箱仍未对应本站账号 |
+| 403 / ACCOUNT_DISABLED | 账号已禁用 |
+| 403 / FORBIDDEN | 账号没有有效的 admin:access 权限 |
+| 429 / RATE_LIMITED | 登录入口预算或失败次数超限，返回 Retry-After |
+| 503 / SERVICE_UNAVAILABLE | Redis、数据库等依赖不可用，不能跳过校验或返回成功 |
+
+每次发送或登录结束后重新获取图形验证码；业务失败保留输入，不自动重放请求。通用响应与安全边界见[邮箱验证与登录方式](#captcha)。
 
 ---
 
@@ -3100,9 +3249,9 @@ Authorization: Bearer <site-token>
 
 每页最多 50；SELF 为本人文章下的评论，非“评论本人”；createTime DESC,commentId DESC。
 
-树表先请求 `?parentId=0&page=1&pageSize=20`，展开时请求 `?parentId=201&page=1&pageSize=20`。每次只分页当前层，`total/totalPages` 只统计该层；继续翻页直到当前层结束，不递归返回全部后代。后台查询不使用前台的审核通过或公开文章过滤，`hasChildren` 包含待审和驳回的直接回复。
+接口省略 `parentId` 时，对全部层级记录按 `createTime DESC,commentId DESC` 平铺分页。正 ID 的直接回复查询继续兼容，后台不套用公开审核状态或文章可见性过滤。
 
-所有筛选按当前记录本身做 AND 匹配，不把祖先或后代当作命中。管理端提交任意筛选时省略 `parentId`，平铺展示全部层级的命中项并保留回复目标 ID，防止父节点未命中时漏掉待审核回复；清空筛选恢复根节点树表。树表表头全选只选择本页根记录，子回复单独勾选，最多100条；根与回复按各自 ID 独立选择，加载按钮不参与批量操作；审核或删除后重新查询并清空展开缓存和选择。
+**管理端交互。** 评论表格在默认和筛选时都省略 `parentId`，主评论和各层回复在同一套分页中平铺。通过顶部审核状态下拉框和“查询”提交筛选，表头复选框只选择本页记录。“查看”打开详情弹窗。审核前读取详情 `X-Revision`，删除前确认将一并删除全部层级回复。操作后清空选择，保留已提交筛选和当前页。
 
 ---
 
@@ -3160,6 +3309,112 @@ X-Revision: "<current-revision>"
 ---
 
 
+
+<a id="admin-comments-conversation"></a>
+
+#### 1.9.3 查询整组评论对话
+
+`GET /api/v1/admin/comments/{commentId}/conversation`，无请求体，使用后台会话并要求 `admin:access` 及 `blog:comment:query`，SELF 按所属文章作者限定，ALL 查询全部；目标或其父链不在范围返回404。
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `commentId` | ID | 是 | Path；当前选中记录的原始字符串 ID，可以是任意深度 |
+| `page` | integer | 否 | 1..100000；不传时自动定位该记录所在的回复页，选中主记录时为第1页 |
+| `pageSize` | integer | 否 | 默认20，1..50 |
+
+响应 `data` 为 [评论对话模型](#response-discussionconversation)，包含 `root`（[CommentAdmin](#response-commentadmin) 主记录）及标准分页字段 `page/pageSize/total/totalPages/records`。`records` 只包含当前页回复，合并主记录下全部层级，按 `createTime ASC,commentId ASC` 排序；`total/totalPages` 为字符串且不包含主记录。无回复时仍返回主记录，超末页保留请求页码和空 `records`。响应 `parentId` 保留真实直接回复目标；`replyTarget` 含直接目标昵称和最多120字符原文摘要。根及回复的 `hasChildren` 在此查询中为null，不用于递归展开。
+
+只在上述后台查询范围内展示待审、驳回及私密内容；评论正文按纯文本显示，留言的 Markdown 使用后端清理后的 `htmlContent`。该入口不返回编辑版本，审核仍先通过原详情接口读取 `X-Revision`，按现有批量审核规则提交。
+
+此接口用于读取评论整组对话。管理端评论表格通过评论详情接口打开“查看”弹窗。
+
+##### 请求与响应示例
+
+以下为虚构记录。选中回复42且省略page，服务端返回该回复所在页；root单独返回，不重复放入records。
+
+```http
+GET /api/v1/admin/comments/42/conversation?pageSize=20
+Authorization: Bearer <site-token>
+```
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": {
+    "root": {
+      "commentId": "41",
+      "articleId": "7",
+      "userId": "12",
+      "parentId": null,
+      "content": "示例主评论",
+      "location": null,
+      "userAgentOs": null,
+      "userAgentBrowser": null,
+      "status": 1,
+      "createTime": "2026-11-05T12:00:00.000Z",
+      "updateTime": "2026-11-05T12:00:00.000Z",
+      "author": {
+        "userId": "12",
+        "nickname": "示例作者",
+        "avatar": null
+      },
+      "articleTitle": "示例文章",
+      "hasChildren": null,
+      "replyTarget": null,
+      "articleAuthor": true,
+      "siteAuthor": true,
+      "siteAdmin": false
+    },
+    "page": 1,
+    "pageSize": 20,
+    "total": "1",
+    "totalPages": "1",
+    "records": [
+      {
+        "commentId": "42",
+        "articleId": "7",
+        "userId": "19",
+        "parentId": "41",
+        "content": "示例回复",
+        "location": null,
+        "userAgentOs": null,
+        "userAgentBrowser": null,
+        "status": 1,
+        "createTime": "2026-11-05T12:01:00.000Z",
+        "updateTime": "2026-11-05T12:01:00.000Z",
+        "author": {
+          "userId": "19",
+          "nickname": "示例读者",
+          "avatar": null
+        },
+        "articleTitle": "示例文章",
+        "hasChildren": null,
+        "replyTarget": {
+          "nickname": "示例作者",
+          "content": "示例主评论"
+        },
+        "articleAuthor": false,
+        "siteAuthor": false,
+        "siteAdmin": false
+      }
+    ]
+  },
+  "errors": []
+}
+```
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 路径ID、页码、页大小不合法，或提交未知/重复/空白查询参数、请求体 |
+| 401 / UNAUTHENTICATED | Token缺失、过期、已注销或不再对应有效用户 |
+| 403 / ACCOUNT_DISABLED | 当前账号已禁用 |
+| 403 / FORBIDDEN | 使用前台会话，或缺少后台入口、本次查询权限 |
+| 404 / NOT_FOUND | 记录不存在、父链无法完整定位，或评论不在当前文章作者范围 |
+| 503 / SERVICE_UNAVAILABLE | 身份、权限或数据依赖不可用 |
+
+
+---
 
 <a id="admin-group-10"></a>
 
@@ -3227,9 +3482,9 @@ Authorization: Bearer <site-token>
 
 筛选AND组合；begin<end；createTime DESC,messageId DESC。后台可读私密内容，不向前台公开后台投影。
 
-根留言请求示例：`?parentId=0&page=1&pageSize=10`；展开示例：`?parentId=301&page=1&pageSize=20`。每次只分页当前层，`total/totalPages` 只统计该层，`hasChildren` 包含待审、驳回及私密直接回复；列表与总数使用同样条件。每次请求仍须具有 `blog:message:query` 的 ALL 范围，不复用公开留言的审核或私密父链过滤。
+正 ID 的直接回复查询继续兼容。后台 query 仍须 ALL，不使用公开留言的审核和私密父链过滤。后台回复仍检查 review 的 ALL、完整父链审核及最早私密范围。
 
-管理端每层先加载20条，通过“加载更多回复”逐页追加，支持继续展开任意层级；失败保留已加载记录并可重试。提交作者、状态、私密或时间筛选时省略 `parentId`，平铺展示所有层级命中项，父节点未命中不影响回复出现；重置后恢复树表。详情、审核、批量操作、分支删除及后台回复接口保持原有版本与权限规则，写入后清空展开缓存和选择并刷新。
+**管理端交互。** 留言表格在默认和筛选时都省略 `parentId`，主留言和各层回复在同一套分页中平铺。顶部通过“查询”提交筛选，表头复选框只选择本页记录。表格保留悄悄话标记、回复对象及行内回复入口，“查看”打开详情弹窗。写入后按已提交筛选和当前页刷新。
 
 ---
 
@@ -3347,6 +3602,116 @@ Content-Type: application/json
 ```
 
 不要求图形验证码，也无需发送 X-Captcha-Id/X-Captcha-Code；仍须后台登录、blog:message:review 的 ALL 范围及用户/IP 限流。作者为当前后台用户，父节点固定Path，继承整条私密范围，初始status=1。父链必须允许展示，待审/驳回/占位目标409；message.enabled=false时拒绝。不接受isAdminReply标志，展示管理员身份时实时核验有效角色。 创建成功不设置Location，通过响应ID及本人/后台详情入口定位。
+
+---
+
+<a id="admin-messages-conversation"></a>
+
+#### 1.10.4 查询整组留言对话
+
+`GET /api/v1/admin/messages/{id}/conversation`，无请求体，使用后台会话并要求 `admin:access` 及 `blog:message:query` 的 ALL；缺少 ALL 返回403，目标不存在返回404。
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `id` | ID | 是 | Path；当前选中记录的原始字符串 ID，可以是任意深度 |
+| `page` | integer | 否 | 1..100000；不传时自动定位该记录所在的回复页，选中主记录时为第1页 |
+| `pageSize` | integer | 否 | 默认20，1..50 |
+
+响应 `data` 为 [留言对话模型](#response-discussionconversation)，包含 `root`（[MessagePrivate](#response-messageprivate) 主记录）及标准分页字段 `page/pageSize/total/totalPages/records`。`records` 只包含当前页回复，合并主记录下全部层级，按 `createTime ASC,messageId ASC` 排序；`total/totalPages` 为字符串且不包含主记录。无回复时仍返回主记录，超末页保留请求页码和空 `records`。响应 `parentId` 保留真实直接回复目标；`replyTarget` 含直接目标昵称和最多120字符原文摘要。根及回复的 `hasChildren` 在此查询中为null，不用于递归展开。
+
+只在上述后台查询范围内展示待审、驳回及私密内容；评论正文按纯文本显示，留言的 Markdown 使用后端清理后的 `htmlContent`。该入口不返回编辑版本，审核仍先通过原详情接口读取 `X-Revision`，按现有批量审核规则提交。
+
+此接口用于读取留言整组对话。管理端留言表格通过留言详情接口打开“查看”弹窗。
+
+##### 请求与响应示例
+
+以下为虚构记录。选中回复52且省略page，服务端返回该回复所在页；root单独返回，不重复放入records。
+
+```http
+GET /api/v1/admin/messages/52/conversation?pageSize=20
+Authorization: Bearer <site-token>
+```
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": {
+    "root": {
+      "messageId": "51",
+      "parentId": null,
+      "author": {
+        "userId": "12",
+        "nickname": "示例读者",
+        "avatar": null
+      },
+      "content": "示例私密留言",
+      "htmlContent": "<p>示例私密留言</p>",
+      "contentFormat": 0,
+      "isSecret": 1,
+      "status": 1,
+      "editedAt": null,
+      "isOwn": false,
+      "createTime": "2026-11-05T12:00:00.000Z",
+      "updateTime": "2026-11-05T12:00:00.000Z",
+      "notifyReply": 0,
+      "location": null,
+      "userAgentOs": null,
+      "userAgentBrowser": null,
+      "hasChildren": null,
+      "replyTarget": null,
+      "siteAuthor": false,
+      "siteAdmin": false
+    },
+    "page": 1,
+    "pageSize": 20,
+    "total": "1",
+    "totalPages": "1",
+    "records": [
+      {
+        "messageId": "52",
+        "parentId": "51",
+        "author": {
+          "userId": "1",
+          "nickname": "示例管理员",
+          "avatar": null
+        },
+        "content": "示例后台回复",
+        "htmlContent": "<p>示例后台回复</p>",
+        "contentFormat": 0,
+        "isSecret": 1,
+        "status": 1,
+        "editedAt": null,
+        "isOwn": true,
+        "createTime": "2026-11-05T12:01:00.000Z",
+        "updateTime": "2026-11-05T12:01:00.000Z",
+        "notifyReply": 0,
+        "location": null,
+        "userAgentOs": null,
+        "userAgentBrowser": null,
+        "hasChildren": null,
+        "replyTarget": {
+          "nickname": "示例读者",
+          "content": "示例私密留言"
+        },
+        "siteAuthor": true,
+        "siteAdmin": true
+      }
+    ]
+  },
+  "errors": []
+}
+```
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 路径ID、页码、页大小不合法，或提交未知/重复/空白查询参数、请求体 |
+| 401 / UNAUTHENTICATED | Token缺失、过期、已注销或不再对应有效用户 |
+| 403 / ACCOUNT_DISABLED | 当前账号已禁用 |
+| 403 / FORBIDDEN | 使用前台会话、缺少后台入口或查询权限，或留言查询权限没有ALL范围 |
+| 404 / NOT_FOUND | 记录不存在、父链无法完整定位 |
+| 503 / SERVICE_UNAVAILABLE | 身份、权限或数据依赖不可用 |
+
 
 ---
 
@@ -5735,7 +6100,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-筛选AND组合；begin<end；operationTime DESC,logId DESC。列表展示 logId（ID 列）和中文操作类型标签；operationType 继续返回原始 ASCII 动作值并用于精确筛选，不改写历史日志。新增/更新/删除分别显示为“新增/更新/删除”，batch-* 保留“批量”含义（如 batch-status 显示“批量更新状态”），其他已知动作按业务显示，未知动作原样展示；详情保留原始值。列表不展开operationData，详情向具有sys:log:query及ALL范围的管理员展示已记录的完整业务字段。
+筛选AND组合；begin<end；operationTime DESC,logId DESC。列表展示 logId（ID 列）和中文操作类型标签；operationType 继续返回原始 ASCII 动作值并用于精确筛选，不改写历史日志。共用批量接口的操作在选中一条时记录单条类型，选中多条时记录 `batch-*`。列表和详情按中文名称展示，已有 `batch-*` 日志在 `selectedCount` 为 `"1"` 时显示对应的单条名称，未知动作原样展示。列表不展开operationData，详情向具有sys:log:query及ALL范围的管理员展示已记录的完整业务字段。
 
 ---
 
@@ -6857,6 +7222,178 @@ BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session�
 
 ---
 
+<a id="blog-auth-email-code"></a>
+
+#### 2.1.8 发送注册或登录邮箱验证码
+
+##### 基本信息
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/blog/auth/email-code` |
+| Content-Type | application/json |
+| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 成功状态 | 200 OK |
+
+##### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `X-Captcha-Id` | string | 是 | Header；当前端图形验证码的随机标识 |
+| `X-Captcha-Code` | string | 是 | Header；图形验证码的6位数字，保留前导零 |
+| `email` | string | 是 | JSON；非空合法邮箱，最多254字符；服务端去首尾空白并转小写 |
+| `purpose` | string | 是 | JSON；仅 REGISTER 或 LOGIN，不接受后台登录用途 |
+
+JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或重复JSON属性。图形验证码与邮件验证码是两项独立校验，不可互换。
+
+##### 请求示例
+
+```http
+POST /api/v1/blog/auth/email-code
+X-Captcha-Id: <captchaId>
+X-Captcha-Code: 012345
+Content-Type: application/json
+
+{"email":"leaf@example.test","purpose":"REGISTER"}
+```
+
+##### 响应参数
+
+`data=null`。只有 SMTP 接受发送后才返回成功，不返回邮件验证码或会话。
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": null,
+  "errors": []
+}
+```
+
+##### 处理与失败
+
+先消费图形验证码，再检查发送频率。REGISTER 只能用于注册，LOGIN 只能用于博客邮箱登录；发送不创建账号，也不证明该邮箱已对应本站账号。再次发送会替换同用途、同邮箱的旧验证码。 邮件验证码五分钟有效，按邮箱和用途隔离；所有用途与端共享每邮箱每60秒1次、每可信IP每60秒5次的发送预算。
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
+| 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
+| 429 / RATE_LIMITED | 邮件发送限额超出；后台还受登录入口和失败限额限制，返回 Retry-After |
+| 503 / SERVICE_UNAVAILABLE | 邮件未启用、SMTP发送失败或依赖不可用；发送失败清理已生成验证码 |
+
+每次发送或登录结束后重新获取图形验证码；业务失败保留输入，不自动重放请求。通用响应与安全边界见[邮箱验证与登录方式](#captcha)。
+
+---
+
+<a id="blog-auth-email-login"></a>
+
+#### 2.1.9 邮箱验证码登录
+
+##### 基本信息
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/blog/auth/email-login` |
+| Content-Type | application/json |
+| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 成功状态 | 200 OK |
+
+##### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `X-Captcha-Id` | string | 是 | Header；当前端图形验证码的随机标识 |
+| `X-Captcha-Code` | string | 是 | Header；图形验证码的6位数字，保留前导零 |
+| `email` | string | 是 | JSON；非空合法邮箱，最多254字符；服务端去首尾空白并转小写 |
+| `emailCode` | string | 是 | JSON；邮件中的6位纯数字字符串，保留前导零 |
+
+JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或重复JSON属性。图形验证码与邮件验证码是两项独立校验，不可互换。
+
+##### 请求示例
+
+```http
+POST /api/v1/blog/auth/email-login
+X-Captcha-Id: <captchaId>
+X-Captcha-Code: 012345
+Content-Type: application/json
+
+{"email":"leaf@example.test","emailCode":"012345"}
+```
+
+##### 响应参数
+
+`data` 为 [Session](#response-session)，`expiresIn=259200`（3天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
+
+```json
+{
+  "code": "OK",
+  "msg": "成功",
+  "data": {
+    "tokenType": "Bearer",
+    "accessToken": "<site-token>",
+    "expiresIn": 259200,
+    "user": {
+      "userId": "12",
+      "username": "leaf",
+      "nickname": "落叶",
+      "email": "leaf@example.test",
+      "avatar": null,
+      "intro": null,
+      "status": 1,
+      "hasPassword": false,
+      "lastLoginTime": "2026-11-05T13:00:00.000Z",
+      "createTime": "2026-11-01T00:00:00.000Z",
+      "updateTime": "2026-11-01T00:00:00.000Z"
+    }
+  },
+  "errors": []
+}
+```
+
+##### 处理与失败
+
+先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号，消费 LOGIN 用途邮件验证码；不接受注册或另一端登录的验证码。邮件验证码正确后检查账号存在与启用状态，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
+
+| HTTP / code | 说明 |
+| --- | --- |
+| 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
+| 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
+| 400 / EMAIL_CODE_INVALID | 邮件验证码错误、过期、用途不符或已消费 |
+| 401 / AUTH_FAILED | 邮件验证码通过后，邮箱仍未对应本站账号 |
+| 403 / ACCOUNT_DISABLED | 账号已禁用 |
+| 429 / RATE_LIMITED | 登录入口预算或失败次数超限，返回 Retry-After |
+| 503 / SERVICE_UNAVAILABLE | Redis、数据库等依赖不可用，不能跳过校验或返回成功 |
+
+每次发送或登录结束后重新获取图形验证码；业务失败保留输入，不自动重放请求。通用响应与安全边界见[邮箱验证与登录方式](#captcha)。
+
+---
+
+<a id="blog-auth-math-captcha"></a>
+
+#### 2.1.10 获取评论和留言数字题目
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `GET /api/v1/blog/auth/math-captcha` |
+| 访问要求 | 公开；不要求 Bearer 或已有验证码 |
+| 请求参数 | 无；不接受查询参数或请求体 |
+| 成功状态 | 200 OK，`Cache-Control: no-store` |
+| 响应 | `Result<ArithmeticCaptcha>`，完整字段见[数字题目模型](#response-arithmeticcaptcha) |
+
+```http
+GET /api/v1/blog/auth/math-captcha
+```
+
+```json
+{"code":"OK","msg":"成功","data":{"captchaId":"<43位URL安全随机字符串>","question":"9 × 9 = ?","expiresIn":120},"errors":[]}
+```
+
+题目使用两个1至9整数的加、减或乘法，减法不产生负数；答案只存服务端。提交评论或留言时，将答案作为无前导零的字符串放入 `X-Captcha-Code`，`X-Captcha-Id` 使用本次返回标识。与登录图形验证码按用途隔离，不能互换。
+
+与 Admin/Blog 图形验证码生成共用每可信IP每60秒30次预算；超限返回429/RATE_LIMITED和Retry-After，非法参数返回400/VALIDATION_ERROR，依赖不可用返回503/SERVICE_UNAVAILABLE。使用入口、一次消费及失败刷新规则见[数字题目验证](#评论和留言的数字题目验证)。
+
+---
+
 <a id="group-2"></a>
 
 <a id="blog-group-2"></a>
@@ -7512,7 +8049,7 @@ GET /api/v1/blog/article-rankings?period=month&metric=view&limit=5
 | `articleId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `page` | integer | 否 | 默认 1，范围 1..100000 |
 | `pageSize` | integer | 否 | 默认 10，范围 1..50 |
-| `parentId` | ID | 否 | 可选，同篇文章的可见父评论；缺失仅根节点 |
+| `parentId` | ID | 否 | 缺失仅根评论；提供时分页查询该可见评论下的全部层级回复，不包含该评论本身 |
 
 ##### 请求示例
 
@@ -7534,6 +8071,7 @@ GET /api/v1/blog/articles/101/comments?page=1&pageSize=10
     "records": [
       {
         "commentId": "201", "articleId": "101", "parentId": null, "content": "感谢分享。", "status": 1,
+        "replyCount": "2", "replyTarget": null, "replyable": true,
         "createTime": "2026-10-29T02:00:00.000Z"
       }
     ]
@@ -7542,7 +8080,7 @@ GET /api/v1/blog/articles/101/comments?page=1&pageSize=10
 }
 ```
 
-每页最多50；不传parentId为根节点，传入只查直接回复；createTime DESC,commentId DESC。带有效会话时保留本人待审、驳回内容，全部祖先也须审核通过或属于本人；其他用户不能读取未通过内容。total及replyCount按当前读者的可见范围计算，replyCount只计直接回复。匿名结果使用公开缓存，有效会话查询直接回源。
+每页最多50；不传parentId为根节点，按createTime DESC,commentId DESC排序；传入后将该节点下的全部层级回复合并分页，按createTime ASC,commentId ASC排序。响应parentId仍是真实的直接回复目标，不改写为根节点。带有效会话时保留本人待审、驳回内容，全部祖先也须审核通过或属于本人；其他用户不能读取未通过内容。total按当前查询范围计数，replyCount统计当前读者可见的全部后代。replyTarget返回直接回复对象的昵称及最多120字符的原文摘要，跨页也可读取；replyable仅在当前节点及全部祖先通过审核时为true，发表仍检查会话权限及文章开关。匿名结果使用公开缓存，有效会话查询直接回源。
 
 ---
 
@@ -7976,7 +8514,7 @@ GET /api/v1/blog/categories?page=1&pageSize=10
 
 ##### 响应参数
 
-`data`：分页对象，`records[]` 为 [CategoryPublic](#response-categorypublic)；分页字段见 [0.2](#pagination)。
+`data`：分页对象，`records[]` 与[公开分类详情](#api-156)字段相同，包含字符串 `articleCount`；分页字段见 [0.2](#pagination)。
 
 ##### 响应示例
 
@@ -7987,7 +8525,8 @@ GET /api/v1/blog/categories?page=1&pageSize=10
     "page": 1, "pageSize": 10, "total": "1", "totalPages": "1",
     "records": [
       {
-        "categoryId": "1", "categoryName": "技术", "slug": "tech", "description": null, "sortOrder": 0
+        "categoryId": "1", "categoryName": "技术", "slug": "tech", "description": null, "sortOrder": 0,
+        "articleCount": "3"
       }
     ]
   },
@@ -7995,7 +8534,7 @@ GET /api/v1/blog/categories?page=1&pageSize=10
 }
 ```
 
-仅 status=1；sortOrder ASC,categoryId ASC。
+仅返回 status=1 的分类，按 sortOrder、categoryId 升序。没有公开文章时 `articleCount` 为 `"0"`。
 
 ---
 
@@ -8027,7 +8566,7 @@ GET /api/v1/blog/tags?page=1&pageSize=10
 
 ##### 响应参数
 
-`data`：分页对象，`records[]` 为 [TagPublic](#response-tagpublic)；分页字段见 [0.2](#pagination)。
+`data`：分页对象，`records[]` 与[公开标签详情](#api-157)字段相同，包含字符串 `articleCount`；分页字段见 [0.2](#pagination)。
 
 ##### 响应示例
 
@@ -8038,7 +8577,7 @@ GET /api/v1/blog/tags?page=1&pageSize=10
     "page": 1, "pageSize": 10, "total": "1", "totalPages": "1",
     "records": [
       {
-        "tagId": "1", "tagName": "Java", "slug": "java"
+        "tagId": "1", "tagName": "Java", "slug": "java", "articleCount": "3"
       }
     ]
   },
@@ -8046,7 +8585,7 @@ GET /api/v1/blog/tags?page=1&pageSize=10
 }
 ```
 
-标签无 status；tagId ASC。
+按 tagId 升序。没有关联公开文章时 `articleCount` 为 `"0"`。
 
 ---
 
@@ -8100,7 +8639,7 @@ GET /api/v1/blog/categories/tech
 }
 ```
 
-不存在或隐藏分类统一 `404/NOT_FOUND`，包括携带后台 Token 的情况；展示中但没有公开文章的分类返回详情及 articleCount="0"。取得 ID 后调用 `GET /api/v1/blog/articles?categoryId=1`，文章数口径与该列表一致。只新增此详情模型的 articleCount，不默认为既有分类列表增加字段。slug 改名后旧值 404，不新增重定向历史。
+不存在或隐藏分类统一 `404/NOT_FOUND`，包括携带后台 Token 的情况；展示中但没有公开文章的分类返回详情及 articleCount="0"。取得 ID 后调用 `GET /api/v1/blog/articles?categoryId=1`，文章数口径与该列表一致。slug 改名后旧值 404，不新增重定向历史。
 
 ---
 
@@ -8145,7 +8684,7 @@ GET /api/v1/blog/tags/java
 {"code":"OK","msg":"成功","data":{"tagId":"1","tagName":"Java","slug":"java","articleCount":"2"},"errors":[]}
 ```
 
-不存在返回 `404/NOT_FOUND`；已存在但没有公开文章返回详情及 articleCount="0"。取得 ID 后调用 `GET /api/v1/blog/articles?tagId=1`；数量与该列表使用同一 PUBLIC 条件。只新增此详情模型的 articleCount，不改变既有标签列表字段；slug 改名后旧值 404。分类/标签详情都不返回后台 X-Revision 或非公开文章计数。
+不存在返回 `404/NOT_FOUND`；已存在但没有公开文章返回详情及 articleCount="0"。取得 ID 后调用 `GET /api/v1/blog/articles?tagId=1`；数量与该列表使用同一 PUBLIC 条件。slug 改名后旧值 404。分类/标签详情都不返回后台 X-Revision 或非公开文章计数。
 
 ---
 
@@ -8172,7 +8711,7 @@ GET /api/v1/blog/tags/java
 | --- | --- | --- | --- |
 | `page` | integer | 否 | 默认1，1..100000 |
 | `pageSize` | integer | 否 | 默认10，1..50 |
-| `parentId` | ID | 否 | 缺失仅根节点；提供时仅该节点的直接回复 |
+| `parentId` | ID | 否 | 缺失仅根留言；提供时分页查询该可见留言下的全部层级回复，不包含该留言本身 |
 
 ##### 请求示例
 
@@ -8198,7 +8737,8 @@ GET /api/v1/blog/messages?page=1&pageSize=10
           "userId": "12", "nickname": "落叶", "avatar": null
         },
         "location": "江苏省 南京市", "userAgentOs": "Windows", "userAgentBrowser": "Edge",
-        "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1, "replyCount": "2"
+        "content": "你好，欢迎交流。", "htmlContent": "<p>你好，欢迎交流。</p>", "contentFormat": 0, "status": 1, "replyCount": "2",
+        "replyTarget": null, "replyable": true
       }
     ]
   },
@@ -8206,7 +8746,7 @@ GET /api/v1/blog/messages?page=1&pageSize=10
 }
 ```
 
-匿名只读取审核通过的公开节点；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total只计当前层可见节点。replyCount为当前读者可见的直接回复数量，以字符串返回；不包含更深层或不可见回复，与展开后该层分页的total一致。createTime ASC,messageId ASC。不可见父节点404。
+匿名只读取审核通过的公开节点；合法会话可额外读取本人待审/驳回节点及当前私密线程允许的内容。完整祖先链必须可见，total统计当前查询范围内的可见节点。replyCount为当前读者可见的全部后代数量，以字符串返回，与以该节点为parentId查询整组回复的total一致。根留言及整组回复均按createTime ASC,messageId ASC排序。不可见父节点404。响应parentId保留真实的直接回复目标；replyTarget返回直接回复对象的昵称及最多120字符原文摘要，跨页仍可查看。replyable要求当前节点及全部祖先通过审核；私密范围、会话权限及开关仍由发表接口复核。
 
 ---
 
@@ -10119,7 +10659,7 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 
 ### 16. 留言板、本人留言与审核
 
-留言与文章评论独立；按 parentId 逐层分页，不一次展开整棵线程。本人接口只取会话身份；私密父链、审核与分支删除规则见 [13.3](#business)。
+留言与文章评论独立；前台按 parentId 将整组可见回复合并分页，每次只读取一页正文，后台默认按主记录收起回复，筛选时平铺全部层级；展开和对话抽屉均按整组回复分页。本人接口只取会话身份；私密父链、审核与分支删除规则见 [13.3](#business)。
 
 <a id="group-17"></a>
 
@@ -10178,8 +10718,6 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
 | `lastLoginTime` | Time | 最近登录 UTC 时间，未登录可 null |
-| `lastLoginIp` | string&#124;null | 最近成功登录的完整 IP，仅管理端可见；历史缺失为 null |
-| `lastLoginLocation` | string&#124;null | 最近登录的省市或国家，回环为本地 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
 
@@ -10666,7 +11204,13 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
-| `replyCount` | string | 当前可见直接回复数，字符串 |
+| `replyCount` | string | 当前读者可见的全部后代回复数 |
+| `replyTarget` | object&#124;null | 直接回复对象；根评论为null |
+| `replyTarget.nickname` | string&#124;null | 回复对象的当前昵称 |
+| `replyTarget.content` | string | 回复对象的原文摘要，最多120字符，按文本展示 |
+| `replyable` | boolean | 当前评论及全部祖先是否通过审核；发表仍须满足权限与文章开关 |
+| `siteAuthor` | boolean | 评论者当前有启用的作者或管理员角色，显示本站作者 |
+| `siteAdmin` | boolean | 评论者当前有启用的管理员角色 |
 
 <a id="response-commentown"></a>
 
@@ -10709,6 +11253,11 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author.avatar` | string&#124;null | 外部头像 URL，可 null |
 | `articleTitle` | string | 所属文章标题 |
 | `hasChildren` | boolean&#124;null | 后台列表是否存在直接回复，不限审核状态；详情未查询此标记时为null |
+| `replyTarget` | object&#124;null | 主记录为null；回复返回直接目标的 `nickname` 和最多120字符的 `content` 原文摘要 |
+| `articleAuthor` | boolean | 当前记录作者是否为所属文章的当前作者 |
+| `siteAuthor` | boolean | 启用用户具有启用的 author 或 admin 角色 |
+| `siteAdmin` | boolean | 启用用户具有启用的 admin 角色；同时显示本站作者 |
+
 
 <a id="response-likestate"></a>
 
@@ -10913,7 +11462,13 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `messageId` | ID | 留言ID |
 | `parentId` | ID&#124;null | 直接回复目标；根留言为null |
-| `replyCount` | string | 当前读者可见的直接回复数量；无回复为"0"，不包含更深层或不可见回复 |
+| `replyCount` | string | 当前读者可见的全部后代回复数量；无回复为"0" |
+| `replyTarget` | object&#124;null | 直接回复对象；根留言为null |
+| `replyTarget.nickname` | string&#124;null | 回复对象的当前昵称 |
+| `replyTarget.content` | string | 回复对象的原文摘要，最多120字符，按文本展示 |
+| `replyable` | boolean | 当前留言及全部祖先是否通过审核；发表仍须满足私密范围、权限与开关 |
+| `siteAuthor` | boolean | 留言者当前有启用的作者或管理员角色，显示本站作者 |
+| `siteAdmin` | boolean | 留言者当前有启用的管理员角色 |
 | `author` | object&#124;null | 当前用户公开资料 |
 | `author.userId` | ID | 本站用户ID |
 | `author.nickname` | string | 当前昵称 |
@@ -10957,6 +11512,10 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `updateTime` | Time | 最后更新时间，UTC |
 | `notifyReply` | integer | 0不通知 1请求回复通知；不是邮箱验证凭据 |
 | `hasChildren` | boolean&#124;null | 后台列表是否存在直接回复，包含私密及未通过审核的回复；本人接口、详情及写入响应为null，不据此透露私密回复关系 |
+| `replyTarget` | object&#124;null | 后台列表、后台详情及后台对话返回直接目标昵称及最多120字符原文摘要；根记录及本人/写入响应为null |
+| `siteAuthor` | boolean | 后台读取时展示启用用户的有效 author 或 admin 身份；本人/写入响应为false |
+| `siteAdmin` | boolean | 后台读取时展示启用用户的有效 admin 身份；本人/写入响应为false |
+
 
 <a id="response-musicpublic"></a>
 
@@ -11156,6 +11715,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `errorMessage` | string&#124;null | ≤500，脱敏错误摘要 |
 | `ipAddress` | string&#124;null | 操作IP |
 | `operationTime` | Time | 操作时间 |
+| `selectedCount` | string&#124;null | 共用批量接口时选中的目标数，其他情况为空 |
 
 <a id="response-operationlogdetail"></a>
 
@@ -11196,6 +11756,58 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `likedAt` | Time | 本人当前点赞明细的 createTime |
 | `article` | ArticlePublic | 完整字段及可空性沿用 [7.1](#api-37)，不含正文或后台字段 |
+
+---
+
+<a id="response-captcha"></a>
+
+### 12.60 Captcha
+
+Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `captchaId` | string | 43位URL安全随机标识，非十进制业务ID |
+| `imageBase64` | string | 200×80 PNG Data URI，显示六位纯数字图形验证码 |
+| `expiresIn` | integer | 固定120秒，读取不续期 |
+
+<a id="response-arithmeticcaptcha"></a>
+
+### 12.61 ArithmeticCaptcha
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `captchaId` | string | 43位URL安全随机标识，独立于图形验证码用途 |
+| `question` | string | 服务端生成的数字题目，如 `9 × 9 = ?`；不返回答案 |
+| `expiresIn` | integer | 固定120秒，第一次校验即消费 |
+
+<a id="response-discussionreplytarget"></a>
+
+### 12.62 DiscussionReplyTarget
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `nickname` | string&#124;null | 直接回复对象的当前昵称；缺失时为null |
+| `content` | string | 直接回复对象的原文摘要，最多120字符，按文本展示 |
+
+根记录的 `replyTarget` 为null。公开接口只返回当前读者可见目标的摘要，不能通过此模型暴露私密或不可见父链。
+
+<a id="response-discussionconversation"></a>
+
+### 12.63 DiscussionConversation
+
+后台评论对话的 `T` 为 [CommentAdmin](#response-commentadmin)，后台留言对话的 `T` 为 [MessagePrivate](#response-messageprivate)。此对象放在 `Result.data` 中，不再套一层 PageResult。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `root` | T | 选中记录所属对话的主记录，固定返回，不计入回复总数 |
+| `page` | integer | 实际回复页码；省略请求page时定位选中回复，主记录或无回复时为1 |
+| `pageSize` | integer | 默认20，范围1..50 |
+| `total` | string | 主记录下全部后代回复数，不包含root |
+| `totalPages` | string | 回复总页数；没有回复时为字符串"0" |
+| `records` | T[] | 当前页全部层级的回复，按createTime和记录ID升序；超末页为空数组 |
+
+`root` 和 `records` 的 `parentId` 保留真实直接回复目标；`replyTarget` 使用[回复对象模型](#response-discussionreplytarget)，`hasChildren` 在对话读取中为null。权限范围、定位和错误分别见[评论对话](#admin-comments-conversation)及[留言对话](#admin-messages-conversation)。不返回 X-Revision；审核前仍需读取原详情版本。
 
 ---
 
@@ -11293,7 +11905,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | 400 | SUBSCRIPTION_TICKET_INVALID | 订阅确认或邮件退订票据无效、过期、复用或与当前用户/邮箱/轮次不符；统一错误，不泄露匹配项 |
 | WebSocket | ONLINE_TICKET_INVALID | 在线票据格式错、过期、复用或来源/用途不匹配；1008 关闭，重新申请票据 |
 | 401 | UNAUTHENTICATED | Token 缺失、失效、过期或被注销 |
-| 401 | AUTH_FAILED | 密码登录名不存在、密码错误或无本站密码，统一文案“账号或密码错误” |
+| 401 | AUTH_FAILED | 账密登录名不存在、密码错误或无本站密码时提示“账号或密码错误”；后台发送验证码找不到邮箱账号、邮箱登录在邮件验证码通过后仍找不到账号时提示“邮箱或验证码错误” |
 | 403 | ACCOUNT_DISABLED | 已确认凭据身份后发现本站账号禁用 |
 | 403 | VISITOR_BLOCKED | 仅访问采集接口限制此统计标识；不代表本站账号被禁用，不阻止公开阅读 |
 | 403 | ACCESS_BLOCKED | 反复404导致当前可信IP临时封禁，附Retry-After；不修改账号或访客统计状态 |
@@ -11337,7 +11949,7 @@ Cache-Control: no-store
 
 <a id="delivery"></a>
 
-接口实施状态以本文标记为准；部署配置和历史验收记录见 [后端运行说明](后端运行说明.md)。
+接口实施状态以本文标记为准；配置与当前检查入口见 [后端运行说明](后端运行说明.md)。
 
 ---
 

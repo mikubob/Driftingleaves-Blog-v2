@@ -5,7 +5,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 
 /**
- * 前台每次展开一层，总数只计当前会话可见的直接子节点。
+ * 分页查询根留言或同一讨论的全部回复。
  */
 public record MessagePublicQueryDTO(@Min(1) @Max(100000) Integer page, @Min(1) @Max(50) Integer pageSize,
                                     String parentId) {
@@ -14,4 +14,5 @@ public record MessagePublicQueryDTO(@Min(1) @Max(100000) Integer page, @Min(1) @
         page = ObjectUtil.defaultIfNull(page, 1);
         pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
     }
+
 }

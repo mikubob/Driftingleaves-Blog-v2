@@ -2,6 +2,7 @@
 import { inject, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { request } from '@/api.js'
 import { session, can } from '@/session.js'
 import { useDiscussionForm } from '@/composables/useDiscussionForm.js'

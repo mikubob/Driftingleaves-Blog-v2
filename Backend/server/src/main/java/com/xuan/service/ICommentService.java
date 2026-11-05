@@ -2,6 +2,8 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
@@ -18,7 +20,7 @@ import com.xuan.vo.CommentPublicVO;
 import java.util.List;
 
 /**
- * 评论业务接口，逐级查询回复，写入和文章状态变更使用同一把锁，删除时一并删除全部子回复。
+ * 评论业务接口，整组分页查询回复，写入和文章状态变更使用同一把锁，删除时一并删除全部子回复。
  */
 public interface ICommentService extends IService<BlogComment> {
 
@@ -42,6 +44,9 @@ public interface ICommentService extends IService<BlogComment> {
 
     /** 分页查询后台评论或一层回复，未传parentId保留平铺；SELF按所属文章作者限定。 */
     PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query);
+
+    /** 查询主记录及整组回复，按当前查询权限限定范围。 */
+    DiscussionConversationVO<CommentAdminVO> conversation(long id, DiscussionConversationQueryDTO query);
 
     /** 根据id查询评论详情及版本，按评论查询权限限定范围。 */
     CommentProfileVO detail(long id);

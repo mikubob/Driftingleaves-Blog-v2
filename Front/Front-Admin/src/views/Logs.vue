@@ -1,6 +1,35 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ElButton,
+  ElCard,
+  ElDatePicker,
+  ElDescriptions,
+  ElDescriptionsItem,
+  ElDialog,
+  ElInput,
+  ElMessage,
+  ElMessageBox,
+  ElOption,
+  ElSelect,
+  ElTable,
+  ElTableColumn,
+  ElTag,
+} from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/date-picker/style/css'
+import 'element-plus/es/components/descriptions/style/css'
+import 'element-plus/es/components/descriptions-item/style/css'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/table/style/css'
+import 'element-plus/es/components/table-column/style/css'
+import 'element-plus/es/components/tag/style/css'
 import { request } from '../api.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
@@ -47,6 +76,16 @@ const operationTypes = {
   'batch-purge': { label: '批量永久删除', type: 'danger' },
   'batch-block': { label: '批量封禁', type: 'warning' },
   'batch-unblock': { label: '批量解封', type: 'success' },
+}
+
+/** 根据已记录的选择数量显示旧版单条操作。 */
+function operationLabel(row) {
+  const selectedCount = row.selectedCount ?? row.operationData?.selectedCount
+  const type = row.operationType
+  if (selectedCount === '1' && type.startsWith('batch-')) {
+    return operationTypes[type.slice('batch-'.length)]?.label || type
+  }
+  return operationTypes[type]?.label || type
 }
 
 async function view(row) {
@@ -188,7 +227,7 @@ const batchActions = computed(() => {
               :title="row.operationType"
               size="small"
             >
-              {{ operationTypes[row.operationType]?.label || row.operationType }}
+              {{ operationLabel(row) }}
             </el-tag>
           </template>
         </el-table-column>
@@ -237,7 +276,9 @@ const batchActions = computed(() => {
       <el-descriptions v-if="detail" :column="1" border>
         <el-descriptions-item label="日志 ID">{{ detail.logId }}</el-descriptions-item>
         <el-descriptions-item label="操作人 ID">{{ detail.userId ?? '—' }}</el-descriptions-item>
-        <el-descriptions-item label="操作类型">{{ detail.operationType }}</el-descriptions-item>
+        <el-descriptions-item label="操作类型">
+          <span :title="detail.operationType">{{ operationLabel(detail) }}</span>
+        </el-descriptions-item>
         <el-descriptions-item label="操作目标">{{ detail.operationTarget }}</el-descriptions-item>
         <el-descriptions-item label="目标 ID">{{ detail.targetId ?? '—' }}</el-descriptions-item>
         <el-descriptions-item label="权限码">{{ detail.permissionCode ?? '—' }}</el-descriptions-item>

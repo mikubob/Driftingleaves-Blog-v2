@@ -1,4 +1,22 @@
 <script setup>
+import {
+  ElButton,
+  ElCard,
+  ElDatePicker,
+  ElEmpty,
+  ElOption,
+  ElSelect,
+  ElTable,
+  ElTableColumn,
+} from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/date-picker/style/css'
+import 'element-plus/es/components/empty/style/css'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/table/style/css'
+import 'element-plus/es/components/table-column/style/css'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { request, queryString } from '../api.js'
 import { session } from '../session.js'

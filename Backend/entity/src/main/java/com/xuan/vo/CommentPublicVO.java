@@ -22,4 +22,8 @@ public class CommentPublicVO {
     private LocalDateTime updateTime;
     private ArticlePublicVO.Author author;
     private Long replyCount;
+    private DiscussionReplyTargetVO replyTarget;
+    private boolean replyable;
+    private boolean siteAuthor;
+    private boolean siteAdmin;
 }

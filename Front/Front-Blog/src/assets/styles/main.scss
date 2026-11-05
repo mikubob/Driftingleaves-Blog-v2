@@ -687,6 +687,7 @@ html.dark .msg-nick {
 html.dark .c-reply-to,
 html.dark .reply-to,
 html.dark .c-actions a,
+html.dark .c-actions button,
 html.dark .msg-actions .act,
 html.dark .c-date,
 html.dark .msg-date,
@@ -698,11 +699,13 @@ html.dark .input-icon {
   color: var(--blog-text2) !important;
 }
 html.dark .c-actions a:hover,
+html.dark .c-actions button:hover,
 html.dark .msg-actions .act:hover {
   color: #ffffff !important;
 }
 html.dark .msg-actions .act.del:hover,
-html.dark .c-actions a.danger:hover {
+html.dark .c-actions a.danger:hover,
+html.dark .c-actions button.danger:hover {
   color: #ff6b6b !important;
 }
 
@@ -719,7 +722,6 @@ html.dark .form-textarea::placeholder {
 }
 
 /* 6. 徽章、提示、验证码 */
-html.dark .c-badge,
 html.dark .badge-admin {
   background: var(--blog-text) !important;
   color: var(--blog-bg) !important;

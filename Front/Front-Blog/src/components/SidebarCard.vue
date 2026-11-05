@@ -2,6 +2,8 @@
 import { computed, inject, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElDialog, ElMessage } from 'element-plus'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/message/style/css'
 import { useBlogStore } from '@/stores'
 import { request } from '@/api.js'
 import { can, session } from '@/session.js'
@@ -220,6 +222,7 @@ function goTag(slug) {
         >
           <i class="iconfont icon-folder" />
           <span class="modal-name">{{ cat.name }}</span>
+          <span class="modal-count">{{ cat.articleCount }} 篇</span>
         </div>
         <div v-if="!blogStore.categories.length" class="modal-empty">暂无分类</div>
       </div>
@@ -230,6 +233,7 @@ function goTag(slug) {
         <span v-for="tag in blogStore.tags" :key="tag.id" class="modal-tag" @click="goTag(tag.slug)">
           <i class="iconfont icon-biaoqian" />
           {{ tag.name }}
+          <span class="tag-count" :aria-label="`${tag.articleCount} 篇文章`">{{ tag.articleCount }}</span>
         </span>
         <div v-if="!blogStore.tags.length" class="modal-empty">暂无标签</div>
       </div>

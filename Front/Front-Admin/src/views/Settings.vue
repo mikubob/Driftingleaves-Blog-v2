@@ -1,6 +1,12 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElButton, ElCard, ElDatePicker, ElInput, ElMessage, ElSwitch } from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/date-picker/style/css'
+import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/switch/style/css'
 import { request } from '../api.js'
 import { can } from '../session.js'
 import { nullable } from '../form.js'

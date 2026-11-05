@@ -4,7 +4,6 @@ import com.xuan.dto.PageQueryDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.ICategoryService;
-import com.xuan.vo.ArticlePublicVO.Category;
 import com.xuan.vo.CategoryPublicDetailVO;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Pattern;
@@ -28,7 +27,7 @@ public class CategoryController {
 
     /** 分页查询分类，没有数据时 records 返回空数组。 */
     @GetMapping
-    public Result<PageResult<Category>> list(@Valid @ModelAttribute PageQueryDTO query) {
+    public Result<PageResult<CategoryPublicDetailVO>> list(@Valid @ModelAttribute PageQueryDTO query) {
         return Result.ok(categories.publicCategories(query));
     }
 

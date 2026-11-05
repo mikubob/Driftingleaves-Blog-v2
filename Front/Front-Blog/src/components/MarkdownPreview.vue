@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import { MdPreview } from 'md-editor-v3'
 import { ElOption, ElSelect } from 'element-plus'
+import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/select/style/css'
 import { apiRoot } from '../api.js'
 import { useThemeStore } from '@/stores'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'

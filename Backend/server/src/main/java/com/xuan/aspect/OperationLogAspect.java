@@ -146,7 +146,12 @@ public class OperationLogAspect {
         }
         SysOperationLog log = new SysOperationLog();
         log.setUserId(sessions.currentUserId());
-        log.setOperationType(operation.type());
+        ObjectNode data = operationData(point);
+        String operationType = operation.type();
+        if (operationType.startsWith("batch-") && data.path("ids").size() == 1) {
+            operationType = operationType.substring("batch-".length());
+        }
+        log.setOperationType(operationType);
         log.setOperationTarget(operation.target());
         log.setPermissionCode(operation.permission());
         log.setOperationTime(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC));
@@ -156,7 +161,7 @@ public class OperationLogAspect {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             log.setIpAddress(IpUtils.clientIp(attributes.getRequest(), properties.getTrustedProxies()));
         }
-        log.setOperationData(operationData(point));
+        log.setOperationData(json.writeValueAsString(data));
 
         // 1. 先登记事务结束回调，业务、外层事务或提交阶段出错都能记录失败。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -191,7 +196,7 @@ public class OperationLogAspect {
     }
 
     /** 提取日志参数，只保存已登记的业务字段，上传只记录文件信息。 */
-    private String operationData(ProceedingJoinPoint point) {
+    private ObjectNode operationData(ProceedingJoinPoint point) {
         String[] names = ((MethodSignature) point.getSignature()).getParameterNames();
         Object[] arguments = point.getArgs();
         ObjectNode data = json.createObjectNode();
@@ -241,7 +246,7 @@ public class OperationLogAspect {
                 data.set(name, json.valueToTree(argument));
             }
         }
-        return json.writeValueAsString(data);
+        return data;
     }
 
     /** 从已知的创建结果中获取目标id。 */

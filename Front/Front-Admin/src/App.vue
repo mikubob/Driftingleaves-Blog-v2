@@ -1,4 +1,6 @@
 <script setup>
+import { ElConfigProvider } from 'element-plus'
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import RequestFailure from './components/RequestFailure.vue'
 import { setRequestFailureHandler } from '../../shared/requestFailure.mjs'
 import { onBeforeUnmount, ref, watch } from 'vue'
@@ -26,7 +28,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
 
 <template>
   <RequestFailure v-if="requestFailure" />
-  <div v-else>
+  <ElConfigProvider v-else :locale="zhCn">
     <router-view />
-  </div>
+  </ElConfigProvider>
 </template>

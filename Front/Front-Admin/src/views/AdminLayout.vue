@@ -1,7 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElBreadcrumb, ElBreadcrumbItem, ElMessage, ElMessageBox } from 'element-plus'
+import 'element-plus/es/components/breadcrumb/style/css'
+import 'element-plus/es/components/breadcrumb-item/style/css'
+import 'element-plus/es/components/message/style/css'
+import 'element-plus/es/components/message-box/style/css'
 import { session, logout } from '../session.js'
 import { allowedPages } from '../navigation.js'
 import NavMenu from '../components/NavMenu.vue'

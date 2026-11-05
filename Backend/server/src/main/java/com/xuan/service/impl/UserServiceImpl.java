@@ -200,6 +200,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "comments", allEntries = true)
     @OperationLog(type = "grant", target = "sys:user", permission = "sys:user:assignRole", targetIdArgument = 0)
     public AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision) {
         // 1. 先拿固定保护锁和升序用户锁，再查当前权限及整体版本。

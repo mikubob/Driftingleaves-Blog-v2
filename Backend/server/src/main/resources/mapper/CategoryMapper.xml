@@ -2,25 +2,30 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 分类不按作者划分，隐藏分类也能在后台查到。 -->
 <mapper namespace="com.xuan.mapper.CategoryMapper">
-    <!-- 详情和公开文章列表使用相同公开条件，隐藏分类不返回。 -->
-    <select id="publicBySlug" resultType="com.xuan.vo.CategoryPublicDetailVO">
-        SELECT c.category_id,c.category_name,c.slug,c.description,c.sort_order,
+    <!-- 列表和详情只统计公开文章，没有公开文章时返回零。 -->
+    <sql id="publicColumns">
+        c.category_id,c.category_name,c.slug,c.description,c.sort_order,
         CAST((SELECT COUNT(*) FROM blog_article a WHERE a.category_id=c.category_id AND
         <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count
+    </sql>
+
+    <select id="publicBySlug" resultType="com.xuan.vo.CategoryPublicDetailVO">
+        SELECT <include refid="publicColumns"/>
         FROM blog_category c WHERE c.slug=#{slug} AND c.status=1
     </select>
 
-    <!-- 公开列表只查展示中的分类，不要求分类已经有文章。 -->
+    <select id="publicPage" resultType="com.xuan.vo.CategoryPublicDetailVO">
+        SELECT <include refid="publicColumns"/>
+        FROM blog_category c WHERE c.status = 1
+        ORDER BY c.sort_order ASC, c.category_id ASC
+    </select>
+
+    <!-- 后台列表可以筛选隐藏分类。 -->
     <select id="categoryPage" resultType="com.xuan.entity.BlogCategory">
         SELECT * FROM blog_category
         <where>
-            <choose>
-                <when test="publicOnly">status = 1</when>
-                <otherwise>
-                    <if test="query.status != null">AND status = #{query.status}</if>
-                    <if test="query.keyword != null">AND INSTR(category_name, #{query.keyword}) &gt; 0</if>
-                </otherwise>
-            </choose>
+            <if test="query.status != null">AND status = #{query.status}</if>
+            <if test="query.keyword != null">AND INSTR(category_name, #{query.keyword}) &gt; 0</if>
         </where>
         ORDER BY sort_order ASC, category_id ASC
     </select>

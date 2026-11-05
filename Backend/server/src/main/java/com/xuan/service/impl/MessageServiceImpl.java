@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -36,6 +38,7 @@ import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UserAgentUtils;
 import com.xuan.vo.ArticlePublicVO;
+import com.xuan.vo.DiscussionReplyTargetVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
@@ -76,7 +79,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final JsonMapper json;
     private final IpLocationResolver locations;
 
-    /** 分页查询可见留言及直接回复。 */
+    /** 分页查询可见根留言或整组回复。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query) {
@@ -87,23 +90,43 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
             throw missing();
         }
-        // shortcut: 目前沿用评论的方式查询全部上级留言，留言过多导致扫描太慢时再改查询方式。
-        List<Long> visible = nodes.stream().filter(node -> Objects.equals(parent, node.getParentId()))
-                .filter(node -> MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer))
-                .map(MessageNode::getMessageId).toList();
-        int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
-        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
-        // 只统计当前页留言的可见直接回复，避免泄露私密或他人未通过审核的回复数量。
-        Map<Long, Long> replyCounts = new HashMap<>();
+        Map<Long, List<Long>> children = new HashMap<>();
         for (MessageNode node : nodes) {
-            if (ids.contains(node.getParentId())
-                    && MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer)) {
-                replyCounts.merge(node.getParentId(), 1L, Long::sum);
+            if (MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer)) {
+                children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getMessageId());
             }
         }
+        List<Long> ordered = new ArrayList<>(children.getOrDefault(null, List.of()));
+        Set<Long> replyable = new HashSet<>();
+        for (int position = 0; position < ordered.size(); position++) {
+            MessageNode node = index.get(ordered.get(position));
+            if (node.getStatus() == 1 && (node.getParentId() == null || replyable.contains(node.getParentId()))) {
+                replyable.add(node.getMessageId());
+            }
+            ordered.addAll(children.getOrDefault(node.getMessageId(), List.of()));
+        }
+        Map<Long, Long> replyCounts = new HashMap<>();
+        // 从最深层向上累计，只统计当前读者能看见的回复。
+        for (int position = ordered.size() - 1; position >= 0; position--) {
+            MessageNode node = index.get(ordered.get(position));
+            if (node.getParentId() != null) {
+                replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getMessageId(), 0L) + 1, Long::sum);
+            }
+        }
+        List<Long> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
+        if (parent != null) {
+            for (int position = 0; position < selected.size(); position++) {
+                selected.addAll(children.getOrDefault(selected.get(position), List.of()));
+            }
+        }
+        Set<Long> selectedIds = new HashSet<>(selected);
+        List<Long> visible = nodes.stream().map(MessageNode::getMessageId).filter(selectedIds::contains).toList();
+        int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
+        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
         List<MessagePublicVO> rows = CollUtil.isEmpty(ids) ? List.of() : messages.visibleRows(ids).stream()
                 .map(row -> {
                     row.setReplyCount(replyCounts.getOrDefault(row.getMessageId(), 0L));
+                    row.setReplyable(replyable.contains(row.getMessageId()));
                     return publicView(row, viewer);
                 }).toList();
         return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visible.size()),
@@ -206,12 +229,60 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                         .convert(row -> privateView(row, actor)));
     }
 
+    /** 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。 */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public DiscussionConversationVO<MessagePrivateVO> conversation(long id, DiscussionConversationQueryDTO query) {
+        long actor = requireAdmin("query");
+        required(messages.scoped(id, null));
+        List<MessageNode> nodes = messages.nodes();
+        Map<Long, MessageNode> byId = new HashMap<>();
+        Map<Long, List<Long>> children = new HashMap<>();
+        for (MessageNode node : nodes) {
+            byId.put(node.getMessageId(), node);
+            children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getMessageId());
+        }
+
+        // 先找到主记录，缺失父节点或循环不能拼成另一组对话。
+        long root = id;
+        Set<Long> ancestors = new HashSet<>();
+        while (true) {
+            MessageNode node = byId.get(root);
+            if (node == null || !ancestors.add(root)) {
+                throw missing();
+            }
+            if (node.getParentId() == null) {
+                break;
+            }
+            root = node.getParentId();
+        }
+        Set<Long> selected = new HashSet<>();
+        List<Long> descendants = new ArrayList<>(children.getOrDefault(root, List.of()));
+        for (int index = 0; index < descendants.size(); index++) {
+            long current = descendants.get(index);
+            if (selected.add(current)) {
+                descendants.addAll(children.getOrDefault(current, List.of()));
+            }
+        }
+        // nodes已按时间和id正序排列，正文分页前先确定选中记录的位置。
+        List<Long> ordered = nodes.stream().map(MessageNode::getMessageId).filter(selected::contains).toList();
+        int page = query.page() == null ? Math.max(0, ordered.indexOf(id)) / query.pageSize() + 1 : query.page();
+        int from = Math.min(ordered.size(), (page - 1) * query.pageSize());
+        List<Long> ids = ordered.subList(from, Math.min(ordered.size(), from + query.pageSize()));
+        List<MessagePrivateVO> records = ids.isEmpty() ? List.of()
+                : messages.visibleRows(ids).stream().map(row -> privateView(row, actor)).toList();
+        return new DiscussionConversationVO<>(privateView(messages.visibleRows(List.of(root)).getFirst(), actor),
+                page, query.pageSize(), Integer.toString(ordered.size()),
+                Long.toString((ordered.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
+    }
+
     /** 根据id查询后台留言及版本。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> adminDetail(long id) {
         long actor = requireAdmin("query");
-        return profile(required(messages.scoped(id, null)), actor);
+        required(messages.scoped(id, null));
+        return profile(messages.visibleRows(List.of(id)).getFirst(), actor);
     }
 
     /** 在后台回复留言。 */
@@ -406,7 +477,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 value.htmlContent(), value.contentFormat(),
                 value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
                 value.updateTime(), row.getNotifyReply(), value.location(),
-                value.userAgentOs(), value.userAgentBrowser(), row.getHasChildren());
+                value.userAgentOs(), value.userAgentBrowser(), row.getHasChildren(),
+                row.getReplyToContent() == null ? null : value.replyTarget(), value.siteAuthor(), value.siteAdmin());
     }
 
     /** 组装留言展示内容，纯文本转义并保留换行。 */
@@ -421,7 +493,10 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 content, html, format, row.getIsSecret(), row.getStatus(), row.getEditedAt(),
                 Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime(),
                 row.getLocation(), row.getUserAgentOs(),
-                row.getUserAgentBrowser(), row.getReplyCount());
+                row.getUserAgentBrowser(), row.getReplyCount(),
+                row.getParentId() == null ? null : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()),
+                row.getReplyable() == null ? row.getStatus() == 1 : row.getReplyable(),
+                row.isSiteAuthor(), row.isSiteAdmin());
     }
 
     /** 返回当前留言资料及对应版本。 */

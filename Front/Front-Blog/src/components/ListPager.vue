@@ -1,6 +1,8 @@
 <script setup>
 import { computed } from 'vue'
 import { ElConfigProvider, ElPagination } from 'element-plus'
+import 'element-plus/es/components/config-provider/style/css'
+import 'element-plus/es/components/pagination/style/css'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 /** 直接使用接口分页数据，翻页事件交回页面维护 URL 或列表状态。 */

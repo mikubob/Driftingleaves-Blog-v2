@@ -1,4 +1,10 @@
 <script setup>
+import { ElButton, ElDescriptions, ElDescriptionsItem, ElDialog, ElTag } from 'element-plus'
+import 'element-plus/es/components/button/style/css'
+import 'element-plus/es/components/descriptions/style/css'
+import 'element-plus/es/components/descriptions-item/style/css'
+import 'element-plus/es/components/dialog/style/css'
+import 'element-plus/es/components/tag/style/css'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { request } from '../api.js'
 import { formatTime } from '../format.js'

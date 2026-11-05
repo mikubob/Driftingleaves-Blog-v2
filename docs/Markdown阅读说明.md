@@ -12,7 +12,7 @@
 
 ## 安全、附件与阅读交互
 
-网页解析结果始终经过 `Front/shared/previewSanitizer.mjs` 的专用 xss 白名单：保留代码工具栏、行号、同步滚动标记、必要 class、标题 id 和静态 SVG/circle/path；清理脚本、事件、样式和危险链接。后台 `editorPreview.mjs` 的回归检查继续使用同一清理器，不能关闭清理或退回默认白名单。原始 HTML 开头不跳过 Markdown 解析。
+网页解析结果始终经过 `Front/shared/previewSanitizer.mjs` 的专用 xss 白名单：保留代码工具栏、行号、同步滚动标记、必要 class、标题 id 和静态 SVG/circle/path；清理脚本、事件、样式和危险链接。编辑实时预览与已保存预览都通过 `useMarkdownRendering` 使用该清理器。原始 HTML 开头不跳过 Markdown 解析。
 
 网页保留语言标识、高亮、复制、details 折叠、中文重复标题去重、桌面/手机目录和片段导航。复制使用解析器取得的代码原文，保留首尾换行；浏览器不允许剪贴板时显示失败提示并允许手动选择。复制需要 HTTPS 或 localhost 安全上下文。高亮使用本地 highlight.js 11.11.1，`markdown-code.css` 显式提供共用的 Atom 风格配色，不依赖高亮 CDN，也不提供额外的代码主题选择器。md-editor-v3 6.3.1 在提供 highlighter 实例后会跳过自动 CSS 加载，因此仅有高亮标记还不够，验证时同时检查实际关键字颜色。
 
@@ -44,19 +44,8 @@ RSS 保留摘要 `description` 和经 XML 转义的 `content:encoded` 全文，�
 
 实际只读参考了 [FeiTwnd 博客文章页](https://github.com/FeiTwnd/FeiTwnd-Website/blob/master/Frontend-Blog/src/view/Article/index.vue)、[后台编辑页](https://github.com/FeiTwnd/FeiTwnd-Website/blob/master/Frontend-Admin/src/view/Article/ArticleEdit.vue)及其 [MIT 许可证](https://github.com/FeiTwnd/FeiTwnd-Website/blob/master/LICENSE)。借鉴 MdEditor/MdPreview 的使用方式、透明正文背景、网站文字配色、代码容器宽度限制和工具栏层级处理，没有复制整套工程或通过 HTML 开头猜测正文格式。API 按本地安装的 6.3.1 类型和实现核对；[上游文档](https://imzbf.github.io/md-editor-v3/en-US/api/)可能对应更新版本。
 
-## 隔离验证
+## 检查方式
 
-检查使用真实组件、Service、Markdown 清理器、附件策略和 MyBatis 映射；HTTP 和 Mapper 边界只返回虚构资料，不使用真实账号或业务文章，不启动后端应用或连接数据库。
+在两个前端目录分别运行 `pnpm build`。
 
-- 后台 `node --test src/editorPreview.test.mjs` 检查清理和附件 URL 转换。
-- `appearance-detail-check.mjs` 检查 HTML 回退行号的实际可见宽度及手机键盘打开主题菜单。
-- `appearance-check.mjs` 对 Markdown 与 HTML 回退各检查六主题 × 明暗，核对实际 SQL 关键字颜色、透明正文背景、网站正文色、统一代码背景、复制折叠、目录、手机长内容与刷新恢复；`editor-appearance-check.mjs` 检查后台六主题的 SQL 实际颜色、输入后重渲染和原文/版本保存。
-- `output/markdown-reading/editor-theme-check.mjs` 检查六种排版、亮色固定、输入后重渲染、复制/折叠、输入与未保存标记保持、保存原文与版本、刷新恢复。
-- `list-theme-check.mjs` 检查列表详情预览及弹窗重开后的偏好保存；`image-lifecycle-check.mjs` 检查图片请求取消、鉴权失败不回退、完整代码空白复制和键盘折叠。
-- `PublicMarkdownCheck.java` 检查公开原文、新旧缓存、两次 PUBLIC 复核、失败不读正文或计数，并核对真实 MyBatis SQL；`MarkdownReadingCheck.java` 检查后端清理、语法、附件归属和 RSS。
-
-旧版原生选择器的 `theme-browser-check.mjs`、`html-theme-check.mjs` 是历史验证记录；当前选择器和代码外观以 appearance 系列检查为准。
-
-截图和运行结果保存在忽略目录 `output/playwright/` 与 `output/markdown-reading/`；旧截图不代表最终状态。未验证真实 MySQL、Redis、OSS、跨源部署或第三方 RSS 阅读器，隔离结果不能视作外部联调完成。
-
-最终博客和管理端 `pnpm build`、后端 `mvn -B -ntp -f Backend/pom.xml -DskipTests package` 通过。后端命令为编译打包，不代表业务集成测试；管理端构建保留现有大分包提示，未为本需求调整无关的图表或组件分包。
+阅读展示还需检查主题、高亮颜色、代码复制/折叠、目录、长代码与表格滚动，以及鉴权图片切换后的取消和 URL 释放。构建成功不能代替这些浏览器行为检查；旧输出目录中的截图和脚本不作为当前可维护测试入口。
