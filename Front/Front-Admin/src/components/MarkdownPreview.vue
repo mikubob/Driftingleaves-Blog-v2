@@ -6,7 +6,7 @@ import { computed } from 'vue'
 import { MdPreview, MdCatalog } from 'md-editor-v3'
 import { getImage } from '../api.js'
 import { adminArticleUrl } from '../editorPreview.mjs'
-import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'
+import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../shared/useMarkdownPreview.js'
 const props = defineProps({ markdown: { type: String, default: '' } })
 const previewTheme = useMarkdownPreferences('author')
 const source = computed(() => props.markdown)

@@ -1,6 +1,6 @@
 <script setup>
 import RequestFailure from './components/RequestFailure.vue'
-import { setRequestFailureHandler } from '../../shared/requestFailure.mjs'
+import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { onBeforeUnmount, ref } from 'vue'
 import { ElConfigProvider } from 'element-plus'
 import 'element-plus/es/components/config-provider/style/css'

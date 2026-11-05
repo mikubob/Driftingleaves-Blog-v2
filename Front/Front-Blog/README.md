@@ -1,5 +1,7 @@
 # 博客端 Front-Blog
 
+本工程独立维护，可单独复制、安装依赖、构建和部署。组件、工具和样式均位于本工程的 `src/`，修改只影响本端。
+
 项目尚未上线，当前说明用于本地开发与构建。
 
 文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
@@ -24,7 +26,7 @@
 | `components/TableOfContents.vue` | 保留桌面/移动目录、阅读进度与锚点交互 |
 | `view/Home, Category, Tag, Archive, Hot, Links, About` | 分类与标签文章页合并至本项目 `view/Taxonomy/index.vue`，路由和样式保留；其余页面替换数据读取，归档按 V2 月份分页 |
 | `view/Article, Message` | 保留正文、点赞动画、表单和布局；`DiscussionList.vue` 将整组回复平铺为一层，保留真实回复对象 |
-| `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 由 [前端共享目录](../shared) 提供，用于评论和留言表单 |
+| `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 由 [本端目录](src/shared) 提供，用于评论和留言表单 |
 | `assets/styles`、`assets/font`、`assets/images/bgc.webp` | 直接复用原站样式、字体和背景 |
 
 V2 新增的登录、个人中心、邮件确认和退订流程继续保留，样式限定在 `.v2-page` 内，使用原站主题变量。没有用这些页面替换原站已有的博客 UI。
@@ -89,7 +91,7 @@ OAuth 需在后端配置真实平台、允许的前端 Origin 及固定 `OAUTH_C
 
 旧 Blog 的页面过渡、卡片悬停、主题切换、音乐旋转、点赞、时钟、目录和回顶样式继续复用；布局过渡启用 `appear`，使首次进入也播放旧版入场效果。按本站要求，动画、过渡与平滑滚动始终启用，不随系统“减少动态效果”设置关闭。
 
-图形验证码复用 `Front/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言创建和回复同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
+图形验证码复用 `src/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。登录与 OAuth LOGIN 提交 `X-Captcha-Id`、`X-Captcha-Code`；博客注册、评论、留言创建和回复同样校验；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交后刷新图片，失败保留正文。跨域白名单须允许两个验证码头；OAuth BIND、回调、兑换仍沿用原有 Cookie/Origin/Bearer 流程，详见[接口文档](../../docs/API.md#captcha)。
 
 文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过 Bearer 读取并在切换/卸载时释放临时 URL。详见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
 

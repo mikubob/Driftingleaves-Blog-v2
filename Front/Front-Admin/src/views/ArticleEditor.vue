@@ -33,10 +33,10 @@ import { getImage, getOptions, isId, request } from '../api.js'
 import { can } from '../session.js'
 import { nullable } from '../form.js'
 import { adminArticleUrl } from '../editorPreview.mjs'
-import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'
+import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../shared/useMarkdownPreview.js'
 import RequestError from '../components/RequestError.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
-import EmojiPicker from '../../../shared/EmojiPicker.vue'
+import EmojiPicker from '../shared/EmojiPicker.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 
 const route = useRoute()

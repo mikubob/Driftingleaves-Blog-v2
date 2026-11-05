@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { apiRoot } from './api.js'
-import { reportNotFound } from '../../shared/notFound.mjs'
+import { reportNotFound } from './shared/notFound.mjs'
 
 export const router = createRouter({
   history: createWebHistory(),

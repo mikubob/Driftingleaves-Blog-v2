@@ -16,6 +16,8 @@
 
 后端需要 JDK 21、Maven、MySQL 和 Redis。前端需要 Node.js `^22.18.0 || >=24.12.0`、pnpm `11.9.0`；在各前端目录运行 `pnpm install --frozen-lockfile`、`pnpm dev` 或 `pnpm build`。四端分别输出到各自的 `dist/`，开发代理配置不会打进部署产物。
 
+Home、Blog、Cv、Admin 四端各自维护源码、资源、配置和依赖，可分别作为独立项目复制、安装、构建和部署。跨端不共享源码目录，也不引用兄弟工程。
+
 各端 `pnpm build` 执行 Vite 生产构建，保留默认 500 kB 分块告警。组件按需导入和路由拆包继续保留，构建后应检查输出体积。
 
 ## 文档

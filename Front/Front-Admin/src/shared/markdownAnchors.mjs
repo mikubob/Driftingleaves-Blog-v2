@@ -30,4 +30,3 @@ export const findFragmentTarget = (container, hash) => {
     (node) => node.id === id || node.getAttribute('name') === id
   )
 }
-

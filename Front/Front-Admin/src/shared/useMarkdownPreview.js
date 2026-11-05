@@ -170,4 +170,3 @@ export function useMarkdownRendering(source, mapUrl, loadImage) {
 
   return { renderer, error, sanitize, headingId, onRendered }
 }
-

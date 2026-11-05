@@ -5,9 +5,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   return {
     plugins: [vue()],
-    resolve: { dedupe: ['vue', 'md-editor-v3', 'xss', 'highlight.js'] },
     server: {
-      fs: { allow: ['..'] },
       host: '127.0.0.1',
       port: 5176,
       strictPort: true,

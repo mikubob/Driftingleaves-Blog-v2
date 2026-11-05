@@ -1,7 +1,7 @@
 import { createApp } from 'vue'
 import { ElLoading } from 'element-plus'
 import 'element-plus/es/components/loading/style/css'
-import '../../shared/element-focus.css'
+import './shared/element-focus.css'
 import App from './App.vue'
 import router, { registerMenuRoutes } from './router.js'
 import { restoreSession, session } from './session.js'

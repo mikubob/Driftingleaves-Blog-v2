@@ -1,6 +1,6 @@
-import { validateOnlineTicket } from '../../shared/online.mjs'
-import { isCaptchaId, setCaptchaHeaders, validateCaptcha, validateArithmeticCaptcha } from '../../shared/captcha.mjs'
-import { reportRequestFailure } from '../../shared/requestFailure.mjs'
+import { validateOnlineTicket } from './shared/online.mjs'
+import { isCaptchaId, setCaptchaHeaders, validateCaptcha, validateArithmeticCaptcha } from './shared/captcha.mjs'
+import { reportRequestFailure } from './shared/requestFailure.mjs'
 
 export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
 let accessToken = ''

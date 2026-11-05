@@ -1,6 +1,6 @@
 import { reactive } from 'vue'
 import { isId, request, setAuthorization } from './api.js'
-import { readStoredSession, removeStoredSession, writeStoredSession } from '../../shared/sessionStorage.mjs'
+import { readStoredSession, removeStoredSession, writeStoredSession } from './shared/sessionStorage.mjs'
 
 const storageKey = 'dl-blog-session'
 const listeners = new Set()

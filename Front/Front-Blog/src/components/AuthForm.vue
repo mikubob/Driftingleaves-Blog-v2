@@ -5,7 +5,7 @@ import { validatePassword } from '../shared/form.js'
 import { acceptSession } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
-import CaptchaField from '../../../shared/CaptchaField.vue'
+import CaptchaField from '../shared/CaptchaField.vue'
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
 const emailLogin = ref(false)

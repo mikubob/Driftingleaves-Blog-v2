@@ -1,9 +1,9 @@
 <script setup>
-import { createOnlineConnection } from '../../shared/online.mjs'
+import { createOnlineConnection } from './shared/online.mjs'
 import { apiRoot, getOnlineTicket } from './api.js'
 import { getFingerprint } from './tracking.js'
 import RequestFailure from './components/RequestFailure.vue'
-import { setRequestFailureHandler } from '../../shared/requestFailure.mjs'
+import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getProfile, getSocialLinks, getExperiences, getSkills } from './api.js'
 import CvIcon from './components/CvIcon.vue'

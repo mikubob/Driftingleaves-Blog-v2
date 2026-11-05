@@ -2,7 +2,7 @@
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import RequestFailure from './components/RequestFailure.vue'
-import { setRequestFailureHandler } from '../../shared/requestFailure.mjs'
+import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { session } from './session.js'
 import router from './router.js'

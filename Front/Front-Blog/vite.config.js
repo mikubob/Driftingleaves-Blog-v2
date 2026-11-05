@@ -7,14 +7,12 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [vue()],
     resolve: {
-      dedupe: ['vue', 'md-editor-v3', 'xss', 'highlight.js'],
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
         '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
       },
     },
     server: {
-      fs: { allow: ['..'] },
       host: '127.0.0.1',
       port: 5174,
       strictPort: true,

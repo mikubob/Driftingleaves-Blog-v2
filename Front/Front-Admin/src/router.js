@@ -1,6 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { apiRoot } from './api.js'
-import { reportNotFound } from '../../shared/notFound.mjs'
+import { reportNotFound } from './shared/notFound.mjs'
 import { allowedPages, pageRegistry } from './navigation.js'
 import { session } from './session.js'
 import RequestFailure from './components/RequestFailure.vue'

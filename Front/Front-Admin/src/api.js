@@ -1,5 +1,5 @@
-import { reportRequestFailure } from '../../shared/requestFailure.mjs'
-import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from '../../shared/captcha.mjs'
+import { reportRequestFailure } from './shared/requestFailure.mjs'
+import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from './shared/captcha.mjs'
 
 const apiOrigin = (import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')
 export const apiRoot = `${apiOrigin}/api/v1`

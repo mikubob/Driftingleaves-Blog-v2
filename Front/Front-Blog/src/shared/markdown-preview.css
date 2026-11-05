@@ -1,0 +1,67 @@
+.markdown-preferences {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #ebeef5;
+  background: #fff;
+  color: #606266;
+  font-size: 13px;
+}
+.markdown-preferences label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.markdown-preferences .el-select {
+  width: 154px;
+  --el-border-radius-base: 8px;
+  --el-fill-color-blank: #f7f8fa;
+}
+.markdown-preferences .el-select__wrapper {
+  min-height: 32px;
+}
+.markdown-preview {
+  min-width: 0;
+  max-width: 100%;
+}
+.markdown-preview .md-editor-preview-wrapper {
+  padding: 12px 0;
+}
+.markdown-preview .md-editor-preview {
+  overflow-wrap: anywhere;
+}
+.markdown-preview img {
+  max-width: 100%;
+  height: auto;
+}
+.markdown-preview pre {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.markdown-preview table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3,
+.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 {
+  scroll-margin-top: 90px;
+}
+.markdown-preview .md-editor-code-head {
+  z-index: 1 !important;
+}
+.markdown-preview .md-editor-dark {
+  color-scheme: dark;
+}
+
+/* smart-blue 内置深色标题仍用深蓝，补足暗背景下的对比度。 */
+.md-editor-dark div.smart-blue-theme {
+  --md-theme-heading-color: #86b7fe;
+  --md-theme-link-color: #86b7fe;
+}
+.md-editor-dark div.smart-blue-theme strong {
+  color: #86b7fe;
+}

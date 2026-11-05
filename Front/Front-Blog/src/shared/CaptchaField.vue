@@ -1,0 +1,138 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
+
+const props = defineProps({
+  request: { type: Function, required: true },
+  endpoint: { type: String, required: true },
+  disabled: Boolean,
+  arithmetic: Boolean,
+})
+const inputId = useId()
+const challenge = ref(null)
+const code = ref('')
+const loading = ref(false)
+const error = ref('')
+const answerPattern = computed(() => props.arithmetic ? '[0-9]{1,2}' : '[0-9]{6}')
+const ready = computed(() => !!challenge.value && new RegExp(`^${answerPattern.value}$`).test(code.value) && !loading.value)
+let controller
+
+/** 刷新立即丢弃旧输入，请求结束后只能提交新验证码对应的答案。 */
+async function refresh() {
+  if (loading.value) {
+    return
+  }
+  challenge.value = null
+  code.value = ''
+  error.value = ''
+  loading.value = true
+  controller = new AbortController()
+  try {
+    const { data } = await props.request(props.endpoint, { signal: controller.signal })
+    challenge.value = data
+  } catch (failure) {
+    if (failure.name !== 'AbortError') {
+      error.value = failure.message
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+/** 父表单只在提交时读取验证码，格式由统一请求入口检查。 */
+function getValue() {
+  return { captchaId: challenge.value?.captchaId, code: code.value }
+}
+
+defineExpose({ refresh, getValue, ready })
+onMounted(refresh)
+onBeforeUnmount(() => controller?.abort())
+</script>
+
+<template>
+  <div class="captcha-field" :aria-busy="loading">
+    <label :for="inputId">{{ arithmetic ? '数字题目验证' : '图形验证码' }}</label>
+    <div class="captcha-controls">
+      <input
+        :id="inputId"
+        v-model="code"
+        :aria-label="arithmetic ? '算术题答案' : '六位数字验证码'"
+        inputmode="numeric"
+        autocomplete="off"
+        :pattern="answerPattern"
+        :maxlength="arithmetic ? 2 : 6"
+        required
+        :placeholder="arithmetic ? '输入计算结果' : '六位数字'"
+        :disabled="disabled || loading || !challenge"
+      />
+      <button
+        type="button"
+        :disabled="disabled || loading"
+        aria-label="刷新验证码"
+        title="两分钟内有效，点击刷新验证码"
+        @click="refresh"
+      >
+        <span v-if="challenge && arithmetic" class="captcha-question">{{ challenge.question }}</span>
+        <img v-else-if="challenge" :src="challenge.imageBase64" alt="六位数字图形验证码，点击刷新" width="200" height="80" />
+        <span v-else>{{ loading ? '加载中…' : '重新获取' }}</span>
+      </button>
+    </div>
+    <p v-if="error" class="captcha-error" role="alert">{{ error }}</p>
+  </div>
+</template>
+
+<style scoped>
+.captcha-field {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  min-width: 0;
+  font-size: 14px;
+}
+.captcha-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.captcha-controls input {
+  box-sizing: border-box;
+  flex: 1;
+  min-width: 100px;
+  width: 120px;
+  padding: 10px 12px;
+  border: 1px solid var(--el-border-color, #c5c8ce);
+  border-radius: 6px;
+  color: var(--el-text-color-primary, #303133);
+  background: var(--el-bg-color, #fff);
+  font: inherit;
+}
+.captcha-controls input:focus,
+.captcha-controls button:focus-visible {
+  border-color: currentColor;
+  outline: none;
+}
+.captcha-controls button {
+  padding: 0;
+  min-width: 125px;
+  min-height: 50px;
+  border: 1px solid var(--el-border-color, #c5c8ce);
+  border-radius: 6px;
+  color: var(--el-text-color-primary, #303133);
+  background: var(--el-bg-color, #fff);
+  cursor: pointer;
+  overflow: hidden;
+}
+.captcha-question {
+  padding: 10px;
+  font-size: 18px;
+}
+.captcha-controls img {
+  display: block;
+  width: 125px;
+  height: 50px;
+}
+.captcha-error {
+  margin: 0;
+  color: #c0392b;
+}
+</style>

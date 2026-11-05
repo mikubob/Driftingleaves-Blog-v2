@@ -7,9 +7,9 @@ import { request } from '@/api.js'
 import { session, can } from '@/session.js'
 import { useDiscussionForm } from '@/composables/useDiscussionForm.js'
 import SidebarCard from '@/components/SidebarCard.vue'
-import CaptchaField from '../../../../shared/CaptchaField.vue'
+import CaptchaField from '../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
-import EmojiPicker from '../../../../shared/EmojiPicker.vue'
+import EmojiPicker from '../../shared/EmojiPicker.vue'
 const route = useRoute()
 const { articleTitle, articleMeta } = inject('setHero')
 articleTitle.value = '留言板'

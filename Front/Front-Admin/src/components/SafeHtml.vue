@@ -2,8 +2,8 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getImage } from '../api.js'
 import highlighter from 'highlight.js/lib/common'
-import { enhanceHtml } from '../../../shared/enhanceHtml.mjs'
-import '../../../shared/reading-content.css'
+import { enhanceHtml } from '../shared/enhanceHtml.mjs'
+import '../shared/reading-content.css'
 
 const props = defineProps({ html: { type: String, default: '' } })
 const container = ref(null)

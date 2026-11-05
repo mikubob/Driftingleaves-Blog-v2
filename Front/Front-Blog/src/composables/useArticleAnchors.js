@@ -1,5 +1,5 @@
 import { nextTick, onBeforeUnmount, onMounted } from 'vue'
-import { findFragmentTarget } from '../../../shared/markdownAnchors.mjs'
+import { findFragmentTarget } from '../shared/markdownAnchors.mjs'
 import { ensureHeadingIds } from '@/utils/markdownAnchors'
 
 /**

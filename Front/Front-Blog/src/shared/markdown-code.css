@@ -1,0 +1,107 @@
+/* 本地 highlighter 不会自动加载 CSS，显式提供两端共用的 Atom 配色。 */
+.md-editor div.md-editor-preview {
+  --md-theme-code-block-bg-color: #f7f8fa;
+  --md-theme-code-block-color: #383a42;
+  --md-theme-code-before-bg-color: #f7f8fa;
+}
+
+.md-editor-dark div.md-editor-preview {
+  --md-theme-code-block-bg-color: #282c34;
+  --md-theme-code-block-color: #abb2bf;
+  --md-theme-code-before-bg-color: #282c34;
+}
+
+.md-editor .md-editor-code {
+  --code-comment: #737784;
+  --code-keyword: #a626a4;
+  --code-name: #e45649;
+  --code-literal: #0184bb;
+  --code-string: #34843b;
+  --code-number: #986801;
+  --code-title: #4078f2;
+  --code-built-in: #9b6a00;
+  overflow: hidden;
+  border: 1px solid var(--md-theme-border-color);
+  border-radius: 7px;
+  color: var(--md-theme-code-block-color);
+  background: var(--md-theme-code-block-bg-color);
+}
+
+.md-editor-dark .md-editor-code {
+  --code-comment: #8b919e;
+  --code-keyword: #c678dd;
+  --code-name: #e06c75;
+  --code-literal: #56b6c2;
+  --code-string: #98c379;
+  --code-number: #d19a66;
+  --code-title: #61afef;
+  --code-built-in: #e6c07b;
+}
+
+.md-editor .md-editor-code > .md-editor-code-head {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--md-theme-border-color);
+  color: var(--md-theme-code-block-color);
+  font: 12px/1.5 var(--blog-sans, system-ui, sans-serif);
+}
+
+.md-editor .md-editor-code > pre {
+  margin: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.md-editor .md-editor-code code {
+  font-family: Consolas, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.md-editor .md-editor-code .md-editor-copy-button {
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+}
+
+.md-editor .md-editor-code :is(summary, .md-editor-copy-button, .md-editor-code-block):focus-visible {
+  outline: 2px solid var(--code-title);
+  outline-offset: 2px;
+}
+
+.md-editor-code :is(.hljs-comment, .hljs-quote) {
+  color: var(--code-comment);
+  font-style: italic;
+}
+.md-editor-code :is(.hljs-doctag, .hljs-keyword, .hljs-formula) {
+  color: var(--code-keyword);
+}
+.md-editor-code :is(.hljs-section, .hljs-name, .hljs-selector-tag, .hljs-deletion) {
+  color: var(--code-name);
+}
+.md-editor-code .hljs-literal {
+  color: var(--code-literal);
+}
+.md-editor-code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-attribute) {
+  color: var(--code-string);
+}
+.md-editor-code :is(.hljs-attr, .hljs-variable, .hljs-template-variable, .hljs-type, .hljs-selector-class, .hljs-selector-attr, .hljs-selector-pseudo, .hljs-number) {
+  color: var(--code-number);
+}
+.md-editor-code :is(.hljs-symbol, .hljs-bullet, .hljs-link, .hljs-meta, .hljs-selector-id, .hljs-title) {
+  color: var(--code-title);
+}
+.md-editor-code :is(.hljs-built_in, .hljs-title.class_, .hljs-class .hljs-title) {
+  color: var(--code-built-in);
+}
+.md-editor-code .hljs-emphasis {
+  font-style: italic;
+}
+.md-editor-code .hljs-strong {
+  font-weight: bold;
+}

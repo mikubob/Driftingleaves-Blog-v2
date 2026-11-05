@@ -17,7 +17,7 @@ export function createPreviewFilter(xss) {
     'stroke-width', 'stroke-linecap', 'stroke-linejoin']
   whiteList.circle = ['cx', 'cy', 'r']
   whiteList.path = ['d']
-  
+
   return new xss.FilterXSS({
     whiteList,
     stripIgnoreTag: true,

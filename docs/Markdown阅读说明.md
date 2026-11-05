@@ -12,7 +12,7 @@
 
 ## 安全、附件与阅读交互
 
-网页解析结果始终经过 `Front/shared/previewSanitizer.mjs` 的专用 xss 白名单：保留代码工具栏、行号、同步滚动标记、必要 class、标题 id 和静态 SVG/circle/path；清理脚本、事件、样式和危险链接。编辑实时预览与已保存预览都通过 `useMarkdownRendering` 使用该清理器。原始 HTML 开头不跳过 Markdown 解析。
+网页解析结果始终经过 Admin、Blog 各自 `src/shared/previewSanitizer.mjs` 的专用 xss 白名单：保留代码工具栏、行号、同步滚动标记、必要 class、标题 id 和静态 SVG/circle/path；清理脚本、事件、样式和危险链接。编辑实时预览与已保存预览都通过 `useMarkdownRendering` 使用该清理器。原始 HTML 开头不跳过 Markdown 解析。
 
 网页保留语言标识、高亮、复制、details 折叠、中文重复标题去重、桌面/手机目录和片段导航。复制使用解析器取得的代码原文，保留首尾换行；浏览器不允许剪贴板时显示失败提示并允许手动选择。复制需要 HTTPS 或 localhost 安全上下文。高亮使用本地 highlight.js 11.11.1，`markdown-code.css` 显式提供共用的 Atom 风格配色，不依赖高亮 CDN，也不提供额外的代码主题选择器。md-editor-v3 6.3.1 在提供 highlighter 实例后会跳过自动 CSS 加载，因此仅有高亮标记还不够，验证时同时检查实际关键字颜色。
 

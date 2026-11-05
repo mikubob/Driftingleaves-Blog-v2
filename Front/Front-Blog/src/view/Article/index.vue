@@ -13,10 +13,10 @@ import { useArticleAnchors } from '@/composables/useArticleAnchors.js'
 import { articlePath, formatDate } from '@/format.js'
 import { recordPage } from '@/tracking.js'
 import MarkdownPreview from '@/components/MarkdownPreview.vue'
-import CaptchaField from '../../../../shared/CaptchaField.vue'
+import CaptchaField from '../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import TableOfContents from '@/components/TableOfContents.vue'
-import EmojiPicker from '../../../../shared/EmojiPicker.vue'
+import EmojiPicker from '../../shared/EmojiPicker.vue'
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
