@@ -180,7 +180,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ##### Spring Cache注解方式
 
-简单缓存统一选择Spring Cache声明式缓存，由RedisCacheManager提供Redis存储；不新增自定义缓存注解或独立缓存Service。下表已接入实际 Service 与配置，真实隔离验收记录见运行说明。
+简单缓存统一选择Spring Cache声明式缓存，由RedisCacheManager提供Redis存储；不新增自定义缓存注解或独立缓存Service。下表列出各 Service 使用的缓存。
 
 | 场景 | 指定方式 |
 | --- | --- |

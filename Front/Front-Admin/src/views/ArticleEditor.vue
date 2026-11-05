@@ -36,7 +36,7 @@ import { adminArticleUrl } from '../editorPreview.mjs'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../../../shared/useMarkdownPreview.js'
 import RequestError from '../components/RequestError.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
-import EmojiPicker from '../components/EmojiPicker.vue'
+import EmojiPicker from '../../../shared/EmojiPicker.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 
 const route = useRoute()

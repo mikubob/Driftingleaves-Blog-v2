@@ -24,10 +24,8 @@
 | `components/TableOfContents.vue` | 保留桌面/移动目录、阅读进度与锚点交互 |
 | `view/Home, Category, Tag, Archive, Hot, Links, About` | 分类与标签文章页合并至本项目 `view/Taxonomy/index.vue`，路由和样式保留；其余页面替换数据读取，归档按 V2 月份分页 |
 | `view/Article, Message` | 保留正文、点赞动画、表单和布局；`DiscussionList.vue` 将整组回复平铺为一层，保留真实回复对象 |
-| `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 迁入 `src/shared/`，继续用于原表单 |
+| `Frontend-Shared/EmojiPicker.vue`、`emoji.json` | 由 [前端共享目录](../shared) 提供，用于评论和留言表单 |
 | `assets/styles`、`assets/font`、`assets/images/bgc.webp` | 直接复用原站样式、字体和背景 |
-
-上一版仿写的主布局、侧栏、播放器、文章/留言页和全局样式已移除。替换前的源码备份保留在忽略目录 `output/before-legacy-reuse/`。
 
 V2 新增的登录、个人中心、邮件确认和退订流程继续保留，样式限定在 `.v2-page` 内，使用原站主题变量。没有用这些页面替换原站已有的博客 UI。
 

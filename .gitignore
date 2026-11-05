@@ -24,6 +24,7 @@ AGENT.md
 /Backend/**/replay_pid*.log
 
 # 个人编辑器和操作系统文件。
+*~
 .idea/
 .vscode/
 *.iml

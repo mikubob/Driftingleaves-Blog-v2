@@ -9,7 +9,7 @@ import { useDiscussionForm } from '@/composables/useDiscussionForm.js'
 import SidebarCard from '@/components/SidebarCard.vue'
 import CaptchaField from '../../../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
-import EmojiPicker from '@shared/EmojiPicker.vue'
+import EmojiPicker from '../../../../shared/EmojiPicker.vue'
 const route = useRoute()
 const { articleTitle, articleMeta } = inject('setHero')
 articleTitle.value = '留言板'
@@ -113,7 +113,11 @@ async function handleSubmit() {
               Markdown
             </label>
             <div class="form-actions">
-              <EmojiPicker @select="insertMsgEmoji" />
+              <EmojiPicker @select="insertMsgEmoji">
+                <template #trigger>
+                  <i class="iconfont icon-talk_emjio" />
+                </template>
+              </EmojiPicker>
               <button class="btn-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmit">
                 留言
               </button>

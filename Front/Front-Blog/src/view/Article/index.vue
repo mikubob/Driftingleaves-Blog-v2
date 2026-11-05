@@ -16,7 +16,7 @@ import MarkdownPreview from '@/components/MarkdownPreview.vue'
 import CaptchaField from '../../../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import TableOfContents from '@/components/TableOfContents.vue'
-import EmojiPicker from '@shared/EmojiPicker.vue'
+import EmojiPicker from '../../../../shared/EmojiPicker.vue'
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
@@ -293,7 +293,11 @@ onUnmounted(() => {
               <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/math-captcha" arithmetic :disabled="submitting" />
               <div class="form-options">
                 <div class="form-actions">
-                  <EmojiPicker @select="insertCommentEmoji" />
+                  <EmojiPicker @select="insertCommentEmoji">
+                    <template #trigger>
+                      <i class="iconfont icon-talk_emjio" />
+                    </template>
+                  </EmojiPicker>
                   <button class="form-submit" :disabled="submitting || !captcha?.ready" @click="handleSubmitComment">
                     <span v-if="submitting">提交中...</span>
                     <span v-else>发表评论</span>

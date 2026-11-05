@@ -49,7 +49,9 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
       @keydown.esc="show = false"
       @click="toggle"
     >
-      <span aria-hidden="true">😊</span>
+      <slot name="trigger">
+        <span aria-hidden="true">😊</span>
+      </slot>
     </button>
     <Transition name="emoji-fade">
       <div v-show="show" ref="pickerRef" class="emoji-panel" @keydown.esc="closePicker">
@@ -95,7 +97,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
   color: #303133;
   background: #f5f7fa;
 }
-.emoji-trigger .iconfont {
+.emoji-trigger :slotted(.iconfont) {
   font-size: 20px;
 }
 .emoji-panel {

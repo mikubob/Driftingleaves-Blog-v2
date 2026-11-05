@@ -1,5 +1,6 @@
 import { nextTick, onBeforeUnmount, onMounted } from 'vue'
-import { ensureHeadingIds, findFragmentTarget } from '@/utils/markdownAnchors'
+import { findFragmentTarget } from '../../../shared/markdownAnchors.mjs'
+import { ensureHeadingIds } from '@/utils/markdownAnchors'
 
 /**
  * 文章内容渲染后补齐锚点并恢复 URL 片段；保留原生片段历史和键盘链接行为。
