@@ -5,7 +5,7 @@ import 'element-plus/es/components/icon/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/radio-button/style/css'
 import 'element-plus/es/components/radio-group/style/css'
-import { reactive, ref } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from '../api.js'
 import CaptchaField from '../shared/CaptchaField.vue'
@@ -21,6 +21,41 @@ const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
+const providers = ref([])
+
+onMounted(async () => {
+  try {
+    const { data } = await request('/admin/auth/oauth/providers')
+    providers.value = data
+  } catch {
+    // 平台列表加载失败时仍可用账号密码或邮箱登录。
+  }
+})
+
+/** 发起第三方登录并跳转到平台授权页。 */
+async function loginWithProvider(provider) {
+  if (busy.value) {
+    return
+  }
+  error.value = ''
+  feedback.value = ''
+  busy.value = true
+  try {
+    const { data } = await request(`/admin/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
+      method: 'POST',
+      body: { operation: 'LOGIN' },
+    })
+    const url = new URL(data.authorizationUrl)
+    if (url.protocol !== 'https:') {
+      throw new Error('授权地址无效。')
+    }
+    location.assign(url.href)
+  } catch (failure) {
+    error.value = failure.message
+  } finally {
+    busy.value = false
+  }
+}
 
 async function login() {
   if (busy.value) {
@@ -160,6 +195,12 @@ async function sendEmailCode() {
             登 录
             <el-icon aria-hidden="true"><ArrowRight /></el-icon>
           </el-button>
+          <div v-if="providers.length" class="oauth-buttons" aria-label="第三方登录">
+            <el-button v-for="provider in providers" :key="provider.source" native-type="button"
+              :disabled="busy" @click="loginWithProvider(provider)">
+              {{ provider.displayName }} 登录
+            </el-button>
+          </div>
         </form>
       </div>
       <footer>© {{ new Date().getFullYear() }} Drifting Leaves</footer>

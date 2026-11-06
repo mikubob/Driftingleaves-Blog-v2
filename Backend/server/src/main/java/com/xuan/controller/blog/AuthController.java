@@ -146,8 +146,7 @@ public class AuthController {
      */
     @GetMapping("/oauth/providers")
     public Result<List<ProviderVO>> providers() {
-        return Result.ok(providers.providers().stream()
-                .filter(provider -> providers.callbackPath(provider.source()).startsWith("/api/v1/blog/"))
+        return Result.ok(providers.providers(WebSession.BLOG.site()).stream()
                 .map(provider -> new ProviderVO(provider.source(), provider.displayName())).toList());
     }
 
@@ -170,12 +169,13 @@ public class AuthController {
         // 1. 复用或创建只用于 OAuth 流程的浏览器标识。
         String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : TokenUtils.random();
 
-        // 2. 限流通过后发起授权，绑定时的原会话和最近认证由业务服务检查。
-        limiter.oauth(request, id);
+        // 2. 登录单独限流，绑定仍由业务服务检查原会话和最近认证。
         if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
-            captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+            limiter.oauthLogin(request, id);
+        } else {
+            limiter.oauth(request, id);
         }
-        OAuthAuthorizeVO result = oauth.authorize(source, body.operation(), id);
+        OAuthAuthorizeVO result = oauth.authorize(WebSession.BLOG, source, body.operation(), id);
 
         // 3. 设置只关联流程的安全 Cookie，再返回授权 URL。
         ResponseCookie cookie = ResponseCookie.from(BROWSER_COOKIE, id).secure(true).httpOnly(true)
@@ -198,8 +198,8 @@ public class AuthController {
     public ResponseEntity<Void> callback(@PathVariable String source, @RequestParam(required = false) String state,
             @RequestParam(required = false) String code, @RequestParam(required = false) String error,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        return ResponseEntity.status(303).location(URI.create(oauth.callback(source, state, code, error, browser)))
-                .build();
+        String redirect = oauth.callback(WebSession.BLOG, source, state, code, error, browser);
+        return ResponseEntity.status(303).location(URI.create(redirect)).build();
     }
 
     /**
@@ -217,8 +217,8 @@ public class AuthController {
         limiter.oauth(request, browser);
 
         // 2. 登录会返回新会话，绑定只确认原账号的绑定结果，不发新会话，也不切换账号。
-        Object result = oauth.exchange(body.ticket(), browser,
-                SessionManager.BLOG_TIMEOUT_SECONDS, request.getHeader(WebSession.EXPECTED_USER));
+        Object result = oauth.exchange(WebSession.BLOG, body.ticket(), browser,
+                request.getHeader(WebSession.EXPECTED_USER));
         if (result instanceof LoginSession login) {
             return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, WebSession.BLOG.issue(login))
                     .body(Result.ok(new OAuthLoginResultVO("LOGIN", login.response())));

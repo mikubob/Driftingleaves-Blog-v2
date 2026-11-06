@@ -9,6 +9,7 @@ import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
 import com.xuan.dto.RegisterDTO;
 import com.xuan.exception.BusinessException;
+import com.xuan.model.LoginSession;
 import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.result.Result;
 import com.xuan.security.WebSession;
@@ -19,11 +20,12 @@ import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthAuthorizeVO;
-import com.xuan.vo.OAuthBindResultVO;
+import com.xuan.vo.OAuthLoginResultVO;
 import com.xuan.vo.ProviderVO;
 import com.xuan.vo.SessionVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -153,8 +155,7 @@ public class AuthController {
      */
     @GetMapping("/oauth/providers")
     public Result<List<ProviderVO>> providers() {
-        return Result.ok(providers.providers().stream()
-                .filter(provider -> providers.callbackPath(provider.source()).startsWith("/api/v1/admin/"))
+        return Result.ok(providers.providers(WebSession.ADMIN.site()).stream()
                 .map(provider -> new ProviderVO(provider.source(), provider.displayName())).toList());
     }
 
@@ -171,17 +172,20 @@ public class AuthController {
     public ResponseEntity<Result<OAuthAuthorizeVO>> authorize(@PathVariable String source,
             @Valid @RequestBody OAuthAuthorizeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
-            throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
+        if (body.operation() == OAuthAuthorizeDTO.Operation.BIND) {
+            sessions.requireAdminAuthentication();
+            WebSession.requireExpectedUser(request.getHeader(WebSession.EXPECTED_USER), sessions.currentUserId());
         }
-        sessions.requireAdminAuthentication();
-        WebSession.requireExpectedUser(request.getHeader(WebSession.EXPECTED_USER), sessions.currentUserId());
         // 1. 复用或创建只用于 OAuth 流程的浏览器标识。
         String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : TokenUtils.random();
 
-        // 2. 限流通过后发起授权，绑定时的原会话和最近认证由业务服务检查。
-        limiter.oauth(request, id);
-        OAuthAuthorizeVO result = oauth.authorize(source, body.operation(), id);
+        // 2. 登录单独限流，绑定仍由业务服务检查原会话和最近认证。
+        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
+            limiter.oauthLogin(request, id);
+        } else {
+            limiter.oauth(request, id);
+        }
+        OAuthAuthorizeVO result = oauth.authorize(WebSession.ADMIN, source, body.operation(), id);
 
         // 3. 设置只关联流程的安全 Cookie，再返回授权 URL。
         ResponseCookie cookie = ResponseCookie.from(BROWSER_COOKIE, id).secure(true).httpOnly(true)
@@ -204,8 +208,8 @@ public class AuthController {
     public ResponseEntity<Void> callback(@PathVariable String source, @RequestParam(required = false) String state,
             @RequestParam(required = false) String code, @RequestParam(required = false) String error,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        return ResponseEntity.status(303).location(URI.create(oauth.callback(source, state, code, error, browser)))
-                .build();
+        String redirect = oauth.callback(WebSession.ADMIN, source, state, code, error, browser);
+        return ResponseEntity.status(303).location(URI.create(redirect)).build();
     }
 
     /**
@@ -214,17 +218,20 @@ public class AuthController {
      * @param body 通过格式校验的 60 秒一次性结果票据
      * @param request 用于 IP 限流的当前请求
      * @param browser 必须与票据关联一致的浏览器标识
-     * @return 绑定结果
+     * @return 后台登录会话或绑定结果
      */
     @PostMapping("/oauth/exchange")
-    public Result<OAuthBindResultVO> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
+    public ResponseEntity<Result<?>> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        sessions.requireAdminAuthentication();
         // 限流后核对浏览器和一次性票据。
         limiter.oauth(request, browser);
 
-        // 绑定只返回原账号的绑定结果。
-        return Result.ok((OAuthBindResultVO) oauth.exchange(body.ticket(), browser,
-                SessionManager.ADMIN_TIMEOUT_SECONDS, request.getHeader(WebSession.EXPECTED_USER)));
+        Object result = oauth.exchange(WebSession.ADMIN, body.ticket(), browser,
+                request.getHeader(WebSession.EXPECTED_USER));
+        if (result instanceof LoginSession login) {
+            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, WebSession.ADMIN.issue(login))
+                    .body(Result.ok(new OAuthLoginResultVO("LOGIN", login.response())));
+        }
+        return ResponseEntity.ok().body(Result.ok(result));
     }
 }

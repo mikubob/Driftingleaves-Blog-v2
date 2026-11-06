@@ -6,7 +6,7 @@ import com.xuan.dto.OAuthAuthorizeDTO.Operation;
 import com.xuan.exception.BusinessException;
 import com.xuan.model.OAuthFlow;
 import com.xuan.model.OAuthTicket;
-import com.xuan.properties.AuthProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.security.WebSession;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
@@ -20,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionException;
+import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -37,7 +38,7 @@ public class OAuthServiceImpl implements IOAuthService {
     private final RedisOAuthStore store;
     private final IUserService users;
     private final SessionManager sessions;
-    private final AuthProperties properties;
+    private final PublicSiteProperties sites;
     private final JsonMapper json = JsonMapper.builder().build();
     private final Clock clock;
 
@@ -51,9 +52,12 @@ public class OAuthServiceImpl implements IOAuthService {
      * @return 平台授权地址及流程有效秒数
      */
     @Override
-    public OAuthAuthorizeVO authorize(String source, Operation operation, String browser) {
+    public OAuthAuthorizeVO authorize(WebSession side, String source, Operation operation, String browser) {
         // 1. 先确认平台配置齐全，才能发起授权。
         providers.requireEnabled(source);
+        if (!sites.origin(side.site()).startsWith("https://")) {
+            throw new BusinessException(404, "NOT_FOUND", "第三方授权需要 HTTPS");
+        }
         Long userId = null;
         String tokenHash = null;
         long authenticatedAt = 0;
@@ -67,7 +71,7 @@ public class OAuthServiceImpl implements IOAuthService {
 
         // 3. 生成不可预测的 state，关联当前浏览器和操作，同一浏览器可以同时有多个流程。
         String state = TokenUtils.random();
-        OAuthFlow flow = new OAuthFlow(TokenUtils.digest(browser), source, operation, userId, tokenHash,
+        OAuthFlow flow = new OAuthFlow(side.site(), TokenUtils.digest(browser), source, operation, userId, tokenHash,
                 authenticatedAt, clock.millis());
 
         // 4. JustAuth 的 state 缓存照常保留，另存 300 秒有效的本站一次性流程。
@@ -89,15 +93,35 @@ public class OAuthServiceImpl implements IOAuthService {
      * @return 固定前端完成页地址，fragment 仅包含 ticket 或允许的业务错误码
      */
     @Override
-    public String callback(String source, String state, String code, String error, String browser) {
-        // 1. 先查平台、浏览器和流程关联，不匹配时不能消费合法 state。
-        providers.requireEnabled(source);
+    public String callback(WebSession side, String source, String state, String code, String error, String browser) {
+        String registeredPath = providers.callbackPath(source);
         String raw = store.read("state", state);
         OAuthFlow flow = json.readValue(raw, OAuthFlow.class);
-        requireBrowser(flow.browserHash(), browser);
-        if (!source.equals(flow.source())) {
+        if (!source.equals(flow.source()) || flow.site() == null) {
             throw RedisOAuthStore.invalid();
         }
+
+        String origin = sites.origin(flow.site());
+        if (!origin.startsWith("https://")) {
+            throw RedisOAuthStore.invalid();
+        }
+        if (!side.site().equals(flow.site())) {
+            if (!registeredPath.startsWith("/api/v1/" + side.site() + "/")) {
+                throw RedisOAuthStore.invalid();
+            }
+            // 登记回调只把请求转回发起端，由发起端检查浏览器 Cookie 后再换码。
+            UriComponentsBuilder redirect = UriComponentsBuilder.fromUriString(origin + "/api/v1/" + flow.site()
+                    + "/auth/oauth/" + source + "/callback").queryParam("state", state);
+            if (error != null) {
+                return redirect.queryParam("error", "denied").build().toUriString();
+            }
+            if (code != null) {
+                return redirect.queryParam("code", "{code}").encode().buildAndExpand(code).toUriString();
+            }
+            return redirect.build().toUriString();
+        }
+        requireBrowser(flow.browserHash(), browser);
+        String complete = origin + "/oauth/complete";
 
         // 2. 绑定按服务端保存的摘要重查原会话，平台回调不用带登录 Cookie。
         if (flow.operation() == Operation.BIND) {
@@ -141,16 +165,16 @@ public class OAuthServiceImpl implements IOAuthService {
 
             // 6. 只发 60 秒有效的结果票据，再跳固定完成页，URL 里不能带本站 Token。
             String ticket = TokenUtils.random();
-            OAuthTicket result = new OAuthTicket(flow.browserHash(), flow.source(), flow.operation(), userId,
+            OAuthTicket result = new OAuthTicket(flow.site(), flow.browserHash(), flow.source(), flow.operation(), userId,
                     flow.tokenHash(), flow.operation() == Operation.LOGIN ? at : flow.authenticatedAt(), binding,
                     identity.uuid());
             store.save("ticket", ticket, json.writeValueAsString(result), Duration.ofSeconds(60));
-            return properties.getFrontendCompleteUrl() + "#ticket=" + ticket;
+            return complete + "#ticket=" + ticket + "&operation=" + flow.operation();
         } catch (BusinessException exception) {
-            return properties.getFrontendCompleteUrl() + "#error=" + exception.getCode();
+            return complete + "#error=" + exception.getCode();
         } catch (DataAccessException | TransactionException exception) {
             // 可信流程消费后，业务或提交失败都跳固定完成页，不能再发票据。
-            return properties.getFrontendCompleteUrl() + "#error=SERVICE_UNAVAILABLE";
+            return complete + "#error=SERVICE_UNAVAILABLE";
         } finally {
             // 7. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。
             store.deleteState(state);
@@ -164,23 +188,26 @@ public class OAuthServiceImpl implements IOAuthService {
      *
      * @param ticket 固定完成页交回的一次性结果票据
      * @param browser 当前浏览器 Cookie 中的随机标识
-     * @param timeoutSeconds 兑换端决定的本站会话有效秒数，不接受前端指定
+     * @param side 发起授权的端，由兑换接口确定
      * @param expectedUserId 页面预期账号，仅用于核对 BIND
      * @return LOGIN 的本站会话结果，或 BIND 的绑定结果
      */
     @Override
-    public Object exchange(String ticket, String browser, int timeoutSeconds, String expectedUserId) {
+    public Object exchange(WebSession side, String ticket, String browser, String expectedUserId) {
         // 1. 先取未过期票据并核对浏览器，不能让其他浏览器消耗结果。
         String raw = store.read("ticket", ticket);
         OAuthTicket result = json.readValue(raw, OAuthTicket.class);
         requireBrowser(result.browserHash(), browser);
 
-        if (result.operation() == Operation.LOGIN && timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-            throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
+        if (!side.site().equals(result.site())) {
+            throw RedisOAuthStore.invalid();
         }
 
         // 2. 绑定必须带发起时同一枚会话的 Cookie，就算是同一用户的另一枚也不行。
         if (result.operation() == Operation.BIND) {
+            if (side == WebSession.ADMIN) {
+                sessions.requireAdminAuthentication();
+            }
             String token = sessions.currentToken();
             if (token == null) {
                 throw RedisOAuthStore.invalid();
@@ -198,7 +225,7 @@ public class OAuthServiceImpl implements IOAuthService {
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
             return users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
-                    timeoutSeconds);
+                    side.timeoutSeconds());
         }
         if (users.requireCurrent() != result.userId()) {
             throw RedisOAuthStore.invalid();

@@ -11,7 +11,7 @@ public interface OAuthProviderClient {
     /**
      * 查询可用的第三方平台，只返回已启用且配置完整的平台名称。
      */
-    List<Provider> providers();
+    List<Provider> providers(String site);
 
     /**
      * 获取可用的平台代码，不包括配置缺失的平台。

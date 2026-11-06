@@ -20,7 +20,7 @@
 - 原 `/auth/**` 和 `/me/**` 分别迁到 `/admin/auth/**`、`/admin/me/**` 及 `/blog/auth/**`、`/blog/me/**`。本人评论、留言、点赞记录和邮件订阅属于 Blog。
 - 原 `/analytics/**`、`/ws/online` 迁到 Home、Blog、Cv 各自前缀下；`siteCode` 必须与当前端一致，WebSocket 票据也必须在同端使用。Admin 不参与在线人数统计。
 - Blog、Home、Cv 分别通过自己端的 `/profile`、`/social-links`、`/configs` 读取共享公开数据。更改资料和配置仍使用 Admin 入口。
-- 旧的无端名前缀入口已移除。前后端须一起部署；OAuth 平台登记的回调地址须更新到所选端 HTTPS Origin 上的 `/api/v1/blog/auth/oauth/{source}/callback` 或 `/api/v1/admin/auth/oauth/{source}/callback`，仍使用既有固定完成页配置。
+- 旧的无端名前缀入口已移除。前后端须一起部署。OAuth 平台继续登记任一端 HTTPS Origin 上的 `/api/v1/blog/auth/oauth/{source}/callback` 或 `/api/v1/admin/auth/oauth/{source}/callback`，两个入口共用该平台应用。
 - 四端路径不建立新的账号、角色或会话体系。Admin 的认证与本人设置维持公开/登录本人规则，后台业务继续要求 `admin:access`、业务权限和数据范围。
 
 <a id="common"></a>
@@ -31,10 +31,10 @@
 
 - 下文使用完整路径，统一前缀 `/api/v1`。JSON 请求使用 `application/json`，上传使用 `multipart/form-data`。
 - 本站通过 Sa-Token 和 Redis 校验会话。Admin 与 Blog 通过同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，固定 604800 秒（7 天）。博客使用 `__Host-dl-blog-session`，固定 259200 秒（3 天）。两个登录 Cookie 均为 host-only，设置 `HttpOnly; Secure; SameSite=Strict; Path=/`，省略 Domain，访问与刷新均不续期。
-- 账密、邮箱验证码登录及博客 OAuth LOGIN 成功时，事务提交后通过 `Set-Cookie` 签发对应端会话，JSON 只返回 `expiresIn` 和 `user`。后台两种登录方式均要求图形验证码和 `admin:access`。两端只读取各自的登录 Cookie，旧 Bearer 和旧会话值均无法恢复登录。新版前端启动时删除本端旧的 `dl-admin-session` 或 `dl-blog-session` localStorage 值，切换后需重新登录一次。
+- 账密、邮箱验证码登录及 OAuth LOGIN 成功时，事务提交后通过 `Set-Cookie` 签发对应端会话。会话 JSON 只含 `expiresIn` 和 `user`，OAuth 登录结果另带 `operation`。后台各登录方式均要求 `admin:access`；账密和邮箱登录还要求图形验证码。两端只读取各自的登录 Cookie，旧 Bearer 和旧会话值均无法恢复登录。新版前端启动时删除本端旧的 `dl-admin-session` 或 `dl-blog-session` localStorage 值，切换后需重新登录一次。
 - 刷新后以本端 `/me`、`/me/capabilities` 核验身份和权限，Admin 还读取 `/me/menus` 并确认 `admin:access`。预期的 401 按未登录处理。退出先撤销当前 Cookie 对应的会话，再用同名同属性、`Max-Age=0` 的 Cookie 清除浏览器值。退出幂等，撤销失败返回错误。普通 401 响应不清除 Cookie。
 - 页面已知登录账号时，用 `X-Expected-User-Id` 发送该页的十进制用户 ID。受保护写请求、有效会话的退出以及 OAuth BIND 发起和兑换要求该头，受保护读取提供该头时也会核对。后端用 Cookie 确定真实身份并执行权限检查。预期缺失或与实际账号不符时，受约束的请求返回 `409/SESSION_ACCOUNT_CHANGED`，不执行操作，也不修改 Cookie。页面重新核验身份，原请求不重试。
-- 博客讨论读取、访问采集和在线票据请求可匿名。省略该头时按匿名处理，即使浏览器已有另一标签页的登录 Cookie。提供该头时，必须带对应的有效会话。账密或邮箱登录、Blog OAuth LOGIN 和独立的邮件退订票据不要求预期账号。
+- 博客讨论读取、访问采集和在线票据请求可匿名。省略该头时按匿名处理，即使浏览器已有另一标签页的登录 Cookie。提供该头时，必须带对应的有效会话。账密或邮箱登录、OAuth LOGIN 和独立的邮件退订票据不要求预期账号。
 - Admin、Blog 的写请求（包括注册、登录、退出、绑定、兑换和上传）在业务执行前核对本端配置的 scheme、host 和 port。优先读取唯一 `Origin`，缺失时才从唯一可解析的 `Referer` 提取来源。`Origin: null`、来源缺失、跨端或不匹配均为 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据及匿名 404 上报按各自规则处理。公开文章详情的阅读计数与会话无关。
 - Admin 和 Blog 按各自配置处理同源请求，反代改写后端看到的 Host 时也适用。HTTP 跨域只向 Home 和 Cv 的配置来源开放各自的公开接口，允许 GET、POST 和 Content-Type，可读取 Retry-After。两端统计为匿名，WebSocket 各自核对所属站点的 Origin。
 - **公开**：无需登录；**登录本人**：账号启用，身份只取当前会话；**后台：P**：账号启用，同时具备 `admin:access` 与权限 P。未认证 401，无权限 403。
@@ -108,8 +108,8 @@
 ### 邮箱验证与登录方式
 
 - 公开注册（`/blog/auth/register` 及保留的 `/admin/auth/register`）必须提供 `email` 和 `emailCode`，仅消费 REGISTER 用途验证码；注册只授予 member，不创建后台身份。
-- 前台可以选择用户名密码、邮箱验证码或已绑定第三方登录，三种登录均需填写图形验证码。第三方 LOGIN 不再自动注册账号；历史已有绑定仍可登录。
-- 后台支持“用户名密码”和“邮箱验证码”两种登录，均需图形验证码和 admin:access；邮箱方式不要求本站密码。第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记。切换到 Cookie 鉴权后，已有用户需重新登录。
+- 前台可以选择用户名密码、邮箱验证码或已绑定第三方登录，其中账密和邮箱登录需填写图形验证码。第三方登录免图形验证码，只接受已绑定账号。
+- 后台支持用户名密码、邮箱验证码和已绑定的第三方账号登录，均需 `admin:access`。账密和邮箱登录需图形验证码，第三方登录免图形验证码。邮箱登录和第三方登录不要求设置本站密码。所有受保护 `/admin/**` 都检查后台认证标记。切换到 Cookie 鉴权后，已有用户需重新登录。
 
 | 接口 | JSON 请求体 | 成功响应 |
 | --- | --- | --- |
@@ -156,7 +156,6 @@ GET /api/v1/blog/auth/captcha
 | `POST /api/v1/{admin,blog}/auth/login` | 账密登录 |
 | `POST /api/v1/{admin,blog}/auth/email-code` | 发送邮箱验证码 |
 | `POST /api/v1/{admin,blog}/auth/email-login` | 邮箱验证码登录 |
-| `POST /api/v1/{admin,blog}/auth/oauth/{source}/authorize` | 仅 `operation=LOGIN`；BIND 沿用原会话、最近认证、Origin 与浏览器校验 |
 
 ### 评论和留言的数字题目验证
 
@@ -175,9 +174,9 @@ GET /api/v1/blog/auth/captcha
 
 题目和图形验证码使用不同 Redis 键，不能跨用途使用；有效期均为 120 秒。后台留言回复仍不要求验证码，保留后台登录、权限与限流；后台评论管理当前只有查询、审核和删除，没有独立回复接口。
 
-验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片或题目，不自动重放写入，正文保留供用户重试。
+验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次提交需验证码的请求后清空输入并重新获取图片或题目，不自动重放写入，正文保留供用户重试。
 
-验证码及 OAuth 发起和兑换使用同源请求，回调和兑换不再次要求图形验证码，以免破坏 JustAuth state 与一次性票据流程。日志不得记录验证码答案或上述验证码请求头。
+验证码及 OAuth 发起和兑换使用同源请求。OAuth 发起、回调和兑换均不要求图形验证码。日志不得记录验证码答案或上述验证码请求头。
 
 ### 0.6 接口限流覆盖与阈值
 
@@ -189,8 +188,9 @@ GET /api/v1/blog/auth/captcha
 | `POST /blog/auth/login` 凭据失败 | 60秒10次；IP、IP+归一用户名 | 已实现，可部署配置 |
 | `POST /blog/auth/login` 总请求 | 60秒30次/IP，成功和失败都计数，进入 BCrypt 前执行；独立于失败次数 | 已实现，进入 BCrypt 前累计独立 IP 总预算 |
 | `POST /blog/auth/register` | 60秒5次；IP、存在的浏览器标识；无标识按IP | 已实现，可部署配置 |
-| `POST /blog/auth/oauth/{source}/authorize`、`POST /blog/auth/oauth/exchange` | 共用60秒20次；IP、浏览器标识；无标识按IP | 已实现，可部署配置 |
-| `GET /blog/auth/oauth/{source}/callback` | 所有平台共用60秒30次/IP，独立于发起/兑换窗口；超限不得消费state或调用平台 | 已实现 |
+| `POST /{admin,blog}/auth/oauth/{source}/authorize`（LOGIN） | 60秒3次，IP、浏览器标识分别计数；两端和各平台共享额度 | 仅发起登录计次；绑定、回调和兑换不占用此额度 |
+| `POST /{admin,blog}/auth/oauth/{source}/authorize`（BIND）、`POST /{admin,blog}/auth/oauth/exchange` | 共用60秒20次；IP、浏览器标识；无标识按IP | 已实现，可部署配置 |
+| `GET /{admin,blog}/auth/oauth/{source}/callback` | 所有平台共用60秒30次/IP，独立于发起/兑换窗口；跨端转发的两次回调均计数，超限不得消费state或调用平台 | 已实现 |
 | `PUT/DELETE /blog/me/password` | 两种方法共用60秒10次；IP、用户 | 已实现 |
 | `POST /blog/articles/{articleId}/comments` | 60秒10次；IP、用户 | 已实现 |
 | `PUT/DELETE /blog/articles/{articleId}/like` | 两种方法及所有文章共用60秒60次；IP、用户 | 已实现 |
@@ -526,25 +526,25 @@ GET /api/v1/admin/auth/oauth/providers
 
 <a id="admin-api-5"></a>
 
-#### 1.1.5 发起第三方绑定
+#### 1.1.5 发起第三方登录或绑定
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/oauth/{source}/authorize` |
-| 接口描述 | 发起第三方绑定 |
+| 接口描述 | 发起第三方登录或绑定 |
 | Content-Type | application/json |
-| 访问要求 | 仅 BIND；须后台完整认证会话 + 最近 300 秒认证；按通用规则检查来源 |
+| 访问要求 | LOGIN 公开，免图形验证码，超限返回 `429/RATE_LIMITED`；BIND 须后台有效会话及最近 300 秒认证；按通用规则检查来源 |
 
 ##### 请求参数
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `source` | string | 是 | Path；服务端已启用平台的大写标识；未知或未启用 404 |
-| `operation` | string | 是 | 仅允许 BIND 绑定当前用户；LOGIN 返回 403/FORBIDDEN；不接收 redirectUri/userId/uuid |
+| `operation` | string | 是 | LOGIN 登录或 BIND 绑定当前用户；不接收 redirectUri/userId/uuid |
 | `__Host-dl-oauth-browser` | string | 否（缺失时由后端签发） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `X-Expected-User-Id` | string | 是 | Header。页面预期账号，使用十进制用户 ID。 |
+| `X-Expected-User-Id` | string | 仅 BIND | Header。页面预期账号，使用十进制用户 ID。 |
 | `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
@@ -579,7 +579,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 }
 ```
 
-后台禁止第三方直接登录。BIND 需完成后台账密或邮箱登录的原会话及最近 300 秒认证，校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留发起页面。
+LOGIN 使用已有第三方绑定，兑换时检查账号状态和 `admin:access`。BIND 使用当前后台会话和最近 300 秒认证，绑定弹窗保留发起页面。
 
 ---
 
@@ -594,7 +594,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 | 接口路径 | `GET /api/v1/admin/auth/oauth/{source}/callback` |
 | 接口描述 | 第三方平台授权回调 |
 | Content-Type | 无请求体 |
-| 访问要求 | 仅平台回调；校验 state、OAuth 流程 Cookie、流程及原会话；回调不需要登录 Cookie |
+| 访问要求 | 登记端按 state 记录转回发起端；发起端校验流程 Cookie，BIND 另查原会话；回调不需要登录 Cookie |
 | 成功状态 | 303（可信流程重定向） |
 
 ##### 请求参数
@@ -619,7 +619,7 @@ Cookie: __Host-dl-oauth-browser=<browser-id>
 
 | 字段/响应头 | 类型 | 说明 |
 | --- | --- | --- |
-| `Location` | string | 固定前端完成页；成功 fragment 携带 ticket，可信失败携带白名单错误码 |
+| `Location` | string | 发起端回调或完成页；完成页成功 fragment 携带 ticket 和 operation，可信失败携带白名单错误码 |
 | `Cache-Control` | string | no-store |
 | `Referrer-Policy` | string | no-referrer |
 | 响应体 | — | 成功重定向不返回 Result；不可信/无效流程直接返回对应 HTTP JSON 错误 |
@@ -628,7 +628,7 @@ Cookie: __Host-dl-oauth-browser=<browser-id>
 
 ```http
 HTTP/1.1 303 See Other
-Location: https://admin.example.com/oauth/complete#ticket=<one-time-ticket>
+Location: https://admin.example.com/oauth/complete#ticket=<one-time-ticket>&operation=BIND
 Cache-Control: no-store
 Referrer-Policy: no-referrer
 ```
@@ -639,16 +639,16 @@ Referrer-Policy: no-referrer
 
 <a id="admin-api-7"></a>
 
-#### 1.1.7 兑换一次性绑定结果
+#### 1.1.7 兑换一次性登录或绑定结果
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/oauth/exchange` |
-| 接口描述 | 兑换一次性绑定结果 |
+| 接口描述 | 兑换一次性登录或绑定结果 |
 | Content-Type | application/json |
-| 访问要求 | 同浏览器 Cookie；仅 BIND，须后台原会话 Cookie；LOGIN 禁止 |
+| 访问要求 | 同一发起端和浏览器；BIND 另须后台原会话 Cookie |
 
 ##### 请求参数
 
@@ -656,7 +656,7 @@ Referrer-Policy: no-referrer
 | --- | --- | --- | --- |
 | `ticket` | string | 是 | 回调得到的本站一次性票据；有效期 60 秒，不是平台 code 或本站 Token |
 | `__Host-dl-oauth-browser` | string | 是 | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `X-Expected-User-Id` | string | 是 | Header。页面预期账号，使用十进制用户 ID。 |
+| `X-Expected-User-Id` | string | 仅 BIND | Header。页面预期账号，使用十进制用户 ID。 |
 | `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
@@ -692,7 +692,7 @@ BIND 成功（200，原会话必须有效，不返回新 Session）：
 }
 ```
 
-兑换时携带同一浏览器的 OAuth 流程 Cookie、发起时的后台登录 Cookie 和 `X-Expected-User-Id`。成功只返回绑定结果。后台拒绝 LOGIN 票据。票据有效期 60 秒且仅消费一次。
+兑换时携带同一浏览器的 OAuth 流程 Cookie。BIND 还须带发起时的后台登录 Cookie 和 `X-Expected-User-Id`，只返回绑定结果。LOGIN 校验 `admin:access` 后通过 `Set-Cookie` 签发后台会话，返回 `operation=LOGIN` 和 `session`。票据有效期 60 秒且仅消费一次。
 
 ---
 
@@ -7146,14 +7146,12 @@ GET /api/v1/blog/auth/oauth/providers
 | 接口路径 | `POST /api/v1/blog/auth/oauth/{source}/authorize` |
 | 接口描述 | 发起第三方登录或绑定 |
 | Content-Type | application/json |
-| 访问要求 | LOGIN 公开；BIND 登录本人 + 最近 300 秒认证；按通用规则检查来源 |
+| 访问要求 | LOGIN 公开，免图形验证码，超限返回 `429/RATE_LIMITED`；BIND 登录本人 + 最近 300 秒认证；按通用规则检查来源 |
 
 ##### 请求参数
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
-| `X-Captcha-Id` | string | LOGIN 是，BIND 否 | Header；见[验证码契约](#captcha) |
-| `X-Captcha-Code` | string | LOGIN 是，BIND 否 | Header；6 位数字，保留前导零 |
 | `source` | string | 是 | Path；服务端已启用平台的大写标识；未知或未启用 404 |
 | `operation` | string | 是 | LOGIN 登录；BIND 绑定当前用户；不接收 redirectUri/userId/uuid |
 | `__Host-dl-oauth-browser` | string | 否（缺失时由后端签发） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
@@ -7166,8 +7164,6 @@ GET /api/v1/blog/auth/oauth/providers
 POST /api/v1/blog/auth/oauth/GITHUB/authorize
 Cookie: __Host-dl-oauth-browser=<browser-id>
 Origin: https://blog.example.com
-X-Captcha-Id: <captchaId>
-X-Captcha-Code: 012345
 Content-Type: application/json
 
 {"operation":"LOGIN"}
@@ -11948,12 +11944,12 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 ### 13.1 OAuth 登录与绑定
 
-平台回调、固定 `/oauth/complete` 和发起页面使用同一个所选端 HTTPS Origin。一套部署只配置一个完成页，每个平台只注册一个回调。
+每个平台只注册一个 HTTPS 回调。两端共用平台应用和用户绑定，各自在本端 HTTPS Origin 完成授权和兑换。
 
-1. 查询本端可用平台，同源调用 authorize。Blog LOGIN 可整页跳转，BIND 使用原会话并打开弹窗保留发起页面。流程 Cookie 为 `__Host-dl-oauth-browser`，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最长 600 秒。
-2. 平台回调由后端校验 state、浏览器 Cookie 和流程；state 有效期 300 秒，一次性使用。BIND 还检查原会话与最近认证。
-3. 后端 303 跳到配置的固定完成页，fragment 仅放 ticket，不放本站或平台 Token；ticket 有效期 60 秒、限同浏览器一次兑换。
-4. 完成页读出并清除 fragment。Blog LOGIN 同源兑换时才签发登录 Cookie，随后重新读取本人资料和权限。BIND 弹窗只发送短期票据，原页面校验消息 Origin 和来源窗口，再用原会话兑换绑定结果。
+1. 查询本端可用平台，同源调用 authorize。LOGIN 可整页跳转，BIND 使用原会话并打开弹窗保留发起页面。流程 Cookie 为 `__Host-dl-oauth-browser`，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最长 600 秒。
+2. 登记回调与发起端不同时，后端按 state 记录把回调转到发起端的固定 API 路径。发起端校验 state、浏览器 Cookie 和流程后才换码。state 有效期 300 秒，一次性使用。BIND 还检查原会话与最近认证。
+3. 后端 303 跳到发起端 `/oauth/complete`，成功 fragment 只放 ticket 和 operation。ticket 有效期 60 秒，只能在同一端、同一浏览器兑换一次。
+4. 完成页读出并清除 fragment。LOGIN 同源兑换时签发本端登录 Cookie，Admin 另查 `admin:access`。BIND 弹窗只发送短期票据，原页面校验消息 Origin 和来源窗口，再用原会话兑换绑定结果。
 
 来源值使用后端启用的平台码，例如 GITHUB；只列配置完整的平台。不得自定回调地址、以昵称/邮箱合并账号或转移他人绑定。保留至少一种可用登录方式；BIND 原页面/会话丢失后重新登录确认绑定结果。完整流程见 [OAuth 开发约定](API_CONTRACT.md#oauth-flow)。
 

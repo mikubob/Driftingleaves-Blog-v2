@@ -43,9 +43,12 @@ public class AuthRateLimiter {
         hit("register", request, browser, properties.getRate().getRegister());
     }
 
-    /**
-     * 检查第三方授权和兑换频率，按 IP 和浏览器标识计数。
-     */
+    /** 限制第三方登录发起次数，两端和各平台共用 IP、浏览器各自的每分钟三次额度。 */
+    public void oauthLogin(HttpServletRequest request, String browser) {
+        limiter.hit(keys("oauth-login", request, browser), 60, 3);
+    }
+
+    /** 检查第三方绑定发起和票据兑换频率，按 IP 和浏览器标识计数。 */
     public void oauth(HttpServletRequest request, String browser) {
         hit("oauth", request, browser, properties.getRate().getOauth());
     }

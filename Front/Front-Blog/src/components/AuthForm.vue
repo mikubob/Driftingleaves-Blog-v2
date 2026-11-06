@@ -147,7 +147,7 @@ async function authorize(provider) {
   try {
     // 2. 取得授权地址，再用弹窗或当前页打开。
     const { data } = await request(`/blog/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
-      method: 'POST', body: { operation: 'LOGIN' }, captcha: captcha.value.getValue(),
+      method: 'POST', body: { operation: 'LOGIN' },
     })
     if (props.popup) {
       awaitingPopup = true
@@ -159,7 +159,6 @@ async function authorize(provider) {
     error.value = failure.message
     popupWindow?.close()
   } finally {
-    captcha.value?.refresh()
     busy.value = false
   }
 }
@@ -232,7 +231,7 @@ async function authorize(provider) {
         <button
           v-for="provider in providers.data"
           :key="provider.source"
-          :disabled="busy || !captcha?.ready"
+          :disabled="busy"
           @click="authorize(provider)"
         >
           {{ provider.displayName }}

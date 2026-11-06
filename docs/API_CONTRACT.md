@@ -57,7 +57,7 @@ X-Revision 是本站自定义业务版本，不承担HTTP缓存校验；If-Revis
 
 ### 0.4 Sa-Token 会话与最近认证
 
-Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下的同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，博客使用 `__Host-dl-blog-session`。两个 Cookie 固定为 host-only、HttpOnly、Secure、SameSite=Strict、Path=/，不设置 Domain。入口只选取所属端 Cookie，同一枚会话不能跨端使用。后台账密或邮箱登录要求图形验证码和 `admin:access`。Blog 可通过账密、邮箱或 OAuth LOGIN 登录。
+Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下的同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，博客使用 `__Host-dl-blog-session`。两个 Cookie 固定为 host-only、HttpOnly、Secure、SameSite=Strict、Path=/，不设置 Domain。入口只选取所属端 Cookie，同一枚会话不能跨端使用。两端均支持账密、邮箱和 OAuth LOGIN。账密和邮箱登录要求图形验证码，OAuth LOGIN 免图形验证码；后台签发会话前还要求 `admin:access`。
 
 | Session 字段 | 类型 | 含义 |
 | --- | --- | --- |
@@ -88,7 +88,7 @@ Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下�
 
 ### 0.6 请求保护与跨域
 
-Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Cookie、OAuth code/state/ticket 或第三方 Token。Admin、Blog 写请求在副作用前核对该端配置的 Origin。缺失 Origin 时才从 Referer 提取来源，缺失、无法解析、Origin:null、跨端或不匹配均返回 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据和匿名 404 上报分别按各自契约处理。Admin 和 Blog 通过同源反代访问。HTTP 跨域只向 Home、Cv 自身的来源开放各自公开的 GET 和 POST，允许 Content-Type 并暴露 Retry-After。在线 WebSocket 分别核对所属站点 Origin。
+Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。第三方登录发起按 IP 和浏览器分别限制为 60 秒内最多三次，两端和各平台共享额度，绑定、回调和兑换不占用此额度。其他认证入口阈值可按部署配置；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Cookie、OAuth code/state/ticket 或第三方 Token。Admin、Blog 写请求在副作用前核对该端配置的 Origin。缺失 Origin 时才从 Referer 提取来源，缺失、无法解析、Origin:null、跨端或不匹配均返回 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据和匿名 404 上报分别按各自契约处理。Admin 和 Blog 通过同源反代访问。HTTP 跨域只向 Home、Cv 自身的来源开放各自公开的 GET 和 POST，允许 Content-Type 并暴露 Retry-After。在线 WebSocket 分别核对所属站点 Origin。
 
 全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，留言创建窗口按表中要求执行。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
 
@@ -100,7 +100,7 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 | author | 后台入口、本人文章创建/查询/编辑/发布/回收/恢复、分类/标签只读、本人文件管理、前台评论/点赞、本人留言与邮件订阅，SELF；无评论审核或系统授权管理权限 |
 | member | 前台评论、删除本人评论、点赞/取消点赞、发表/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
 
-图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言创建和回复使用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED。两个验证码请求头由同源请求发送。
+图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。账密登录、邮箱登录、注册和发送邮件验证码使用图形验证码；前台评论/留言创建和回复使用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED。两个验证码请求头由同源请求发送。
 
 ### 0.7 鉴权组件落地要求
 
@@ -715,16 +715,16 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 
 仅支持服务端启用白名单中、可通过 GET 回调的普通 OAuth 平台；source 路径使用 QQ/GITHUB/GITEE 等大写值（不是承诺三者已接入），未知/未启用平台统一404。任意第三方授权 URL、redirectUri、returnUrl、userId、uuid 不能由客户端指定。每平台仅一个应用；身份始终为服务端验证所得 `source + AuthUser.uuid`，区分大小写；不能以昵称或邮箱合并。
 
-1. 前端同源调用 authorize。后端设置随机 `__Host-dl-oauth-browser` 流程 Cookie，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多 600 秒。BIND 使用本端原登录 Cookie 和 `X-Expected-User-Id`。发起端、固定完成页和平台注册回调必须使用同一个 HTTPS Origin。
+1. 前端通过本端 HTTPS Origin 调用 authorize。后端设置随机 `__Host-dl-oauth-browser` 流程 Cookie，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多 600 秒。BIND 使用本端原登录 Cookie 和 `X-Expected-User-Id`。Redis 流程记录发起端，完成页使用该端 HTTPS Origin。
 2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留弹窗引用；授权 URL 带 state。
-3. 平台回调同源代理地址 `/api/v1/<所选端>/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不依赖登录 Cookie，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
+3. 平台回调代理地址为 `/api/v1/<登记端>/auth/oauth/{source}/callback`。请求包含 state 和 code，或 error/error_description。登记端和发起端不同时，先按有效 state 和 source 记录将请求转到发起端的固定回调路径，只转发 state 和授权码或通用取消标记。发起端核对流程 Cookie 和原会话，再用 Redis 原子 compare-and-consume 消费流程。浏览器不匹配不消耗有效流程，重放或过期返回 OAUTH_STATE_INVALID。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
-5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。前台 LOGIN 仅接受已有绑定：先锁本站用户，再重查绑定归属及启用状态；没有绑定返回 OAUTH_NOT_BOUND，要求先完成邮箱注册、登录后绑定，不创建或合并账号。后台禁止第三方 LOGIN，只保留完整后台登录后的 BIND。
+5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。两端 LOGIN 共用已有绑定，先锁本站用户，再重查绑定归属及启用状态。未绑定返回 OAUTH_NOT_BOUND，不创建或合并账号。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。
-7. 成功后只生成 60 秒、一次性的随机 ticket，在 Redis 绑定同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到**后端配置的固定前端页面** `/oauth/complete#ticket=<opaque>`。回调不把本站 Token、平台 code 或第三方 Token放在跳转 URL；设置 no-store、Referrer-Policy:no-referrer。
-8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，同源调用 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，使用本端原会话 Cookie 和 `X-Expected-User-Id` 调用 exchange。弹窗不接收本站 Token、不在 URL 或存储中传 Token。后端原子校验并消费 ticket，再检查用户启用；LOGIN 此时在用户行锁内重查该 source+uuid 仍绑定同一用户，再调用 Sa-Token 创建会话，提交后签发博客 Cookie，并返回 Session JSON，认证时间记为已验证第三方身份的时间（不能借延迟交换刷新）；BIND 必须带同一枚有效会话 Cookie 且只返回绑定结果。重放/过期/浏览器不符统一 OAUTH_STATE_INVALID。网络响应丢失需重新发起，不能再兑换。
+7. 成功后生成 60 秒、一次性的随机 ticket，在 Redis 绑定发起端、同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到发起端 `/oauth/complete#ticket=<opaque>&operation=<LOGIN或BIND>`。完成页 URL 不包含本站 Token、平台 code 或第三方 Token，回调设置 no-store 和 Referrer-Policy:no-referrer。
+8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，同源调用 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，使用本端原会话 Cookie 和 `X-Expected-User-Id` 调用 exchange。后端核对发起端和浏览器，再原子消费 ticket。LOGIN 在用户行锁内重查账号启用及绑定归属，Admin 另查 `admin:access`，提交后签发本端 Cookie 并返回 Session JSON。认证时间沿用平台验证成功的时间。BIND 只返回绑定结果。重放、过期、跨端或浏览器不符统一返回 OAUTH_STATE_INVALID，网络响应丢失需重新发起。
 
-失败回调：存在已验证且刚消费的本站流程时，303 固定 `/oauth/complete#error=<本文错误码>`；不得透传平台 error_description 或任意跳转地址。无可信 state/浏览器关系时直接以对应 HTTP JSON 错误结束，不重定向。前端仅显示通用失败并允许重试；无固定前端地址时禁止启用该平台。平台取消同样消费流程，结果为 OAUTH_DENIED。绑定已经提交而结果 ticket 丢失时，通过 GET /blog/me/oauth-bindings 确认，不回滚已完成绑定。
+失败回调：存在已验证且刚消费的本站流程时，303 到发起端 `/oauth/complete#error=<本文错误码>`。不得透传平台 error_description 或任意跳转地址。发起端遇到无效 state 或浏览器不符时直接返回 HTTP JSON 错误。平台取消同样消费流程，结果为 OAUTH_DENIED。绑定已经提交而结果 ticket 丢失时，通过本端绑定列表确认。
 
 解绑/清除密码必须锁定同一 sys_user 行，串行检查跨表登录方式：有效 BCrypt 密码或至少一个仍被后端白名单启用、应用凭据配置完整的平台绑定。此处检查配置可用性，不要求实时探测平台在线，不能只数 oauth 行。服务配置停用平台前检查受影响的纯第三方用户并安排其他登录方式；平台短时故障不作为自动解绑理由。首期不提供管理员绕过最后登录方式保护的接口。
 
@@ -888,4 +888,4 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 ### 邮件认证补充
 
-当前接口字段、发送/消费顺序和错误见 [邮箱验证与登录方式](API.md#邮箱验证与登录方式)。邮件验证码五分钟有效，注册、前台登录、后台登录分开，校验一次即消费。SMTP 失败返回503且清理验证码；接口不返回答案。第三方未绑定返回 OAUTH_NOT_BOUND，不能自动注册；后台第三方 LOGIN 禁止，绑定流程保留。
+当前接口字段、发送/消费顺序和错误见 [邮箱验证与登录方式](API.md#邮箱验证与登录方式)。邮件验证码五分钟有效，注册、前台登录、后台登录分开，校验一次即消费。SMTP 失败返回503且清理验证码；接口不返回答案。两端的第三方登录都要求已有绑定，未绑定返回 OAUTH_NOT_BOUND。

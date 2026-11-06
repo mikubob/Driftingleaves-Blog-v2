@@ -23,7 +23,6 @@ public class AuthProperties {
 
     /** 兼容旧站绝对附件地址，不用于 HTTP 或 WebSocket 跨域。 */
     private List<String> allowedOrigins = new ArrayList<>();
-    private String frontendCompleteUrl;
     /** 从右往左跳过这些明确配置的代理，不能直接相信转发头里的最左地址。 */
     private List<String> trustedProxies = new ArrayList<>();
 

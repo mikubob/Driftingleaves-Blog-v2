@@ -179,14 +179,10 @@ public class AuthWebConfig implements WebMvcConfigurer {
             return;
         }
 
-        // 平台回调和发起必须匹配同一个已配置的端；绑定的原会话由业务层检查。
+        // 两端可以发起授权，回调由业务层按登记地址和流程所属端处理。
         boolean authorize = "POST".equals(method) && path.matches("/(admin|blog)/auth/oauth/[^/]+/authorize");
         if (authorize || (callback && "GET".equals(method))) {
-            String expected = providers.callbackPath(path.split("/")[4]);
-            String callbackPath = authorize ? path.substring(0, path.lastIndexOf('/')) + "/callback" : path;
-            if (!expected.equals("/api/v1" + callbackPath)) {
-                throw new BusinessException(404, "NOT_FOUND", "平台不存在或未启用");
-            }
+            providers.requireEnabled(path.split("/")[4]);
             return;
         }
 

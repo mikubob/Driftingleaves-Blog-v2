@@ -40,7 +40,10 @@ public class JustAuthClient implements OAuthProviderClient {
      * 查询已启用且配置完整的第三方平台。
      */
     @Override
-    public List<Provider> providers() {
+    public List<Provider> providers(String site) {
+        if (!sites.origin(site).startsWith("https://")) {
+            return List.of();
+        }
         return enabledSources().stream().sorted().map(source -> new Provider(source, SOURCES.get(source))).toList();
     }
 
@@ -123,15 +126,12 @@ public class JustAuthClient implements OAuthProviderClient {
         AuthProperties.Provider provider = properties.getProviders().get(source);
         if (provider == null || !provider.isEnabled() || blank(provider.getClientId()) || blank(
                 provider.getClientSecret())
-                || !UrlPolicy.valid(provider.getRedirectUri()) || blank(provider.getRedirectUri())
-                || !UrlPolicy.valid(properties.getFrontendCompleteUrl()) || blank(
-                properties.getFrontendCompleteUrl())) {
+                || blank(provider.getRedirectUri()) || !UrlPolicy.valid(provider.getRedirectUri())) {
             return false;
         }
 
-        // 回调、完成页和授权发起端同源，浏览器才能在回调时发送流程 Cookie。
+        // 每个平台只登记一个回调地址，两端共用该平台应用和用户身份。
         URI callback = URI.create(provider.getRedirectUri());
-        URI complete = URI.create(properties.getFrontendCompleteUrl());
         String callbackPath = callback.getRawPath();
         String side;
         if (callbackPath.equals("/api/v1/blog/auth/oauth/" + source + "/callback")) {
@@ -144,10 +144,7 @@ public class JustAuthClient implements OAuthProviderClient {
         String origin = sites.origin(side);
         return "https".equals(callback.getScheme())
                 && origin.equals(PublicSiteProperties.originOf(callback))
-                && origin.equals(PublicSiteProperties.originOf(complete))
-                && callback.getRawQuery() == null && callback.getRawFragment() == null
-                && "/oauth/complete".equals(complete.getRawPath()) && complete.getRawQuery() == null
-                && complete.getRawFragment() == null;
+                && callback.getRawQuery() == null && callback.getRawFragment() == null;
     }
 
     /**

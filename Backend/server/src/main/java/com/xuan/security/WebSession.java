@@ -50,6 +50,10 @@ public enum WebSession {
         return site;
     }
 
+    public int timeoutSeconds() {
+        return timeoutSeconds;
+    }
+
     public String readToken(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();
         if (cookies == null) {

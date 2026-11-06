@@ -70,13 +70,13 @@ public class SessionManager {
         return StpUtil.getTokenValue();
     }
 
-    /** 检查后台登录，只接受后台账密或邮箱认证，前台会话不能代替。 */
+    /** 检查是否通过后台登录入口认证。 */
     public void requireAdminAuthentication() {
         String token = currentToken();
         SaSession session = token == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
         Object method = session == null ? null : session.get("method");
-        if (!"ADMIN_PASSWORD".equals(method) && !"ADMIN_EMAIL".equals(method)) {
-            throw new BusinessException(403, "FORBIDDEN", "请使用账号密码或邮箱验证码登录后台");
+        if (!"ADMIN_PASSWORD".equals(method) && !"ADMIN_EMAIL".equals(method) && !"ADMIN_OAUTH".equals(method)) {
+            throw new BusinessException(403, "FORBIDDEN", "请重新登录后台");
         }
     }
 
@@ -114,7 +114,8 @@ public class SessionManager {
         Object value = session.get("authenticatedAt");
         long at = value instanceof Number number ? number.longValue() : 0;
         long age = clock.millis() - at;
-        if (age < 0 || age > 300_000 || (requireOAuth && !"OAUTH".equals(session.get("method")))) {
+        Object method = session.get("method");
+        if (age < 0 || age > 300_000 || (requireOAuth && !"OAUTH".equals(method) && !"ADMIN_OAUTH".equals(method))) {
             throw new BusinessException(403, "REAUTH_REQUIRED", "请在五分钟内重新认证");
         }
         return at;

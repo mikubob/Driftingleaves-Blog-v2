@@ -770,9 +770,6 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LoginSession loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
-        if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-            throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
-        }
         // 1. 兑换时重新锁用户并查状态，不能只信回调时查到的结果。
         SysUser user = users.lockById(userId);
         enabled(user);
@@ -783,8 +780,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             throw new BusinessException(400, "OAUTH_STATE_INVALID", "授权身份已解绑，请重新发起");
         }
 
-        // 3. 认证时间用平台验证成功的时间，兑换等待不能刷新最近认证窗口。
-        return createSession(user, authenticatedAt, "OAUTH", timeoutSeconds);
+        boolean admin = timeoutSeconds == SessionManager.ADMIN_TIMEOUT_SECONDS;
+        if (admin) {
+            permissions.requireScope(userId, "admin:access");
+        }
+        // 认证时间用平台验证成功的时间，兑换等待不能刷新最近认证窗口。
+        return createSession(user, authenticatedAt, admin ? "ADMIN_OAUTH" : "OAUTH", timeoutSeconds);
     }
 
     /**
