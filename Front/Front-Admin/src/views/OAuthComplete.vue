@@ -3,12 +3,7 @@ import { ElButton, ElResult } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/result/style/css'
 import { onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { request } from '../api.js'
-import { acceptSession } from '../session.js'
-import { firstPage, registerMenuRoutes } from '../router.js'
 
-const router = useRouter()
 const message = ref('正在完成授权…')
 const failed = ref(false)
 
@@ -17,32 +12,18 @@ onMounted(async () => {
   history.replaceState(null, '', location.pathname)
   if (!ticket || ticket.length > 512) {
     failed.value = true
-    message.value = '缺少有效授权票据，请重新发起登录或绑定。'
+    message.value = '缺少有效授权票据，请重新发起绑定。'
     return
   }
-  // 绑定弹窗只把票据发回同源原页面，由保留 Token 的原页面兑换。
+  // 绑定弹窗只把票据发回同源原页面，由原页面使用当前会话兑换。
   if (window.opener) {
     window.opener.postMessage({ type: 'drifting-leaves-oauth', ticket }, location.origin)
     message.value = '授权结果已交回原页面，可以关闭此窗口。'
     window.close()
     return
   }
-  try {
-    const { data } = await request('/admin/auth/oauth/exchange', {
-      method: 'POST',
-      body: { ticket },
-      credentials: 'include',
-    })
-    if (data.operation !== 'LOGIN' || !data.session) {
-      throw new Error('绑定页面已关闭或会话已丢失，请重新登录后检查绑定列表。')
-    }
-    await acceptSession(data.session)
-    registerMenuRoutes()
-    await router.replace(firstPage())
-  } catch (error) {
-    failed.value = true
-    message.value = error.message
-  }
+  failed.value = true
+  message.value = '绑定页面已关闭，请回到后台检查绑定列表。'
 })
 </script>
 

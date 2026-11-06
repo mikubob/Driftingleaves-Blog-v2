@@ -3,7 +3,7 @@
 本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 209 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；当前检查入口及恢复步骤见运行说明，既有路由数本身不代表缓存验收。项目尚未上线；当前配置与检查入口见[后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
-- [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口规划.md)
+- [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口说明.md)
 - [缓存、限流与后续验收](#cache-contract)
 - [后台统一操作：实现与验收](#batch-contract)
 - [共享模型与状态](#models)
@@ -57,18 +57,18 @@ X-Revision 是本站自定义业务版本，不承担HTTP缓存校验；If-Revis
 
 ### 0.4 Sa-Token 会话与最近认证
 
-Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorization: Bearer <token>` 传递；后续实现配置相同 tokenName/tokenPrefix，关闭从请求体、URL、普通登录 Cookie 读取 Token。前台密码、邮箱验证码与已绑定第三方登录返回相同 `Session`；后台支持账密或绑定邮箱验证码两种方式，均需图形验证码和 admin:access；前台会话不能访问受保护后台接口，已有后台组合认证会话继续有效至到期。多端可同时登录，每次登录签发独立 Token，不复用上次 Token。
+Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下的同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，博客使用 `__Host-dl-blog-session`。两个 Cookie 固定为 host-only、HttpOnly、Secure、SameSite=Strict、Path=/，不设置 Domain。入口只选取所属端 Cookie，同一枚会话不能跨端使用。后台账密或邮箱登录要求图形验证码和 `admin:access`。Blog 可通过账密、邮箱或 OAuth LOGIN 登录。
 
 | Session 字段 | 类型 | 含义 |
 | --- | --- | --- |
-| tokenType | string | 固定 Bearer |
-| accessToken | string | 仅登录成功返回，不写 URL/日志；没有 refreshToken |
-| expiresIn | number | 本次 Token 有效秒数；Blog 登录为 259200（3 天），Admin 登录为 604800（7 天），无滑动续期 |
-| user | Me | 当前用户模型，不含密码哈希 |
+| expiresIn | number | 固定有效秒数，Blog 为 259200（3 天），Admin 为 604800（7 天） |
+| user | Me | 当前用户模型 |
 
-密码登录和 OAuth LOGIN 兑换均由对应端的服务端入口决定有效期，不接受客户端指定天数；有效期从签发 Token 起计算。浏览器在 localStorage 的 `dl-blog-session`、`dl-admin-session` 独立保存 `{accessToken, expiresAt}`，其中 expiresAt 为接收登录响应时按 expiresIn 换算的毫秒时间戳。刷新或重新打开页面时，先检查到期时间，再用原 Bearer 请求对应端 `/me`、`/me/capabilities`；Admin 还须读取 `/me/menus` 并确认 `admin:access`，最后恢复动态路由。不持久化用户资料、权限或菜单，刷新和访问都不更新到期时间。浏览器禁用存储时仅本页登录有效。
+登录事务提交后通过 `Set-Cookie` 签发会话。Cookie 与 Redis 使用相同固定有效期，访问和刷新均不续期。会话值不进入 JSON、URL、日志、前端存储或 WebSocket 协议。刷新后重新读取本端 `/me` 与 `/me/capabilities`，Admin 还读取 `/me/menus` 并确认 `admin:access`。前端启动清理本端旧 localStorage 键，拒绝恢复旧 Bearer，用户需重新登录一次。
 
-退出登录、恢复核验失败及 401/UNAUTHENTICATED 清除本端内存与持久凭据；其他端的存储键保留，但撤销的 Token 仍会被后端拒绝。OAuth 浏览器 Cookie 仅关联授权流程，不作为业务登录凭证；Token 不写 URL、Cookie 或日志，没有 refreshToken。带身份的响应及所有 `/blog/auth、/blog/me、/admin` 响应 `Cache-Control: no-store`；前台接口不混入隐式私人字段。除幂等注销接口外，携带过期或已注销会话访问受保护接口返回 401。注销当前会话不依赖客户端 userId。此前签发的两小时 Token 保持原有效期，不自动延长；前后端需一起部署，重新登录后使用新有效期。
+同源标签页共享 Cookie。登录、退出或安全操作撤销会话后，前端用不带身份信息的广播通知同端标签页重新核验。写请求携带页面预期账号 `X-Expected-User-Id`，服务端在副作用前与 Cookie 认证的用户 ID 比较。认证写入、有效会话的退出和 OAuth BIND 发起及兑换必须提供该头。受保护读取提供该头时也核对。缺失或不匹配返回 409/SESSION_ACCOUNT_CHANGED，不修改会话 Cookie，前端不重发原请求。博客讨论和统计等可选身份入口无该头时保持匿名，有该头时核验有效会话。显式登录及独立邮件退订票据使用各自的校验规则。
+
+退出先撤销当前会话，再清除同名同属性 Cookie。没有有效会话时仍可幂等退出；Redis 撤销失败返回错误。普通 401 只表示本次请求未登录，不修改 Cookie。带身份的响应以及认证响应采用 `Cache-Control: no-store`。
 
 改密码、清除密码、解绑成功后撤销该用户**所有**本站会话；前端重新登录。账号禁用也撤销所有会话。角色/权限/授权变更撤销受影响会话并清除菜单权限缓存，重新登录后重新加载。停用菜单只影响菜单，不撤销接口权限。每个受保护请求均检查账号和有效授权，不能只信登录时快照。
 
@@ -88,7 +88,7 @@ Sa-Token 使用不透明本站 Token，不使用 JWT。固定通过 `Authorizati
 
 ### 0.6 请求保护与跨域
 
-Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Authorization、OAuth code/state/ticket 或第三方 Token。跨域只允许明确前端 origin，预检允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code，暴露 X-Revision/Location/Retry-After；带 OAuth Cookie 请求允许 credentials，不能使用通配 origin。非白名单业务路由默认拒绝匿名。
+Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。认证入口阈值是部署参数；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Cookie、OAuth code/state/ticket 或第三方 Token。Admin、Blog 写请求在副作用前核对该端配置的 Origin。缺失 Origin 时才从 Referer 提取来源，缺失、无法解析、Origin:null、跨端或不匹配均返回 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据和匿名 404 上报分别按各自契约处理。Admin 和 Blog 通过同源反代访问。HTTP 跨域只向 Home、Cv 自身的来源开放各自公开的 GET 和 POST，允许 Content-Type 并暴露 Retry-After。在线 WebSocket 分别核对所属站点 Origin。
 
 全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，留言创建窗口按表中要求执行。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
 
@@ -100,7 +100,7 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 | author | 后台入口、本人文章创建/查询/编辑/发布/回收/恢复、分类/标签只读、本人文件管理、前台评论/点赞、本人留言与邮件订阅，SELF；无评论审核或系统授权管理权限 |
 | member | 前台评论、删除本人评论、点赞/取消点赞、发表/删除本人留言、本人订阅/退订，SELF；无后台入口和菜单 |
 
-图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言创建和回复使用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED；跨域预检允许两个验证码请求头。
+图形验证码按 [验证码契约](API.md#captcha) 实现：common/utils 的 CaptchaUtils 只负责 Hutool 六位纯数字圆圈验证码生成，common/store 负责 Redis 120 秒 TTL 与原子消费，HTTP 入口读取 X-Captcha-Id/X-Captcha-Code 后校验。登录、注册、OAuth LOGIN 发起使用图形验证码；前台评论/留言创建和回复使用 `/blog/auth/math-captcha` 的加减乘数字题目，答案只存服务端，和图形验证码隔离缓存键，均为 120 秒一次性消费；后台留言回复不要求图形验证码，仍检查后台登录、review 权限的 ALL 范围和用户/IP 限流。后台评论管理无独立回复接口，现有查询、审核和删除不要求图形验证码；OAuth BIND、回调、兑换继续沿用现有鉴权。不能将验证码当作 Sa-Token、OAuth state 或浏览器身份。验证码错误不累计 AUTH_FAILED。两个验证码请求头由同源请求发送。
 
 ### 0.7 鉴权组件落地要求
 
@@ -110,14 +110,14 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 | 配置/扩展 | 本项目契约 |
 | --- | --- |
-| Sa-Token 读取 | tokenName=Authorization、tokenPrefix=Bearer；只从 Header 读，关闭 Body/Query/Cookie 读取 |
+| Sa-Token 读取 | 关闭 Sa-Token 默认的 Header、Body/Query、Cookie 读取；MVC 只把对应端登录 Cookie 交给当前 Sa-Token 请求 |
 | 会话 | Blog timeout=259200 秒（3 天）、Admin timeout=604800 秒（7 天），密码与 OAuth LOGIN 一致；不启用滑动续期；多端并存、各次 Token 独立；最近认证时间存 Token 级会话，不能只存用户级时间 |
 | `StpInterface` | 返回启用用户经启用角色得到的有效 role_code/permission_code；角色码无 ROLE_ 前缀 |
 | 拦截器与注解 | 实际注册登录/路由/权限检查；后台要求 admin:access 与具体权限同时成立；不依赖菜单隐藏或单个角色名放行 |
 | ALL/SELF | 业务查询和更新的 SQL 按本次权限计算归属，普通权限集合不足以表达此范围 |
 | Redis | 保存会话与 OAuth 流程，使用隔离键前缀；安全校验不可用返回 503，禁止降级匿名放行 |
 | JustAuth state | Redis AuthStateCache timeout 使用毫秒；默认存在性检查不能代替本站流程一次性消费 |
-| OAuth 回调 | 回调白名单仅允许具体平台地址；绑定回调验证服务端存储的原会话，不要求平台附加本站 Authorization |
+| OAuth 回调 | 回调白名单仅允许具体平台地址；绑定回调验证服务端存储的原会话，只通过 OAuth 流程 Cookie 和一次性 state 识别回调 |
 
 框架核对依据：[Sa-Token 固定版本会话配置](https://raw.githubusercontent.com/dromara/Sa-Token/v1.46.0/sa-token-core/src/main/java/cn/dev33/satoken/config/SaTokenConfig.java)、[JustAuth 1.16.7 AuthStateCache](https://raw.githubusercontent.com/justauth/JustAuth/v1.16.7/src/main/java/blog/me/zhyd/oauth/cache/AuthStateCache.java)、[JustAuth 与本站用户整合](https://www.justauth.cn/features/integrate-existing-systems/)。有效期、票据、白名单与业务授权组合是本站设计，不是框架默认值。
 
@@ -303,7 +303,7 @@ Redis 和数据库没有共同事务：角色/权限撤销或订阅轮次操作�
 
 缓存复用 [0.8](#cache-contract) 与各单条写入影响域，在整批成功提交后统一失效；不能因绕过单条代理而漏掉 CacheEvict、事务感知清理或失败后的保护恢复，也不为每个目标重复清全域缓存。角色/权限/菜单关联变化同时影响相应用户或角色聚合版本。通知仅对本次真实状态转换登记，文章首次公开和留言实际审核通过都在整批提交后发送；失败不回滚业务、进程内投递不保证跨宕机送达的限制保持。文章通知按收件人有限并发，和留言回复通知共用并发名额；等待后重新检查PUBLIC与当前订阅轮次，不保证不同收件人的投递先后。验证码和订阅确认邮件仍同步返回SMTP发送结果。
 
-批量审计沿用现有字段与脱敏边界，明确记录动作、业务权限、所选 ID 和涉及数量，不能只截取集合第一项充当全部目标；不保存 Bearer、原始请求体、正文、悄悄话、邮箱或存储路径。无单一目标时 targetId 为 null；实际 ID 集合放现有 operationData，字段白名单与 operationData 当前大小约束不变。普通整批事务成功记录一条批次审计；失败日志在整笔回滚后沿用现有独立审计规则。
+批量审计沿用现有字段与脱敏边界，明确记录动作、业务权限、所选 ID 和涉及数量，不能只截取集合第一项充当全部目标；不保存登录 Cookie、原始请求体、正文、悄悄话、邮箱或存储路径。无单一目标时 targetId 为 null；实际 ID 集合放现有 operationData，字段白名单与 operationData 当前大小约束不变。普通整批事务成功记录一条批次审计；失败日志在整笔回滚后沿用现有独立审计规则。
 
 #### 0.9.4 文件逐项事务与失败报告
 
@@ -354,7 +354,7 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | PasswordSet | newPassword:string 必填（同注册约束）；currentPassword:string 仅已有密码时必填，否则必须省略 |
 | PasswordClear | currentPassword:string 必填，同密码约束 |
 | Capabilities | roleCodes:string[]、permissionCodes:string[]、dataScopes:对象（权限码 → ALL或SELF）。只含当前有效授权，数组字典序；全局权限仍返回角色计算值，但无本人资源语义 |
-| Session | tokenType/accessToken/expiresIn/user，完整约束见0.4；只在本站登录成功返回 |
+| Session | expiresIn/user，完整约束见0.4；只在本站登录成功返回 |
 | Provider | source:string、displayName:string；只列配置完整且启用的平台，不含应用凭据 |
 | OAuthAuthorize | 请求仅operation:LOGIN或BIND；响应authorizationUrl:string、expiresIn:number（state有效秒数），平台/回跳地址由服务端配置 |
 | OAuthExchange | 仅ticket:string必填，43位ASCII `[A-Za-z0-9_-]{43}`；结果使用下述OAuthResult联合响应 |
@@ -363,7 +363,7 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 
 用户名（账号）和邮箱分别保持全库唯一，按数据库排序规则判断；数据库唯一键拒绝写入后，一次检查两个字段，修改时排除目标本人。注册和后台新建账号的 409/UNIQUE_CONFLICT 必须区分“用户名已被使用”“邮箱已被使用”“用户名和邮箱均已被使用”，即使两个字段分别被不同账号占用也返回两项。errors 只包含对应的 username/email 及中文说明，不包含占用账号或原始输入；本人和后台修改邮箱沿用相同格式，邮箱 null 仍可清空。写入失败整笔回滚，注册已消费的邮件验证码不恢复；前端直接展示 msg，不重复追加 errors，完整示例见[账号唯一冲突](API.md#user-unique-conflict)。
 
-`OAuthResult` 为联合响应：LOGIN 只有 operation/session，BIND 只有 operation/binding。OAuth 票据和第三方 access_token 不得当成本站 Bearer。
+`OAuthResult` 为联合响应：LOGIN 只有 operation/session，BIND 只有 operation/binding。OAuth 票据和第三方 access_token 不得当成本站登录凭据。
 
 <a id="model-12-2"></a>
 
@@ -540,7 +540,7 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 原文件名仅展示，移除路径分隔符/控制字符，结果空或>255报400；服务端生成ASCII object_key（≤512），按分类目录/随机文件名组织。PNG/JPEG存入image、音频存入audio、LRC存入lyric、TXT/JSON存入text目录；OSS对象键为专属前缀/分类/随机文件名，本地对象键为分类/随机文件名。normalize后的绝对路径必须仍位于上传根目录内，防目录穿越和符号链接越界。不接收旧版无分类目录的对象键。存储根目录不能被Nginx/静态资源映射公开。File模型不返回bucket/objectKey/磁盘路径。
 
-成功内容响应为实际存储的文件字节（图片可能已压缩），非Result：`Content-Type`取服务端确认的MIME，文本附UTF-8 charset、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。读取以Spring MVC Resource响应支持Range：完整200、有效范围206（含Content-Range）、不可满足范围416；不支持分片或断点上传。文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。业务失败仍返回对应HTTP的JSON Result；Range错误由Spring MVC处理。前端携带Bearer fetch后台内容，以临时object URL预览图片/音频，歌词以纯文本预览，不能把Token拼接进img URL。
+成功内容响应为实际存储的文件字节（图片可能已压缩），非Result：`Content-Type`取服务端确认的MIME，文本附UTF-8 charset、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。读取以Spring MVC Resource响应支持Range：完整200、有效范围206（含Content-Range）、不可满足范围416；不支持分片或断点上传。文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。业务失败仍返回对应HTTP的JSON Result；Range错误由Spring MVC处理。前端通过同源后台 API 获取内容，以临时object URL预览图片/音频，歌词以纯文本预览，不能把Token拼接进img URL。
 
 <a id="model-12-9"></a>
 
@@ -616,7 +616,7 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 
 lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/json/txt；是否有歌词由URL判断。播放列表只返回status=1，sortOrder ASC,musicId ASC。三个媒体字段允许外部HTTP(S)资源，或规范路径 `/api/v1/blog/music/files/{fileId}/content`；配置为本站origin的相同绝对地址保存为该相对路径。其余本站附件路径、磁盘路径和脚本均拒绝，服务器不下载或代理探测外部URL。表中音乐媒体字段是上述规则的URL特例。删除曲目只删除元数据，文件仍由文件管理清理。
 
-上传继续使用 `POST /admin/files` 的唯一 multipart `file` 部件及 `blog:file:upload` 权限，不增设上传接口或存储系统。支持格式、MIME和大小见12.8；上传响应的 `previewUrl` 是需Bearer的后台原文件接口。管理端上传成功后把fileId组成上述音乐路径填入表单，保存曲目时才建立引用；未保存或已替换的上传文件可从文件管理手动清理。
+上传继续使用 `POST /admin/files` 的唯一 multipart `file` 部件及 `blog:file:upload` 权限，不增设上传接口或存储系统。支持格式、MIME和大小见12.8；上传响应的 `previewUrl` 是需后台会话的后台原文件接口。管理端上传成功后把fileId组成上述音乐路径填入表单，保存曲目时才建立引用；未保存或已替换的上传文件可从文件管理手动清理。
 
 保存受管引用先锁操作者，再升序锁所引用文件，最后锁音乐（创建时直接插入）。锁后复核原Token、音乐操作的ALL权限、文件query的独立ALL/SELF范围，以及封面为图片、音频为audio、歌词扩展名与lyricType一致、存储对象可用。原有If-Revision、事务、审计和播放列表缓存失效保持。文件删除在持文件锁时检查全部状态的音乐三个字段和原有全部文章引用，仍引用返回409/RESOURCE_IN_USE，包括隐藏音乐。
 
@@ -639,7 +639,7 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 
 本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。账号邮箱变更后需重新申请并确认，历史订阅不自动迁移；确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
 
-确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，携带本站Bearer向确认接口提交JSON票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
+确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，通过同源博客 API 提交 JSON 票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
 
 邮件退订票据30天有效，Redis绑定订阅ID、邮箱、verifiedAt、本轮subscribeTime，只允许退订该记录；有效票据可重复调用保持幂等。邮件链接由固定前端页面读取fragment并让用户确认，再POST退订；GET不修改订阅。重新申请/换邮箱/再激活或删除记录后，旧轮次票据失效。服务端不向本人状态接口或后台列表返回票据，不在访问日志中记录票据。实名登录只用于本站身份，邮箱确认不创建会话、不改变登录邮箱或角色。XML Feed独立于邮箱订阅，公开阅读不需要票据。
 
@@ -665,7 +665,7 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 | `ProvinceMetric` | `province`:string&#124;null（最新访客省份；null表示未知）；`visitorCount`:string（区间内访问的不同非NULL visitorId数） |
 | `ArticleViewMetric` | `articleId`:ID（未回收文章ID）；`title`:string（当前标题）；`slug`:string（当前slug）；`pageViewCount`:string（日期范围内文章浏览明细数，不是view_count累计值） |
 
-analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode只能home/blog/cv，由服务端与配置的Origin/站点规范路径核验；articleId必须属于PUBLIC文章并与页面slug一致，未关联文章时为null。userId仅来自有效Bearer，客户端不能上传IP/UA/访问时间。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回recorded=true；采集失败不影响前端公开内容读取。
+analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode只能home/blog/cv，由服务端与配置的Origin/站点规范路径核验；articleId必须属于PUBLIC文章并与页面slug一致，未关联文章时为null。只有博客可以从有效登录 Cookie 识别 userId，Home 和 Cv 仅匿名，客户端不能上传IP/UA/访问时间。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回recorded=true；采集失败不影响前端公开内容读取。
 
 PV是保留的page_view条数；UV是所选区间内不同非null visitorId数量，不能把IP、session或sys_user计数当成同一指标。删除访客将关联置null，会使UV减少，PV不变；删除浏览明细改变基于明细的报表；不反向扣减blog_article.view_count。文章详情成功读取每次原子增加view_count，独立采集POST只写明细，避免一页计两次累计阅读。封禁统计标识仅约束采集入口，不承诺阻止伪造者阅读网站。
 
@@ -715,20 +715,20 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 
 仅支持服务端启用白名单中、可通过 GET 回调的普通 OAuth 平台；source 路径使用 QQ/GITHUB/GITEE 等大写值（不是承诺三者已接入），未知/未启用平台统一404。任意第三方授权 URL、redirectUri、returnUrl、userId、uuid 不能由客户端指定。每平台仅一个应用；身份始终为服务端验证所得 `source + AuthUser.uuid`，区分大小写；不能以昵称或邮箱合并。
 
-1. 前端以 `fetch(...,{credentials:"include"})` 调 authorize。后端设置/读取随机 `__Host-dl-oauth-browser` Cookie：Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多存活 10 分钟，仅标识发起浏览器。前后端需同站部署，推荐同源 `/api` 反代；BIND 同时携带 Authorization。后端校验请求 Origin 为配置前端。
-2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留内存 Token；URL 带 state。
-3. 平台回调本后端固定地址 `/api/v1/blog/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不携带本站 Bearer，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
+1. 前端同源调用 authorize。后端设置随机 `__Host-dl-oauth-browser` 流程 Cookie，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多 600 秒。BIND 使用本端原登录 Cookie 和 `X-Expected-User-Id`。发起端、固定完成页和平台注册回调必须使用同一个 HTTPS Origin。
+2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留弹窗引用；授权 URL 带 state。
+3. 平台回调同源代理地址 `/api/v1/<所选端>/auth/oauth/{source}/callback`。请求包含 state 和平台成功参数（如 code；QQ 等由选定适配器处理），或 error/error_description。处理器先校验 source、Cookie 和 Redis 流程中记录的 operation/目标会话；平台回调不依赖登录 Cookie，BIND 的原会话由服务端保存的会话引用查询验证；用 Redis 原子 compare-and-consume 将本站流程从未消费改为已消费，匹配后只能有一个请求成功。浏览器不匹配不消费合法流程；重放/过期返回 OAUTH_STATE_INVALID，不能换码或改库。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
 5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。前台 LOGIN 仅接受已有绑定：先锁本站用户，再重查绑定归属及启用状态；没有绑定返回 OAUTH_NOT_BOUND，要求先完成邮箱注册、登录后绑定，不创建或合并账号。后台禁止第三方 LOGIN，只保留完整后台登录后的 BIND。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。
 7. 成功后只生成 60 秒、一次性的随机 ticket，在 Redis 绑定同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到**后端配置的固定前端页面** `/oauth/complete#ticket=<opaque>`。回调不把本站 Token、平台 code 或第三方 Token放在跳转 URL；设置 no-store、Referrer-Policy:no-referrer。
-8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，以 credentials 调 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，携带原内存 Token 与 credentials 调 exchange。弹窗不接收本站 Token、不在 URL 或存储中传 Token。后端原子校验并消费 ticket，再检查用户启用；LOGIN 此时在用户行锁内重查该 source+uuid 仍绑定同一用户，再调用 Sa-Token 创建本站 Session，并更新最近登录时间，认证时间记为已验证第三方身份的时间（不能借延迟交换刷新）；BIND 必须带原 Token 且返回绑定结果。重放/过期/浏览器不符统一 OAUTH_STATE_INVALID。网络响应丢失需重新发起，不能再兑换。
+8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，同源调用 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，使用本端原会话 Cookie 和 `X-Expected-User-Id` 调用 exchange。弹窗不接收本站 Token、不在 URL 或存储中传 Token。后端原子校验并消费 ticket，再检查用户启用；LOGIN 此时在用户行锁内重查该 source+uuid 仍绑定同一用户，再调用 Sa-Token 创建会话，提交后签发博客 Cookie，并返回 Session JSON，认证时间记为已验证第三方身份的时间（不能借延迟交换刷新）；BIND 必须带同一枚有效会话 Cookie 且只返回绑定结果。重放/过期/浏览器不符统一 OAUTH_STATE_INVALID。网络响应丢失需重新发起，不能再兑换。
 
 失败回调：存在已验证且刚消费的本站流程时，303 固定 `/oauth/complete#error=<本文错误码>`；不得透传平台 error_description 或任意跳转地址。无可信 state/浏览器关系时直接以对应 HTTP JSON 错误结束，不重定向。前端仅显示通用失败并允许重试；无固定前端地址时禁止启用该平台。平台取消同样消费流程，结果为 OAUTH_DENIED。绑定已经提交而结果 ticket 丢失时，通过 GET /blog/me/oauth-bindings 确认，不回滚已完成绑定。
 
 解绑/清除密码必须锁定同一 sys_user 行，串行检查跨表登录方式：有效 BCrypt 密码或至少一个仍被后端白名单启用、应用凭据配置完整的平台绑定。此处检查配置可用性，不要求实时探测平台在线，不能只数 oauth 行。服务配置停用平台前检查受影响的纯第三方用户并安排其他登录方式；平台短时故障不作为自动解绑理由。首期不提供管理员绕过最后登录方式保护的接口。
 
-BIND 必须保留发起页面及其弹窗流程：原页面关闭、刷新导致弹窗流程丢失时，先恢复有效 Bearer 或重新登录，再通过绑定列表确认结果，按需要重新发起；不允许仅凭浏览器 Cookie 恢复本站身份。完成页的 postMessage 只传本次票据和白名单结果，不监听任意窗口发来的登录 Token。LOGIN 整页跳转返回后创建对应端的持久会话，使用同一套保存与恢复逻辑。
+BIND 必须保留发起页面及其弹窗流程。原页面关闭或刷新导致流程丢失时，可恢复登录后通过绑定列表确认结果，再按需要发起。完成页的 postMessage 只传一次性票据。OAuth 流程 Cookie 与两端登录 Cookie 分开。
 
 ### 13.2 授权、菜单与状态变化
 
@@ -752,7 +752,7 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 
 文章附件引用支持Markdown链接/图片和文章coverUrl，规范路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`；必须是当前文章articleId，不能指向另一篇文章的上下文。创建草稿后取得articleId，再上传/编辑引用；POST新文章不能附带未知articleId的本站文件URL。后端解析Markdown语法树（含清理后保留的HTML链接/图片）和coverUrl确认引用集合，不以文本随意包含数字作为引用证据。相同路径的绝对本站URL归一成规范相对路径；其余本站文件路径/编码绕过/存储直链拒绝，外部URL不映射为内部文件。
 
-文章写入时，每个引用必须存在，写作者须有`blog:file:query`及对应文件范围；不能通过引用他人私密文件让其公开。发布时再检查所有引用可用。前台HTML保留上述公开上下文；后台详情HTML将这些路径改为相应`/admin/articles/.../content`，前端需Bearer fetch后替换临时object URL，原始Markdown不改写。一个文件被多篇文章引用时，只要某篇PUBLIC且确实引用，就可从该篇上下文公开读取；**需要私密隔离时必须另传一份文件，不能在公开文章复用同一fileId**。修改/撤销引用或下架后立即按当前状态鉴权。
+文章写入时，每个引用必须存在，写作者须有`blog:file:query`及对应文件范围；不能通过引用他人私密文件让其公开。发布时再检查所有引用可用。前台HTML保留上述公开上下文；后台详情HTML将这些路径改为相应`/admin/articles/.../content`，前端通过同源后台 API 获取后替换临时object URL，原始Markdown不改写。一个文件被多篇文章引用时，只要某篇PUBLIC且确实引用，就可从该篇上下文公开读取；**需要私密隔离时必须另传一份文件，不能在公开文章复用同一fileId**。修改/撤销引用或下架后立即按当前状态鉴权。
 
 音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链图标、配置、主页与简历图标仍不接受本站附件API路径（包括等价绝对URL），仅用外部http(s)资源；不新增文件用途/公开状态字段。不能把私密附件URL粘贴进头像或公开配置实现匿名访问。
 
@@ -829,7 +829,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | RssSubscriptionController/ServiceImpl、RssFeedController、SitemapController | 第18章；邮箱确认、本人状态与退订、邮件退订票据、RSS/XML输出；不采用旧JWT或visitorId授权 |
 | Visitor/View/Report控制器、ReportServiceImpl与Mapper | 第19章；统计标识不作为身份，明细与PV/UV分开，数组报表替代逗号字符串；区间累计新访客明确定义 |
 | OperationLogController与旧操作日志模型 | 第20章；本站用户与权限码快照，日志只读及显式清理，无任意请求体落库 |
-| 旧管理员登录、验证码、Cookie/JWT和游客角色 | 沿用第1..4章本站Bearer与JustAuth，不新增平行鉴权；不复制旧账号或默认密码 |
+| 旧管理员登录、验证码、Cookie/JWT和游客角色 | 沿用第1..4章本站 Sa-Token 会话与 JustAuth，不新增平行鉴权；不复制旧账号或默认密码 |
 | 旧评论的Markdown、悄悄话和邮件提醒 | 现有blog_comment没有相应格式/私密/通知字段，仍采用第9章纯文本评论，删除同步移除整条分支；这些旧能力没有被默认为已承诺，留言采用新增表的独立功能 |
 | 旧批量审核/删除及访客封禁/解封 | [0.9](#batch-contract)已用26个支持单条/多条的V2统一入口替换旧单条管理写路由，保留逐资源权限/版本/状态校验，数据库操作整批事务、文件删除逐项事务；前端不以循环提交独立请求模拟整批原子性 |
 | 旧全文索引、计数同步、邮件系统与部署配置 | 搜索契约定义字面包含；不移植异步计数批次，不把SMTP/OAuth/存储凭据放进配置表；本轮使用Boot BOM管理的mail starter实现SMTP边界，并接入现有数据库/Redis及地域设施 |
@@ -878,7 +878,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 ## 23. 在线连接与统计身份
 
-完整 HTTP/消息定义见 [API 第23章](API.md#group-23)与[在线说明](实时在线人数接口规划.md)。Home、Blog、Cv 各自的 `POST /<端>/analytics/online/tickets` 使用可选 Bearer，一旦携带必须有效；精确 `GET /<端>/ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
+完整 HTTP/消息定义见 [API 第23章](API.md#group-23)与[在线说明](实时在线人数接口说明.md)。三个公开端都可匿名领取在线票据。Blog 提供预期账号时核对当前有效会话，缺失预期账号时按匿名处理。精确 `GET /<端>/ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
 
 在线服务只签发用途隔离的30秒随机票据，键保存摘要，载荷只保存服务端确认的userId、原Token摘要与到期时间；浏览器不能自报userId。join按Origin、原会话、账号状态重查后Lua比较完整载荷并删除。长连接通过 `SessionManager.requireOriginalActive` 只查绑定用户的原会话，不扫描Redis全键；现有敏感操作的 `originalToken/requireRecent` 仍要求最近300秒认证。心跳不续期Token、不写PV。
 

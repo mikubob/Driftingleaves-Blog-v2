@@ -241,7 +241,7 @@ const batchActions = computed(() => {
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="260" fixed="right">
+        <el-table-column label="操作" align="center" width="260" fixed="right">
           <template #default="{ row }">
             <el-button
               v-if="can('blog:category:query')"

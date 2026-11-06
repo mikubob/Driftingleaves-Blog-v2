@@ -11,14 +11,18 @@ export const uniqueHeadingId = (text, used) => {
   const base = headingSlug(text)
   let id = base
   let suffix = 0
-  while (used.has(id)) id = `${base}-${++suffix}`
+  while (used.has(id)) {
+    id = `${base}-${++suffix}`
+  }
   used.add(id)
   return id
 }
 
-/** 查找页内锚点，使用解码后的 id/name，目标缺失或编码错误时返回 null，不拼接 CSS 选择器。 */
+/** 查找页内锚点，解码后直接比较 id 或 name。无效片段返回 null，未匹配到元素时返回 undefined。 */
 export const findFragmentTarget = (container, hash) => {
-  if (!container || !hash.startsWith('#') || hash === '#') return null
+  if (!container || !hash.startsWith('#') || hash === '#') {
+    return null
+  }
   let id
   try {
     id = decodeURIComponent(hash.slice(1))

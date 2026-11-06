@@ -88,7 +88,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #909399;
+  color: var(--blog-text3);
   margin-bottom: 20px;
   padding-bottom: 14px;
   border-bottom: 1px solid #ebeef5;
@@ -167,7 +167,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
 }
 .link-desc {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   margin: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -177,7 +177,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
 
 .empty {
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 40px 0;
   font-size: 14px;
   margin: 0;

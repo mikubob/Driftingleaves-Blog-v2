@@ -9,9 +9,10 @@ import com.xuan.dto.OAuthAuthorizeDTO;
 import com.xuan.dto.OAuthExchangeDTO;
 import com.xuan.dto.RegisterDTO;
 import com.xuan.exception.BusinessException;
-import com.xuan.properties.AuthProperties;
+import com.xuan.model.LoginSession;
 import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.result.Result;
+import com.xuan.security.WebSession;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
@@ -19,11 +20,13 @@ import com.xuan.store.CaptchaStore;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthAuthorizeVO;
+import com.xuan.vo.OAuthLoginResultVO;
 import com.xuan.vo.ProviderVO;
 import com.xuan.vo.SessionVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.CookieValue;
@@ -40,7 +43,7 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 登录和第三方授权接口，Cookie 只标识浏览器，绑定时由业务层检查原会话。
+ * 登录和第三方授权接口，登录 Cookie 与 OAuth 浏览器标识分开。
  */
 @RestController("blogAuthController")
 @RequestMapping("/blog/auth")
@@ -54,7 +57,6 @@ public class AuthController {
     private final IOAuthService oauth;
     private final OAuthProviderClient providers;
     private final AuthRateLimiter limiter;
-    private final AuthProperties properties;
     private final CaptchaStore captchas;
 
     /**
@@ -81,18 +83,18 @@ public class AuthController {
      *
      * @param body 已校验的用户名和密码长度的登录请求
      * @param request 用于按 IP 和统一格式后的用户名限流的请求
-     * @return 仅成功登录返回的独立 Bearer 会话
+     * @return 登录 Cookie 和脱敏资料
      */
     @PostMapping("/login")
     @RateLimit(value = "login-total", limit = 30)
-    public Result<SessionVO> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
+    public ResponseEntity<Result<SessionVO>> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
 
         // 2. 用户业务一起完成凭据验证、会话签发和登录时间写入。
         try {
-            return Result.ok(users.login(body, SessionManager.BLOG_TIMEOUT_SECONDS));
+            return WebSession.BLOG.login(users.login(body, SessionManager.BLOG_TIMEOUT_SECONDS));
         } catch (BusinessException exception) {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
             if ("AUTH_FAILED".equals(exception.getCode())) {
@@ -114,11 +116,11 @@ public class AuthController {
     /** 使用邮箱验证码登录，图形验证码也必须通过，会话有效期与密码登录一致。 */
     @PostMapping("/email-login")
     @RateLimit(value = "login-total", limit = 30)
-    public Result<SessionVO> emailLogin(@Valid @RequestBody EmailLoginDTO body, HttpServletRequest request) {
+    public ResponseEntity<Result<SessionVO>> emailLogin(@Valid @RequestBody EmailLoginDTO body, HttpServletRequest request) {
         limiter.checkLogin(request, body.email());
         captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
         try {
-            return Result.ok(users.loginEmail(body, SessionManager.BLOG_TIMEOUT_SECONDS));
+            return WebSession.BLOG.login(users.loginEmail(body, SessionManager.BLOG_TIMEOUT_SECONDS));
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.email());
@@ -128,14 +130,13 @@ public class AuthController {
     }
 
     /**
-     * 退出当前 Bearer 会话，没传 Token 或早已失效也返回成功；不影响这个用户的其他设备。
+     * 撤销当前端会话，再清除登录 Cookie；没有会话也返回成功。
      *
      * @return data 为 null 的成功结果
      */
     @PostMapping("/logout")
-    public Result<Void> logout() {
-        sessions.logout();
-        return Result.ok(null);
+    public ResponseEntity<Result<Void>> logout() {
+        return WebSession.BLOG.logout(sessions);
     }
 
     /**
@@ -146,15 +147,16 @@ public class AuthController {
     @GetMapping("/oauth/providers")
     public Result<List<ProviderVO>> providers() {
         return Result.ok(providers.providers().stream()
+                .filter(provider -> providers.callbackPath(provider.source()).startsWith("/api/v1/blog/"))
                 .map(provider -> new ProviderVO(provider.source(), provider.displayName())).toList());
     }
 
     /**
-     * 发起第三方登录或绑定并设置浏览器 Cookie；先查前端 Origin，绑定还要查原会话和最近认证，不能自选目标用户或回跳地址。
+     * 发起第三方授权并设置流程 Cookie，绑定时还要检查原会话和最近认证。
      *
      * @param source 服务端已启用的平台标识
      * @param body 仅包含 LOGIN 或 BIND 操作类型的请求
-     * @param request 用于 Origin 校验和 IP 限流的当前请求
+     * @param request 用于 IP 限流的当前请求
      * @param browser 已有浏览器标识；缺失或格式无效时重新生成
      * @return 授权 URL、state 有效秒数及安全 Cookie 响应头
      */
@@ -162,8 +164,10 @@ public class AuthController {
     public ResponseEntity<Result<OAuthAuthorizeVO>> authorize(@PathVariable String source,
             @Valid @RequestBody OAuthAuthorizeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        // 1. 先查前端 Origin，再复用或创建浏览器标识；这个 Cookie 不能代表登录身份。
-        requireOrigin(request);
+        if (body.operation() == OAuthAuthorizeDTO.Operation.BIND) {
+            WebSession.requireExpectedUser(request.getHeader(WebSession.EXPECTED_USER), sessions.currentUserId());
+        }
+        // 1. 复用或创建只用于 OAuth 流程的浏览器标识。
         String id = browser != null && browser.matches("[A-Za-z0-9_-]{43}") ? browser : TokenUtils.random();
 
         // 2. 限流通过后发起授权，绑定时的原会话和最近认证由业务服务检查。
@@ -180,7 +184,7 @@ public class AuthController {
     }
 
     /**
-     * 处理平台顶层 GET 回调，核对浏览器、state 和绑定原会话后跳固定完成页；平台不用带本站 Bearer，流程不可信就报 JSON 错误，不跳转。
+     * 处理平台顶层 GET 回调，核对浏览器、state 和绑定原会话后跳固定完成页；平台不用带登录 Cookie，流程不可信就报 JSON 错误，不跳转。
      *
      * @param source 回调路径中的服务端允许的平台标识
      * @param state 平台带回的一次性 state，由业务服务验证
@@ -199,32 +203,26 @@ public class AuthController {
     }
 
     /**
-     * 在同一浏览器兑换一次性结果票据，先查 Origin 和频率；绑定必须带发起时的原 Token，不能换成 Cookie 或另一枚 Token。
+     * 在同一浏览器兑换一次性结果票据，绑定必须带发起时的原会话 Cookie。
      *
      * @param body 通过格式校验的 60 秒一次性结果票据
-     * @param request 用于 Origin、IP 校验及携带原 Bearer 的当前请求
+     * @param request 用于 IP 限流的当前请求
      * @param browser 必须与票据关联一致的浏览器标识
      * @return LOGIN 的会话分支或 BIND 的绑定分支，二者不混合
      */
     @PostMapping("/oauth/exchange")
-    public Result<Object> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
+    public ResponseEntity<Result<?>> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        // 1. 先查 Origin 和频率，再交给业务核对浏览器及一次性票据。
-        requireOrigin(request);
+        // 限流后核对浏览器和一次性票据。
         limiter.oauth(request, browser);
 
         // 2. 登录会返回新会话，绑定只确认原账号的绑定结果，不发新会话，也不切换账号。
-        return Result.ok(oauth.exchange(body.ticket(), browser, SessionManager.BLOG_TIMEOUT_SECONDS));
-    }
-
-    /**
-     * OAuth 发起和兑换只能来自配置过的前端 origin；缺失或没授权都拒绝，不能拿 Cookie 代替来源检查。
-     *
-     * @param request 浏览器发起的当前 HTTP 请求
-     */
-    private void requireOrigin(HttpServletRequest request) {
-        if (!properties.getAllowedOrigins().contains(request.getHeader("Origin"))) {
-            throw new BusinessException(403, "FORBIDDEN", "请求Origin不被允许");
+        Object result = oauth.exchange(body.ticket(), browser,
+                SessionManager.BLOG_TIMEOUT_SECONDS, request.getHeader(WebSession.EXPECTED_USER));
+        if (result instanceof LoginSession login) {
+            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, WebSession.BLOG.issue(login))
+                    .body(Result.ok(new OAuthLoginResultVO("LOGIN", login.response())));
         }
+        return ResponseEntity.ok().body(Result.ok(result));
     }
 }

@@ -12,7 +12,7 @@ import './assets/styles/account.scss'
 const app = createApp(App)
 app.use(createPinia())
 async function bootstrap() {
-  // 授权完成页先处理票据，不能让旧会话恢复失败打断新的登录或绑定弹窗。
+  // OAuth 完成页先处理一次性票据。
   if (location.pathname !== '/oauth/complete') {
     await restoreSession()
   }

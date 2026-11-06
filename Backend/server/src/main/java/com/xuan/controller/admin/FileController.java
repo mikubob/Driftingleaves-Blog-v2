@@ -31,7 +31,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 
 /**
- * 后台文件管理接口，提供文件资料、上传和读取，私密文件携带 Bearer 获取后预览。
+ * 后台文件管理接口，提供文件资料、上传和读取，私密文件通过后台会话读取后预览。
  */
 @RestController
 @RequiredArgsConstructor

@@ -1,9 +1,9 @@
 package com.xuan.session;
 
-import cn.hutool.core.util.StrUtil;
 import cn.dev33.satoken.session.SaSession;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.dev33.satoken.stp.parameter.SaLoginParameter;
+import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
 import com.xuan.utils.TokenUtils;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +29,7 @@ public class SessionManager {
     /** 创建登录 Token，调用前必须在事务中锁住用户，事务未提交成功时撤销新 Token。 */
     public String create(long userId, long authenticatedAt, String method, int timeoutSeconds) {
         // 1. 先生成本次 Token，后面签发或提交出错时才能找到它并清理。
-        String token = TokenUtils.random();
+        String token = webTokenPrefix(timeoutSeconds) + TokenUtils.random();
 
         // 2. 签发前先登记事务回调，数据库没提交就撤销本次会话。
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -80,10 +80,22 @@ public class SessionManager {
         }
     }
 
+    /** 检查会话是否由当前端的网页登录签发，迁移前的 Token 不能用作登录 Cookie。 */
+    public static boolean isWebToken(String token, int timeoutSeconds) {
+        String prefix = webTokenPrefix(timeoutSeconds);
+        return token != null && token.startsWith(prefix)
+                && token.substring(prefix.length()).matches("[A-Za-z0-9_-]{43}");
+    }
+
+    private static String webTokenPrefix(int timeoutSeconds) {
+        return timeoutSeconds == ADMIN_TIMEOUT_SECONDS ? "admin." : "blog.";
+    }
+
     /** 检查原 Token 是否有效，写事务必须在拿到用户锁后调用。 */
     public void requireActive(String token, long userId) {
         Object actual = StpUtil.getStpLogic().getLoginIdByToken(token);
-        if (actual == null || !actual.toString().equals(Long.toString(userId))) {
+        if (actual == null || !actual.toString().equals(Long.toString(userId))
+                || (!isWebToken(token, BLOG_TIMEOUT_SECONDS) && !isWebToken(token, ADMIN_TIMEOUT_SECONDS))) {
             throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
         }
     }
@@ -93,7 +105,8 @@ public class SessionManager {
         // 1. 先重查 Token 归属和会话，已退出或属于别人的 Token 都不能用。
         Object loginId = StpUtil.getStpLogic().getLoginIdByToken(token);
         SaSession session = loginId == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
-        if (loginId == null || !Objects.equals(loginId.toString(), Long.toString(userId)) || session == null) {
+        if (loginId == null || !Objects.equals(loginId.toString(), Long.toString(userId)) || session == null
+                || (!isWebToken(token, BLOG_TIMEOUT_SECONDS) && !isWebToken(token, ADMIN_TIMEOUT_SECONDS))) {
             throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
         }
 
@@ -150,7 +163,7 @@ public class SessionManager {
      * 退出当前登录，未传 Token 或 Token 已失效时也返回成功。
      */
     public void logout() {
-        // 只撤销 Header 里的当前 Token；没传或早已失效时也算退出成功。
+        // 只撤销当前端 Cookie 对应的会话，其他端和设备不受影响。
         String token = currentToken();
         if (!StrUtil.nullToEmpty(token).isBlank()) {
             StpUtil.logoutByTokenValue(token);

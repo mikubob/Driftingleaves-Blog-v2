@@ -478,7 +478,7 @@ onUnmounted(() => {
   border: none;
   cursor: pointer;
   font-size: 13px;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 4px 8px;
   border-radius: 4px;
   font-family: inherit;
@@ -503,7 +503,7 @@ onUnmounted(() => {
   gap: 4px;
   cursor: pointer;
   font-size: 13px;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 4px 8px;
   border-radius: 4px;
   font-family: inherit;
@@ -706,7 +706,7 @@ onUnmounted(() => {
   position: absolute;
   left: 10px;
   font-size: 14px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   pointer-events: none;
   z-index: 1;
 }
@@ -721,7 +721,7 @@ onUnmounted(() => {
   position: absolute;
   right: 8px;
   font-size: 16px;
-  color: #909399;
+  color: var(--blog-text3);
   cursor: pointer;
   user-select: none;
   transition: color 0.15s;
@@ -786,7 +786,7 @@ onUnmounted(() => {
   border-color: #f56c6c;
 }
 .error-text {
-  color: #f56c6c;
+  color: var(--blog-error-text);
   font-size: 12px;
   margin: 4px 0 0;
   line-height: 1.4;
@@ -794,11 +794,11 @@ onUnmounted(() => {
 .char-counter-line {
   text-align: right;
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-top: 4px;
 }
 .char-counter-line.over-limit {
-  color: #f56c6c;
+  color: var(--blog-error-text);
 }
 .form-options {
   display: flex;
@@ -922,11 +922,11 @@ onUnmounted(() => {
 }
 .c-reply-to {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .c-pending {
   font-size: 10px;
-  color: #e6a23c;
+  color: var(--blog-warning-text);
   background: #fdf6ec;
   padding: 1px 6px;
   border-radius: 3px;
@@ -944,7 +944,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: #b0b4bb;
+  color: var(--blog-text3);
 }
 .c-meta-icon {
   width: 13px;
@@ -1027,7 +1027,7 @@ onUnmounted(() => {
 
 .c-date {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -1048,7 +1048,7 @@ onUnmounted(() => {
 }
 .c-actions a {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   cursor: pointer;
   text-decoration: none;
 }
@@ -1079,13 +1079,13 @@ onUnmounted(() => {
 .empty-comment {
   padding: 32px 0;
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   font-size: 14px;
 }
 .not-found {
   padding: 80px 0;
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   font-size: 16px;
 }
 

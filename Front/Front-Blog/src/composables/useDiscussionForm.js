@@ -1,6 +1,6 @@
 import { computed, nextTick, ref } from 'vue'
 
-/** 为迁移的评论、留言表单保留计数和表情插入；V2 身份来自登录会话。 */
+/** 管理评论和留言表单的字数统计与表情插入。 */
 export function useDiscussionForm(textarea) {
   const form = ref({ content: '', isMarkdown: false, isSecret: false, isNotice: false })
   const errors = ref({ content: '' })

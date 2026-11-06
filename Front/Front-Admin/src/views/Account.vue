@@ -9,7 +9,7 @@ import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import { request } from '../api.js'
-import { clearSession, session } from '../session.js'
+import { session, sessionRevoked } from '../session.js'
 import { nullable, validatePassword } from '../form.js'
 import RequestError from '../components/RequestError.vue'
 
@@ -104,7 +104,7 @@ async function changePassword(clear = false) {
     }
     await request('/admin/me/password', { method: clear ? 'DELETE' : 'PUT', body })
     Object.assign(password, { currentPassword: '', newPassword: '', confirmPassword: '' })
-    clearSession()
+    sessionRevoked()
     ElMessage.success('安全设置已更新，请重新登录')
   } catch (failure) {
     formError.value = failure.message
@@ -135,7 +135,6 @@ async function bind(provider) {
     const { data } = await request(`/admin/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
       method: 'POST',
       body: { operation: 'BIND' },
-      credentials: 'include',
     })
     const url = new URL(data.authorizationUrl)
     if (!['http:', 'https:'].includes(url.protocol)) {
@@ -174,7 +173,6 @@ async function receiveBinding(event) {
     const { data } = await request('/admin/auth/oauth/exchange', {
       method: 'POST',
       body: { ticket: event.data.ticket },
-      credentials: 'include',
     })
     if (data.operation !== 'BIND') {
       throw new Error('授权结果与绑定流程不匹配。')
@@ -201,7 +199,7 @@ async function unbind(source) {
   saving.value = true
   try {
     await request(`/admin/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
-    clearSession()
+    sessionRevoked()
     ElMessage.success('已解除绑定，请重新登录')
   } catch (failure) {
     ElMessage.error(failure.message)

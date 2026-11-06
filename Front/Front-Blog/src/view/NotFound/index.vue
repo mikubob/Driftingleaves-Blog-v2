@@ -23,7 +23,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--blog-bg, #fafafa);
+  background: var(--blog-bg);
   font-family: var(
     --blog-sans,
     -apple-system,
@@ -40,7 +40,7 @@ onMounted(() => {
 .error-code {
   font-size: 120px;
   font-weight: 900;
-  color: var(--blog-text, #303133);
+  color: var(--blog-text);
   margin: 0;
   line-height: 1;
   letter-spacing: -4px;
@@ -48,27 +48,31 @@ onMounted(() => {
 .error-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--blog-text, #303133);
+  color: var(--blog-text);
   margin: 16px 0 8px;
 }
 .error-desc {
   font-size: 14px;
-  color: var(--blog-text3, #909399);
+  color: var(--blog-text3);
   margin: 0 0 32px;
 }
 .error-btn {
   display: inline-block;
   padding: 10px 32px;
   font-size: 14px;
-  color: var(--blog-bg, #fff);
-  background: var(--blog-text, #303133);
+  color: var(--blog-bg);
+  background: var(--blog-text);
   border-radius: 6px;
   text-decoration: none;
   font-weight: 500;
   transition: background 0.2s;
 }
+.error-btn:focus-visible {
+  outline: 2px solid var(--blog-text);
+  outline-offset: 3px;
+}
 .error-btn:hover {
-  background: var(--blog-text2, #000);
+  background: var(--blog-text2);
 }
 
 @media (max-width: 480px) {

@@ -4,7 +4,10 @@
   --blog-card: #ffffff;
   --blog-text: #303133;
   --blog-text2: #606266;
-  --blog-text3: #909399;
+  --blog-text3: #6b6e74;
+  --blog-error-text: #a93030;
+  --blog-success-text: #386c23;
+  --blog-warning-text: #865000;
   --blog-border: #e4e7ed;
   --blog-border-light: #ebeef5;
   --blog-hover: #f5f7fa;
@@ -22,8 +25,8 @@
 
   --el-text-color-primary: #303133;
   --el-text-color-regular: #606266;
-  --el-text-color-secondary: #909399;
-  --el-text-color-placeholder: #c0c4cc;
+  --el-text-color-secondary: var(--blog-text3);
+  --el-text-color-placeholder: var(--blog-text3);
 
   --el-border-color: #e4e7ed;
   --el-border-color-light: #ebeef5;
@@ -63,6 +66,11 @@ body {
   font-family: var(--blog-sans);
   line-height: 1.6;
   overflow-x: clip;
+}
+
+::placeholder {
+  color: var(--blog-text3);
+  opacity: 1;
 }
 
 a {
@@ -203,7 +211,10 @@ html.dark {
   --blog-card: #232323;
   --blog-text: #e5e5e5;
   --blog-text2: #b0b0b0;
-  --blog-text3: #808080;
+  --blog-text3: #a0a0a0;
+  --blog-error-text: #ff8080;
+  --blog-success-text: #9ed581;
+  --blog-warning-text: #e6a23c;
   --blog-border: #333;
   --blog-border-light: #2c2c2c;
   --blog-hover: #2a2a2a;
@@ -216,8 +227,8 @@ html.dark {
   --el-fill-color-blank: #232323;
   --el-text-color-primary: #e5e5e5;
   --el-text-color-regular: #b0b0b0;
-  --el-text-color-secondary: #808080;
-  --el-text-color-placeholder: #555;
+  --el-text-color-secondary: var(--blog-text3);
+  --el-text-color-placeholder: var(--blog-text3);
   --el-border-color: #3a3a3a;
   --el-border-color-light: #333;
   --el-border-color-lighter: #2c2c2c;
@@ -412,13 +423,13 @@ html.dark .modal-tag {
   color: var(--blog-text2) !important;
 }
 html.dark .modal-tag:hover {
-  border-color: #888 !important;
+  border-color: var(--blog-text3) !important;
   color: var(--blog-text) !important;
   background: var(--blog-hover) !important;
 }
 html.dark .tag-count {
   background: #333 !important;
-  color: #888 !important;
+  color: var(--blog-text3) !important;
 }
 
 html.dark .skeleton-cover,
@@ -499,7 +510,7 @@ html.dark .form-input:focus,
 html.dark .form-textarea:focus,
 html.dark .msg-form-input:focus,
 html.dark .msg-form-textarea:focus {
-  border-color: #888 !important;
+  border-color: var(--blog-text3) !important;
 }
 
 /* 深色通用边框使用了 !important，错误状态需保留同等优先级。 */
@@ -517,12 +528,6 @@ html.dark .msg-body {
 html.dark .c-nick,
 html.dark .msg-nick {
   color: var(--blog-text) !important;
-}
-html.dark .c-date,
-html.dark .msg-date,
-html.dark .c-meta-item,
-html.dark .msg-meta-item {
-  color: #666 !important;
 }
 html.dark .c-children,
 html.dark .msg-children {
@@ -547,11 +552,11 @@ html.dark .rss-copy-btn {
 }
 html.dark .rss-unsub-btn {
   background: #2a2a2a !important;
-  color: #888 !important;
+  color: var(--blog-text3) !important;
 }
 html.dark .rss-unsub-btn:hover {
   background: #3a2020 !important;
-  color: #e55 !important;
+  color: var(--blog-error-text) !important;
 }
 
 html.dark .profile-avatar,
@@ -587,7 +592,7 @@ html.dark .msg-submit-btn:hover {
   background: #fff !important;
 }
 
-/* Article reading aids: force monochrome emphasis in dark mode. */
+/* 深色模式下，阅读进度条和目录使用单色强调。 */
 html.dark .reading-progress .reading-progress-track,
 .reading-progress.is-dark .reading-progress-track {
   background: rgba(255, 255, 255, 0.12) !important;
@@ -728,7 +733,7 @@ html.dark .badge-admin {
 }
 html.dark .c-pending,
 html.dark .msg-pending {
-  color: #e6a23c !important;
+  color: var(--blog-warning-text) !important;
   background: #3a2e1a !important;
 }
 html.dark .reply-hint,

@@ -57,12 +57,14 @@ public class ProfilePatchDTO {
         intro = normalize(value);
     }
 
+    /** 检查资料修改请求至少包含一个字段，传入昵称时不能为 null。 */
     @AssertTrue(message = "请至少修改一项个人资料，昵称不能为空。")
     public boolean isValidPatch() {
         return (nicknamePresent || emailPresent || avatarPresent || introPresent)
                 && (!nicknamePresent || nickname != null);
     }
 
+    /** 去掉可空资料的首尾空白，空白内容按清空处理。 */
     private String normalize(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }

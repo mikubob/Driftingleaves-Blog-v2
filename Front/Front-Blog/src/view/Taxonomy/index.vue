@@ -7,6 +7,7 @@ import { useResource } from '@/composables/useResource.js'
 import ArticleCard from '@/components/ArticleCard.vue'
 import SidebarCard from '@/components/SidebarCard.vue'
 import ListPager from '@/components/ListPager.vue'
+/** 选择分类或标签，页面按对应类型请求文章。 */
 const props = defineProps({ kind: { type: String, required: true } })
 // 分类和标签共用列表，接口路径与字段仍按各自类型读取。
 const taxonomy = computed(() => props.kind === 'category'
@@ -141,7 +142,7 @@ function handlePageChange(page) {
 }
 .empty {
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 60px 0;
   font-size: 14px;
   margin: 0;

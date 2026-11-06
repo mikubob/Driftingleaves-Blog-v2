@@ -28,7 +28,7 @@ onMounted(async () => {
   }
   try {
     const { data } = await request('/blog/auth/oauth/exchange', {
-      method: 'POST', credentials: 'include', body: { ticket },
+      method: 'POST', body: { ticket },
     })
     if (data.operation !== 'LOGIN' || !data.session) {
       throw new Error('授权流程不匹配，请重新登录。')

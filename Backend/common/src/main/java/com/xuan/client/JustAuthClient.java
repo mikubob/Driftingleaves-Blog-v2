@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.xuan.exception.BusinessException;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.AuthProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.store.RedisOAuthStore;
 import lombok.RequiredArgsConstructor;
 import me.zhyd.oauth.config.AuthConfig;
@@ -32,6 +33,7 @@ public class JustAuthClient implements OAuthProviderClient {
 
     private static final Map<String, String> SOURCES = Map.of("GITHUB", "GitHub", "GITEE", "Gitee", "QQ", "QQ");
     private final AuthProperties properties;
+    private final PublicSiteProperties sites;
     private final RedisOAuthStore states;
 
     /**
@@ -58,6 +60,12 @@ public class JustAuthClient implements OAuthProviderClient {
         if (!enabledSources().contains(source)) {
             throw new BusinessException(404, "NOT_FOUND", "平台不存在或未启用");
         }
+    }
+
+    @Override
+    public String callbackPath(String source) {
+        requireEnabled(source);
+        return URI.create(properties.getProviders().get(source).getRedirectUri()).getRawPath();
     }
 
     /**
@@ -121,16 +129,25 @@ public class JustAuthClient implements OAuthProviderClient {
             return false;
         }
 
-        // 2. 再检查 HTTPS、固定回调路径和前端 origin，不能临时换回跳地址。
+        // 回调、完成页和授权发起端同源，浏览器才能在回调时发送流程 Cookie。
         URI callback = URI.create(provider.getRedirectUri());
         URI complete = URI.create(properties.getFrontendCompleteUrl());
-        String origin = complete.getScheme() + "://" + complete.getRawAuthority();
-        return "https".equals(callback.getScheme()) && "https".equals(complete.getScheme())
-                && (callback.getPath().equals("/api/v1/blog/auth/oauth/" + source + "/callback")
-                || callback.getPath().equals("/api/v1/admin/auth/oauth/" + source + "/callback"))
+        String callbackPath = callback.getRawPath();
+        String side;
+        if (callbackPath.equals("/api/v1/blog/auth/oauth/" + source + "/callback")) {
+            side = "blog";
+        } else if (callbackPath.equals("/api/v1/admin/auth/oauth/" + source + "/callback")) {
+            side = "admin";
+        } else {
+            return false;
+        }
+        String origin = sites.origin(side);
+        return "https".equals(callback.getScheme())
+                && origin.equals(PublicSiteProperties.originOf(callback))
+                && origin.equals(PublicSiteProperties.originOf(complete))
                 && callback.getRawQuery() == null && callback.getRawFragment() == null
-                && complete.getPath().equals("/oauth/complete") && complete.getRawQuery() == null
-                && complete.getRawFragment() == null && properties.getAllowedOrigins().contains(origin);
+                && "/oauth/complete".equals(complete.getRawPath()) && complete.getRawQuery() == null
+                && complete.getRawFragment() == null;
     }
 
     /**

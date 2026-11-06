@@ -7,8 +7,8 @@ import bgcImg from '@/assets/images/bgc.webp'
 const route = useRoute()
 const blogStore = useBlogStore()
 
+/** 接收页面提供的封面、标题和摘要，摘要按文本展示。 */
 const props = defineProps({
-  // 封面/标题/meta 由页面提供，meta 仅按文本展示；组件不请求数据或创建监听器。
   /** 文章封面 (文章详情页传入) */
   coverImage: { type: String, default: '' },
   /** 文章标题 */
@@ -20,7 +20,9 @@ const props = defineProps({
 const isHome = computed(() => route.name === 'home')
 
 const bgImage = computed(() => {
-  if (props.coverImage) return props.coverImage
+  if (props.coverImage) {
+    return props.coverImage
+  }
   return bgcImg
 })
 </script>

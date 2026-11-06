@@ -255,7 +255,7 @@ const batchActions = computed(() => {
         <el-table-column label="操作时间" width="180">
           <template #default="{ row }">{{ formatTime(row.operationTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="150">
+        <el-table-column label="操作" align="center" width="150">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <el-button type="danger" v-if="can('sys:log:delete', true)" link @click="remove(row)">删除</el-button>

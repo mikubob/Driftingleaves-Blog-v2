@@ -7,9 +7,11 @@ import com.xuan.controller.admin.PermissionController;
 import com.xuan.controller.admin.RoleController;
 import com.xuan.controller.admin.TagController;
 import com.xuan.controller.admin.UserController;
+import com.xuan.controller.auth.CaptchaController;
 import com.xuan.controller.blog.AuthController;
 import com.xuan.controller.blog.AuthorController;
 import com.xuan.controller.blog.MeController;
+import com.xuan.controller.blog.MyArticleController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -19,7 +21,7 @@ import org.springframework.web.servlet.HandlerMapping;
 import java.util.Set;
 
 /** 检查登录、系统管理和文章分类标签接口的参数，拒绝未声明的字段。 */
-@ControllerAdvice(assignableTypes = {AuthController.class, com.xuan.controller.auth.CaptchaController.class,
+@ControllerAdvice(assignableTypes = {AuthController.class, CaptchaController.class,
         com.xuan.controller.admin.AuthController.class, com.xuan.controller.admin.MeController.class,
         MeController.class, UserController.class,
         RoleController.class, PermissionController.class,
@@ -27,7 +29,7 @@ import java.util.Set;
         CategoryController.class, TagController.class,
         com.xuan.controller.blog.ArticleController.class, com.xuan.controller.blog.CategoryController.class,
         com.xuan.controller.blog.TagController.class, AuthorController.class,
-        com.xuan.controller.blog.MyArticleController.class})
+        MyArticleController.class})
 public class ModelRequestAdvice {
 
     /** 检查参数名、重复参数和不允许的请求体，字段内容由 DTO 和业务层校验。 */

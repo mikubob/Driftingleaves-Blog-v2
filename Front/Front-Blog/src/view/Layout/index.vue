@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import BlogHeader from '@/components/BlogHeader.vue'
 import BlogFooter from '@/components/BlogFooter.vue'
 import HeroBanner from '@/components/HeroBanner.vue'
-import { useBlogStore, useThemeStore } from '@/stores'
+import { useBlogStore } from '@/stores'
 import { createOnlineConnection } from '../../shared/online.mjs'
 import { apiRoot, getOnlineTicket } from '@/api.js'
 import { getFingerprint } from '@/tracking.js'
@@ -17,7 +17,10 @@ const connection = createOnlineConnection({
   apiRoot, requestTicket: getOnlineTicket,
   payload: () => ({ fingerprint: getFingerprint(), siteCode: 'blog',
     pagePath: route.meta.sensitive ? new URL(import.meta.env.BASE_URL, window.location.href).pathname : window.location.pathname }),
-  onState: (state) => { online.value = state }, onSessionInvalid: clearSession,
+  onState: (state) => {
+    online.value = state
+  },
+  onSessionInvalid: clearSession,
 })
 const unsubscribe = onSessionChange(connection.restart)
 onMounted(connection.start)
@@ -26,7 +29,6 @@ onUnmounted(() => {
   connection.stop()
 })
 const blogStore = useBlogStore()
-const themeStore = useThemeStore()
 const articleCover = ref('')
 const articleTitle = ref('')
 const articleMeta = ref('')
@@ -54,7 +56,6 @@ const scrollToTop = () => {
   })
 }
 onMounted(() => {
-  themeStore.applyTheme()
   blogStore.init()
   window.addEventListener('scroll', onScroll, { passive: true })
 })

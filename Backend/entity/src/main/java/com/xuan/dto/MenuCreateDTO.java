@@ -109,16 +109,19 @@ public class MenuCreateDTO {
         isVisible = value;
     }
 
+    /** 获取菜单可见状态。未传时，按钮默认隐藏，其他菜单默认显示。 */
     public Integer getIsVisible() {
         int defaultVisibility = "B".equals(menuType) ? 0 : 1;
         return visiblePresent ? isVisible : defaultVisibility;
     }
 
+    /** 检查是否提交了上级菜单；可见状态可以省略，但传入时必须有值。 */
     @AssertTrue(message = "上级菜单和显示设置未完整提交，请重新打开菜单编辑窗口后重试。")
     public boolean isCompleteCreate() {
         return parentPresent && (!visiblePresent || isVisible != null);
     }
 
+    /** 去掉路由、组件和图标字段的首尾空白，空白内容转为 null。 */
     private String clean(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }

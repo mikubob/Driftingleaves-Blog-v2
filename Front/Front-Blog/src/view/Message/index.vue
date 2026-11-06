@@ -194,7 +194,7 @@ async function handleSubmit() {
   cursor: pointer;
   font-size: 16px;
   margin-left: auto;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .form-row {
   display: flex;
@@ -217,7 +217,7 @@ async function handleSubmit() {
   position: absolute;
   left: 10px;
   font-size: 14px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   pointer-events: none;
   z-index: 1;
 }
@@ -232,7 +232,7 @@ async function handleSubmit() {
   position: absolute;
   right: 8px;
   font-size: 16px;
-  color: #909399;
+  color: var(--blog-text3);
   cursor: pointer;
   user-select: none;
   transition: color 0.15s;
@@ -293,7 +293,7 @@ async function handleSubmit() {
   border-color: #f56c6c;
 }
 .error-text {
-  color: #f56c6c;
+  color: var(--blog-error-text);
   font-size: 12px;
   margin: 4px 0 0;
   line-height: 1.4;
@@ -301,11 +301,11 @@ async function handleSubmit() {
 .char-counter-line {
   text-align: right;
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-top: 4px;
 }
 .char-counter-line.over-limit {
-  color: #f56c6c;
+  color: var(--blog-error-text);
 }
 .form-input-error,
 .form-input-error:focus {
@@ -357,7 +357,7 @@ async function handleSubmit() {
 /* 留言数 */
 .msg-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 0 4px;
 }
 
@@ -433,11 +433,11 @@ async function handleSubmit() {
 }
 .reply-to {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .msg-pending {
   font-size: 10px;
-  color: #e6a23c;
+  color: var(--blog-warning-text);
   background: #fdf6ec;
   padding: 1px 6px;
   border-radius: 3px;
@@ -455,7 +455,7 @@ async function handleSubmit() {
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: #b0b4bb;
+  color: var(--blog-text3);
 }
 .msg-meta-icon {
   width: 13px;
@@ -464,7 +464,7 @@ async function handleSubmit() {
 }
 .msg-date {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -560,7 +560,7 @@ async function handleSubmit() {
 }
 .act {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   cursor: pointer;
   transition: color 0.15s;
 }
@@ -598,7 +598,7 @@ async function handleSubmit() {
 }
 .empty {
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 40px 0;
   font-size: 14px;
 }

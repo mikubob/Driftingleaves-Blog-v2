@@ -1,7 +1,7 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
 import { request } from '../api.js'
-import { clearSession, session } from '../session.js'
+import { session, sessionRevoked } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 
@@ -42,7 +42,7 @@ async function bind(source) {
   busy.value = true
   try {
     const { data } = await request(`/blog/auth/oauth/${encodeURIComponent(source)}/authorize`, {
-      method: 'POST', credentials: 'include', body: { operation: 'BIND' },
+      method: 'POST', body: { operation: 'BIND' },
     })
     const url = new URL(data.authorizationUrl)
     if (!['http:', 'https:'].includes(url.protocol)) {
@@ -71,7 +71,7 @@ async function receive(event) {
   busy.value = true
   try {
     const { data } = await request('/blog/auth/oauth/exchange', {
-      method: 'POST', credentials: 'include', body: { ticket: event.data.ticket },
+      method: 'POST', body: { ticket: event.data.ticket },
     })
     if (data.operation !== 'BIND') {
       throw new Error('授权结果与绑定操作不匹配。')
@@ -90,7 +90,7 @@ async function unbind(source) {
   busy.value = true
   try {
     await request(`/blog/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
-    clearSession()
+    sessionRevoked()
   } catch (failure) {
     error.value = failure.message
   } finally {

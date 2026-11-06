@@ -12,6 +12,7 @@ import ResourceState from './ResourceState.vue'
 import SafeHtml from './SafeHtml.vue'
 import DiscussionMeta from './DiscussionMeta.vue'
 
+/** 按讨论类型加载评论或留言，传入父 ID 时显示对应的回复。 */
 const props = defineProps({
   kind: String,
   articleId: String,
@@ -19,6 +20,7 @@ const props = defineProps({
   parentId: { type: String, default: null },
   allowReply: { type: Boolean, default: true },
 })
+/** 通知父组件打开回复、更新总数或重新查询已变化的回复组。 */
 const emit = defineEmits(['reply', 'total', 'changed'])
 const page = ref(1)
 const expanded = ref([])

@@ -107,11 +107,11 @@
 }
 .c-reply-to {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .c-pending {
   font-size: 10px;
-  color: #e6a23c;
+  color: var(--blog-warning-text);
   background: #fdf6ec;
   padding: 1px 6px;
   border-radius: 3px;
@@ -193,7 +193,7 @@
 
 .c-date {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-left: auto;
   flex-shrink: 0;
 }
@@ -239,7 +239,7 @@
 .empty-comment {
   padding: 32px 0;
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   font-size: 14px;
 }
 
@@ -312,7 +312,7 @@
 }
 .msg-pending {
   font-size: 10px;
-  color: #e6a23c;
+  color: var(--blog-warning-text);
   background: #fdf6ec;
   padding: 1px 6px;
   border-radius: 3px;
@@ -322,7 +322,7 @@
 /* 元信息 — 与昵称同行 */
 .msg-date {
   font-size: 12px;
-  color: #c0c4cc;
+  color: var(--blog-text3);
   margin-left: auto;
   flex-shrink: 0;
 }

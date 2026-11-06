@@ -7,7 +7,7 @@
   --admin-border-light: #ebeef5;
   --admin-text: #303133;
   --admin-text-2: #606266;
-  --admin-text-3: #909399;
+  --admin-text-3: #6b6e74;
   --admin-hover: #f5f7fa;
   --admin-radius: 8px;
 }
@@ -65,7 +65,7 @@ a {
 }
 
 .muted-text {
-  color: #909399;
+  color: var(--admin-text-3);
 }
 
 .table-wrap {

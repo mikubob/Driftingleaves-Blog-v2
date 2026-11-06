@@ -2,7 +2,7 @@
 import { createOnlineConnection } from './shared/online.mjs'
 import { apiRoot, getOnlineTicket } from './api.js'
 import { getFingerprint } from './tracking.js'
-import RequestFailure from './components/RequestFailure.vue'
+import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { getProfile, getSocialLinks, getExperiences, getSkills } from './api.js'
@@ -87,19 +87,15 @@ onBeforeUnmount(() => {
   controller.abort()
   colorScheme.removeEventListener('change', followSystemTheme)
 })
-const requestFailure = ref(false)
-setRequestFailureHandler(() => {
-  if (requestFailure.value) {
-    return
-  }
-  requestFailure.value = true
-  document.title = '404 - 页面不存在'
+const requestFailure = ref(null)
+setRequestFailureHandler((error) => {
+  requestFailure.value ??= error
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" />
+  <RequestFailure v-if="requestFailure" :error="requestFailure" />
   <div v-else>
     <a class="skip-link no-print" href="#resume">跳至简历内容</a>
     <div class="toolbar no-print" aria-label="简历工具">

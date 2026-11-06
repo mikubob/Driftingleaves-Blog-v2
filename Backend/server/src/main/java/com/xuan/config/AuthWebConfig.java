@@ -1,13 +1,15 @@
 package com.xuan.config;
 
-import cn.hutool.core.util.StrUtil;
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import cn.dev33.satoken.context.SaHolder;
 import cn.dev33.satoken.interceptor.SaInterceptor;
+import cn.dev33.satoken.stp.StpLogic;
 import cn.dev33.satoken.stp.StpUtil;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.exception.BusinessException;
-import com.xuan.properties.AuthProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.result.Result;
+import com.xuan.security.WebSession;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import jakarta.servlet.DispatcherType;
@@ -20,12 +22,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsUtils;
 import org.springframework.web.cors.DefaultCorsProcessor;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.HandlerInterceptor;
@@ -36,7 +41,9 @@ import tools.jackson.databind.json.JsonMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -65,11 +72,28 @@ public class AuthWebConfig implements WebMvcConfigurer {
             "POST /home/analytics/page-views", "POST /home/analytics/online/tickets",
             "GET /cv/profile", "GET /cv/social-links", "GET /cv/configs", "GET /cv/experiences", "GET /cv/skills",
             "POST /cv/analytics/page-views", "POST /cv/analytics/online/tickets");
+    private static final Set<String> ONLINE_SOCKETS = Set.of("/home/ws/online", "/blog/ws/online", "/cv/ws/online");
+    private static final Set<String> ANONYMOUS_WRITES = Set.of(
+            "POST /admin/security/not-found", "POST /blog/security/not-found",
+            "POST /blog/rss-subscriptions/unsubscribe");
     private final IUserService users;
     private final SessionManager sessions;
     private final OAuthProviderClient providers;
-    private final AuthProperties properties;
+    private final PublicSiteProperties sites;
+    private final Environment environment;
     private final ObjectProvider<HttpServletRequest> requests;
+
+    /** 让 Sa-Token 只使用本应用已经选好的请求会话。 */
+    @Bean
+    public StpLogic webStpLogic() {
+        return new StpLogic(StpUtil.TYPE) {
+            @Override
+            public String getTokenValueNotCut() {
+                Object token = SaHolder.getStorage().get(splicingKeyJustCreatedSave());
+                return token instanceof String value ? value : null;
+            }
+        };
+    }
 
     /**
      * 注册权限拦截器，先检查登录和后台入口，再检查操作权限。
@@ -77,7 +101,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         // 1. 先查当前身份和后台入口；SaInterceptor 默认先查注解，这里拆开才能保证报错顺序。
-        registry.addInterceptor(new SaInterceptor(handler -> guard(requests.getObject(), handler))
+        registry.addInterceptor(new SaInterceptor(handler -> guard(requests.getObject()))
                 .isAnnotation(false)).addPathPatterns("/**");
 
         // 2. 身份有效后再检查业务权限，避免把账号禁用或会话失效报成缺权限。
@@ -104,46 +128,121 @@ public class AuthWebConfig implements WebMvcConfigurer {
     /**
      * 检查请求权限，按方法和完整路径放行公开接口，其余请求检查登录和后台权限。
      */
-    private void guard(HttpServletRequest request, Object handler) {
+    private void guard(HttpServletRequest request) {
         // 1. 先放行错误分派和预检，跨域能不能通过由前面的 CORS 过滤器检查。
         if (request.getDispatcherType() == DispatcherType.ERROR || "OPTIONS".equals(request.getMethod())) {
             return;
         }
 
-        // 2. 按请求方法和完整路径逐条放行，不能把整个 auth 或 blog 都公开。
         String path = request.getServletPath();
-        String route = request.getMethod() + " " + path;
-        if ("GET".equals(request.getMethod()) && path.matches("/(home|blog|cv)/ws/online")) {
+        String method = request.getMethod();
+        WebSession side = WebSession.forPath(path);
+        String route = method + " " + path;
+        boolean write = requiresOrigin(side, method, route);
+        if (write) {
+            String trustedOrigin = sites.origin(side.site());
+            requireOrigin(request, trustedOrigin);
+            request.setAttribute(WebSession.VERIFIED_ORIGIN, trustedOrigin);
+        }
+
+        boolean callback = path.matches("/(admin|blog)/auth/oauth/[^/]+/callback");
+        if (callback && "HEAD".equals(method)) {
+            throw new BusinessException(405, "METHOD_NOT_ALLOWED", "请求方法不被允许");
+        }
+        if ("GET".equals(method) && ONLINE_SOCKETS.contains(path)) {
             return;
         }
-        if (PUBLIC.contains(route) || ("GET".equals(request.getMethod())
-                && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
-                || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
-                || path.matches("/blog/music/files/[^/]+/content")
-                || path.matches("/blog/(authors|categories|tags)/[^/]+")))) {
-            if (("GET /blog/messages".equals(route) || path.matches("/(home|blog|cv)/analytics/(page-views|online/tickets)")
-                    && "POST".equals(request.getMethod())) && request.getHeader(
-                    "Authorization") != null) {
-                users.requireCurrent();
+
+        // 可选登录接口只有在页面明确提供预期账号时才使用登录 Cookie。
+        boolean publicRoute = isPublic(method, path);
+        boolean optional = optionalSession(method, path);
+        boolean logout = "POST".equals(method) && path.matches("/(admin|blog)/auth/logout");
+        boolean exchange = "POST".equals(method) && path.matches("/(admin|blog)/auth/oauth/exchange");
+        String expectedUserId = request.getHeader(WebSession.EXPECTED_USER);
+        boolean usesSession = !publicRoute || logout || exchange || (optional && expectedUserId != null);
+        if (side != null && usesSession && !callback) {
+            String token = side.readToken(request);
+            if (token != null) {
+                StpUtil.getStpLogic().setTokenValueToStorage(token);
+            }
+            if (logout && token != null) {
+                Object userId = StpUtil.getLoginIdByToken(token);
+                if (userId != null) {
+                    WebSession.requireExpectedUser(expectedUserId, userId);
+                }
+            }
+            if (optional) {
+                WebSession.requireExpectedUser(expectedUserId, users.requireCurrent());
+            }
+        }
+        if (publicRoute) {
+            return;
+        }
+
+        // 平台回调和发起必须匹配同一个已配置的端；绑定的原会话由业务层检查。
+        boolean authorize = "POST".equals(method) && path.matches("/(admin|blog)/auth/oauth/[^/]+/authorize");
+        if (authorize || (callback && "GET".equals(method))) {
+            String expected = providers.callbackPath(path.split("/")[4]);
+            String callbackPath = authorize ? path.substring(0, path.lastIndexOf('/')) + "/callback" : path;
+            if (!expected.equals("/api/v1" + callbackPath)) {
+                throw new BusinessException(404, "NOT_FOUND", "平台不存在或未启用");
             }
             return;
         }
 
-        // 3. OAuth 动态路径也要检查平台名单，绑定需要的原会话由业务服务检查。
-        if (("POST".equals(request.getMethod()) && path.matches("/(admin|blog)/auth/oauth/[^/]+/authorize"))
-                || ("GET".equals(request.getMethod()) && path.matches("/(admin|blog)/auth/oauth/[^/]+/callback"))) {
-            providers.requireEnabled(path.split("/")[4]);
-            return;
-        }
-
         // 4. 其余请求都实时检查登录和账号状态，后台再检查 admin:access。
-        users.requireCurrent();
-        if (path.startsWith("/admin/")) {
+        long userId = users.requireCurrent();
+        if (side != null && (write || expectedUserId != null)) {
+            WebSession.requireExpectedUser(expectedUserId, userId);
+        }
+        if (side == WebSession.ADMIN) {
             sessions.requireAdminAuthentication();
         }
         if (isAdminBusinessPath(path)) {
             StpUtil.checkPermission("admin:access");
         }
+    }
+
+    /** 判断公开接口，涉及身份的讨论和统计接口仍单独处理。 */
+    private static boolean isPublic(String method, String path) {
+        return PUBLIC.contains(method + " " + path) || ("GET".equals(method)
+                && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
+                || path.matches("/blog/articles/[^/]+/files/[^/]+/content")
+                || path.matches("/blog/music/files/[^/]+/content")
+                || path.matches("/blog/(authors|categories|tags)/[^/]+")));
+    }
+
+    private static boolean optionalSession(String method, String path) {
+        return ("GET".equals(method) && (path.equals("/blog/messages") || path.matches("/blog/articles/[^/]+/comments")))
+                || ("POST".equals(method) && path.matches("/blog/analytics/(page-views|online/tickets)"));
+    }
+
+    private static boolean requiresOrigin(WebSession side, String method, String route) {
+        return side != null && !Set.of("GET", "HEAD", "OPTIONS").contains(method) && !ANONYMOUS_WRITES.contains(route);
+    }
+
+    /** 优先核对 Origin，只有请求缺少 Origin 时才从 Referer 提取来源。 */
+    private static void requireOrigin(HttpServletRequest request, String trustedOrigin) {
+        List<String> origins = Collections.list(request.getHeaders(HttpHeaders.ORIGIN));
+        if (origins.equals(List.of(trustedOrigin))) {
+            return;
+        }
+        if (origins.isEmpty()) {
+            List<String> referers = Collections.list(request.getHeaders(HttpHeaders.REFERER));
+            if (referers.size() == 1) {
+                try {
+                    URI referer = URI.create(referers.getFirst());
+                    if (referer.getScheme() != null && referer.getHost() != null && referer.getRawUserInfo() == null
+                            && referer.getRawFragment() == null
+                            && trustedOrigin.equals(PublicSiteProperties.originOf(referer))) {
+                        return;
+                    }
+                } catch (IllegalArgumentException ignored) {
+                    // 无法解析时拒绝，不从请求 Host 或转发头推断来源。
+                }
+            }
+        }
+        throw new BusinessException(403, "FORBIDDEN", "请求来源不被允许");
     }
 
     /** 判断是否为后台业务接口，登录和本人设置单独检查。 */
@@ -153,36 +252,40 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 && !path.equals("/admin/me") && !path.startsWith("/admin/me/");
     }
 
-    /**
-     * 配置跨域，只允许已配置的前端来源，开放版本等响应头，拒绝时返回统一错误。
-     */
+    /** 仅为主页和简历的公开客户端开放 HTTP 跨域。 */
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter(JsonMapper json) {
-        // 1. 启动时检查每个 origin，不能用通配符，也不能带凭据或路径。
-        CorsConfiguration config = new CorsConfiguration();
-        for (String origin : properties.getAllowedOrigins()) {
-            URI uri = URI.create(origin);
-            if (!("http".equals(uri.getScheme()) || "https".equals(uri.getScheme())) || uri.getHost() == null
-                    || uri.getUserInfo() != null || uri.getQuery() != null || uri.getFragment() != null
-                    || StrUtil.isNotEmpty(uri.getPath())) {
-                throw new IllegalArgumentException("allowed-origins必须是明确的HTTP(S) origin");
+        String adminOrigin = sites.origin("admin");
+        String blogOrigin = sites.origin("blog");
+        validateSessionOrigins(URI.create(adminOrigin), URI.create(blogOrigin));
+        Map<WebSession, String> sessionOrigins = Map.of(WebSession.ADMIN, adminOrigin, WebSession.BLOG, blogOrigin);
+        CorsConfiguration homeCors = publicCors(sites.origin("home"));
+        CorsConfiguration cvCors = publicCors(sites.origin("cv"));
+        CorsConfiguration denied = new CorsConfiguration();
+        CorsFilter cors = new CorsFilter(request -> {
+            String path = request.getServletPath();
+            boolean preflight = CorsUtils.isPreFlightRequest(request);
+            String method = preflight ? request.getHeader(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD) : request.getMethod();
+            if (!preflight && "GET".equals(method) && ONLINE_SOCKETS.contains(path)) {
+                // WebSocket 握手由各站自己的 Origin 校验处理。
+                return null;
             }
-        }
+            if (PUBLIC.contains(method + " " + path)) {
+                if (path.startsWith("/home/")) {
+                    return homeCors;
+                }
+                if (path.startsWith("/cv/")) {
+                    return cvCors;
+                }
+            }
 
-        // 2. 只开放约定的方法和请求头，让前端能读到版本、跳转地址和等待秒数。
-        config.setAllowedOrigins(properties.getAllowedOrigins());
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("Authorization", "Content-Type", "If-Revision",
-                "X-Captcha-Id", "X-Captcha-Code", "Range"));
-        config.setExposedHeaders(List.of("X-Revision", "Location", "Retry-After",
-                "Accept-Ranges", "Content-Range", "Content-Length"));
-        config.setAllowCredentials(true);
-        config.setMaxAge(600L);
-
-        // 3. 全部路径共用 CORS，跨域被拒绝时也返回统一 JSON 错误。
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        CorsFilter cors = new CorsFilter(source);
+            // 同源反代可能改写后端看到的 Host。允许本端请求继续执行，不添加跨域许可。
+            WebSession side = WebSession.forPath(path);
+            if (!preflight && side != null && sessionOrigins.get(side).equals(request.getHeader(HttpHeaders.ORIGIN))) {
+                return null;
+            }
+            return denied;
+        });
         cors.setCorsProcessor(new DefaultCorsProcessor() {
             /**
              * 返回跨域请求被拒绝的 JSON 结果。
@@ -198,9 +301,37 @@ public class AuthWebConfig implements WebMvcConfigurer {
             }
         });
 
-        // 4. CORS 放在鉴权和请求体处理前面，合法预检就不用带本站 Token。
+        // CORS 在鉴权和请求体处理前，合法预检不需要登录 Cookie。
         FilterRegistrationBean<CorsFilter> filter = new FilterRegistrationBean<>(cors);
         filter.setOrder(Ordered.HIGHEST_PRECEDENCE + 10);
         return filter;
+    }
+
+    private CorsConfiguration publicCors(String origin) {
+        CorsConfiguration config = new CorsConfiguration();
+        config.setAllowedOrigins(List.of(origin));
+        config.setAllowedMethods(List.of("GET", "POST"));
+        config.setAllowedHeaders(List.of(HttpHeaders.CONTENT_TYPE));
+        config.setExposedHeaders(List.of(HttpHeaders.RETRY_AFTER));
+        config.setMaxAge(600L);
+        return config;
+    }
+
+    private void validateSessionOrigins(URI admin, URI blog) {
+        boolean dev = environment.acceptsProfiles(Profiles.of("dev & !prd"));
+        boolean localAdmin = dev && isLoopback(admin);
+        boolean localBlog = dev && isLoopback(blog);
+        if ((!localAdmin && !"https".equals(admin.getScheme())) || (!localBlog && !"https".equals(blog.getScheme()))) {
+            throw new IllegalArgumentException("管理端和博客须使用HTTPS，dev允许回环HTTP");
+        }
+        if (admin.getHost().equals(blog.getHost())
+                && !(localAdmin && localBlog && admin.getPort() != blog.getPort())) {
+            throw new IllegalArgumentException("管理端和博客须使用不同主机名，dev回环地址可使用不同端口");
+        }
+    }
+
+    private boolean isLoopback(URI origin) {
+        String host = origin.getHost();
+        return host.equals("127.0.0.1") || host.equals("[::1]") || host.equals("localhost") || host.endsWith(".localhost");
     }
 }

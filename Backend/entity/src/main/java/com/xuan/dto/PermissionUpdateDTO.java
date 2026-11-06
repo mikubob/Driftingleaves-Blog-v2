@@ -40,6 +40,7 @@ public class PermissionUpdateDTO {
         description = value == null || value.strip().isEmpty() ? null : value.strip();
     }
 
+    /** 检查是否提交了权限描述，显式传空可清除原值。 */
     @AssertTrue(message = "描述未完整提交，请重新打开编辑窗口后重试；描述留空可清除已有内容。")
     public boolean isCompleteReplace() {
         return descriptionPresent;

@@ -2,8 +2,10 @@ package com.xuan.controller.security;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.ratelimit.NotFoundRateLimiter;
 import com.xuan.result.Result;
+import com.xuan.security.WebSession;
 import com.xuan.utils.IpUtils;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -19,11 +21,13 @@ public class NotFoundController {
 
     private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
+    private final PublicSiteProperties sites;
 
     /** 上报前端 404，先检查来源和请求参数，再与后端 404 共用计数窗口。 */
     @PostMapping({"/blog/security/not-found", "/admin/security/not-found"})
     public Result<Void> report(HttpServletRequest request) throws IOException {
-        if (!properties.getAllowedOrigins().contains(request.getHeader("Origin"))) {
+        WebSession side = WebSession.forPath(request.getServletPath());
+        if (!sites.origin(side.site()).equals(request.getHeader("Origin"))) {
             throw new BusinessException(403, "FORBIDDEN", "访问来源不被允许");
         }
         if (request.getQueryString() != null || request.getInputStream().read() != -1) {

@@ -155,7 +155,7 @@ function handlePageChange(page) {
 }
 
 .search-count {
-  color: #909399;
+  color: var(--blog-text3);
   font-size: 13px;
 }
 
@@ -223,7 +223,7 @@ function handlePageChange(page) {
 .empty-tip {
   padding: 60px 0;
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   font-size: 14px;
   background: #fff;
   border-radius: 8px;

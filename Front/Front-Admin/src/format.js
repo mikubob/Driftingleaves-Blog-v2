@@ -9,6 +9,7 @@ export function formatTime(value) {
   }).format(new Date(value))
 }
 
+/** 格式化十进制计数，用 BigInt 保留精度，无有效计数时显示占位符。 */
 export function formatCount(value) {
   return typeof value === 'string' && /^\d+$/.test(value)
     ? new Intl.NumberFormat('zh-CN').format(BigInt(value))

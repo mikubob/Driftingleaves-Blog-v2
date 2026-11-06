@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { getPage, request } from '../../api.js'
 
+/** 管理博客的公开配置和首页数据，供页面共用。 */
 export const useBlogStore = defineStore('blog', () => {
   const personalInfo = ref({})
   const report = ref({})

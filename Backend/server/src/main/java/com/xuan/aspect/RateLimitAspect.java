@@ -82,9 +82,11 @@ public class RateLimitAspect {
         return point.proceed();
     }
 
+    /** 按操作和可信客户端 IP 统计一分钟内的请求次数。 */
     private void hitIp(String operation, int limit, HttpServletRequest request) {
-        limiter.hit(List.of(properties.getRedisPrefix() + "rate:interface:" + operation + ":ip:" +
-                TokenUtils.digest(String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies())))), 60, limit);
+        String clientIp = String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies()));
+        String key = properties.getRedisPrefix() + "rate:interface:" + operation + ":ip:" + TokenUtils.digest(clientIp);
+        limiter.hit(List.of(key), 60, limit);
     }
 
     /** 检查请求频率，按操作名、可信 IP 和登录会话计数，超限时不执行方法。 */

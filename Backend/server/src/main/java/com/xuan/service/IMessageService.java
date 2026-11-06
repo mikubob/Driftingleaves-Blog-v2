@@ -3,7 +3,6 @@ package com.xuan.service;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DiscussionConversationQueryDTO;
-import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageCreateDTO;
 import com.xuan.dto.MessageEditDTO;
@@ -13,6 +12,7 @@ import com.xuan.entity.BlogMessage;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
 

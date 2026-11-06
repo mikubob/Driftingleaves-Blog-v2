@@ -204,7 +204,7 @@ const batchActions = computed(() => {
         <el-table-column label="订阅时间" width="180">
           <template #default="{ row }">{{ formatTime(row.subscribeTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="230">
+        <el-table-column label="操作" align="center" width="230">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
             <el-button

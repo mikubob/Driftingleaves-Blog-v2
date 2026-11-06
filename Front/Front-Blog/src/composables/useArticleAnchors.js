@@ -22,7 +22,9 @@ export const useArticleAnchors = (contentRef) => {
 
   const onContentRendered = async () => {
     await nextTick()
-    if (!active) return
+    if (!active) {
+      return
+    }
     ensureHeadingIds(contentRef.value)
     restoreFragment()
   }
@@ -34,15 +36,22 @@ export const useArticleAnchors = (contentRef) => {
       event.metaKey ||
       event.shiftKey ||
       event.altKey
-    )
+    ) {
       return
+    }
     const link = event.target.closest('a[href^="#"]')
-    if (!link || !contentRef.value?.contains(link)) return
+    if (!link || !contentRef.value?.contains(link)) {
+      return
+    }
     const hash = link.getAttribute('href')
-    if (!findFragmentTarget(contentRef.value, hash)) return
+    if (!findFragmentTarget(contentRef.value, hash)) {
+      return
+    }
     event.preventDefault()
     // 使用原生片段导航，保留浏览历史和复制链接的锚点。
-    if (window.location.hash !== hash) window.location.hash = hash
+    if (window.location.hash !== hash) {
+      window.location.hash = hash
+    }
     scrollToFragment(hash)
   }
 

@@ -1,5 +1,6 @@
 package com.xuan.handle;
 
+import com.xuan.controller.admin.SiteConfigController;
 import com.xuan.controller.blog.FriendLinkController;
 import com.xuan.controller.publicsite.PublicSiteConfigController;
 import com.xuan.exception.BusinessException;
@@ -13,7 +14,7 @@ import java.util.Set;
 /** 检查站点接口参数，拒绝未声明、重复和空参数，包括多余的状态或身份字段。 */
 @ControllerAdvice(assignableTypes = {FriendLinkController.class,
         PublicSiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
-        com.xuan.controller.admin.SiteConfigController.class})
+        SiteConfigController.class})
 public class SiteRequestAdvice {
 
     /** 检查查询参数和 GET 请求体，参数类型及长度由 DTO 校验。 */

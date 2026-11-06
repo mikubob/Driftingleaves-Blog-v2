@@ -261,7 +261,7 @@ const batchActions = computed(() => {
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="enabled" /></template>
         </el-table-column>
-        <el-table-column label="操作" width="240">
+        <el-table-column label="操作" align="center" width="240">
           <template #default="{ row }">
             <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('sys:role:update')" link @click="edit(row)">编辑</el-button>

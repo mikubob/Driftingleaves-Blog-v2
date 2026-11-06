@@ -67,7 +67,9 @@ const digitalDate = computed(() => {
 const weekdayText = computed(() => weekdayMap[now.value.getDay()])
 
 const currentLunar = computed(() => {
-  if (!solarFactory.value) return null
+  if (!solarFactory.value) {
+    return null
+  }
 
   const time = now.value
   return solarFactory.value
@@ -135,7 +137,9 @@ const clockMarkers = Array.from({ length: 12 }, (_, index) => ({
 const getRemainingRatio = (start, end, current) => {
   const total = end - start
   const remaining = end - current
-  if (total <= 0) return 0
+  if (total <= 0) {
+    return 0
+  }
   return Math.min(Math.max(remaining / total, 0), 1)
 }
 
@@ -203,7 +207,9 @@ const circleCircumference = 2 * Math.PI * circleRadius
 const getRingDashoffset = (ratio) => circleCircumference * (1 - ratio)
 
 const loadLunarModule = async () => {
-  if (solarFactory.value) return
+  if (solarFactory.value) {
+    return
+  }
 
   try {
     const { Solar } = await import('lunar-javascript')
@@ -342,7 +348,7 @@ onUnmounted(() => {
                   :stroke-dashoffset="getRingDashoffset(item.ratio)"
                 />
               </svg>
-              <span class="time-ring-percent" :style="{ color: item.color }">
+              <span class="time-ring-percent">
                 {{ item.percent }}
               </span>
             </div>
@@ -706,7 +712,7 @@ onUnmounted(() => {
 .time-progress-date,
 .time-progress-weekday {
   margin: 0;
-  color: #5aa8ea;
+  color: #27649e;
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 2px;
@@ -776,6 +782,7 @@ onUnmounted(() => {
 }
 
 .time-ring-percent {
+  color: var(--blog-text);
   position: absolute;
   inset: 0;
   display: flex;
@@ -815,19 +822,19 @@ onUnmounted(() => {
 }
 
 .almanac-label--yi {
-  color: #2f9e74;
+  color: #207454;
 }
 
 .almanac-label--ji {
-  color: #e45874;
+  color: #aa3450;
 }
 
 .almanac-label--xiu {
-  color: #4b8ef7;
+  color: #285fb5;
 }
 
 .almanac-label--chongsha {
-  color: #9b6bdb;
+  color: #7642a9;
 }
 
 .almanac-value {
@@ -853,7 +860,7 @@ onUnmounted(() => {
   padding: 18px 16px;
   border: none;
   border-radius: 30px;
-  background: linear-gradient(135deg, #4f77e3 0%, #5279e1 100%);
+  background: linear-gradient(135deg, #3b5fc4 0%, #3f62c7 100%);
   box-shadow:
     0 20px 34px rgba(83, 121, 225, 0.22),
     inset 0 1px 0 rgba(255, 255, 255, 0.12);

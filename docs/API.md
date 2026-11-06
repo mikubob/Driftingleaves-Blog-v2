@@ -20,7 +20,7 @@
 - 原 `/auth/**` 和 `/me/**` 分别迁到 `/admin/auth/**`、`/admin/me/**` 及 `/blog/auth/**`、`/blog/me/**`。本人评论、留言、点赞记录和邮件订阅属于 Blog。
 - 原 `/analytics/**`、`/ws/online` 迁到 Home、Blog、Cv 各自前缀下；`siteCode` 必须与当前端一致，WebSocket 票据也必须在同端使用。Admin 不参与在线人数统计。
 - Blog、Home、Cv 分别通过自己端的 `/profile`、`/social-links`、`/configs` 读取共享公开数据。更改资料和配置仍使用 Admin 入口。
-- 旧的无端名前缀入口已移除。前后端须一起部署；OAuth 平台登记的回调地址须更新到配置选定的 `/api/v1/blog/auth/oauth/{source}/callback` 或 `/api/v1/admin/auth/oauth/{source}/callback`，仍使用既有固定完成页配置。
+- 旧的无端名前缀入口已移除。前后端须一起部署；OAuth 平台登记的回调地址须更新到所选端 HTTPS Origin 上的 `/api/v1/blog/auth/oauth/{source}/callback` 或 `/api/v1/admin/auth/oauth/{source}/callback`，仍使用既有固定完成页配置。
 - 四端路径不建立新的账号、角色或会话体系。Admin 的认证与本人设置维持公开/登录本人规则，后台业务继续要求 `admin:access`、业务权限和数据范围。
 
 <a id="common"></a>
@@ -30,12 +30,17 @@
 ### 路径与鉴权
 
 - 下文使用完整路径，统一前缀 `/api/v1`。JSON 请求使用 `application/json`，上传使用 `multipart/form-data`。
-- 登录后通过 `Authorization: Bearer <accessToken>` 传递本站 Sa-Token。Blog 的密码、邮箱验证码及已绑定第三方登录固定有效 259200 秒（3 天）；Admin 可选择账密或绑定邮箱验证码登录，两种方式都须通过图形验证码并拥有 admin:access，成功签发 604800 秒（7 天）会话。无 refreshToken、无滑动续期，不接受客户端指定有效期。前台及历史会话均不能访问受保护的后台接口，即使该用户拥有后台权限，也必须重新完成后台登录。
-- 浏览器以 localStorage 的 `dl-blog-session`、`dl-admin-session` 分别保存 `{accessToken, expiresAt}`，到期时间按登录响应的 expiresIn 换算。刷新或重新打开页面后先检查到期时间，再读取对应端 `/me`、`/me/capabilities` 核验身份和权限；Admin 还读取 `/me/menus`、确认 `admin:access` 后注册动态路由。资料、权限和菜单不持久化，恢复不续期。退出、核验失败或 401/UNAUTHENTICATED 清除本端持久凭据。浏览器禁用存储时仅本页有效；旧 Token 保留原到期时间，重新登录后采用新有效期。
+- 本站通过 Sa-Token 和 Redis 校验会话。Admin 与 Blog 通过同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，固定 604800 秒（7 天）。博客使用 `__Host-dl-blog-session`，固定 259200 秒（3 天）。两个登录 Cookie 均为 host-only，设置 `HttpOnly; Secure; SameSite=Strict; Path=/`，省略 Domain，访问与刷新均不续期。
+- 账密、邮箱验证码登录及博客 OAuth LOGIN 成功时，事务提交后通过 `Set-Cookie` 签发对应端会话，JSON 只返回 `expiresIn` 和 `user`。后台两种登录方式均要求图形验证码和 `admin:access`。两端只读取各自的登录 Cookie，旧 Bearer 和旧会话值均无法恢复登录。新版前端启动时删除本端旧的 `dl-admin-session` 或 `dl-blog-session` localStorage 值，切换后需重新登录一次。
+- 刷新后以本端 `/me`、`/me/capabilities` 核验身份和权限，Admin 还读取 `/me/menus` 并确认 `admin:access`。预期的 401 按未登录处理。退出先撤销当前 Cookie 对应的会话，再用同名同属性、`Max-Age=0` 的 Cookie 清除浏览器值。退出幂等，撤销失败返回错误。普通 401 响应不清除 Cookie。
+- 页面已知登录账号时，用 `X-Expected-User-Id` 发送该页的十进制用户 ID。受保护写请求、有效会话的退出以及 OAuth BIND 发起和兑换要求该头，受保护读取提供该头时也会核对。后端用 Cookie 确定真实身份并执行权限检查。预期缺失或与实际账号不符时，受约束的请求返回 `409/SESSION_ACCOUNT_CHANGED`，不执行操作，也不修改 Cookie。页面重新核验身份，原请求不重试。
+- 博客讨论读取、访问采集和在线票据请求可匿名。省略该头时按匿名处理，即使浏览器已有另一标签页的登录 Cookie。提供该头时，必须带对应的有效会话。账密或邮箱登录、Blog OAuth LOGIN 和独立的邮件退订票据不要求预期账号。
+- Admin、Blog 的写请求（包括注册、登录、退出、绑定、兑换和上传）在业务执行前核对本端配置的 scheme、host 和 port。优先读取唯一 `Origin`，缺失时才从唯一可解析的 `Referer` 提取来源。`Origin: null`、来源缺失、跨端或不匹配均为 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据及匿名 404 上报按各自规则处理。公开文章详情的阅读计数与会话无关。
+- Admin 和 Blog 按各自配置处理同源请求，反代改写后端看到的 Host 时也适用。HTTP 跨域只向 Home 和 Cv 的配置来源开放各自的公开接口，允许 GET、POST 和 Content-Type，可读取 Retry-After。两端统计为匿名，WebSocket 各自核对所属站点的 Origin。
 - **公开**：无需登录；**登录本人**：账号启用，身份只取当前会话；**后台：P**：账号启用，同时具备 `admin:access` 与权限 P。未认证 401，无权限 403。
 - 文章、文件、评论按本次权限的 ALL/SELF 范围检查；范围外资源返回 404。多个权限分别检查范围。分类、标签、用户、角色等全局资源不产生“本人版本”；标注 ALL 的操作必须具备 ALL 范围。
 - 密码变更、清除密码、发起绑定与解绑要求最近 300 秒成功认证。密码变更/清除/解绑、账号禁用及授权变更会撤销相关会话；需要时重新登录。
-- 认证、本人资料、后台业务和带身份的响应使用 `Cache-Control: no-store`。OAuth 还需同浏览器 Cookie 与明确 Origin，见 [13.1](#oauth-flow)。
+- 认证、本人资料、后台业务和带身份的响应使用 `Cache-Control: no-store`。OAuth 还需同浏览器的流程 Cookie，见 [13.1](#oauth-flow)。
 
 <a id="pagination"></a>
 
@@ -86,7 +91,7 @@
 
 统一的[批量接口](#admin-batch)是多资源例外：逐条使用 Body 中的 `items[].revision`，不使用整个请求的 If-Revision；状态写入在响应 `data.items[].revision` 返回各资源的新版本，不返回单一 X-Revision。版本来源和校验语义仍与单条接口一致。
 
-没有通用幂等键。创建超时先查询确认；点赞/取消点赞、注销可幂等，OAuth state/ticket 一次性。429 读取 Retry-After；服务不可用返回 503，不当作成功重试。跨域需允许 Authorization/If-Revision/X-Captcha-Id/X-Captcha-Code 并暴露 X-Revision/Location/Retry-After。
+没有通用幂等键。创建超时先查询确认；点赞/取消点赞、注销可幂等，OAuth state/ticket 一次性。429 读取 Retry-After；服务不可用返回 503，不当作成功重试。Home 和 Cv 的公开接口在合法跨域响应中暴露 Retry-After。
 
 ### 0.5 查找接口
 
@@ -104,7 +109,7 @@
 
 - 公开注册（`/blog/auth/register` 及保留的 `/admin/auth/register`）必须提供 `email` 和 `emailCode`，仅消费 REGISTER 用途验证码；注册只授予 member，不创建后台身份。
 - 前台可以选择用户名密码、邮箱验证码或已绑定第三方登录，三种登录均需填写图形验证码。第三方 LOGIN 不再自动注册账号；历史已有绑定仍可登录。
-- 后台支持“用户名密码”和“邮箱验证码”两种登录，均需图形验证码和 admin:access；邮箱方式不要求本站密码。第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记，前台会话不能访问；原有后台组合认证会话在到期前继续有效。
+- 后台支持“用户名密码”和“邮箱验证码”两种登录，均需图形验证码和 admin:access；邮箱方式不要求本站密码。第三方只支持已登录后的绑定。所有受保护 `/admin/**` 都检查后台认证标记。切换到 Cookie 鉴权后，已有用户需重新登录。
 
 | 接口 | JSON 请求体 | 成功响应 |
 | --- | --- | --- |
@@ -114,6 +119,8 @@
 | `POST /api/v1/admin/auth/email-login` | `{"email":"leaf@example.test","emailCode":"012345"}` | `Result<Session>`，七天；消费后台验证码并检查 admin:access |
 
 以上接口均公开并要求 `X-Captcha-Id`、`X-Captcha-Code`，只接收声明字段、不接受查询参数。发送成功与失败都会消耗图形验证码；成功后前端刷新图片，注册或登录提交时填写新图片。邮件验证码六位纯数字、五分钟有效，按注册/前台登录/后台登录分开，任何一次邮件校验都会原子消费对应验证码；验证码不出现在 HTTP 响应或日志中。发送接口仅在 SMTP 接受后返回成功，未启用或发送失败返回 503，失败清理验证码。
+
+两个端的邮箱登录与发送登录验证码接口在限流和图形验证码校验通过后，邮箱未绑定本站账号时返回 `401/AUTH_FAILED`，提示“该邮箱未注册”。博客注册用途仍向新邮箱发送验证码。
 
 所有发送用途和端共享每邮箱每 60 秒一次、每可信 IP 每 60 秒五次的限额，超限 429 并带 Retry-After。发送接口在图形验证码通过后计数；后台发送还检查账号登录失败次数。前台密码/邮箱登录及后台登录/发送共用 login-total 每分钟 30 次的入口预算；邮箱或后台邮件验证码失败也计入已有登录失败预算。
 
@@ -125,7 +132,7 @@
 
 首次加载、点击图片刷新和提交后刷新均调用上述接口、共用同一预算；刷新不会绕过限流，也不会重置窗口。超限在生成图片和写入验证码缓存之前拒绝。
 
-使用 Hutool `CaptchaUtil.createCircleCaptcha` 生成 200×80 PNG、6 位纯数字和 20 个干扰圆圈，数字保留前导零。验证码不是本站会话或 OAuth state，不设置 Cookie，不要求 Bearer。
+使用 Hutool `CaptchaUtil.createCircleCaptcha` 生成 200×80 PNG、6 位纯数字和 20 个干扰圆圈，数字保留前导零。验证码不是本站会话或 OAuth state，不设置 Cookie，无需登录。
 
 ```http
 GET /api/v1/blog/auth/captcha
@@ -170,7 +177,7 @@ GET /api/v1/blog/auth/captcha
 
 验证码在业务操作前验证；进入校验后的第一次尝试即原子删除，正确、错误或后续业务失败都不能复用。缺失、格式错误、过期、答案错误及重放统一返回 HTTP 400、`CAPTCHA_INVALID`，不累计密码错误次数。Redis 不可用返回 503，不能跳过校验。其他入口校验、鉴权或限流提前拒绝时可能尚未消费，客户端每次写请求结束后均清空输入并重新获取图片或题目，不自动重放写入，正文保留供用户重试。
 
-跨域沿用明确 Origin 白名单，CORS 在鉴权前处理 OPTIONS，并允许 `X-Captcha-Id`、`X-Captcha-Code`、Authorization、Content-Type、If-Revision。验证码不依赖跨域 Cookie；OAuth authorize/exchange 仍带 credentials，回调和兑换不再次要求图形验证码，以免破坏 JustAuth state 与一次性票据流程。日志不得记录验证码答案或上述验证码请求头。
+验证码及 OAuth 发起和兑换使用同源请求，回调和兑换不再次要求图形验证码，以免破坏 JustAuth state 与一次性票据流程。日志不得记录验证码答案或上述验证码请求头。
 
 ### 0.6 接口限流覆盖与阈值
 
@@ -211,7 +218,7 @@ GET /api/v1/blog/auth/captcha
 
 #### 0.6.1 错误页展示与反复 404 临时封禁
 
-四端全屏错误页保留 `404 / 页面不存在`，描述固定为“你访问的页面已经走丢了”；不显示接口 HTTP 状态、业务错误码或原始异常信息。接口仍保留真实 HTTP 状态和 `code/msg/data/errors`，请求层仍能读取 `Retry-After`，不能把错误改成 HTTP 200。
+不存在的页面显示 `404 / 页面不存在`。网络、服务和限流错误使用全屏请求错误页，显示实际 HTTP 状态（如有）及用户可读的错误提示。Admin 和 Blog 的认证接口遇到 429 时在当前界面提示 `Retry-After` 等待时间。
 
 参考 `FeiTwnd-Website` 的限频后封禁一天机制，使用本站 Redis 原子固定窗口：同一可信客户端 IP 在 60 秒内最多允许 20 次不存在访问，第 21 次触发 86400 秒临时封禁。四端共享 IP 预算，不按路径、Token、UA 或 fingerprint 拆分；只存 IP 摘要，不修改本站账号或 `blog_visitor`。封禁期间所有新的 API 请求及 WebSocket 握手返回 `403/ACCESS_BLOCKED`，附正整数秒 `Retry-After`；不会续期，到期自动恢复。已建立的 WebSocket 不主动断开。共享出口 IP 的访问者共用预算，部署须配置准确的可信代理。
 
@@ -222,7 +229,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | 项目 | 约定 |
 | --- | --- |
 | 接口 | `POST /api/v1/blog/security/not-found`；`POST /api/v1/admin/security/not-found` |
-| 鉴权 | 公开；必须携带在 `app.auth.allowed-origins` 中的明确 `Origin` |
+| 鉴权 | 公开。必须携带所属端 `app.sites` 配置的 `Origin` |
 | 参数 | 无 Path/Query/Body 参数；不接受客户端 IP、用户ID、fingerprint 或目标URL |
 | 成功 | HTTP 200；`{"code":"OK","msg":"成功","data":null,"errors":[]}` |
 | 错误 | 参数/请求体400，非法来源403/FORBIDDEN，封禁403/ACCESS_BLOCKED，保护不可用503 |
@@ -351,6 +358,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 
 ```http
 POST /api/v1/admin/auth/register
+Origin: https://admin.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -405,6 +413,7 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/auth/login
+Origin: https://admin.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -414,7 +423,7 @@ Content-Type: application/json
 
 ##### 响应参数
 
-`data`：[Session](#response-session)。
+`data`：[Session](#response-session)。成功时通过 `Set-Cookie` 签发登录 Cookie。
 
 ##### 响应示例
 
@@ -422,7 +431,7 @@ Content-Type: application/json
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "tokenType": "Bearer", "accessToken": "<site-token>", "expiresIn": 604800,
+    "expiresIn": 604800,
     "user": {
       "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
       "status": 1
@@ -449,7 +458,7 @@ Content-Type: application/json
 | 接口路径 | `POST /api/v1/admin/auth/logout` |
 | 接口描述 | 退出当前登录 |
 | Content-Type | 无请求体 |
-| 访问要求 | 幂等注销；无 Token 或已失效仍返回 200 |
+| 访问要求 | 幂等注销；无会话或已失效仍返回 200 |
 
 ##### 请求参数
 
@@ -459,12 +468,14 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/auth/logout
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
 
-`data` 固定为 null。
+`data` 固定为 null。同时下发同名同属性、`Max-Age=0` 的登录 Cookie。
 
 ##### 响应示例
 
@@ -472,7 +483,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-仅撤销当前 Token；缺失或已失效也返回 200，不泄露会话状态。
+存在有效会话时，先核对页面预期账号，再撤销对应会话。预期账号缺失或不匹配时返回 `409/SESSION_ACCOUNT_CHANGED`，不撤销会话、不清除 Cookie。无有效会话时仍可幂等退出。
 
 ---
 
@@ -509,7 +520,7 @@ GET /api/v1/admin/auth/oauth/providers
 {"code":"OK","msg":"成功","data":[{"source":"GITHUB","displayName":"GitHub"}],"errors":[]}
 ```
 
-只列配置完整且启用的平台，示例 GITHUB 不代表已经开通；不返回 App ID/Secret。
+只列本端配置完整且启用的平台，示例 GITHUB 不代表已经开通；不返回 App ID/Secret。
 
 ---
 
@@ -524,7 +535,7 @@ GET /api/v1/admin/auth/oauth/providers
 | 接口路径 | `POST /api/v1/admin/auth/oauth/{source}/authorize` |
 | 接口描述 | 发起第三方绑定 |
 | Content-Type | application/json |
-| 访问要求 | 仅 BIND；须后台完整认证会话 + 最近 300 秒认证；浏览器 Cookie/Origin 必填 |
+| 访问要求 | 仅 BIND；须后台完整认证会话 + 最近 300 秒认证；按通用规则检查来源 |
 
 ##### 请求参数
 
@@ -532,16 +543,17 @@ GET /api/v1/admin/auth/oauth/providers
 | --- | --- | --- | --- |
 | `source` | string | 是 | Path；服务端已启用平台的大写标识；未知或未启用 404 |
 | `operation` | string | 是 | 仅允许 BIND 绑定当前用户；LOGIN 返回 403/FORBIDDEN；不接收 redirectUri/userId/uuid |
-| `__Host-dl-oauth-browser` | string | 是（发起时可由后端新设） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `Origin` | string | 是 | Header；浏览器自动发送，必须匹配配置前端 origin；BIND/兑换附加身份要求见访问要求 |
+| `__Host-dl-oauth-browser` | string | 否（缺失时由后端签发） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
+| `X-Expected-User-Id` | string | 是 | Header。页面预期账号，使用十进制用户 ID。 |
+| `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
 
 ```http
 POST /api/v1/admin/auth/oauth/GITHUB/authorize
-Cookie: __Host-dl-oauth-browser=<browser-id>
-Origin: https://blog.example.com
-Authorization: Bearer <admin-token>
+Cookie: __Host-dl-oauth-browser=<browser-id>; __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
+Origin: https://admin.example.com
 Content-Type: application/json
 
 {"operation":"BIND"}
@@ -567,7 +579,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 }
 ```
 
-后台禁止第三方直接登录。BIND 需完成后台账密和邮箱验证的原 Token 及最近 300 秒认证，校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留原 Token。
+后台禁止第三方直接登录。BIND 需完成后台账密或邮箱登录的原会话及最近 300 秒认证，校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留发起页面。
 
 ---
 
@@ -582,7 +594,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 | 接口路径 | `GET /api/v1/admin/auth/oauth/{source}/callback` |
 | 接口描述 | 第三方平台授权回调 |
 | Content-Type | 无请求体 |
-| 访问要求 | 仅平台回调；校验 state、浏览器 Cookie、流程及原会话；不要求回调请求携带本站 Bearer |
+| 访问要求 | 仅平台回调；校验 state、OAuth 流程 Cookie、流程及原会话；回调不需要登录 Cookie |
 | 成功状态 | 303（可信流程重定向） |
 
 ##### 请求参数
@@ -616,12 +628,12 @@ Cookie: __Host-dl-oauth-browser=<browser-id>
 
 ```http
 HTTP/1.1 303 See Other
-Location: https://blog.example.com/oauth/complete#ticket=<one-time-ticket>
+Location: https://admin.example.com/oauth/complete#ticket=<one-time-ticket>
 Cache-Control: no-store
 Referrer-Policy: no-referrer
 ```
 
-平台顶层 GET 回调不携带本站 Bearer。后端凭 state、浏览器 Cookie 和 Redis 流程定位操作；BIND 再校验服务端保存的原会话仍有效且属于目标用户。可信流程成功后 303 到固定完成页，不在回调直接向浏览器发本站 Token。已消费的可信流程遇到数据库访问或事务提交失败时，303 到固定完成页的 `#error=SERVICE_UNAVAILABLE`，不签发成功票据，且不能重放本次 state。
+平台顶层 GET 回调使用 OAuth 流程 Cookie。后端凭 state、浏览器 Cookie 和 Redis 流程定位操作；BIND 再校验服务端保存的原会话仍有效且属于目标用户。可信流程成功后 303 到固定完成页，不在回调直接向浏览器发本站 Token。已消费的可信流程遇到数据库访问或事务提交失败时，303 到固定完成页的 `#error=SERVICE_UNAVAILABLE`，不签发成功票据，且不能重放本次 state。
 
 ---
 
@@ -636,23 +648,24 @@ Referrer-Policy: no-referrer
 | 接口路径 | `POST /api/v1/admin/auth/oauth/exchange` |
 | 接口描述 | 兑换一次性绑定结果 |
 | Content-Type | application/json |
-| 访问要求 | 同浏览器 Cookie；仅 BIND，须完成后台完整认证的原 Token；LOGIN 禁止 |
+| 访问要求 | 同浏览器 Cookie；仅 BIND，须后台原会话 Cookie；LOGIN 禁止 |
 
 ##### 请求参数
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `ticket` | string | 是 | 回调得到的本站一次性票据；有效期 60 秒，不是平台 code 或本站 Token |
-| `__Host-dl-oauth-browser` | string | 是（发起时可由后端新设） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `Origin` | string | 是 | Header；浏览器自动发送，必须匹配配置前端 origin；BIND/兑换附加身份要求见访问要求 |
+| `__Host-dl-oauth-browser` | string | 是 | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
+| `X-Expected-User-Id` | string | 是 | Header。页面预期账号，使用十进制用户 ID。 |
+| `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
 
 ```http
 POST /api/v1/admin/auth/oauth/exchange
-Cookie: __Host-dl-oauth-browser=<browser-id>
-Origin: https://blog.example.com
-Authorization: Bearer <admin-token>
+Cookie: __Host-dl-oauth-browser=<browser-id>; __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
+Origin: https://admin.example.com
 Content-Type: application/json
 
 {"ticket":"<one-time-ticket>"}
@@ -664,7 +677,7 @@ Content-Type: application/json
 
 ##### 响应示例
 
-BIND 成功（200，原 Token 必须有效，不返回新 Session）：
+BIND 成功（200，原会话必须有效，不返回新 Session）：
 
 ```json
 {
@@ -679,7 +692,7 @@ BIND 成功（200，原 Token 必须有效，不返回新 Session）：
 }
 ```
 
-必须携带同浏览器 Cookie 及发起时已完成后台完整认证的原 Token，仅返回 binding，不切换账号；禁止通过 LOGIN 票据获取后台会话。票据有效期 60 秒且仅消费一次。
+兑换时携带同一浏览器的 OAuth 流程 Cookie、发起时的后台登录 Cookie 和 `X-Expected-User-Id`。成功只返回绑定结果。后台拒绝 LOGIN 票据。票据有效期 60 秒且仅消费一次。
 
 ---
 
@@ -693,7 +706,7 @@ BIND 成功（200，原 Token 必须有效，不返回新 Session）：
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/email-code` |
 | Content-Type | application/json |
-| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 访问要求 | 公开；无需登录，仍执行图形验证码及接口限流 |
 | 成功状态 | 200 OK |
 
 ##### 请求参数
@@ -710,6 +723,7 @@ JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或
 
 ```http
 POST /api/v1/admin/auth/email-code
+Origin: https://admin.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -738,7 +752,7 @@ Content-Type: application/json
 | --- | --- |
 | 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
 | 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
-| 401 / AUTH_FAILED | 邮箱未对应本站账号 |
+| 401 / AUTH_FAILED | 该邮箱未注册 |
 | 403 / ACCOUNT_DISABLED | 账号已禁用 |
 | 403 / FORBIDDEN | 账号没有有效的 admin:access 权限 |
 | 429 / RATE_LIMITED | 邮件发送限额超出；后台还受登录入口和失败限额限制，返回 Retry-After |
@@ -758,7 +772,7 @@ Content-Type: application/json
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/auth/email-login` |
 | Content-Type | application/json |
-| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 访问要求 | 公开；无需登录，仍执行图形验证码及接口限流 |
 | 成功状态 | 200 OK |
 
 ##### 请求参数
@@ -776,6 +790,7 @@ JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或
 
 ```http
 POST /api/v1/admin/auth/email-login
+Origin: https://admin.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -785,15 +800,13 @@ Content-Type: application/json
 
 ##### 响应参数
 
-`data` 为 [Session](#response-session)，`expiresIn=604800`（7天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
+成功时通过 `Set-Cookie` 签发登录 Cookie，`data` 为 [Session](#response-session)，`expiresIn=604800`（7天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
 
 ```json
 {
   "code": "OK",
   "msg": "成功",
   "data": {
-    "tokenType": "Bearer",
-    "accessToken": "<site-token>",
     "expiresIn": 604800,
     "user": {
       "userId": "12",
@@ -815,14 +828,14 @@ Content-Type: application/json
 
 ##### 处理与失败
 
-先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号，消费 ADMIN_LOGIN 用途邮件验证码；不接受注册或另一端登录的验证码。邮件验证码正确后检查账号存在与启用状态以及有效的 `admin:access` 权限，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
+先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号；找不到账号时清除该用途的旧验证码并提示邮箱未注册。找到账号后消费 ADMIN_LOGIN 用途邮件验证码，不接受注册或另一端登录的验证码。邮件验证码正确后检查账号启用状态以及有效的 `admin:access` 权限，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
 
 | HTTP / code | 说明 |
 | --- | --- |
 | 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
 | 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
 | 400 / EMAIL_CODE_INVALID | 邮件验证码错误、过期、用途不符或已消费 |
-| 401 / AUTH_FAILED | 邮件验证码通过后，邮箱仍未对应本站账号 |
+| 401 / AUTH_FAILED | 该邮箱未注册 |
 | 403 / ACCOUNT_DISABLED | 账号已禁用 |
 | 403 / FORBIDDEN | 账号没有有效的 admin:access 权限 |
 | 429 / RATE_LIMITED | 登录入口预算或失败次数超限，返回 Retry-After |
@@ -857,7 +870,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/admin/me
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -914,7 +927,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PATCH /api/v1/admin/me/profile
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -973,7 +988,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PUT /api/v1/admin/me/password
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"newPassword":"New-example-password-2026","currentPassword":"Example-password-2026"}
@@ -1016,7 +1033,9 @@ Content-Type: application/json
 
 ```http
 DELETE /api/v1/admin/me/password
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"currentPassword":"Example-password-2026"}
@@ -1057,7 +1076,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/admin/me/capabilities
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1110,7 +1129,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/me/menus
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1157,7 +1176,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/me/oauth-bindings
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1197,7 +1216,9 @@ source 升序，只列当前配置完整且启用的平台绑定，仅返回平�
 
 ```http
 DELETE /api/v1/admin/me/oauth-bindings/GITHUB
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -1241,7 +1262,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/menus
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1291,7 +1312,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/menus/110
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1358,7 +1379,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/menus
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {
@@ -1428,7 +1451,9 @@ Location: /api/v1/admin/menus/10
 
 ```http
 PUT /api/v1/admin/menus/110
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -1506,7 +1531,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/users?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1558,7 +1583,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/users/12
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1642,7 +1667,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/users
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {
@@ -1704,7 +1731,9 @@ Location: /api/v1/admin/users/12
 
 ```http
 PUT /api/v1/admin/users/12
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -1768,7 +1797,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PUT /api/v1/admin/users/12/roles
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -1835,7 +1866,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/roles?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1887,7 +1918,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/roles/4
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -1946,7 +1977,9 @@ sys:role:query
 
 ```http
 POST /api/v1/admin/roles
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"roleCode":"editor","roleName":"内容编辑","description":null,"dataScope":"SELF","status":1}
@@ -2004,7 +2037,9 @@ Location: /api/v1/admin/roles/4
 
 ```http
 PUT /api/v1/admin/roles/4
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -2070,7 +2105,9 @@ roleCode 不可改；dataScope 或 status 实际变化时撤销全部关联用�
 
 ```http
 PUT /api/v1/admin/roles/4/grants
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -2138,7 +2175,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/permissions?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2190,7 +2227,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/permissions/114
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2249,7 +2286,9 @@ sys:permission:query
 
 ```http
 POST /api/v1/admin/permissions
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"permissionCode":"blog:article:export","permissionName":"导出文章","module":"blog","description":null,"status":1}
@@ -2307,7 +2346,9 @@ Location: /api/v1/admin/permissions/114
 
 ```http
 PUT /api/v1/admin/permissions/114
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -2383,7 +2424,7 @@ permissionCode 创建后不可改，PUT 不接受该字段。仅名称、模块�
 
 ```http
 GET /api/v1/admin/articles?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2403,7 +2444,8 @@ Authorization: Bearer <site-token>
         "author": {
           "userId": "12", "nickname": "落叶"
         },
-        "category": null, "title": "第一片落叶", "slug": "first-leaf", "status": 0
+        "category": null, "title": "第一片落叶", "slug": "first-leaf", "status": 0,
+        "isTop": 0, "viewCount": "0", "likeCount": "0", "commentCount": "0"
       }
     ]
   },
@@ -2411,7 +2453,7 @@ Authorization: Bearer <site-token>
 }
 ```
 
-updateTime DESC,articleId DESC；trash 默认 0。SELF 强制本人，authorId 不能扩大范围。
+先按置顶状态排序，置顶文章排在普通文章前面。同组按 `updateTime`、`articleId` 降序排列，再分页。`trash` 默认 0。SELF 强制本人，`authorId` 不能扩大范围。
 
 ---
 
@@ -2439,7 +2481,7 @@ updateTime DESC,articleId DESC；trash 默认 0。SELF 强制本人，authorId �
 
 ```http
 GET /api/v1/admin/articles/101
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2480,7 +2522,7 @@ X-Revision: "<current-revision>"
 
 读取不增加文章阅读量，不修改状态、更新时间或版本。不存在及超出 SELF 范围统一返回 `404/NOT_FOUND`；无后台入口或查询权限返回 `403/FORBIDDEN`；未登录返回 `401/UNAUTHENTICATED`；ID 格式错误返回 `400/VALIDATION_ERROR`；正文缺失返回 `503/SERVICE_UNAVAILABLE`，不伪造空正文。
 
-管理端在文章标题和操作列提供“详情”入口，打开后独立展示加载、失败重试或完整详情，不将列表数据当作详情。详情只读，不能因查看而要求编辑/发布权限；列表和回收站共用此入口。网页正文复用现有 Markdown 预览组件及清理规则，受管图片通过后台文章附件接口携带 Bearer 读取，临时地址随组件销毁释放；公开详情的 PUBLIC 条件保持不变。
+管理端在文章标题和操作列提供“详情”入口，打开后独立展示加载、失败重试或完整详情，不将列表数据当作详情。详情只读，不能因查看而要求编辑/发布权限；列表和回收站共用此入口。网页正文复用现有 Markdown 预览组件及清理规则，受管图片通过后台文章附件接口通过后台会话读取，临时地址随组件销毁释放；公开详情的 PUBLIC 条件保持不变。
 
 ---
 
@@ -2519,7 +2561,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/articles
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {
@@ -2555,7 +2599,7 @@ Location: /api/v1/admin/articles/101
 
 作者固定当前用户，status 固定 0；文章、正文、标签同事务。创建并取得 ID 后再添加本站附件引用。
 
-创建成功返回详情 Location 与当前聚合 X-Revision；封面中的等价绝对本站附件 URL 保存为规范公开相对路径。后台详情的 coverUrl 也保留此规范写入值，HTML 内的本站附件属性则转换为后台文章上下文；后台预览封面需使用对应后台上下文并以 Bearer fetch 获取，不能向图片 URL 添加 Token。
+创建成功返回详情 Location 与当前聚合 X-Revision；封面中的等价绝对本站附件 URL 保存为规范公开相对路径。后台详情的 coverUrl 也保留此规范写入值，HTML 内的本站附件属性则转换为后台文章上下文；后台预览封面需使用对应后台上下文并通过同源请求获取，不能向图片 URL 添加 Token。
 
 ---
 
@@ -2596,7 +2640,9 @@ Location: /api/v1/admin/articles/101
 
 ```http
 PUT /api/v1/admin/articles/101
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -2666,7 +2712,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/articles/101/files/42/content
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2734,7 +2780,7 @@ Cache-Control: no-store
 
 ```http
 GET /api/v1/admin/categories?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2786,7 +2832,7 @@ sortOrder ASC,categoryId ASC；全局字典，不使用 SELF 本人过滤。keyw
 
 ```http
 GET /api/v1/admin/categories/1
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -2858,7 +2904,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/categories
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"categoryName":"技术","slug":"tech","description":null,"sortOrder":0,"status":1}
@@ -2916,7 +2964,9 @@ Location: /api/v1/admin/categories/1
 
 ```http
 PUT /api/v1/admin/categories/1
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -2976,7 +3026,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/tags?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3028,7 +3078,7 @@ tagId ASC；全局字典，不使用 SELF 本人过滤。keyword 去首尾空白
 
 ```http
 GET /api/v1/admin/tags/1
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3097,7 +3147,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/tags
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"tagName":"Java","slug":"java"}
@@ -3154,7 +3206,9 @@ Location: /api/v1/admin/tags/1
 
 ```http
 PUT /api/v1/admin/tags/1
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -3222,7 +3276,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/comments?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3278,7 +3332,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/comments/201
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3334,7 +3388,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/comments/42/conversation?pageSize=20
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ```json
@@ -3451,7 +3505,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/messages?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3512,7 +3566,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/messages/301
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3574,7 +3628,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/messages/301/replies
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"content":"你好，欢迎交流。","contentFormat":0,"notifyReply":0}
@@ -3629,7 +3685,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/admin/messages/52/conversation?pageSize=20
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ```json
@@ -3745,7 +3801,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/links?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3797,7 +3853,7 @@ sortOrder ASC,linkId ASC。
 
 ```http
 GET /api/v1/admin/links/1
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -3871,7 +3927,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/links
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0,"status":0}
@@ -3931,7 +3989,9 @@ Location: /api/v1/admin/links/1
 
 ```http
 PUT /api/v1/admin/links/1
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -3995,7 +4055,7 @@ status 同模型更新；仅保存 URL，不由服务器抓取。
 
 ```http
 GET /api/v1/admin/configs
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4048,7 +4108,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/configs/site
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4111,7 +4171,9 @@ site/comment/message；未知键 404。
 
 ```http
 PUT /api/v1/admin/configs/site
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -4187,7 +4249,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/files?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4239,7 +4301,7 @@ SELF 仅本人；createTime DESC,fileId DESC。keyword 按 originalName 字面�
 
 ```http
 GET /api/v1/admin/files/42
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4287,7 +4349,9 @@ Authorization: Bearer <site-token>
 
 ```http
 POST /api/v1/admin/files
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: multipart/form-data; boundary=example
 
 --example
@@ -4345,7 +4409,7 @@ Location: /api/v1/admin/files/42
 
 ```http
 GET /api/v1/admin/files/42/content
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4372,7 +4436,7 @@ Cache-Control: no-store
 <PNG binary>
 ```
 
-需要文件查询权限及其范围；前端 Bearer fetch 后使用临时 object URL，不把 Token 拼到 img URL。
+需要文件查询权限及其范围；前端通过同源请求读取后使用临时 object URL，不把 Token 拼到 img URL。
 
 ---
 
@@ -4403,7 +4467,7 @@ Cache-Control: no-store
 
 ```http
 GET /api/v1/admin/home/profile
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4467,7 +4531,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PUT /api/v1/admin/home/profile
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -4531,7 +4597,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/home/social-links?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4584,7 +4650,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/home/social-links/21
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4642,7 +4708,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/home/social-links
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"name":"GitHub","icon":"github","url":"https://github.com/example","sortOrder":0,"status":1}
@@ -4706,7 +4774,9 @@ Location: /api/v1/admin/home/social-links/21
 
 ```http
 PUT /api/v1/admin/home/social-links/21
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -4776,7 +4846,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/cv/experiences?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4829,7 +4899,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/cv/experiences/31
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -4891,7 +4961,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/cv/experiences
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {
@@ -4962,7 +5034,9 @@ endDate=null表示至今；非空不得早于startDate。内容使用CommonMark�
 
 ```http
 PUT /api/v1/admin/cv/experiences/31
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -5030,7 +5104,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/cv/skills?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5082,7 +5156,7 @@ sortOrder ASC,skillId ASC。
 
 ```http
 GET /api/v1/admin/cv/skills/41
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5139,7 +5213,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/cv/skills
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"name":"Java","description":"后端开发","icon":null,"sortOrder":0,"status":1}
@@ -5202,7 +5278,9 @@ Location: /api/v1/admin/cv/skills/41
 
 ```http
 PUT /api/v1/admin/cv/skills/41
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -5270,7 +5348,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/music?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5323,7 +5401,7 @@ keyword匹配title或artist，筛选AND组合；sortOrder ASC,musicId ASC。全�
 
 ```http
 GET /api/v1/admin/music/51
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5385,7 +5463,9 @@ X-Revision: "<current-revision>"
 
 ```http
 POST /api/v1/admin/music
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {
@@ -5457,7 +5537,9 @@ lyricUrl与lyricType同时为空或同时非空；durationSeconds可为null。�
 
 ```http
 PUT /api/v1/admin/music/51
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -5530,7 +5612,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/rss-subscriptions?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5583,7 +5665,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/rss-subscriptions/401
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5646,7 +5728,7 @@ X-Revision: "<current-revision>"
 
 ```http
 GET /api/v1/admin/visitors?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5701,7 +5783,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/visitors/501
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5773,7 +5855,7 @@ X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的浏览次数
 
 ```http
 GET /api/v1/admin/page-views?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5832,7 +5914,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/statistics/overview
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5881,7 +5963,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/statistics/page-views
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5923,7 +6005,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/statistics/visitors
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -5973,7 +6055,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/statistics/provinces
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -6015,7 +6097,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/statistics/articles
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -6075,7 +6157,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/operation-logs?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -6127,7 +6209,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/admin/operation-logs/701
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 ##### 响应参数
@@ -6160,7 +6242,7 @@ Authorization: Bearer <site-token>
 
 #### 公共请求与结果
 
-全部入口要求有效 Bearer、启用账号、`admin:access` 和各接口列出的业务权限，使用 `Content-Type: application/json`、`Cache-Control: no-store`。不接受 Query、通用 action、筛选条件或“全选所有查询结果”；仅操作 Body 中明确选中的同类 ID。删除使用 POST 动作路径，避免在 DELETE 中携带批量 JSON；对应的旧单条管理写入口已移除，单个目标也使用此协议。
+全部入口要求有效后台会话、启用账号、`admin:access` 和各接口列出的业务权限，使用 `Content-Type: application/json`、`Cache-Control: no-store`。不接受 Query、通用 action、筛选条件或“全选所有查询结果”；仅操作 Body 中明确选中的同类 ID。删除使用 POST 动作路径，避免在 DELETE 中携带批量 JSON；对应的旧单条管理写入口已移除，单个目标也使用此协议。
 
 以下请求模型的字段均在 Body，除明确可 null 的字段外均必填。只允许对应模型声明的字段，嵌套对象同样拒绝未知字段。
 
@@ -6189,7 +6271,9 @@ Authorization: Bearer <site-token>
 
 ```http
 PUT /api/v1/admin/comments/batch-review
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"301","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""},{"id":"302","revision":"\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\""}],"status":1}
@@ -6203,7 +6287,9 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/categories/batch-delete
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"101","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}]}
@@ -6217,7 +6303,9 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/messages/batch-delete
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"ids":["401","402"]}
@@ -6227,7 +6315,9 @@ Content-Type: application/json
 
 ```http
 PUT /api/v1/admin/visitors/batch-block
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"501","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}],"blockedUntil":null}
@@ -6413,7 +6503,9 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/files/batch-delete
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"ids":["601","602"]}
@@ -6665,7 +6757,9 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/admin/users/batch-delete
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"12","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}]}
@@ -6695,7 +6789,9 @@ Content-Type: application/json
 
 ```http
 PUT /api/v1/admin/categories/batch-status
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"2","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""},{"id":"1","revision":"\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\""}],"status":0}
@@ -6820,7 +6916,9 @@ Content-Type: application/json
 
 ```http
 PUT /api/v1/admin/music/batch-status
-Authorization: Bearer <site-token>
+Origin: https://admin.example.com
+Cookie: __Host-dl-admin-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"items":[{"id":"10","revision":"\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}],"status":0}
@@ -6873,6 +6971,7 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/blog/auth/register
+Origin: https://blog.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -6927,6 +7026,7 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/blog/auth/login
+Origin: https://blog.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -6936,7 +7036,7 @@ Content-Type: application/json
 
 ##### 响应参数
 
-`data`：[Session](#response-session)。
+`data`：[Session](#response-session)。成功时通过 `Set-Cookie` 签发登录 Cookie。
 
 ##### 响应示例
 
@@ -6944,7 +7044,7 @@ Content-Type: application/json
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "tokenType": "Bearer", "accessToken": "<site-token>", "expiresIn": 259200,
+    "expiresIn": 259200,
     "user": {
       "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
       "status": 1
@@ -6969,7 +7069,7 @@ Content-Type: application/json
 | 接口路径 | `POST /api/v1/blog/auth/logout` |
 | 接口描述 | 退出当前登录 |
 | Content-Type | 无请求体 |
-| 访问要求 | 幂等注销；无 Token 或已失效仍返回 200 |
+| 访问要求 | 幂等注销；无会话或已失效仍返回 200 |
 
 ##### 请求参数
 
@@ -6979,12 +7079,14 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/blog/auth/logout
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
 
-`data` 固定为 null。
+`data` 固定为 null。同时下发同名同属性、`Max-Age=0` 的登录 Cookie。
 
 ##### 响应示例
 
@@ -6992,7 +7094,7 @@ Authorization: Bearer <site-token>
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-仅撤销当前 Token；缺失或已失效也返回 200，不泄露会话状态。
+存在有效会话时，先核对页面预期账号，再撤销对应会话。预期账号缺失或不匹配时返回 `409/SESSION_ACCOUNT_CHANGED`，不撤销会话、不清除 Cookie。无有效会话时仍可幂等退出。
 
 ---
 
@@ -7029,7 +7131,7 @@ GET /api/v1/blog/auth/oauth/providers
 {"code":"OK","msg":"成功","data":[{"source":"GITHUB","displayName":"GitHub"}],"errors":[]}
 ```
 
-只列配置完整且启用的平台，示例 GITHUB 不代表已经开通；不返回 App ID/Secret。
+只列本端配置完整且启用的平台，示例 GITHUB 不代表已经开通；不返回 App ID/Secret。
 
 ---
 
@@ -7044,7 +7146,7 @@ GET /api/v1/blog/auth/oauth/providers
 | 接口路径 | `POST /api/v1/blog/auth/oauth/{source}/authorize` |
 | 接口描述 | 发起第三方登录或绑定 |
 | Content-Type | application/json |
-| 访问要求 | LOGIN 公开；BIND 登录本人 + 最近 300 秒认证；均需浏览器 Cookie/Origin |
+| 访问要求 | LOGIN 公开；BIND 登录本人 + 最近 300 秒认证；按通用规则检查来源 |
 
 ##### 请求参数
 
@@ -7054,8 +7156,9 @@ GET /api/v1/blog/auth/oauth/providers
 | `X-Captcha-Code` | string | LOGIN 是，BIND 否 | Header；6 位数字，保留前导零 |
 | `source` | string | 是 | Path；服务端已启用平台的大写标识；未知或未启用 404 |
 | `operation` | string | 是 | LOGIN 登录；BIND 绑定当前用户；不接收 redirectUri/userId/uuid |
-| `__Host-dl-oauth-browser` | string | 是（发起时可由后端新设） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `Origin` | string | 是 | Header；浏览器自动发送，必须匹配配置前端 origin；BIND/兑换附加身份要求见访问要求 |
+| `__Host-dl-oauth-browser` | string | 否（缺失时由后端签发） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
+| `X-Expected-User-Id` | string | BIND 是，LOGIN 否 | Header。页面预期账号，使用十进制用户 ID。 |
+| `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
 
@@ -7090,7 +7193,7 @@ Set-Cookie: __Host-dl-oauth-browser=<browser-id>; Max-Age=600; Path=/; Secure; H
 }
 ```
 
-LOGIN 公开且仅接受已绑定第三方身份；未绑定返回 OAUTH_NOT_BOUND，必须先通过邮箱注册，再登录绑定。BIND 需当前 Token 及最近 300 秒认证。两者均校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留原 Token。
+LOGIN 公开且仅接受已绑定第三方身份；未绑定返回 OAUTH_NOT_BOUND，必须先通过邮箱注册，再登录绑定。BIND 需当前有效会话及最近 300 秒认证。两者均校验 Origin，并设置/读取 OAuth 浏览器 Cookie；绑定使用弹窗保留发起页面。
 
 ---
 
@@ -7105,7 +7208,7 @@ LOGIN 公开且仅接受已绑定第三方身份；未绑定返回 OAUTH_NOT_BOU
 | 接口路径 | `GET /api/v1/blog/auth/oauth/{source}/callback` |
 | 接口描述 | 第三方平台授权回调 |
 | Content-Type | 无请求体 |
-| 访问要求 | 仅平台回调；校验 state、浏览器 Cookie、流程及原会话；不要求回调请求携带本站 Bearer |
+| 访问要求 | 仅平台回调；校验 state、OAuth 流程 Cookie、流程及原会话；回调不需要登录 Cookie |
 | 成功状态 | 303（可信流程重定向） |
 
 ##### 请求参数
@@ -7144,7 +7247,7 @@ Cache-Control: no-store
 Referrer-Policy: no-referrer
 ```
 
-平台顶层 GET 回调不携带本站 Bearer。后端凭 state、浏览器 Cookie 和 Redis 流程定位操作；BIND 再校验服务端保存的原会话仍有效且属于目标用户。可信流程成功后 303 到固定完成页，不在回调直接向浏览器发本站 Token。已消费的可信流程遇到数据库访问或事务提交失败时，303 到固定完成页的 `#error=SERVICE_UNAVAILABLE`，不签发成功票据，且不能重放本次 state。
+平台顶层 GET 回调使用 OAuth 流程 Cookie。后端凭 state、浏览器 Cookie 和 Redis 流程定位操作；BIND 再校验服务端保存的原会话仍有效且属于目标用户。可信流程成功后 303 到固定完成页，不在回调直接向浏览器发本站 Token。已消费的可信流程遇到数据库访问或事务提交失败时，303 到固定完成页的 `#error=SERVICE_UNAVAILABLE`，不签发成功票据，且不能重放本次 state。
 
 ---
 
@@ -7159,15 +7262,16 @@ Referrer-Policy: no-referrer
 | 接口路径 | `POST /api/v1/blog/auth/oauth/exchange` |
 | 接口描述 | 兑换一次性登录或绑定结果 |
 | Content-Type | application/json |
-| 访问要求 | 同浏览器 Cookie；BIND 须原 Token；LOGIN 不需本站 Token |
+| 访问要求 | 同浏览器的 OAuth 流程 Cookie；BIND 须原会话 Cookie，LOGIN 可匿名兑换 |
 
 ##### 请求参数
 
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `ticket` | string | 是 | 回调得到的本站一次性票据；有效期 60 秒，不是平台 code 或本站 Token |
-| `__Host-dl-oauth-browser` | string | 是（发起时可由后端新设） | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
-| `Origin` | string | 是 | Header；浏览器自动发送，必须匹配配置前端 origin；BIND/兑换附加身份要求见访问要求 |
+| `__Host-dl-oauth-browser` | string | 是 | Cookie；Secure、HttpOnly、SameSite=Lax、Path=/，仅绑定浏览器，不是业务登录凭证 |
+| `X-Expected-User-Id` | string | BIND 是，LOGIN 否 | Header。页面预期账号，使用十进制用户 ID。 |
+| `Origin` | string | 与 Referer 至少提供一项 | Header。匹配所属端 HTTPS Origin，缺失时按通用规则核对 Referer。 |
 
 ##### 请求示例
 
@@ -7192,7 +7296,7 @@ Content-Type: application/json
   "data": {
     "operation": "LOGIN",
     "session": {
-      "tokenType": "Bearer", "accessToken": "<site-token>", "expiresIn": 259200,
+      "expiresIn": 259200,
       "user": {
         "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
         "status": 1
@@ -7203,7 +7307,7 @@ Content-Type: application/json
 }
 ```
 
-BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session）：
+BIND 成功分支（仍为 200，原会话必须有效，不返回新 Session）：
 
 ```json
 {
@@ -7218,7 +7322,7 @@ BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session�
 }
 ```
 
-必须携带同浏览器 Cookie；LOGIN 返回 Session，BIND 必须带发起时的原 Token，仅返回 binding，不切换账号。票据有效期 60 秒且仅消费一次。
+必须携带同一浏览器的 OAuth 流程 Cookie。Blog LOGIN 签发博客 Cookie 并返回 Session；BIND 必须带发起时的原会话 Cookie 和 `X-Expected-User-Id`，只返回 binding。票据有效期 60 秒且仅消费一次。
 
 ---
 
@@ -7232,7 +7336,7 @@ BIND 成功分支（仍为 200，原 Token 必须有效，不返回新 Session�
 | --- | --- |
 | 接口路径 | `POST /api/v1/blog/auth/email-code` |
 | Content-Type | application/json |
-| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 访问要求 | 公开；无需登录，仍执行图形验证码及接口限流 |
 | 成功状态 | 200 OK |
 
 ##### 请求参数
@@ -7250,6 +7354,7 @@ JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或
 
 ```http
 POST /api/v1/blog/auth/email-code
+Origin: https://blog.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -7272,13 +7377,14 @@ Content-Type: application/json
 
 ##### 处理与失败
 
-先消费图形验证码，再检查发送频率。REGISTER 只能用于注册，LOGIN 只能用于博客邮箱登录；发送不创建账号，也不证明该邮箱已对应本站账号。再次发送会替换同用途、同邮箱的旧验证码。 邮件验证码五分钟有效，按邮箱和用途隔离；所有用途与端共享每邮箱每60秒1次、每可信IP每60秒5次的发送预算。
+先消费图形验证码，再检查发送频率。REGISTER 用于注册，允许向新邮箱发送；LOGIN 用于博客邮箱登录，只发送到已绑定本站账号的邮箱。再次发送会替换同用途、同邮箱的旧验证码。 邮件验证码五分钟有效，按邮箱和用途隔离；所有用途与端共享每邮箱每60秒1次、每可信IP每60秒5次的发送预算。
 
 | HTTP / code | 说明 |
 | --- | --- |
 | 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
 | 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
-| 429 / RATE_LIMITED | 邮件发送限额超出；后台还受登录入口和失败限额限制，返回 Retry-After |
+| 401 / AUTH_FAILED | LOGIN 用途下该邮箱未注册 |
+| 429 / RATE_LIMITED | 邮件发送限额超出，返回 Retry-After |
 | 503 / SERVICE_UNAVAILABLE | 邮件未启用、SMTP发送失败或依赖不可用；发送失败清理已生成验证码 |
 
 每次发送或登录结束后重新获取图形验证码；业务失败保留输入，不自动重放请求。通用响应与安全边界见[邮箱验证与登录方式](#captcha)。
@@ -7295,7 +7401,7 @@ Content-Type: application/json
 | --- | --- |
 | 接口路径 | `POST /api/v1/blog/auth/email-login` |
 | Content-Type | application/json |
-| 访问要求 | 公开；不要求 Bearer，仍执行图形验证码及接口限流 |
+| 访问要求 | 公开；无需登录，仍执行图形验证码及接口限流 |
 | 成功状态 | 200 OK |
 
 ##### 请求参数
@@ -7313,6 +7419,7 @@ JSON只接收表中标为JSON的字段，不接受查询参数、额外字段或
 
 ```http
 POST /api/v1/blog/auth/email-login
+Origin: https://blog.example.com
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -7322,15 +7429,13 @@ Content-Type: application/json
 
 ##### 响应参数
 
-`data` 为 [Session](#response-session)，`expiresIn=259200`（3天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
+成功时通过 `Set-Cookie` 签发登录 Cookie，`data` 为 [Session](#response-session)，`expiresIn=259200`（3天）；`user` 为 [Me](#response-me)，不包含完整IP、密码哈希或权限快照。
 
 ```json
 {
   "code": "OK",
   "msg": "成功",
   "data": {
-    "tokenType": "Bearer",
-    "accessToken": "<site-token>",
     "expiresIn": 259200,
     "user": {
       "userId": "12",
@@ -7352,14 +7457,14 @@ Content-Type: application/json
 
 ##### 处理与失败
 
-先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号，消费 LOGIN 用途邮件验证码；不接受注册或另一端登录的验证码。邮件验证码正确后检查账号存在与启用状态，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
+先检查登录失败限额并消费图形验证码，再锁定邮箱所属账号；找不到账号时清除该用途的旧验证码并提示邮箱未注册。找到账号后消费 LOGIN 用途邮件验证码，不接受注册或另一端登录的验证码。邮件验证码正确后检查账号启用状态，成功才签发本站会话。邮箱方式不要求已设置本站密码。邮件校验无论正确、错误或后续业务失败，当前验证码都不能再次使用。错误邮件验证码或 AUTH_FAILED 会计入登录失败预算，CAPTCHA_INVALID 不计入密码/邮箱登录失败次数；图形验证码失败时不会进入邮件校验。
 
 | HTTP / code | 说明 |
 | --- | --- |
 | 400 / VALIDATION_ERROR | 必填字段、邮箱、验证码格式、用途、JSON或查询参数不合法 |
 | 400 / CAPTCHA_INVALID | 图形验证码缺失、无效、过期或已消费 |
 | 400 / EMAIL_CODE_INVALID | 邮件验证码错误、过期、用途不符或已消费 |
-| 401 / AUTH_FAILED | 邮件验证码通过后，邮箱仍未对应本站账号 |
+| 401 / AUTH_FAILED | 该邮箱未注册 |
 | 403 / ACCOUNT_DISABLED | 账号已禁用 |
 | 429 / RATE_LIMITED | 登录入口预算或失败次数超限，返回 Retry-After |
 | 503 / SERVICE_UNAVAILABLE | Redis、数据库等依赖不可用，不能跳过校验或返回成功 |
@@ -7375,7 +7480,7 @@ Content-Type: application/json
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/auth/math-captcha` |
-| 访问要求 | 公开；不要求 Bearer 或已有验证码 |
+| 访问要求 | 公开；无需登录 或已有验证码 |
 | 请求参数 | 无；不接受查询参数或请求体 |
 | 成功状态 | 200 OK，`Cache-Control: no-store` |
 | 响应 | `Result<ArithmeticCaptcha>`，完整字段见[数字题目模型](#response-arithmeticcaptcha) |
@@ -7421,7 +7526,7 @@ GET /api/v1/blog/auth/math-captcha
 
 ```http
 GET /api/v1/blog/me
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -7478,7 +7583,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PATCH /api/v1/blog/me/profile
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
@@ -7537,7 +7644,9 @@ X-Revision: "<current-revision>"
 
 ```http
 PUT /api/v1/blog/me/password
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"newPassword":"New-example-password-2026","currentPassword":"Example-password-2026"}
@@ -7580,7 +7689,9 @@ Content-Type: application/json
 
 ```http
 DELETE /api/v1/blog/me/password
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"currentPassword":"Example-password-2026"}
@@ -7621,7 +7732,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/blog/me/capabilities
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -7674,7 +7785,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/blog/me/menus
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -7721,7 +7832,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/blog/me/oauth-bindings
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -7761,7 +7872,9 @@ source 升序，只列当前配置完整且启用的平台绑定，仅返回平�
 
 ```http
 DELETE /api/v1/blog/me/oauth-bindings/GITHUB
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -8112,7 +8225,9 @@ GET /api/v1/blog/articles/101/comments?page=1&pageSize=10
 
 ```http
 POST /api/v1/blog/articles/101/comments
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -8181,7 +8296,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/blog/articles/101/like
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -8221,7 +8336,9 @@ Authorization: Bearer <site-token>
 
 ```http
 PUT /api/v1/blog/articles/101/like
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -8261,7 +8378,9 @@ Authorization: Bearer <site-token>
 
 ```http
 DELETE /api/v1/blog/articles/101/like
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -8703,7 +8822,7 @@ GET /api/v1/blog/tags/java
 | 接口路径 | `GET /api/v1/blog/messages` |
 | 接口描述 | 分页读取可见留言或回复 |
 | Content-Type | 无请求体 |
-| 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
+| 访问要求 | 公开。提供预期账号时校验有效博客会话，否则按匿名处理 |
 
 ##### 请求参数
 
@@ -8780,7 +8899,9 @@ GET /api/v1/blog/messages?page=1&pageSize=10
 
 ```http
 POST /api/v1/blog/messages
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 X-Captcha-Id: <captchaId>
 X-Captcha-Code: 012345
 Content-Type: application/json
@@ -8847,7 +8968,7 @@ Content-Type: application/json
 
 ```http
 GET /api/v1/blog/me/comments?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -8909,7 +9030,9 @@ Authorization: Bearer <site-token>
 
 ```http
 DELETE /api/v1/blog/me/comments/201
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -8957,7 +9080,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/blog/me/messages?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -9014,7 +9137,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/blog/me/messages/301
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -9072,7 +9195,9 @@ X-Revision: "<current-revision>"
 
 ```http
 DELETE /api/v1/blog/me/messages/301
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -9118,7 +9243,7 @@ Authorization: Bearer <site-token>
 
 ```http
 GET /api/v1/blog/me/liked-articles?page=1&pageSize=10
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -9180,7 +9305,7 @@ userId 只从当前会话取得，拒绝客户端 userId、authorId 等未声明
 
 ```http
 GET /api/v1/blog/me/rss-subscription
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 ##### 响应参数
@@ -9227,7 +9352,9 @@ Authorization: Bearer <site-token>
 
 ```http
 PUT /api/v1/blog/me/rss-subscription
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"email":"leaf@example.test"}
@@ -9279,7 +9406,9 @@ Content-Type: application/json
 
 ```http
 POST /api/v1/blog/me/rss-subscription/confirm
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"ticket":"confirmation-ticket-example"}
@@ -9328,7 +9457,9 @@ Content-Type: application/json
 
 ```http
 DELETE /api/v1/blog/me/rss-subscription
-Authorization: Bearer <site-token>
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 ```
 
 ##### 响应参数
@@ -9622,7 +9753,7 @@ GET /api/v1/blog/music/files/42/content
 Range: bytes=0-1023
 ```
 
-成功响应包含实际MIME（文本为UTF-8）、Content-Length、Accept-Ranges、no-store、nosniff及安全编码的inline文件名；206另含Content-Range。只存在隐藏引用或未保存到曲目时404，管理员Token不放宽公开规则。存储不可用503；业务错误为JSON Result，Range错误由Spring MVC处理。后台预览沿用带Bearer的 `/api/v1/admin/files/{fileId}/content`，检查文件query范围。保存音乐及文件删除规则见[音乐模型](API_CONTRACT.md#model-12-11)。
+成功响应包含实际MIME（文本为UTF-8）、Content-Length、Accept-Ranges、no-store、nosniff及安全编码的inline文件名；206另含Content-Range。只存在隐藏引用或未保存到曲目时404，管理员Token不放宽公开规则。存储不可用503；业务错误为JSON Result，Range错误由Spring MVC处理。后台预览沿用需后台会话的 `/api/v1/admin/files/{fileId}/content`，检查文件query范围。保存音乐及文件删除规则见[音乐模型](API_CONTRACT.md#model-12-11)。
 
 ---
 
@@ -9668,7 +9799,7 @@ Content-Type: application/json
 {"code":"OK","msg":"成功","data":null,"errors":[]}
 ```
 
-这是显式公开的票据能力接口；不需要Bearer，也不颁发会话。票据存Redis，有效30天，绑定subscriptionId、email、verifiedAt和本轮subscribeTime；只能将该订阅改为退订。相同有效票据重复退订200，邮箱或订阅轮次变化后400/SUBSCRIPTION_TICKET_INVALID。邮件链接指向固定前端完成页#unsubscribeTicket=...，页面清除fragment并由用户确认后POST；邮件扫描器GET不改变状态。不接受email/userId作为替代凭据。
+这是显式公开的票据能力接口；无需登录，也不颁发会话。票据存Redis，有效30天，绑定subscriptionId、email、verifiedAt和本轮subscribeTime；只能将该订阅改为退订。相同有效票据重复退订200，邮箱或订阅轮次变化后400/SUBSCRIPTION_TICKET_INVALID。邮件链接指向固定前端完成页#unsubscribeTicket=...，页面清除fragment并由用户确认后POST；邮件扫描器GET不改变状态。不接受email/userId作为替代凭据。
 
 ---
 
@@ -9837,7 +9968,7 @@ GET /api/v1/blog/statistics
 | 接口路径 | `POST /api/v1/blog/analytics/page-views` |
 | 接口描述 | 记录站点页面浏览 |
 | Content-Type | application/json |
-| 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
+| 访问要求 | 公开。提供预期账号时校验有效博客会话，否则按匿名处理 |
 
 ##### 请求参数
 
@@ -9854,6 +9985,7 @@ GET /api/v1/blog/statistics
 
 ```http
 POST /api/v1/blog/analytics/page-views
+Origin: https://blog.example.com
 Content-Type: application/json
 
 {
@@ -9872,7 +10004,7 @@ Content-Type: application/json
 {"code":"OK","msg":"成功","data":{"recorded":true},"errors":[]}
 ```
 
-IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。携带Bearer时必须有效，匿名不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
+IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。有效博客会话计入本站用户，匿名不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
 
 已实现的[采集限流](#request-protection)在访客创建、地域解析与明细写入前执行；429不得写入数据或返回recorded=true。fingerprint只增加统计维度限制，不能代替独立IP限流；本POST响应不缓存。
 
@@ -9891,29 +10023,30 @@ IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、�
 | 项目 | 约定 |
 | --- | --- |
 | 接口 | `POST /api/v1/blog/analytics/online/tickets` |
-| 身份 | 公开、可选 Bearer；携带时必须属于启用账号的有效本站会话 |
+| 身份 | 公开。提供预期账号时校验有效博客会话，否则按匿名处理 |
 | 成功 | HTTP 201，`Cache-Control: no-store`，无版本头 |
 | 请求体 | `fingerprint`：ASCII `[A-Za-z0-9-]{16,150}`；`siteCode`：`home/blog/cv`；`pagePath`：S(2048)站内路径，不能包含查询/fragment |
-| 来源 | 必须提供 Origin，在 `app.auth.allowed-origins` 内且匹配 `app.sites` 的站点与最长路径前缀 |
+| 来源 | 按同源来源规则核对，并匹配 `app.sites` 的站点与最长路径前缀 |
 | 参数 | 三个 Body 字段均必填；拒绝查询参数、未知/重复字段和类型错误 |
 | 限流 | 60秒每可信IP120次、每站点/Origin/fingerprint统计键30次；429带Retry-After |
 
 ```http
 POST /api/v1/blog/analytics/online/tickets
 Origin: https://blog.example.test
-Authorization: Bearer <site-token>
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
 Content-Type: application/json
 
 {"fingerprint":"d681988a-cbd0-4ef6-bdec-f84bfa234e16","siteCode":"blog","pagePath":"/"}
 ```
 
-匿名请求省略 Authorization；Token 的持久化和刷新恢复遵守通用协议，仅经 HTTP Header 发送。示例 Origin 必须在部署中明确允许。
+浏览器在博客同源 HTTP 请求中自动携带有效 Cookie；匿名请求也可领取票据。
 
 ```json
 {"code":"OK","msg":"成功","data":{"ticket":"<43-character-single-use-ticket>","expiresIn":30},"errors":[]}
 ```
 
-票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。无效会话401、禁用账号403/ACCOUNT_DISABLED、来源/站点不匹配403/FORBIDDEN；Redis或身份查询不可用503，不降级匿名签发。
+票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。无预期账号按匿名签票。提供预期账号时，会话无效返回 401，账号禁用返回 403/ACCOUNT_DISABLED，账号不匹配返回 409/SESSION_ACCOUNT_CHANGED。Redis 或身份查询不可用返回 503。来源或站点不匹配返回 403/FORBIDDEN。
 
 `siteCode` 必须等于 `blog`，否则返回 400/VALIDATION_ERROR；后续仍校验 Origin 与配置的站点路径。
 
@@ -9923,7 +10056,7 @@ Content-Type: application/json
 
 #### 2.19.2 加入原生 WebSocket 并接收快照
 
-`ws(s)://<API主机>/api/v1/blog/ws/online`；从既有 API 地址推导，只映射协议并追加 `/blog/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。Cookie 不证明身份。建连后五秒内发送：
+`ws(s)://<API主机>/api/v1/blog/ws/online`；从既有 API 地址推导，只映射协议并追加 `/blog/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。握手只使用一次性票据，代理转发 Upgrade 时移除 Cookie。建连后五秒内发送：
 
 ```json
 {"type":"join","ticket":"<43-character-single-use-ticket>"}
@@ -10116,7 +10249,7 @@ GET /api/v1/home/social-links
 | 接口路径 | `POST /api/v1/home/analytics/page-views` |
 | 接口描述 | 记录站点页面浏览 |
 | Content-Type | application/json |
-| 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
+| 访问要求 | 公开，仅匿名 |
 
 ##### 请求参数
 
@@ -10151,7 +10284,7 @@ Content-Type: application/json
 {"code":"OK","msg":"成功","data":{"recorded":true},"errors":[]}
 ```
 
-IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。携带Bearer时必须有效，匿名不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
+IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。该端只记录匿名访问，不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
 
 已实现的[采集限流](#request-protection)在访客创建、地域解析与明细写入前执行；429不得写入数据或返回recorded=true。fingerprint只增加统计维度限制，不能代替独立IP限流；本POST响应不缓存。
 
@@ -10170,29 +10303,28 @@ IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、�
 | 项目 | 约定 |
 | --- | --- |
 | 接口 | `POST /api/v1/home/analytics/online/tickets` |
-| 身份 | 公开、可选 Bearer；携带时必须属于启用账号的有效本站会话 |
+| 身份 | 公开，仅匿名 |
 | 成功 | HTTP 201，`Cache-Control: no-store`，无版本头 |
 | 请求体 | `fingerprint`：ASCII `[A-Za-z0-9-]{16,150}`；`siteCode`：`home/home/cv`；`pagePath`：S(2048)站内路径，不能包含查询/fragment |
-| 来源 | 必须提供 Origin，在 `app.auth.allowed-origins` 内且匹配 `app.sites` 的站点与最长路径前缀 |
+| 来源 | 必须提供 Origin，并匹配 `app.sites` 的所属站点与最长路径前缀 |
 | 参数 | 三个 Body 字段均必填；拒绝查询参数、未知/重复字段和类型错误 |
 | 限流 | 60秒每可信IP120次、每站点/Origin/fingerprint统计键30次；429带Retry-After |
 
 ```http
 POST /api/v1/home/analytics/online/tickets
 Origin: https://home.example.test
-Authorization: Bearer <site-token>
 Content-Type: application/json
 
 {"fingerprint":"d681988a-cbd0-4ef6-bdec-f84bfa234e16","siteCode":"home","pagePath":"/"}
 ```
 
-匿名请求省略 Authorization；Token 的持久化和刷新恢复遵守通用协议，仅经 HTTP Header 发送。示例 Origin 必须在部署中明确允许。
+该端按匿名身份领取票据。示例 Origin 必须在部署中明确允许。
 
 ```json
 {"code":"OK","msg":"成功","data":{"ticket":"<43-character-single-use-ticket>","expiresIn":30},"errors":[]}
 ```
 
-票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。无效会话401、禁用账号403/ACCOUNT_DISABLED、来源/站点不匹配403/FORBIDDEN；Redis或身份查询不可用503，不降级匿名签发。
+票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。来源或站点不匹配返回 403/FORBIDDEN，Redis 不可用返回 503。
 
 `siteCode` 必须等于 `home`，否则返回 400/VALIDATION_ERROR；后续仍校验 Origin 与配置的站点路径。
 
@@ -10202,7 +10334,7 @@ Content-Type: application/json
 
 #### 3.4.2 加入原生 WebSocket 并接收快照
 
-`ws(s)://<API主机>/api/v1/home/ws/online`；从既有 API 地址推导，只映射协议并追加 `/home/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。Cookie 不证明身份。建连后五秒内发送：
+`ws(s)://<API主机>/api/v1/home/ws/online`；从既有 API 地址推导，只映射协议并追加 `/home/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。握手只使用一次性票据，代理转发 Upgrade 时移除 Cookie。建连后五秒内发送：
 
 ```json
 {"type":"join","ticket":"<43-character-single-use-ticket>"}
@@ -10503,7 +10635,7 @@ GET /api/v1/cv/skills?page=1&pageSize=10
 | 接口路径 | `POST /api/v1/cv/analytics/page-views` |
 | 接口描述 | 记录站点页面浏览 |
 | Content-Type | application/json |
-| 访问要求 | 公开；可选Bearer，携带时必须校验有效会话和账号状态 |
+| 访问要求 | 公开，仅匿名 |
 
 ##### 请求参数
 
@@ -10538,7 +10670,7 @@ Content-Type: application/json
 {"code":"OK","msg":"成功","data":{"recorded":true},"errors":[]}
 ```
 
-IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。携带Bearer时必须有效，匿名不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
+IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、会话ID或Token字段。该端只记录匿名访问，不创建sys_user。事务写访客首次/最近时间及一条page_view后返回recorded=true；失败503不伪造已记录。该POST不增加blog_article.view_count，文章成功详情读取仍按7.2计一次，避免双计。受限统计标识返回403/VISITOR_BLOCKED，只影响此采集入口；可伪造标识不能用于阻止公开阅读。重复POST可能产生多条浏览，无通用幂等键。
 
 已实现的[采集限流](#request-protection)在访客创建、地域解析与明细写入前执行；429不得写入数据或返回recorded=true。fingerprint只增加统计维度限制，不能代替独立IP限流；本POST响应不缓存。
 
@@ -10557,29 +10689,28 @@ IP/UA、viewTime和userId由服务端读取；不接受visitorId、用户ID、�
 | 项目 | 约定 |
 | --- | --- |
 | 接口 | `POST /api/v1/cv/analytics/online/tickets` |
-| 身份 | 公开、可选 Bearer；携带时必须属于启用账号的有效本站会话 |
+| 身份 | 公开，仅匿名 |
 | 成功 | HTTP 201，`Cache-Control: no-store`，无版本头 |
 | 请求体 | `fingerprint`：ASCII `[A-Za-z0-9-]{16,150}`；`siteCode`：`home/cv/cv`；`pagePath`：S(2048)站内路径，不能包含查询/fragment |
-| 来源 | 必须提供 Origin，在 `app.auth.allowed-origins` 内且匹配 `app.sites` 的站点与最长路径前缀 |
+| 来源 | 必须提供 Origin，并匹配 `app.sites` 的所属站点与最长路径前缀 |
 | 参数 | 三个 Body 字段均必填；拒绝查询参数、未知/重复字段和类型错误 |
 | 限流 | 60秒每可信IP120次、每站点/Origin/fingerprint统计键30次；429带Retry-After |
 
 ```http
 POST /api/v1/cv/analytics/online/tickets
 Origin: https://cv.example.test
-Authorization: Bearer <site-token>
 Content-Type: application/json
 
 {"fingerprint":"d681988a-cbd0-4ef6-bdec-f84bfa234e16","siteCode":"cv","pagePath":"/"}
 ```
 
-匿名请求省略 Authorization；Token 的持久化和刷新恢复遵守通用协议，仅经 HTTP Header 发送。示例 Origin 必须在部署中明确允许。
+该端按匿名身份领取票据。示例 Origin 必须在部署中明确允许。
 
 ```json
 {"code":"OK","msg":"成功","data":{"ticket":"<43-character-single-use-ticket>","expiresIn":30},"errors":[]}
 ```
 
-票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。无效会话401、禁用账号403/ACCOUNT_DISABLED、来源/站点不匹配403/FORBIDDEN；Redis或身份查询不可用503，不降级匿名签发。
+票据随机且只用于一次 join，Redis TTL 30 秒，申请本身不增加人数。来源或站点不匹配返回 403/FORBIDDEN，Redis 不可用返回 503。
 
 `siteCode` 必须等于 `cv`，否则返回 400/VALIDATION_ERROR；后续仍校验 Origin 与配置的站点路径。
 
@@ -10589,7 +10720,7 @@ Content-Type: application/json
 
 #### 4.5.2 加入原生 WebSocket 并接收快照
 
-`ws(s)://<API主机>/api/v1/cv/ws/online`；从既有 API 地址推导，只映射协议并追加 `/cv/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。Cookie 不证明身份。建连后五秒内发送：
+`ws(s)://<API主机>/api/v1/cv/ws/online`；从既有 API 地址推导，只映射协议并追加 `/cv/ws/online`。握手只允许精确 GET Upgrade 和明确 Origin，拒绝查询参数、Authorization 和子协议传身份；普通 GET 返回400。握手只使用一次性票据，代理转发 Upgrade 时移除 Cookie。建连后五秒内发送：
 
 ```json
 {"type":"join","ticket":"<43-character-single-use-ticket>"}
@@ -10695,7 +10826,7 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 
 ### 23. 实时在线人数
 
-Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点统计”卡片展示三项人数。Admin 不参与。首期仅单后端实例，在线成员不写 MySQL，不改变 PV/UV 或文章阅读数。完整去重、消息和生命周期约定见[在线说明](实时在线人数接口规划.md)。
+Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点统计”卡片展示三项人数。Admin 不参与。首期仅单后端实例，在线成员不写 MySQL，不改变 PV/UV 或文章阅读数。完整去重、消息和生命周期约定见[在线说明](实时在线人数接口说明.md)。
 
 <a id="models"></a>
 
@@ -10725,10 +10856,10 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 ### 12.2 Session
 
+登录响应的 JSON 数据，浏览器会话只由 `Set-Cookie` 下发。
+
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `tokenType` | string | 固定 Bearer |
-| `accessToken` | string | 本站不透明 Token，仅成功登录返回 |
 | `expiresIn` | integer | 当前端的会话有效秒数：Blog 为 259200（3 天），Admin 为 604800（7 天） |
 | `user` | object | 本人资料 Me |
 | `user.userId` | ID | 本站用户 ID；响应为十进制字符串 |
@@ -10769,9 +10900,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `operation` | string | LOGIN 或 BIND |
 | `session` | object | LOGIN 分支的本站 Session |
-| `session.tokenType` | string | 固定 Bearer |
-| `session.accessToken` | string | 本站不透明 Token，仅成功登录返回 |
-| `session.expiresIn` | integer | 按兑换端签发：Blog 为 259200（3 天），Admin 为 604800（7 天） |
+| `session.expiresIn` | integer | 仅 Blog LOGIN，固定 259200（3 天） |
 | `session.user` | object | 本人资料 Me |
 | `session.user.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `session.user.username` | string | 登录名 |
@@ -11329,7 +11458,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `sizeBytes` | string | 文件实际字节数字符串 |
 | `storageType` | string | 当前默认 oss，历史 local 按原元数据读取 |
 | `createTime` | Time | 创建 UTC 时间 |
-| `previewUrl` | string | 需 Bearer 的后台文件内容路径 |
+| `previewUrl` | string | 需后台会话的后台文件内容路径 |
 
 <a id="response-homeprofilepublic"></a>
 
@@ -11819,10 +11948,12 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 ### 13.1 OAuth 登录与绑定
 
-1. 查询可用平台，调用 authorize（`credentials: "include"`）；LOGIN 可整页跳转，BIND 携带当前 Token 并打开弹窗保留原页面。
+平台回调、固定 `/oauth/complete` 和发起页面使用同一个所选端 HTTPS Origin。一套部署只配置一个完成页，每个平台只注册一个回调。
+
+1. 查询本端可用平台，同源调用 authorize。Blog LOGIN 可整页跳转，BIND 使用原会话并打开弹窗保留发起页面。流程 Cookie 为 `__Host-dl-oauth-browser`，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最长 600 秒。
 2. 平台回调由后端校验 state、浏览器 Cookie 和流程；state 有效期 300 秒，一次性使用。BIND 还检查原会话与最近认证。
 3. 后端 303 跳到配置的固定完成页，fragment 仅放 ticket，不放本站或平台 Token；ticket 有效期 60 秒、限同浏览器一次兑换。
-4. 完成页优先处理票据，不先恢复旧会话。LOGIN 读取并移除 ticket 后调用 exchange，得到对应端有效期的本站 Session 并持久化；BIND 弹窗以精确 origin 的 postMessage 把 ticket 交给原页面，原页面携带原 Token 兑换绑定结果，弹窗不恢复身份或清除原页面的持久凭据。
+4. 完成页读出并清除 fragment。Blog LOGIN 同源兑换时才签发登录 Cookie，随后重新读取本人资料和权限。BIND 弹窗只发送短期票据，原页面校验消息 Origin 和来源窗口，再用原会话兑换绑定结果。
 
 来源值使用后端启用的平台码，例如 GITHUB；只列配置完整的平台。不得自定回调地址、以昵称/邮箱合并账号或转移他人绑定。保留至少一种可用登录方式；BIND 原页面/会话丢失后重新登录确认绑定结果。完整流程见 [OAuth 开发约定](API_CONTRACT.md#oauth-flow)。
 
@@ -11848,7 +11979,7 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 ### 13.4 文件引用与访问
 
-先创建草稿取得 articleId，再上传并在正文/封面引用文件；公开附件路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`，必须对应当前文章并实际引用。后台详情的安全 HTML 使用后台附件路径，客户端携带 Bearer 获取后生成临时 object URL。
+先创建草稿取得 articleId，再上传并在正文/封面引用文件；公开附件路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`，必须对应当前文章并实际引用。后台详情的安全 HTML 使用后台附件路径，客户端通过后台会话获取后生成临时 object URL。
 
 公开文章确实引用的文件可从该文章上下文读取；草稿、私密、下架和回收站上下文返回 404。后台读取同时满足文章和文件各自权限范围。音乐使用独立的[公开音乐文件路径](#music-file-content)，保存时检查文件权限与用途；头像、配置和主页/简历图标仍仅用外部资源。
 
@@ -11904,8 +12035,8 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 | 400 | OAUTH_DENIED | 用户在平台取消授权 |
 | 400 | SUBSCRIPTION_TICKET_INVALID | 订阅确认或邮件退订票据无效、过期、复用或与当前用户/邮箱/轮次不符；统一错误，不泄露匹配项 |
 | WebSocket | ONLINE_TICKET_INVALID | 在线票据格式错、过期、复用或来源/用途不匹配；1008 关闭，重新申请票据 |
-| 401 | UNAUTHENTICATED | Token 缺失、失效、过期或被注销 |
-| 401 | AUTH_FAILED | 账密登录名不存在、密码错误或无本站密码时提示“账号或密码错误”；后台发送验证码找不到邮箱账号、邮箱登录在邮件验证码通过后仍找不到账号时提示“邮箱或验证码错误” |
+| 401 | UNAUTHENTICATED | 登录会话缺失、失效、过期或被注销 |
+| 401 | AUTH_FAILED | 账密登录名不存在、密码错误或无本站密码时提示“账号或密码错误”；邮箱登录和发送登录验证码找不到邮箱账号时提示“该邮箱未注册” |
 | 403 | ACCOUNT_DISABLED | 已确认凭据身份后发现本站账号禁用 |
 | 403 | VISITOR_BLOCKED | 仅访问采集接口限制此统计标识；不代表本站账号被禁用，不阻止公开阅读 |
 | 403 | ACCESS_BLOCKED | 反复404导致当前可信IP临时封禁，附Retry-After；不修改账号或访客统计状态 |
@@ -11916,6 +12047,7 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 | 409 | OAUTH_BIND_CONFLICT | 身份已属他人或本站用户同平台已绑定其他身份 |
 | 409 | LAST_LOGIN_METHOD | 清除密码/解绑会失去最后一种可用登录方式 |
 | 409 | LAST_ADMIN | 会使最后一个有效管理员失效 |
+| 409 | SESSION_ACCOUNT_CHANGED | 页面预期账号与 Cookie 账号不一致，或认证写请求缺少预期账号。拒绝操作并保留 Cookie，由页面重新核验身份。 |
 | 409 | STATE_CONFLICT | 当前状态不支持操作，如回收站编辑、父评论已不可回复 |
 | 409 | RESOURCE_IN_USE | 菜单有子节点、权限被菜单引用、文件仍有引用等 |
 | 412 | REVISION_CONFLICT | If-Revision 与当前资源不符，重新获取后合并 |
@@ -11935,7 +12067,7 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 ### 14.2 鉴权失败示例
 
-缺失、过期或已撤销 Token 的受保护请求统一 401；有效登录但缺少业务权限返回 403；有权限而资源不属于本次 SELF 范围返回 404。OAuth 流程中的可信失败按固定回跳规则处理，不能把此规则推广到普通 API。
+缺失、过期或已撤销会话的受保护请求统一 401；有效登录但缺少业务权限返回 403；有权限而资源不属于本次 SELF 范围返回 404。OAuth 流程中的可信失败按固定回跳规则处理，不能把此规则推广到普通 API。
 
 ```http
 HTTP/1.1 403 Forbidden

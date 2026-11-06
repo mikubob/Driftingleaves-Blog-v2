@@ -840,7 +840,7 @@ onUnmounted(() => {
 }
 .music-panel-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   font-weight: 400;
 }
 .music-panel-list {
@@ -928,7 +928,7 @@ onUnmounted(() => {
 .music-panel-artist {
   display: block;
   font-size: 11px;
-  color: #909399;
+  color: var(--blog-text3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

@@ -1,3 +1,4 @@
+/** 校验验证码标识，使用独立于业务 ID 的 43 位 URL 安全字符。 */
 export const isCaptchaId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{43}$/.test(value)
 
 /** 验证码标识独立于业务 ID；只接受 PNG Data URI，不接收外部图片地址。 */

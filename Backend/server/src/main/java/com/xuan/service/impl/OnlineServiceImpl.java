@@ -36,9 +36,6 @@ public class OnlineServiceImpl implements IOnlineService {
     /** 生成一次性在线统计票据。 */
     @Override
     public OnlineTicketVO issue(OnlineTicketCreateDTO request, String origin, String ip) {
-        if (origin == null || !auth.getAllowedOrigins().contains(origin)) {
-            throw new BusinessException(403, "FORBIDDEN", "在线统计来源不被允许");
-        }
         if (request.pagePath().contains("?") || request.pagePath().contains("#")) {
             throw new BusinessException(400, "VALIDATION_ERROR", "在线路径不能包含查询参数或片段");
         }

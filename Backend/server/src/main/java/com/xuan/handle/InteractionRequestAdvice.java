@@ -2,6 +2,7 @@ package com.xuan.handle;
 
 import com.xuan.controller.blog.ArticleLikeController;
 import com.xuan.controller.blog.CommentController;
+import com.xuan.controller.blog.MyCommentController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -12,7 +13,7 @@ import java.util.Set;
 
 /** 检查评论等互动接口的参数，拒绝未声明的 userId 等字段。 */
 @ControllerAdvice(assignableTypes = {CommentController.class,
-        com.xuan.controller.blog.MyCommentController.class, com.xuan.controller.admin.CommentController.class,
+        MyCommentController.class, com.xuan.controller.admin.CommentController.class,
         ArticleLikeController.class})
 public class InteractionRequestAdvice {
 

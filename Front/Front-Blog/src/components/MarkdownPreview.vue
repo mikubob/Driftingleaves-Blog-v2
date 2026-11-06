@@ -7,9 +7,11 @@ import 'element-plus/es/components/select/style/css'
 import { apiRoot } from '../api.js'
 import { useThemeStore } from '@/stores'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../shared/useMarkdownPreview.js'
+/** 接收文章的 Markdown，并按读者偏好渲染正文。 */
 const props = defineProps({
   markdown: { type: String, required: true },
 })
+/** 正文处理完成后通知文章页恢复链接中的锚点。 */
 const emit = defineEmits(['rendered'])
 const themeStore = useThemeStore()
 const previewTheme = useMarkdownPreferences('reader')

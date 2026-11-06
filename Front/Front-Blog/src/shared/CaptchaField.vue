@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 
+/** 通过调用方提供的请求入口加载验证码，支持图形和算术题。 */
 const props = defineProps({
   request: { type: Function, required: true },
   endpoint: { type: String, required: true },
@@ -43,6 +44,7 @@ function getValue() {
   return { captchaId: challenge.value?.captchaId, code: code.value }
 }
 
+/** 提供刷新、取值和就绪状态，让父表单决定何时提交。 */
 defineExpose({ refresh, getValue, ready })
 onMounted(refresh)
 onBeforeUnmount(() => controller?.abort())
@@ -133,6 +135,6 @@ onBeforeUnmount(() => controller?.abort())
 }
 .captcha-error {
   margin: 0;
-  color: #c0392b;
+  color: var(--blog-error-text);
 }
 </style>

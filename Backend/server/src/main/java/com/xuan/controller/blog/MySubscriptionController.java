@@ -41,7 +41,7 @@ public class MySubscriptionController {
         return Result.ok(subscriptions.request(request));
     }
 
-    /** 确认订阅，Bearer 必须属于申请邮件的用户。 */
+    /** 确认订阅，当前会话必须属于申请邮件的用户。 */
     @PostMapping("/confirm")
     @SaCheckPermission("blog:rss:subscribe")
     @RateLimit(value = "subscription-confirm", limit = 10, dimension = RateLimit.Dimension.USER)

@@ -55,6 +55,7 @@ public class AdminUserUpdateDTO {
         intro = value == null || value.strip().isEmpty() ? null : value.strip();
     }
 
+    /** 检查邮箱、头像和简介是否都已提交，显式传空可清除原值。 */
     @AssertTrue(message = "邮箱、头像或简介未完整提交，请重新打开用户编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return emailPresent && avatarPresent && introPresent;

@@ -21,10 +21,10 @@ const tooltip = {
 const valueAxis = {
   type: 'value',
   splitLine: { lineStyle: { color: '#f0f0f0' } },
-  axisLabel: { color: '#909399', fontSize: 11 },
+  axisLabel: { color: '#6b6e74', fontSize: 11 },
 }
 
-/** 沿用旧后台的平滑折线、渐变面积和按日期联动提示。 */
+/** 生成趋势图，使用平滑折线、渐变面积和按日期联动的提示。 */
 export function makeTrendOption(rows, valueKey, label, color = '#2563eb') {
   return {
     tooltip: { ...tooltip, trigger: 'axis' },
@@ -33,7 +33,7 @@ export function makeTrendOption(rows, valueKey, label, color = '#2563eb') {
       type: 'category',
       data: rows.map((row) => row.date),
       axisLine: { lineStyle: { color: '#e4e7ed' } },
-      axisLabel: { color: '#909399', fontSize: 12, hideOverlap: true },
+      axisLabel: { color: '#6b6e74', fontSize: 12, hideOverlap: true },
     },
     yAxis: valueAxis,
     series: [

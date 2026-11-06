@@ -4,10 +4,12 @@ import { apiRoot } from '../api.js'
 import highlighter from 'highlight.js/lib/common'
 import { enhanceHtml } from '../shared/enhanceHtml.mjs'
 import '../shared/reading-content.css'
+/** 接收后端清理过的 HTML，按需提取文章标题。 */
 const props = defineProps({
   html: { type: String, required: true },
   outline: Boolean,
 })
+/** 将处理后的标题列表交给父组件。 */
 const emit = defineEmits(['headings'])
 const container = ref(null)
 

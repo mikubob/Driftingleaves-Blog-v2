@@ -8,7 +8,7 @@ import SafeHtml from './SafeHtml.vue'
 import DiscussionAuthor from './DiscussionAuthor.vue'
 import StatusTag from './StatusTag.vue'
 
-// 评论和留言共用详情布局，手机上将信息表改为单列。
+/** 接收评论或留言详情，窄屏时将信息表改为单列。 */
 const props = defineProps({ kind: { type: String, required: true }, detail: { type: Object, required: true } })
 const isComment = computed(() => props.kind === 'comment')
 const media = window.matchMedia('(max-width: 640px)')

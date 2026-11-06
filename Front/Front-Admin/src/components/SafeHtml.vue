@@ -5,6 +5,7 @@ import highlighter from 'highlight.js/lib/common'
 import { enhanceHtml } from '../shared/enhanceHtml.mjs'
 import '../shared/reading-content.css'
 
+/** 接收后端清理过的 HTML，私密正文图片需要通过后台接口读取。 */
 const props = defineProps({ html: { type: String, default: '' } })
 const container = ref(null)
 const error = ref('')

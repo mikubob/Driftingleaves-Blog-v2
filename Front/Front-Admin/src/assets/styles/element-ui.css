@@ -12,8 +12,8 @@
 
   --el-text-color-primary: #303133;
   --el-text-color-regular: #606266;
-  --el-text-color-secondary: #909399;
-  --el-text-color-placeholder: #c0c4cc;
+  --el-text-color-secondary: var(--admin-text-3);
+  --el-text-color-placeholder: var(--admin-text-3);
 
   --el-border-color: #e4e7ed;
   --el-border-color-light: #ebeef5;

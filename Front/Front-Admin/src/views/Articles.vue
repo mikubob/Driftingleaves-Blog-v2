@@ -352,15 +352,19 @@ const batchActions = computed(() => {
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="article" /></template>
         </el-table-column>
-        <el-table-column label="阅读 / 点赞" width="130">
-          <template #default="{ row }">
-            {{ formatCount(row.viewCount) }} / {{ formatCount(row.likeCount) }}
-          </template>
+        <el-table-column label="阅读量" width="90" align="center">
+          <template #default="{ row }">{{ formatCount(row.viewCount) }}</template>
+        </el-table-column>
+        <el-table-column label="点赞数" width="90" align="center">
+          <template #default="{ row }">{{ formatCount(row.likeCount) }}</template>
+        </el-table-column>
+        <el-table-column label="评论数" width="90" align="center">
+          <template #default="{ row }">{{ formatCount(row.commentCount) }}</template>
         </el-table-column>
         <el-table-column label="更新时间" width="175">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" min-width="235" fixed="right">
+        <el-table-column label="操作" align="center" min-width="235" fixed="right">
           <template #default="{ row }">
             <el-button v-if="can('blog:article:query')" type="primary" link @click="view(row)">
               详情

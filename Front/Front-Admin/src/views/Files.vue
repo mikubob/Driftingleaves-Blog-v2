@@ -232,7 +232,7 @@ const batchActions = computed(() => {
         <el-table-column label="上传时间" width="180">
           <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="140">
+        <el-table-column label="操作" align="center" width="140">
           <template #default="{ row }">
             <el-button type="primary" link @click="preview(row)">预览</el-button>
             <el-button type="danger" v-if="can('blog:file:delete')" link @click="remove(row)">删除</el-button>

@@ -1,6 +1,7 @@
 package com.xuan.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -26,6 +27,7 @@ import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.OAuthBindingMapper;
 import com.xuan.mapper.UserMapper;
+import com.xuan.model.LoginSession;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
@@ -451,7 +453,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO login(LoginDTO request, int timeoutSeconds) {
+    public LoginSession login(LoginDTO request, int timeoutSeconds) {
         // 1. 先锁用户再验凭据，避免旧密码验证通过后越过并发退出登录的时点又发 Token。
         SysUser user = users.lockByUsername(request.username());
 
@@ -474,9 +476,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     /** 发送注册或前台登录验证码，发送不创建账号，验证码只能用于请求指定的操作。 */
     @Override
     public void sendEmailCode(EmailCodeDTO request) {
-        String purpose = request.purpose() == EmailCodeDTO.Purpose.REGISTER
-                ? EmailCodeStore.REGISTER : EmailCodeStore.LOGIN;
-        emailCodes.send(request.email(), purpose);
+        if (request.purpose() == EmailCodeDTO.Purpose.REGISTER) {
+            emailCodes.send(request.email(), EmailCodeStore.REGISTER);
+            return;
+        }
+
+        boolean registered = users.exists(Wrappers.<SysUser>lambdaQuery().eq(SysUser::getEmail, request.email()));
+        if (!registered) {
+            throw unregisteredEmail();
+        }
+        emailCodes.send(request.email(), EmailCodeStore.LOGIN);
     }
 
     /** 发送后台登录验证码，邮件发送失败不会签发会话或假装成功。 */
@@ -485,7 +494,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     public void sendAdminEmailCode(AdminEmailCodeDTO request) {
         SysUser user = users.lockByEmail(request.email());
         if (user == null) {
-            throw new BusinessException(401, "AUTH_FAILED", "邮箱或验证码错误");
+            throw unregisteredEmail();
         }
         enabled(user);
         permissions.requireScope(user.getUserId(), "admin:access");
@@ -495,19 +504,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     /** 使用邮箱验证码登录，按登录端隔离验证码，后台必须拥有入口权限。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO loginEmail(EmailLoginDTO request, int timeoutSeconds) {
+    public LoginSession loginEmail(EmailLoginDTO request, int timeoutSeconds) {
         SysUser user = users.lockByEmail(request.email());
         boolean admin = timeoutSeconds == SessionManager.ADMIN_TIMEOUT_SECONDS;
         String purpose = admin ? EmailCodeStore.ADMIN_LOGIN : EmailCodeStore.LOGIN;
-        emailCodes.verify(request.email(), purpose, request.emailCode());
         if (user == null) {
-            throw new BusinessException(401, "AUTH_FAILED", "邮箱或验证码错误");
+            emailCodes.discard(request.email(), purpose);
+            throw unregisteredEmail();
         }
+
+        emailCodes.verify(request.email(), purpose, request.emailCode());
         enabled(user);
         if (admin) {
             permissions.requireScope(user.getUserId(), "admin:access");
         }
         return createSession(user, clock.millis(), admin ? "ADMIN_EMAIL" : "EMAIL", timeoutSeconds);
+    }
+
+    /** 提示邮箱未注册，仍按登录失败计数。 */
+    private BusinessException unregisteredEmail() {
+        return new BusinessException(401, "AUTH_FAILED", "该邮箱未注册");
     }
 
     /**
@@ -753,7 +769,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
+    public LoginSession loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds) {
         if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
             throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
         }
@@ -902,7 +918,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param timeoutSeconds 当前登录端的固定有效秒数
      * @return 事务成功提交后可返回客户端的独立会话与脱敏资料
      */
-    private SessionVO createSession(SysUser user, long authenticatedAt, String method, int timeoutSeconds) {
+    private LoginSession createSession(SysUser user, long authenticatedAt, String method, int timeoutSeconds) {
         // 1. 用户锁内发独立 Token，会话组件同时登记事务失败时的清理。
         String token = sessions.create(user.getUserId(), authenticatedAt, method, timeoutSeconds);
 
@@ -912,7 +928,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             ip = IpUtils.clientIp(attributes.getRequest(), auth.getTrustedProxies());
         }
         users.updateLastLogin(user.getUserId(), ip, ip == null ? null : locations.getIpLocation(ip));
-        return new SessionVO("Bearer", token, timeoutSeconds, view(users.selectById(user.getUserId())));
+        return new LoginSession(token, new SessionVO(timeoutSeconds, view(users.selectById(user.getUserId()))));
     }
 
     /**

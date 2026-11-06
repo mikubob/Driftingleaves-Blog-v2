@@ -1,4 +1,4 @@
-/** 票据只在内存中使用一次，不能把 HTTP accessToken 交给 WebSocket。 */
+/** 连接只发送一次性票据。 */
 export function validateOnlineTicket(data) {
   if (!data || typeof data.ticket !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(data.ticket)
     || data.expiresIn !== 30) {

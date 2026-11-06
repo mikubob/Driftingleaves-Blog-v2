@@ -13,6 +13,7 @@ const props = defineProps({
   loading: Boolean,
   preservePage: Boolean,
 })
+/** 将新页码或每页条数交给父列表处理。 */
 const emit = defineEmits(['change', 'size-change'])
 // 接口最多允许访问第 100000 页，先截取再转数字，保留 BIGINT 总数的精度。
 const pageCount = computed(() => {

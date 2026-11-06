@@ -3,6 +3,7 @@ import { ElButton } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import { computed } from 'vue'
 
+/** 接收当前行和可用状态操作，通过同一个批量组件提交单条记录。 */
 const props = defineProps({
   row: { type: Object, required: true },
   actions: { type: Array, required: true },

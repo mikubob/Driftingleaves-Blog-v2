@@ -3,7 +3,7 @@ import { apiRoot } from './api.js'
 import { reportNotFound } from './shared/notFound.mjs'
 import { allowedPages, pageRegistry } from './navigation.js'
 import { session } from './session.js'
-import RequestFailure from './components/RequestFailure.vue'
+import RequestFailure from './shared/RequestFailure.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -39,6 +39,7 @@ const router = createRouter({
 })
 
 const removeRoutes = []
+/** 替换动态路由，只注册当前账号可访问且已在本地登记的菜单页面。 */
 export function registerMenuRoutes() {
   removeRoutes.splice(0).forEach((remove) => remove())
   for (const node of allowedPages(session.menus, session.capabilities)) {
@@ -75,6 +76,7 @@ export function registerMenuRoutes() {
   }
 }
 
+/** 选择登录后的首页，优先进入统计总览，再找第一个可见页面。 */
 export function firstPage() {
   const pages = allowedPages(session.menus, session.capabilities)
   return (

@@ -16,9 +16,12 @@ import java.lang.annotation.Target;
 @Constraint(validatedBy = PasswordValidator.class)
 public @interface Password {
 
+    /** 密码长度或字节数校验失败时的提示。 */
     String message() default "密码须为8..64个字符且UTF-8不超过72字节";
 
+    /** 指定在哪些校验组检查密码。 */
     Class<?>[] groups() default {};
 
+    /** 为密码校验失败附加自定义信息。 */
     Class<? extends Payload>[] payload() default {};
 }

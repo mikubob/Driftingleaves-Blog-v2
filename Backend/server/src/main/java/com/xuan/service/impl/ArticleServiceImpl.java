@@ -17,14 +17,14 @@ import com.xuan.entity.BlogCategory;
 import com.xuan.entity.BlogFile;
 import com.xuan.entity.BlogTag;
 import com.xuan.exception.BusinessException;
-import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.ArticleMapper.CommentNode;
+import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleFilter;
 import com.xuan.model.ArticleRow;
 import com.xuan.notification.SubscriptionNotifier;
-import com.xuan.policy.ArticleAttachmentPolicy;
 import com.xuan.policy.ArticleAttachmentPolicy.References;
+import com.xuan.policy.ArticleAttachmentPolicy;
 import com.xuan.policy.CommentVisibilityPolicy;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
@@ -35,8 +35,8 @@ import com.xuan.session.SessionManager;
 import com.xuan.store.FileStore;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
-import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.MarkdownUtils.ArticleContent;
+import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArchiveVO;
 import com.xuan.vo.ArticleAdminDetailVO;
@@ -139,6 +139,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return page;
     }
 
+    /** 直接从数据库分页查询公开文章，包含当前浏览、点赞和评论数。 */
     private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
         YearMonth month = query.month() == null ? null : YearMonth.parse(query.month());
         ArticleFilter filter = new ArticleFilter(true, null, query.keyword(), IdUtils.parse(query.categoryId()),

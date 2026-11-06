@@ -7,6 +7,7 @@ import jakarta.validation.constraints.NotNull;
  */
 public record OAuthAuthorizeDTO(@NotNull Operation operation) {
 
+    /** 区分第三方登录和绑定当前账号。 */
     public enum Operation {
         LOGIN, BIND
     }

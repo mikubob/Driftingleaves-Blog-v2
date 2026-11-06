@@ -82,7 +82,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onClickOutside))
   background: transparent;
   cursor: pointer;
   font-size: 20px;
-  color: #909399;
+  color: var(--blog-text3);
   display: inline-flex;
   align-items: center;
   justify-content: center;

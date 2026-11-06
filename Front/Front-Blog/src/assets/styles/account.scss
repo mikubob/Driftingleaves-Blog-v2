@@ -38,7 +38,7 @@ fieldset {
 }
 
 .error-state {
-  color: #c45656;
+  color: var(--blog-error-text);
 }
 
 .discussion-list .c-body,
@@ -100,10 +100,10 @@ fieldset {
     letter-spacing: 2px;
   }
   .error-text {
-    color: #c45656;
+    color: var(--blog-error-text);
   }
   .success-text {
-    color: #529b2e;
+    color: var(--blog-success-text);
   }
 
   button, .button {

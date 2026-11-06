@@ -13,6 +13,11 @@ import com.xuan.controller.admin.VisitorController;
 import com.xuan.controller.blog.AnalyticsController;
 import com.xuan.controller.blog.FeedController;
 import com.xuan.controller.blog.MessageController;
+import com.xuan.controller.blog.MyMessageController;
+import com.xuan.controller.blog.MySubscriptionController;
+import com.xuan.controller.blog.OnlineController;
+import com.xuan.controller.publicsite.PublicHomeProfileController;
+import com.xuan.controller.publicsite.PublicSocialController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -27,16 +32,16 @@ import java.util.Set;
         ExperienceController.class,
         SkillController.class,
         MusicController.class,
-        com.xuan.controller.publicsite.PublicHomeProfileController.class,
-        com.xuan.controller.publicsite.PublicSocialController.class,
+        PublicHomeProfileController.class,
+        PublicSocialController.class,
         com.xuan.controller.cv.ExperienceController.class,
         com.xuan.controller.cv.SkillController.class,
         com.xuan.controller.blog.MusicController.class, OperationLogController.class,
         SubscriptionController.class,
-        com.xuan.controller.blog.MySubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
+        MySubscriptionController.class, com.xuan.controller.blog.SubscriptionController.class,
         FeedController.class, MessageController.class,
-        com.xuan.controller.blog.MyMessageController.class, com.xuan.controller.admin.MessageController.class,
-        AnalyticsController.class, com.xuan.controller.blog.OnlineController.class,
+        MyMessageController.class, com.xuan.controller.admin.MessageController.class,
+        AnalyticsController.class, OnlineController.class,
         com.xuan.controller.home.AnalyticsController.class, com.xuan.controller.home.OnlineController.class,
         com.xuan.controller.cv.AnalyticsController.class, com.xuan.controller.cv.OnlineController.class,
         VisitorController.class, PageViewController.class,

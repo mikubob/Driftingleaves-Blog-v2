@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useThemeStore } from '@/stores'
 import { ensureHeadingIds } from '@/utils/markdownAnchors'
 
+/** 接收文章内容和阅读进度，用于同步当前标题和进度显示。 */
 const props = defineProps({
   markdown: { type: String, required: true },
   progress: { type: Number, default: 0 }
@@ -23,8 +24,12 @@ let contentObserver = null
 let headingObserver = null
 
 const isDark = computed(() => {
-  if (themeStore.mode === 'dark') return true
-  if (themeStore.mode === 'light') return false
+  if (themeStore.mode === 'dark') {
+    return true
+  }
+  if (themeStore.mode === 'light') {
+    return false
+  }
   return window.matchMedia('(prefers-color-scheme: dark)').matches
 })
 
@@ -119,7 +124,9 @@ const extractHeadings = () => {
 
 const observeContent = () => {
   const el = document.querySelector('.article-content')
-  if (!el) return
+  if (!el) {
+    return
+  }
 
   contentObserver?.disconnect()
   contentObserver = new MutationObserver(() => {
@@ -159,7 +166,9 @@ const scrollTo = (id) => {
 const scrollActiveIntoView = (containerRef) => {
   nextTick(() => {
     const container = containerRef.value
-    if (!container || !activeId.value) return
+    if (!container || !activeId.value) {
+      return
+    }
 
     const activeItem = container.querySelector('.toc-item.active')
     activeItem?.scrollIntoView({
@@ -183,7 +192,9 @@ watch(activeId, () => {
 })
 
 watch(mobileOpen, (open) => {
-  if (typeof document === 'undefined') return
+  if (typeof document === 'undefined') {
+    return
+  }
 
   if (open) {
     bodyOverflow.value = document.body.style.overflow

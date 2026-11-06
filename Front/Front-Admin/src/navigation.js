@@ -145,6 +145,7 @@ export const pageRegistry = {
   },
 }
 
+/** 按原顺序展开菜单树，每个父节点排在子节点前。 */
 export function flattenMenus(nodes) {
   const result = []
   for (const node of nodes) {
@@ -156,6 +157,7 @@ export function flattenMenus(nodes) {
   return result
 }
 
+/** 检查菜单路径是否指向站内，拒绝协议相对地址和带参数的路径。 */
 export function isInternalPath(path) {
   return typeof path === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]*$/.test(path)
 }

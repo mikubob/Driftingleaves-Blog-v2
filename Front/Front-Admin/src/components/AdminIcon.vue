@@ -13,6 +13,7 @@ import {
   Medal,
   UserFilled,
 } from '@element-plus/icons-vue'
+/** 按本地已登记的名称展示管理端图标。 */
 const props = defineProps({ name: String })
 const iconFonts = {
   chart: 'icon-yibiaopan',

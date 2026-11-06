@@ -1,17 +1,25 @@
 import { reportRequestFailure } from './shared/requestFailure.mjs'
 import { isCaptchaId, setCaptchaHeaders, validateCaptcha } from './shared/captcha.mjs'
 
-const apiOrigin = (import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')
-export const apiRoot = `${apiOrigin}/api/v1`
-let accessToken = ''
-let onUnauthenticated = () => {}
+export const apiRoot = '/api/v1'
+let sessionVersion = 0
+let sessionUserId = () => null
+let onExpired = () => {}
+let onAccountChanged = () => {}
 
-/** 设置请求使用的 Token，保存和恢复登录状态由会话模块负责。 */
-export function setAuthorization(token, onExpired = onUnauthenticated) {
-  accessToken = token
-  onUnauthenticated = onExpired
+/** 从当前页面状态读取预期账号，并处理服务端会话变化。 */
+export function bindSessionState(readUserId, expired, accountChanged) {
+  sessionUserId = readUserId
+  onExpired = expired
+  onAccountChanged = accountChanged
 }
 
+/** 标记登录状态已变化，之前发出的请求不能清理新登录状态。 */
+export function invalidateSessionRequests() {
+  sessionVersion += 1
+}
+
+/** 保存后台请求失败的状态码、业务错误码和字段错误。 */
 export class ApiError extends Error {
   constructor(message, status, code, errors = []) {
     super(message)
@@ -21,6 +29,7 @@ export class ApiError extends Error {
   }
 }
 
+/** 校验业务 ID，接受 Long 范围内的正十进制字符串。 */
 export function isId(value) {
   return (
     typeof value === 'string' &&
@@ -57,11 +66,11 @@ function validateNumbers(value, key = '') {
 }
 
 /** 发送后台请求，统一处理登录状态、Result 响应、版本和限流提示；失败后不自动重试。 */
-export async function request(path, { body, revision, captcha, blob = false, ...options } = {}) {
+export async function request(path, { body, revision, captcha, expectedUserId = sessionUserId(), blob = false, ...options } = {}) {
   const headers = new Headers({ Accept: blob ? '*/*' : 'application/json' })
   setCaptchaHeaders(headers, captcha)
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`)
+  if (expectedUserId) {
+    headers.set('X-Expected-User-Id', expectedUserId)
   }
   if (revision !== undefined) {
     if (typeof revision !== 'string' || !/^"[^"\r\n]+"$/.test(revision)) {
@@ -74,6 +83,7 @@ export async function request(path, { body, revision, captcha, blob = false, ...
     headers.set('Content-Type', 'application/json')
   }
 
+  const requestSessionVersion = sessionVersion
   let response
   try {
     response = await fetch(`${apiRoot}${path}`, {
@@ -81,6 +91,7 @@ export async function request(path, { body, revision, captcha, blob = false, ...
       headers,
       body: body === undefined || multipart ? body : JSON.stringify(body),
       cache: 'no-store',
+      credentials: 'same-origin',
     })
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -121,9 +132,13 @@ export async function request(path, { body, revision, captcha, blob = false, ...
           (item) => typeof item?.field === 'string' && typeof item.message === 'string',
         )
       : []
-    if (response.status === 401 && result?.code === 'UNAUTHENTICATED') {
-      accessToken = ''
-      onUnauthenticated()
+    if (response.status === 401 && result?.code === 'UNAUTHENTICATED'
+      && requestSessionVersion === sessionVersion) {
+      onExpired()
+    }
+    if (response.status === 409 && result?.code === 'SESSION_ACCOUNT_CHANGED'
+      && requestSessionVersion === sessionVersion) {
+      onAccountChanged()
     }
     if (response.status === 412) {
       message = '内容已被其他人修改。请保留当前输入，重新获取详情后合并修改。'
@@ -160,6 +175,7 @@ export function queryString(params) {
   return search ? `?${search}` : ''
 }
 
+/** 查询后台分页并校验响应，记录总数和总页数保留字符串。 */
 export async function getPage(path, params, signal) {
   const { data } = await request(`${path}${queryString(params)}`, { signal })
   if (
@@ -191,7 +207,7 @@ export async function getOptions(path, params = {}, signal) {
   }
 }
 
-/** 私密文件只从已知 API 路径携带 Bearer 读取，不向外部 URL 发送 Token。 */
+/** 私密文件只从本站已知的后台 API 路径读取。 */
 export async function getFile(path, signal) {
   const prefix = '/api/v1'
   if (

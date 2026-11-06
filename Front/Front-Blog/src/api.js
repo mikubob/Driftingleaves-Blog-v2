@@ -2,21 +2,31 @@ import { validateOnlineTicket } from './shared/online.mjs'
 import { isCaptchaId, setCaptchaHeaders, validateCaptcha, validateArithmeticCaptcha } from './shared/captcha.mjs'
 import { reportRequestFailure } from './shared/requestFailure.mjs'
 
-export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
-let accessToken = ''
+export const apiRoot = '/api/v1'
+let sessionVersion = 0
+let sessionUserId = () => null
 let onExpired = () => {}
+let onAccountChanged = () => {}
 
-/** 设置当前请求凭据；所有请求始终指向已配置的 API 根路径。 */
-export function setAuthorization(token, expired = onExpired) {
-  accessToken = token
+/** 从当前页面状态读取预期账号，并处理服务端会话变化。 */
+export function bindSessionState(readUserId, expired, accountChanged) {
+  sessionUserId = readUserId
   onExpired = expired
+  onAccountChanged = accountChanged
 }
 
+/** 标记登录状态已变化，之前发出的请求不能清理新登录状态。 */
+export function invalidateSessionRequests() {
+  sessionVersion += 1
+}
+
+/** 校验业务 ID，接受 Long 范围内的正十进制字符串。 */
 export function isId(value) {
   return typeof value === 'string' && /^[1-9]\d{0,18}$/.test(value)
     && BigInt(value) <= 9223372036854775807n
 }
 
+/** 校验公开网页地址，只允许不含用户名和密码的绝对 HTTP(S) 地址。 */
 export function isWebUrl(value) {
   if (typeof value !== 'string') {
     return false
@@ -117,7 +127,7 @@ const discussionDetails = (value) => model(value, {
   replyTarget: (item) => item === null || model(item, { nickname: nullableText, content: text }),
 })
 const session = (value) => model(value, {
-  tokenType: (item) => item === 'Bearer', accessToken: (item) => text(item) && !!item, user: me,
+  expiresIn: (item) => Number.isSafeInteger(item) && item > 0, user: me,
 })
 
 /** 校验博客接口返回的数据，格式不正确时不更新页面。 */
@@ -223,11 +233,11 @@ class ApiError extends Error {
 }
 
 /** 发送博客请求，统一读取 Result 响应、处理登录失效和 Retry-After 等待提示，不自动重试写请求。 */
-export async function request(path, { body, revision, captcha, ...options } = {}) {
+export async function request(path, { body, revision, captcha, expectedUserId = sessionUserId(), ...options } = {}) {
   const headers = new Headers({ Accept: 'application/json' })
   setCaptchaHeaders(headers, captcha)
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`)
+  if (expectedUserId) {
+    headers.set('X-Expected-User-Id', expectedUserId)
   }
   if (body !== undefined) {
     headers.set('Content-Type', 'application/json')
@@ -238,6 +248,7 @@ export async function request(path, { body, revision, captcha, ...options } = {}
     }
     headers.set('If-Revision', revision)
   }
+  const requestSessionVersion = sessionVersion
   let response
   try {
     response = await fetch(`${apiRoot}${path}`, {
@@ -245,6 +256,7 @@ export async function request(path, { body, revision, captcha, ...options } = {}
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: 'no-store',
+      credentials: 'same-origin',
     })
   } catch (error) {
     if (error.name === 'AbortError') {
@@ -271,9 +283,13 @@ export async function request(path, { body, revision, captcha, ...options } = {}
     throw response.ok || response.status >= 500 ? reportRequestFailure(error, path) : error
   }
   if (!response.ok || result?.code !== 'OK') {
-    if (response.status === 401 && result?.code === 'UNAUTHENTICATED') {
-      accessToken = ''
+    if (response.status === 401 && result?.code === 'UNAUTHENTICATED'
+      && requestSessionVersion === sessionVersion) {
       onExpired()
+    }
+    if (response.status === 409 && result?.code === 'SESSION_ACCOUNT_CHANGED'
+      && requestSessionVersion === sessionVersion) {
+      onAccountChanged()
     }
     let message = typeof result?.msg === 'string' ? result.msg : `请求失败（HTTP ${response.status}）。`
     if (response.status === 412) {
@@ -298,6 +314,7 @@ export async function request(path, { body, revision, captcha, ...options } = {}
   return { data: result.data, revision: response.headers.get('X-Revision') }
 }
 
+/** 拼接非空查询条件，保留数字 0 和字符串 ID。 */
 export function queryString(params = {}) {
   const query = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -320,6 +337,7 @@ export async function getPage(path, params = {}, signal) {
   return data
 }
 
+/** 读取 URL 中的页码，无效值回到第一页，最大取 100000。 */
 export function pageNumber(value) {
   if (typeof value !== 'string' || !/^[1-9]\d{0,5}$/.test(value)) {
     return 1
@@ -327,7 +345,7 @@ export function pageNumber(value) {
   return Math.min(Number(value), 100000)
 }
 
-/** 在线票据复用当前内存 Bearer，只在 HTTP Header 中发送。 */
+/** 通过博客 HTTP 接口领取在线票据。 */
 export async function getOnlineTicket(body, signal) {
   const { data } = await request('/blog/analytics/online/tickets', { method: 'POST', body, signal })
   return validateOnlineTicket(data)

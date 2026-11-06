@@ -102,7 +102,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  color: #909399;
+  color: var(--blog-text3);
   margin-bottom: 20px;
   padding-bottom: 14px;
   border-bottom: 1px solid #ebeef5;
@@ -190,7 +190,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
 .item-date {
   flex-shrink: 0;
   font-size: 13px;
-  color: #909399;
+  color: var(--blog-text3);
   font-family: var(--blog-serif);
   font-variant-numeric: tabular-nums;
   min-width: 48px;
@@ -203,7 +203,7 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
 
 .empty {
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 40px 0;
   font-size: 14px;
 }

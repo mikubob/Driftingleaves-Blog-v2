@@ -17,6 +17,7 @@ export function getFingerprint() {
   return fingerprint
 }
 
+/** 组装访问统计，去掉站内路径和来源地址的查询参数及片段。 */
 export function trackingPayload(path, title, articleId = null) {
   const fingerprint = getFingerprint()
   let referer = null
@@ -36,6 +37,7 @@ export function trackingPayload(path, title, articleId = null) {
   }
 }
 
+/** 上报一次博客访问，统计失败不影响阅读。 */
 export async function recordPage(path, title, articleId = null) {
   try {
     await request('/blog/analytics/page-views', {

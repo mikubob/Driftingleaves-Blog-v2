@@ -15,12 +15,12 @@ import com.xuan.dto.ProfilePatchDTO;
 import com.xuan.dto.RegisterDTO;
 import com.xuan.dto.UserRolesDTO;
 import com.xuan.entity.SysUser;
+import com.xuan.model.LoginSession;
 import com.xuan.result.PageResult;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MeVO;
 import com.xuan.vo.OAuthBindingVO;
-import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserAdminVO;
 import com.xuan.vo.UserProfileVO;
 
@@ -56,7 +56,7 @@ public interface IUserService extends IService<SysUser> {
     MeVO register(RegisterDTO request);
 
     /** 使用用户名和密码登录，先锁住用户再检查密码，按登录端指定的有效秒数生成独立 Token，并记录登录时间。 */
-    SessionVO login(LoginDTO request, int timeoutSeconds);
+    LoginSession login(LoginDTO request, int timeoutSeconds);
 
     /** 注册和邮箱登录分别发送验证码，SMTP 接受后才返回成功。 */
     void sendEmailCode(EmailCodeDTO request);
@@ -65,7 +65,7 @@ public interface IUserService extends IService<SysUser> {
     void sendAdminEmailCode(AdminEmailCodeDTO request);
 
     /** 按当前绑定邮箱锁用户，消费对应登录端的邮件验证码，后台还检查入口权限。 */
-    SessionVO loginEmail(EmailLoginDTO request, int timeoutSeconds);
+    LoginSession loginEmail(EmailLoginDTO request, int timeoutSeconds);
 
     /** 查询当前用户资料，在用户锁内读取资料和全部角色，并一起计算版本。 */
     UserProfileVO me();
@@ -95,5 +95,5 @@ public interface IUserService extends IService<SysUser> {
     OAuthBindingVO bindOAuth(long userId, String tokenHash, String source, String uuid);
 
     /** 使用第三方账号登录，一次性使用票据后，在用户锁内确认原身份仍已绑定，再创建会话；兑换等待不能刷新认证时间。 */
-    SessionVO loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds);
+    LoginSession loginOAuth(long userId, String source, String uuid, long authenticatedAt, int timeoutSeconds);
 }

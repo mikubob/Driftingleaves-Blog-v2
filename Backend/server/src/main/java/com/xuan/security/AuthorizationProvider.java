@@ -2,8 +2,8 @@ package com.xuan.security;
 
 import cn.dev33.satoken.stp.StpInterface;
 import com.xuan.exception.BusinessException;
-import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.AuthorizationMapper.MenuGrant;
+import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.vo.CapabilitiesVO;
 import com.xuan.vo.MenuNodeVO;
 import lombok.RequiredArgsConstructor;

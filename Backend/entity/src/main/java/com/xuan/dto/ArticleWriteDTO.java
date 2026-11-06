@@ -147,6 +147,7 @@ public class ArticleWriteDTO {
         return tagIds == null || new HashSet<>(tagIds).size() == tagIds.size();
     }
 
+    /** 去掉可空文本的首尾空白，空白内容按清空处理。 */
     private String clean(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }

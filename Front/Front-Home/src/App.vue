@@ -1,14 +1,14 @@
 <script setup>
 import { createOnlineConnection } from './shared/online.mjs'
 import { apiRoot, getOnlineTicket } from './api.js'
-import RequestFailure from './components/RequestFailure.vue'
+import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watchEffect } from 'vue'
 import { getProfile, getSocialLinks, getSiteConfig, recordPageView } from './api.js'
 import { createPageView, getFingerprint } from './tracking.js'
 import HomeIcon from './components/HomeIcon.vue'
 
-const requestFailure = ref(false)
+const requestFailure = ref(null)
 const connection = createOnlineConnection({
   apiRoot, requestTicket: getOnlineTicket,
   payload: () => ({ fingerprint: getFingerprint(window), siteCode: 'home', pagePath: window.location.pathname }),
@@ -87,18 +87,14 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => controller.abort())
-setRequestFailureHandler(() => {
-  if (requestFailure.value) {
-    return
-  }
-  requestFailure.value = true
-  document.title = '404 - 页面不存在'
+setRequestFailureHandler((error) => {
+  requestFailure.value ??= error
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" />
+  <RequestFailure v-if="requestFailure" :error="requestFailure" />
   <div v-else>
     <a class="skip-link" href="#home">跳至主页内容</a>
     <div class="home-container">

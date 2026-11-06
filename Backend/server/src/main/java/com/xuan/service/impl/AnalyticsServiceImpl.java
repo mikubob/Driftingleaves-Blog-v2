@@ -116,7 +116,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         return new TrackingResultVO(true);
     }
 
-    /** 检查可选的登录信息，传入 Bearer 时必须有效，加锁等待后要重新检查。 */
+    /** 检查可选的登录信息，博客可使用当前登录 Cookie，加锁等待后要重新检查。 */
     private Long current() {
         if (sessions.currentToken() == null) {
             return null;

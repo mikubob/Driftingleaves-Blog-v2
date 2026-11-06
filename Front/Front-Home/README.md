@@ -15,16 +15,16 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-默认地址为 `http://127.0.0.1:5173`。开发服务器将 `/api/v1` 原样代理到 `http://localhost:5922`。复制 `.env.example` 为 `.env.local` 可修改 `API_PROXY_TARGET`。
+默认地址为 `http://127.0.0.1:5173`。开发服务器将 `/api/v1/home/` 原样代理到 `http://localhost:5922`。复制 `.env.example` 为 `.env.local` 可修改 `API_PROXY_TARGET`。
 
-端口占用时直接报错，不自动换端口。后端 `dev` 默认放行 `http://127.0.0.1:5173` 与 `http://localhost:5173`；代理保留浏览器 Origin，仍需通过后端来源检查。主页采集的默认 `HOME_BASE_URL` 为 `http://127.0.0.1:5173`，使用 `localhost` 时将其改为 `http://localhost:5173`。显式设置 `FRONTEND_ORIGINS` 会替换默认白名单，自定义地址需同步配置，修改后重启后端。
+端口占用时直接报错。开发代理保留浏览器 Origin。使用 `localhost` 或更改端口时，同步修改后端 `HOME_BASE_URL` 并重启。公开 HTTP 跨域与在线连接都按该站配置的来源校验。
 
 ```powershell
 pnpm build
 pnpm preview
 ```
 
-生产产物位于 `dist/`。同源部署由反向代理转发 `/api/v1`；跨域部署在构建前设置 `VITE_API_ORIGIN`，值为后端公开源站，不含 `/api/v1`。开发代理不会随静态产物部署。
+生产产物位于 `dist/`。同源部署由反向代理转发 `/api/v1/home/`；跨域部署在构建前设置 `VITE_API_ORIGIN`，值为后端公开源站，不含 `/api/v1`。开发代理不会随静态产物部署。
 
 ## 接口与展示
 
@@ -47,4 +47,4 @@ pnpm preview
 
 ## 服务器异常与限流
 
-网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 显示参考 FeiTwnd-Website 对应端的全屏 404 样式；429 保留 Retry-After 秒数提示。请求仍失败且不自动重放，普通校验、鉴权与版本冲突沿用原逻辑。点击“返回首页”重新进入站点；如有未提交编辑，应重新加载后再操作。统计采集失败保持静默，不切换异常页。
+网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 进入全屏请求错误页，显示实际错误。HTTP 429 提示 Retry-After 等待时间。请求失败后可手动重试。统计采集失败保持静默。

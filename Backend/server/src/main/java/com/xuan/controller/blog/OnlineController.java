@@ -4,6 +4,7 @@ import com.xuan.dto.OnlineTicketCreateDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
+import com.xuan.security.WebSession;
 import com.xuan.service.IOnlineService;
 import com.xuan.utils.IpUtils;
 import com.xuan.vo.OnlineTicketVO;
@@ -12,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestAttribute;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -25,14 +27,15 @@ public class OnlineController {
     private final IOnlineService online;
     private final AuthProperties auth;
 
-    /** 生成在线统计票据，成功返回 201，传入 Bearer 时必须有效，响应禁止缓存。 */
+    /** 生成在线统计票据，成功返回 201，博客身份从当前登录 Cookie 读取，响应禁止缓存。 */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body, HttpServletRequest request) {
+    public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body,
+            @RequestAttribute(WebSession.VERIFIED_ORIGIN) String origin, HttpServletRequest request) {
         if (!"blog".equals(body.siteCode())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
         }
-        return Result.ok(online.issue(body, request.getHeader("Origin"),
+        return Result.ok(online.issue(body, origin,
                 IpUtils.clientIp(request, auth.getTrustedProxies())));
     }
 }

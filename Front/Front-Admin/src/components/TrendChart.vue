@@ -5,6 +5,7 @@ import { computed } from 'vue'
 import { formatCount } from '../format.js'
 import { makeTrendOption } from '../chartOptions.js'
 import ReportChart from './ReportChart.vue'
+/** 按指定的计数字段和图例名称展示趋势数据。 */
 const props = defineProps({
   rows: { type: Array, default: () => [] },
   valueKey: String,

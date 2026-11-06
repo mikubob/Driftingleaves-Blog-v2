@@ -1,17 +1,21 @@
 <script setup>
 import { onMounted } from 'vue'
 
+/** 展示请求错误，路由没有传入错误时展示 404 页面。 */
+const props = defineProps({ error: Error })
+const title = props.error ? '请求失败' : '页面不存在'
+
 onMounted(() => {
-  document.title = '404 - 页面不存在'
+  document.title = props.error ? title : `404 - ${title}`
 })
 </script>
 
 <template>
   <main class="error-page" role="alert">
     <div class="error-content">
-      <h1 class="error-code">404</h1>
-      <p class="error-title">页面不存在</p>
-      <p class="error-desc">你访问的页面已经走丢了</p>
+      <h1 class="error-code">{{ error ? error.status ?? '!' : '404' }}</h1>
+      <p class="error-title">{{ title }}</p>
+      <p class="error-desc">{{ error?.message ?? '你访问的页面已经走丢了' }}</p>
       <a href="/" class="error-btn">返回首页</a>
     </div>
   </main>
@@ -23,7 +27,7 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--blog-bg, #fafafa);
+  background: var(--blog-bg);
   font-family: var(
     --blog-sans,
     -apple-system,
@@ -40,7 +44,7 @@ onMounted(() => {
 .error-code {
   font-size: 120px;
   font-weight: 900;
-  color: var(--blog-text, #303133);
+  color: var(--blog-text);
   margin: 0;
   line-height: 1;
   letter-spacing: -4px;
@@ -48,27 +52,31 @@ onMounted(() => {
 .error-title {
   font-size: 20px;
   font-weight: 600;
-  color: var(--blog-text, #303133);
+  color: var(--blog-text);
   margin: 16px 0 8px;
 }
 .error-desc {
   font-size: 14px;
-  color: var(--blog-text3, #909399);
+  color: var(--blog-text3);
   margin: 0 0 32px;
 }
 .error-btn {
   display: inline-block;
   padding: 10px 32px;
   font-size: 14px;
-  color: #fff;
-  background: var(--blog-text, #303133);
+  color: var(--blog-bg);
+  background: var(--blog-text);
   border-radius: 6px;
   text-decoration: none;
   font-weight: 500;
   transition: background 0.2s;
 }
+.error-btn:focus-visible {
+  outline: 2px solid var(--blog-text);
+  outline-offset: 3px;
+}
 .error-btn:hover {
-  background: #000;
+  background: var(--blog-text2);
 }
 
 @media (max-width: 480px) {

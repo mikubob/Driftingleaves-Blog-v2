@@ -26,7 +26,7 @@ Home、Blog、Cv、Admin 四端各自维护源码、资源、配置和依赖，�
 - [接口文档](docs/API.md)：请求、响应与错误。
 - [接口开发约定](docs/API_CONTRACT.md)：鉴权、事务、并发与资源访问规则。
 - [数据库说明](sql/README.md)与[演示数据](sql/DEMO_DATA.md)。
-- [后端依赖与模块](docs/后端Maven依赖与模块规划.md)。
-- [实时在线人数](docs/实时在线人数接口规划.md)与[Markdown 阅读展示](docs/Markdown阅读说明.md)。
+- [后端依赖与模块](docs/后端依赖与模块说明.md)。
+- [实时在线人数](docs/实时在线人数接口说明.md)与[Markdown 阅读展示](docs/Markdown阅读说明.md)。
 
 文档只描述当前实现及使用方法。构建成功不代表外部平台联调、正式部署或上线验收完成。

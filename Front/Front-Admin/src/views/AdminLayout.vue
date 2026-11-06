@@ -276,7 +276,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
   border-top: 1px solid #e4e7ed;
   background: transparent;
   cursor: pointer;
-  color: #909399;
+  color: var(--admin-text-3);
   transition: color 0.15s;
 }
 
@@ -530,7 +530,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
 
 .sidebar :deep(.nav-group-title) {
   padding: 12px 20px 6px;
-  color: #909399;
+  color: var(--admin-text-3);
   font-size: 11px;
 }
 

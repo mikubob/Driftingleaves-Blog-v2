@@ -15,16 +15,16 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-默认开发地址为 `http://127.0.0.1:5175`。将 `.env.example` 复制为 `.env.local`，按实际环境设置 `API_PROXY_TARGET`；默认代理到 `http://localhost:5922`，不包含真实部署地址或凭据。
+默认开发地址为 `http://127.0.0.1:5175`。将 `.env.example` 复制为 `.env.local`，按实际环境设置 `API_PROXY_TARGET`；默认将 `/api/v1/cv/` 代理到 `http://localhost:5922`，不包含真实部署地址或凭据。
 
-端口占用时直接报错，不自动换端口。后端 `dev` 默认放行 `http://127.0.0.1:5175` 与 `http://localhost:5175`；代理保留浏览器 Origin，仍需通过后端来源检查。开发 `CV_BASE_URL` 默认对应 `http://127.0.0.1:5175`，使用其他公开基址时显式覆盖。设置 `FRONTEND_ORIGINS` 会替换默认白名单，自定义域名或端口需同步配置，修改后重启后端。
+端口占用时直接报错。开发代理保留浏览器 Origin。使用 `localhost` 或更改端口时，同步修改后端 `CV_BASE_URL` 并重启。公开 HTTP 跨域与在线连接都按该站配置的来源校验。
 
 ```powershell
 pnpm build
 pnpm preview
 ```
 
-生产静态产物位于 `dist/`。默认由同源反向代理把 `/api/v1` 转发给后端；跨域部署时，在构建前设置 `VITE_API_ORIGIN` 为后端公开源站（不含 `/api/v1`），并在后端放行简历站 Origin。开发代理不会随静态产物部署。
+生产静态产物位于 `dist/`。默认由同源反向代理把 `/api/v1/cv/` 转发给后端；跨域部署时，在构建前设置 `VITE_API_ORIGIN` 为后端公开源站（不含 `/api/v1`），并将后端 `CV_BASE_URL` 指向简历站实际地址。开发代理不会随静态产物部署。
 
 ## 数据契约
 
@@ -47,7 +47,7 @@ pnpm preview
 
 ## 服务器异常与限流
 
-网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 显示参考 FeiTwnd-Website 对应端的全屏 404 样式；429 保留 Retry-After 秒数提示。请求仍失败且不自动重放，普通校验、鉴权与版本冲突沿用原逻辑。点击“返回首页”重新进入站点；如有未提交编辑，应重新加载后再操作。统计采集失败保持静默，不切换异常页。
+网络连接失败、HTTP 5xx、无法解析的成功响应及 HTTP 429 进入全屏请求错误页，显示实际错误。HTTP 429 提示 Retry-After 等待时间。请求失败后可手动重试。统计采集失败保持静默。
 
 
 按本站要求，已有动画和过渡始终启用，不随系统“减少动态效果”设置关闭。

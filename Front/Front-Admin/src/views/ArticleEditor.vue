@@ -572,7 +572,7 @@ onBeforeUnmount(() => {
 
 .save-state,
 .editor-hint {
-  color: #909399;
+  color: var(--admin-text-3);
   font-size: 12px;
 }
 
@@ -679,7 +679,7 @@ onBeforeUnmount(() => {
   height: 78px;
   border: 1px dashed #d3d6db;
   border-radius: 6px;
-  color: #909399;
+  color: var(--admin-text-3);
   cursor: pointer;
 }
 

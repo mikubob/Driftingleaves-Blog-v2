@@ -62,6 +62,11 @@ public class EmailCodeStore {
         }
     }
 
+    /** 清除旧邮箱验证码，邮箱已解绑时也不能保留已尝试使用的验证码。 */
+    public void discard(String email, String purpose) {
+        redis.delete(key(email, purpose));
+    }
+
     /** 生成邮件验证码缓存键，统一邮箱大小写并去掉首尾空白，不保存原邮箱地址。 */
     private String key(String email, String purpose) {
         return auth.getRedisPrefix() + "email-code:" + purpose + ":"

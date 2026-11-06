@@ -3,7 +3,7 @@ import { reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { getPage, isWebUrl, request } from '../api.js'
 import { validatePassword } from '../shared/form.js'
-import { can, clearSession, logout, session } from '../session.js'
+import { can, logout, session, sessionRevoked } from '../session.js'
 import { articleView } from '../shared/presentation.js'
 import { useResource } from '../composables/useResource.js'
 import { formatDate } from '../format.js'
@@ -96,7 +96,7 @@ async function changePassword() {
     await request('/blog/me/password', { method: 'PUT', body })
     password.current = ''
     password.next = ''
-    clearSession()
+    sessionRevoked()
     await router.push('/login')
   } catch (failure) {
     error.value = failure.message

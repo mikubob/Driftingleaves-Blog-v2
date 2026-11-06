@@ -326,7 +326,7 @@ onMounted(async () => {
         <el-table-column label="最近登录地域" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.lastLoginLocation || '未知' }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" align="center" width="280">
           <template #default="{ row }">
             <el-button
               v-if="can('sys:user:query')"

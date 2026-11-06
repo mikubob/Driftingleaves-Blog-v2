@@ -56,7 +56,7 @@
         </where>
         <choose>
             <when test="filter.publicOnly">ORDER BY a.is_top DESC, a.publish_time DESC, a.article_id DESC</when>
-            <otherwise>ORDER BY a.update_time DESC, a.article_id DESC</otherwise>
+            <otherwise>ORDER BY a.is_top DESC, a.update_time DESC, a.article_id DESC</otherwise>
         </choose>
     </select>
 

@@ -2,6 +2,7 @@ package com.xuan.interceptor;
 
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.ratelimit.RedisRateLimiter;
 import com.xuan.result.Result;
 import com.xuan.utils.IpUtils;
@@ -26,6 +27,7 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
     private final AuthProperties auth;
+    private final PublicSiteProperties sites;
     private final RedisRateLimiter limiter;
     private final JsonMapper json;
 
@@ -40,15 +42,16 @@ public class OnlineHandshakeInterceptor implements HandshakeInterceptor {
                     || headers.containsHeader("Authorization") || headers.containsHeader("Sec-WebSocket-Protocol")) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "请使用约定的 WebSocket 握手");
             }
+            var servlet = ((ServletServerHttpRequest) request).getServletRequest();
+            String site = servlet.getServletPath().split("/")[1];
             String origin = headers.getOrigin();
-            if (origin == null || !auth.getAllowedOrigins().contains(origin)) {
+            if (!sites.origin(site).equals(origin)) {
                 throw new BusinessException(403, "FORBIDDEN", "在线统计来源不被允许");
             }
-            var servlet = ((ServletServerHttpRequest) request).getServletRequest();
             String ip = IpUtils.clientIp(servlet, auth.getTrustedProxies());
             limiter.hit(List.of(auth.getRedisPrefix() + "rate:online:handshake:" + TokenUtils.digest(ip)), 60, 120);
             attributes.put("onlineOrigin", origin);
-            attributes.put("onlineSite", servlet.getServletPath().split("/")[1]);
+            attributes.put("onlineSite", site);
             return true;
         } catch (BusinessException error) {
             reject(response, error);

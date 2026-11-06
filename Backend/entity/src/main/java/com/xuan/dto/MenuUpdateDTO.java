@@ -99,11 +99,13 @@ public class MenuUpdateDTO {
         permissionId = value;
     }
 
+    /** 检查更新菜单时是否显式提交了全部可空字段，避免漏传后清空原值。 */
     @AssertTrue(message = "菜单设置未完整提交，请重新打开菜单编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return present.size() == 6;
     }
 
+    /** 去掉路由、组件和图标字段的首尾空白，空白内容按清空处理。 */
     private String clean(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }

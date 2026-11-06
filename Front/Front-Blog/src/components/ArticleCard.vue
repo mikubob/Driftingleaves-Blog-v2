@@ -113,7 +113,7 @@ const fmtDate = formatDateTime
   gap: 12px;
   margin-bottom: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .card-top .iconfont {
   font-size: 12px;
@@ -166,7 +166,7 @@ const fmtDate = formatDateTime
 }
 .card-tag {
   font-size: 11px;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 1px 6px;
   background: #f5f7fa;
   border-radius: 3px;
@@ -175,7 +175,7 @@ const fmtDate = formatDateTime
   display: flex;
   gap: 14px;
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   margin-top: auto;
 }
 .card-meta .iconfont {

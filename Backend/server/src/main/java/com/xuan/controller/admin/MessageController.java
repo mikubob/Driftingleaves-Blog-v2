@@ -2,9 +2,8 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.dto.BatchIdsDTO;
-import com.xuan.dto.DiscussionConversationQueryDTO;
-import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.BatchStatusDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageEditDTO;
 import com.xuan.model.ResourceVersion;
@@ -15,6 +14,7 @@ import com.xuan.service.IMessageService;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.IpUtils;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.MessagePrivateVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;

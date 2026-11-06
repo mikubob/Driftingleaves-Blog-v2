@@ -6,6 +6,7 @@ import com.xuan.audit.FailureAuditWriter;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.ArticleWriteDTO;
+import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.CategoryCreateDTO;
 import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.dto.ConfigWriteDTO;
@@ -73,6 +74,7 @@ import tools.jackson.databind.node.ObjectNode;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -203,10 +205,10 @@ public class OperationLogAspect {
         for (int index = 0; index < arguments.length; index++) {
             Object argument = arguments[index];
             String name = names[index];
-            if (argument instanceof java.util.List<?> selected && ("items".equals(name) || "ids".equals(name))) {
+            if (argument instanceof List<?> selected && ("items".equals(name) || "ids".equals(name))) {
                 var ids = json.createArrayNode();
                 for (Object value : selected) {
-                    if (value instanceof com.xuan.dto.BatchItemDTO item) {
+                    if (value instanceof BatchItemDTO item) {
                         ids.add(item.id());
                     } else if (value instanceof String id) {
                         ids.add(id);

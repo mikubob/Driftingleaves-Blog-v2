@@ -30,7 +30,7 @@ const route = useRoute()
 <style scoped>
 .nav-group-title {
   padding: 12px 20px 6px;
-  color: #909399;
+  color: var(--admin-text-3);
   font-size: 11px;
 }
 

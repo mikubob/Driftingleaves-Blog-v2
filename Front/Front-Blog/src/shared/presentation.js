@@ -10,6 +10,7 @@ export function articleView(article) {
   }
 }
 
+/** 整理评论和留言的展示字段，作者已删除时使用占位昵称。 */
 export function discussionView(item) {
   return {
     ...item,

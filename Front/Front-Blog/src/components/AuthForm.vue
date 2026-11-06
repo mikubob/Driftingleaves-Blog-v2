@@ -6,6 +6,7 @@ import { acceptSession } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 import CaptchaField from '../shared/CaptchaField.vue'
+/** 选择第三方登录方式，弹窗模式保留当前页面。 */
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
 const emailLogin = ref(false)
@@ -34,7 +35,7 @@ async function popupResult(event) {
   error.value = ''
   try {
     const { data } = await request('/blog/auth/oauth/exchange', {
-      method: 'POST', credentials: 'include', body: { ticket: event.data.ticket },
+      method: 'POST', body: { ticket: event.data.ticket },
     })
     if (data.operation !== 'LOGIN' || !data.session) {
       throw new Error('授权流程不匹配，请重新登录。')
@@ -130,7 +131,9 @@ async function sendEmailCode() {
   }
 }
 
+/** 发起第三方登录，授权失败时关闭预先打开的弹窗。 */
 async function authorize(provider) {
+  // 1. 在点击事件中打开弹窗，避免异步请求结束后被浏览器拦截。
   if (props.popup) {
     popupWindow?.close()
     popupWindow = window.open('about:blank', 'dl-blog-login', 'width=560,height=720')
@@ -142,8 +145,9 @@ async function authorize(provider) {
   busy.value = true
   error.value = ''
   try {
+    // 2. 取得授权地址，再用弹窗或当前页打开。
     const { data } = await request(`/blog/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
-      method: 'POST', credentials: 'include', body: { operation: 'LOGIN' }, captcha: captcha.value.getValue(),
+      method: 'POST', body: { operation: 'LOGIN' }, captcha: captcha.value.getValue(),
     })
     if (props.popup) {
       awaitingPopup = true

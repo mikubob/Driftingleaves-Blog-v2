@@ -2,12 +2,11 @@ package com.xuan.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.xuan.dto.BatchItemDTO;
-import com.xuan.dto.DiscussionConversationQueryDTO;
-import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.dto.CommentAdminQueryDTO;
 import com.xuan.dto.CommentCreateDTO;
 import com.xuan.dto.CommentOwnQueryDTO;
 import com.xuan.dto.CommentPublicQueryDTO;
+import com.xuan.dto.DiscussionConversationQueryDTO;
 import com.xuan.entity.BlogComment;
 import com.xuan.model.ResourceVersion;
 import com.xuan.result.PageResult;
@@ -16,6 +15,7 @@ import com.xuan.vo.CommentAdminVO;
 import com.xuan.vo.CommentOwnVO;
 import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
+import com.xuan.vo.DiscussionConversationVO;
 
 import java.util.List;
 

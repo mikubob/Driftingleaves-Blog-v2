@@ -189,7 +189,7 @@ onBeforeUnmount(() => controller?.abort())
             <el-table :data="articles">
               <el-table-column type="index" label="#" width="50" />
               <el-table-column prop="title" label="文章标题" min-width="180" show-overflow-tooltip />
-              <el-table-column label="浏览量" width="110" align="right">
+              <el-table-column label="浏览量" width="110" align="center">
                 <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
               </el-table-column>
             </el-table>

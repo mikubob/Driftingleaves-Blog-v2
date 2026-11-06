@@ -19,6 +19,7 @@ import 'element-plus/es/components/message-box/style/css'
 import { prepareBatch } from '../batch.js'
 import { request } from '../api.js'
 
+/** 根据资源、记录和操作配置显示批量操作；传入选中项时由父页面维护选中状态。 */
 const props = defineProps({
   resource: { type: String, required: true },
   idKey: { type: String, required: true },
@@ -29,6 +30,7 @@ const props = defineProps({
   selectedRows: Array,
   selectable: { type: Function, default: () => true },
 })
+/** 批量操作成功后通知父页面刷新，外部维护选中项时由父页面清除。 */
 const emit = defineEmits(['completed', 'clear'])
 const tableSelection = ref([])
 const selected = computed(() => props.selectedRows ?? tableSelection.value)
@@ -57,7 +59,9 @@ watch(() => [props.rows, props.disabled], () => {
     clear()
   }
 }, { flush: 'post' })
-onBeforeUnmount(() => { generation += 1 })
+onBeforeUnmount(() => {
+  generation += 1
+})
 
 function select(rows) {
   tableSelection.value = rows
@@ -102,10 +106,13 @@ async function execute(action, rows = selected.value, extra = {}) {
   const originalGeneration = generation
   busy.value = true
   try {
+    // 1. 读取选中记录的版本，列表已刷新时要求重新选择。
     const payload = await prepareBatch(props.resource, props.idKey, targets, action.revision !== false)
     if (originalGeneration !== generation) {
       throw new Error('列表已刷新，请重新选择记录。')
     }
+
+    // 2. 展示影响范围，确认后再次检查列表是否刷新。
     let warning = action.warning || ''
     if (action.block) {
       warning += extra.blockedUntil ? ` 限制至 ${new Date(extra.blockedUntil).toLocaleString()}。` : ' 将永久限制这些统计标识。'
@@ -120,6 +127,7 @@ async function execute(action, rows = selected.value, extra = {}) {
     if (originalGeneration !== generation) {
       throw new Error('列表已刷新，请重新选择记录。')
     }
+    // 3. 提交整批请求，逐个展示文件删除失败的结果。
     failures.value = []
     const { data } = await request(`${props.resource}/${action.path}`, {
       method: action.method || 'POST',
@@ -146,6 +154,7 @@ async function execute(action, rows = selected.value, extra = {}) {
   }
 }
 
+/** 提供表格选中项更新和批量执行入口，行内操作可复用相同流程。 */
 defineExpose({ select, selectable, busy, execute })
 </script>
 

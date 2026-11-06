@@ -332,7 +332,7 @@ function goTag(slug) {
 }
 .info-tag {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
   margin: 0 0 6px;
 }
 .info-location {
@@ -378,7 +378,7 @@ function goTag(slug) {
 }
 .stat-label {
   font-size: 11px;
-  color: #909399;
+  color: var(--blog-text3);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -487,18 +487,18 @@ function goTag(slug) {
 }
 .modal-item .iconfont {
   font-size: 15px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .modal-name {
   flex: 1;
 }
 .modal-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--blog-text3);
 }
 .modal-empty {
   text-align: center;
-  color: #909399;
+  color: var(--blog-text3);
   padding: 20px;
   font-size: 14px;
 }
@@ -536,7 +536,7 @@ function goTag(slug) {
   border-radius: 8px;
   padding: 1px 6px;
   font-size: 11px;
-  color: #909399;
+  color: var(--blog-text3);
   margin-left: 2px;
 }
 
@@ -608,11 +608,11 @@ function goTag(slug) {
   font-size: 13px;
 }
 .rss-label {
-  color: #909399;
+  color: var(--blog-text3);
   min-width: 36px;
 }
 .rss-value {
-  color: #303133;
+  color: var(--blog-text);
   font-weight: 500;
 }
 .rss-actions {
@@ -626,7 +626,7 @@ function goTag(slug) {
   font-size: 13px;
   border: none;
   background: #f5f7fa;
-  color: #909399;
+  color: var(--blog-text3);
   border-radius: 6px;
   cursor: pointer;
   font-family: inherit;

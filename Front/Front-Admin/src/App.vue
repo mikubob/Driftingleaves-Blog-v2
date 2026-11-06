@@ -1,7 +1,7 @@
 <script setup>
 import { ElConfigProvider } from 'element-plus'
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import RequestFailure from './components/RequestFailure.vue'
+import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { session } from './session.js'
@@ -15,19 +15,15 @@ watch(
     }
   },
 )
-const requestFailure = ref(false)
-setRequestFailureHandler(() => {
-  if (requestFailure.value) {
-    return
-  }
-  requestFailure.value = true
-  document.title = '404 - 页面不存在'
+const requestFailure = ref(null)
+setRequestFailureHandler((error) => {
+  requestFailure.value ??= error
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
 
 <template>
-  <RequestFailure v-if="requestFailure" />
+  <RequestFailure v-if="requestFailure" :error="requestFailure" />
   <ElConfigProvider v-else :locale="zhCn">
     <router-view />
   </ElConfigProvider>

@@ -1,8 +1,8 @@
 import { reactive } from 'vue'
-import { request, setAuthorization } from './api.js'
-import { readStoredSession, removeStoredSession, writeStoredSession } from './shared/sessionStorage.mjs'
+import { bindSessionState, invalidateSessionRequests, isId, request } from './api.js'
+import { removeStoredSession } from './shared/sessionStorage.mjs'
+import { reloadSessionPage, syncSession } from './shared/sessionSync.mjs'
 
-const storageKey = 'dl-admin-session'
 export const session = reactive({
   user: null,
   capabilities: { roleCodes: [], permissionCodes: [], dataScopes: {} },
@@ -10,16 +10,28 @@ export const session = reactive({
   ready: false,
 })
 
-/** 清除登录信息和保存的 Token，用户权限每次都从后端读取。 */
+/** 清除当前页面的登录信息和权限。 */
 export function clearSession() {
-  setAuthorization('')
-  removeStoredSession(storageKey)
+  invalidateSessionRequests()
   session.user = null
   session.capabilities = { roleCodes: [], permissionCodes: [], dataScopes: {} }
   session.menus = []
   session.ready = false
 }
 
+const notifySessionChange = syncSession('admin', recheckSession)
+bindSessionState(() => session.ready ? session.user?.userId : null, clearSession, recheckSession)
+
+/** 撤销会话成功后清理当前页面，并通知其他标签页。 */
+export function sessionRevoked() {
+  clearSession()
+  notifySessionChange()
+}
+
+// 启动时清理旧版持久凭据，包括直接打开 OAuth 完成页的情况。
+removeStoredSession('dl-admin-session')
+
+/** 检查后台操作权限；要求 ALL 时同时核对数据范围。 */
 export function can(permission, all = false) {
   return (
     session.capabilities.permissionCodes.includes(permission) &&
@@ -29,45 +41,36 @@ export function can(permission, all = false) {
 
 /** 登录后重新读取权限与菜单，不能从角色名称推导管理员权限。 */
 export async function acceptSession(data) {
-  if (
-    !data ||
-    data.tokenType !== 'Bearer' ||
-    typeof data.accessToken !== 'string' ||
-    !data.accessToken ||
-    !Number.isSafeInteger(data.expiresIn) ||
-    data.expiresIn <= 0
-  ) {
+  if (!isId(data?.user?.userId) || !Number.isSafeInteger(data.expiresIn) || data.expiresIn <= 0) {
     throw new Error('登录响应缺少有效会话。')
   }
-  const expiresAt = Date.now() + data.expiresIn * 1000
-  await loadSession(data.accessToken)
-  writeStoredSession(storageKey, data.accessToken, expiresAt)
+  invalidateSessionRequests()
+  notifySessionChange()
+  await loadSession()
 }
 
-/** 刷新后核验服务端身份、权限和菜单，保留原到期时间。 */
+/** 刷新后向后端核验身份和权限。 */
 export async function restoreSession() {
-  const stored = readStoredSession(storageKey)
-  if (!stored) {
-    return
-  }
   try {
-    await loadSession(stored.accessToken)
+    await loadSession()
   } catch {
-    // 读取失败时已清理会话，由路由守卫回到登录页。
+    // 未登录时继续启动，网络和服务错误由请求层报告。
   }
 }
 
-/** 登录和恢复都重新读取后台权限，避免信任浏览器保存的授权。 */
-async function loadSession(accessToken) {
-  setAuthorization(accessToken, clearSession)
+/** 登录和刷新共用同一套服务端核验。 */
+async function loadSession() {
   try {
-    const [me, capabilities, menus] = await Promise.all([
-      request('/admin/me'),
-      request('/admin/me/capabilities'),
-      request('/admin/me/menus'),
+    const me = await request('/admin/me', { expectedUserId: null })
+    const expectedUserId = me.data?.userId
+    if (!isId(expectedUserId)) {
+      throw new Error('服务器返回的账号资料无效。')
+    }
+    const [capabilities, menus] = await Promise.all([
+      request('/admin/me/capabilities', { expectedUserId }),
+      request('/admin/me/menus', { expectedUserId }),
     ])
     if (
-      !me.data ||
       !Array.isArray(capabilities.data?.permissionCodes) ||
       !Array.isArray(capabilities.data?.roleCodes) ||
       !capabilities.data?.dataScopes ||
@@ -88,10 +91,13 @@ async function loadSession(accessToken) {
   }
 }
 
+/** 服务端撤销成功后再清除页面上的登录状态。 */
 export async function logout() {
-  try {
-    await request('/admin/auth/logout', { method: 'POST' })
-  } finally {
-    clearSession()
-  }
+  await request('/admin/auth/logout', { method: 'POST' })
+  sessionRevoked()
+}
+
+function recheckSession() {
+  invalidateSessionRequests()
+  reloadSessionPage()
 }

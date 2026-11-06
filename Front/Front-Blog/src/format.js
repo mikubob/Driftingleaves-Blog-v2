@@ -1,3 +1,4 @@
+/** 把 UTC 时间显示为本地日期，空值使用占位符。 */
 export function formatDate(value) {
   if (!value) {
     return '—'
@@ -7,6 +8,7 @@ export function formatDate(value) {
   }).format(new Date(value))
 }
 
+/** 用文章 slug 生成详情路径，对路径中的 slug 做编码。 */
 export function articlePath(article) {
   return `/articles/${encodeURIComponent(article.slug)}`
 }

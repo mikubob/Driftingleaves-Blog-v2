@@ -7,6 +7,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.model.OAuthFlow;
 import com.xuan.model.OAuthTicket;
 import com.xuan.properties.AuthProperties;
+import com.xuan.security.WebSession;
 import com.xuan.service.IOAuthService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
@@ -15,7 +16,6 @@ import com.xuan.utils.TokenUtils;
 import com.xuan.vo.OAuthAuthorizeVO;
 import com.xuan.vo.OAuthBindResultVO;
 import com.xuan.vo.OAuthBindingVO;
-import com.xuan.vo.OAuthLoginResultVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
@@ -99,7 +99,7 @@ public class OAuthServiceImpl implements IOAuthService {
             throw RedisOAuthStore.invalid();
         }
 
-        // 2. 绑定按服务端保存的摘要重查原会话，平台回调不用带本站 Bearer。
+        // 2. 绑定按服务端保存的摘要重查原会话，平台回调不用带登录 Cookie。
         if (flow.operation() == Operation.BIND) {
             sessions.originalToken(flow.userId(), flow.tokenHash());
         }
@@ -165,19 +165,28 @@ public class OAuthServiceImpl implements IOAuthService {
      * @param ticket 固定完成页交回的一次性结果票据
      * @param browser 当前浏览器 Cookie 中的随机标识
      * @param timeoutSeconds 兑换端决定的本站会话有效秒数，不接受前端指定
+     * @param expectedUserId 页面预期账号，仅用于核对 BIND
      * @return LOGIN 的本站会话结果，或 BIND 的绑定结果
      */
     @Override
-    public Object exchange(String ticket, String browser, int timeoutSeconds) {
+    public Object exchange(String ticket, String browser, int timeoutSeconds, String expectedUserId) {
         // 1. 先取未过期票据并核对浏览器，不能让其他浏览器消耗结果。
         String raw = store.read("ticket", ticket);
         OAuthTicket result = json.readValue(raw, OAuthTicket.class);
         requireBrowser(result.browserHash(), browser);
 
-        // 2. 绑定必须带发起时同一枚 Token，就算是同一用户的另一枚也不行。
+        if (result.operation() == Operation.LOGIN && timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
+            throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
+        }
+
+        // 2. 绑定必须带发起时同一枚会话的 Cookie，就算是同一用户的另一枚也不行。
         if (result.operation() == Operation.BIND) {
             String token = sessions.currentToken();
-            if (token == null || !Objects.equals(result.tokenHash(), TokenUtils.digest(token))) {
+            if (token == null) {
+                throw RedisOAuthStore.invalid();
+            }
+            WebSession.requireExpectedUser(expectedUserId, sessions.currentUserId());
+            if (!Objects.equals(result.tokenHash(), TokenUtils.digest(token))) {
                 throw RedisOAuthStore.invalid();
             }
             sessions.requireActive(token, result.userId());
@@ -188,12 +197,8 @@ public class OAuthServiceImpl implements IOAuthService {
 
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
         if (result.operation() == Operation.LOGIN) {
-            if (timeoutSeconds != SessionManager.BLOG_TIMEOUT_SECONDS) {
-                throw new BusinessException(403, "FORBIDDEN", "后台仅支持账号密码或邮箱验证码登录");
-            }
-            return new OAuthLoginResultVO("LOGIN",
-                    users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
-                            timeoutSeconds));
+            return users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
+                    timeoutSeconds);
         }
         if (users.requireCurrent() != result.userId()) {
             throw RedisOAuthStore.invalid();

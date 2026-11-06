@@ -82,7 +82,7 @@ watch(source, async (value, previous, onCleanup) => {
   border: 1px solid #e4e7ed;
   border-radius: 6px;
   background: #fafafa;
-  color: #909399;
+  color: var(--admin-text-3);
   font-size: 12px;
   text-align: center;
   overflow-wrap: anywhere;

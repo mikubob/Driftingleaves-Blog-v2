@@ -139,6 +139,7 @@ public class PublicCacheStore {
             TransactionSynchronizationManager.bindResource(TRANSACTION, write);
             Write owned = write;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                /** 事务结束后解绑写入记录，回滚时尝试解除受影响缓存的保护。 */
                 @Override
                 public void afterCompletion(int status) {
                     TransactionSynchronizationManager.unbindResourceIfPossible(TRANSACTION);

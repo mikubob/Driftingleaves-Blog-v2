@@ -244,7 +244,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
   user-select: none;
 }
 
-/* switch slider */
+/* 设置筛选开关的滑块。 */
 .hot-filter-switch::before {
   content: '';
   position: absolute;
@@ -265,7 +265,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
   outline-offset: -1px;
 }
 
-/* hover opacity on the side that will be selected */
+/* 悬停时突出即将切换到的选项。 */
 .hot-filter-switch:has(input:checked):hover > span:first-of-type,
 .hot-filter-switch:has(input:not(:checked)):hover > span:last-of-type {
   opacity: 1;
@@ -273,7 +273,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
   transition-duration: 100ms;
 }
 
-/* hover slider peek */
+/* 悬停时让滑块向另一侧略微展开。 */
 .hot-filter-switch:has(input:checked):hover::before {
   inset: var(--_switch-padding) var(--_switch-padding) var(--_switch-padding)
     45%;
@@ -284,13 +284,13 @@ const goArticle = (slug) => router.push('/articles/' + slug)
     var(--_switch-padding);
 }
 
-/* checked - move slider to right */
+/* 选中时将滑块移到右侧。 */
 .hot-filter-switch:has(input:checked)::before {
   inset: var(--_switch-padding) var(--_switch-padding) var(--_switch-padding)
     50%;
 }
 
-/* opacity states */
+/* 降低未选中选项的文字不透明度。 */
 .hot-filter-switch > span:last-of-type,
 .hot-filter-switch > input:checked + span:first-of-type {
   opacity: 0.75;
@@ -413,11 +413,11 @@ const goArticle = (slug) => router.push('/articles/' + slug)
 }
 .rank-2 {
   background: #fef5eb;
-  color: #d35400;
+  color: #a74400;
 }
 .rank-3 {
   background: #fffbeb;
-  color: #b7950b;
+  color: #795e08;
 }
 .rank-badge {
   font-size: 20px;

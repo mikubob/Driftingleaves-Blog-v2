@@ -12,7 +12,7 @@ import './style.css'
 const app = createApp(App)
 app.directive('loading', ElLoading.directive)
 async function bootstrap() {
-  // 授权完成页先处理票据，绑定弹窗不恢复身份，也不清理原页面的持久凭据。
+  // OAuth 完成页先处理一次性票据。
   if (location.pathname !== '/oauth/complete') {
     await restoreSession()
   }

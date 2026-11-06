@@ -34,7 +34,7 @@ defineProps({ item: { type: Object, required: true } })
   align-items: center;
   gap: 3px;
   font-size: 12px;
-  color: #b0b4bb;
+  color: var(--blog-text3);
 }
 .discussion-meta-icon {
   width: 13px;
