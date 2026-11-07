@@ -29,6 +29,9 @@ public interface VisitorMapper extends BaseMapper<BlogVisitor> {
     /** 管理只替换限制字段，不回写旧的访问/IP/UA。 */
     int restriction(@Param("row") BlogVisitor row);
 
+    /** 查询此 IP 是否还有未到期的手动封禁。 */
+    boolean hasActiveIpBlock(@Param("ip") String ip, @Param("now") LocalDateTime now);
+
     /** 列表按最近访问和ID倒序，查询条件与total一致。 */
     IPage<VisitorVO> visitorPage(IPage<VisitorVO> page, @Param("query") VisitorQueryDTO query);
 

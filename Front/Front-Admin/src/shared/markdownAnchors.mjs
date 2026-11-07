@@ -17,20 +17,3 @@ export const uniqueHeadingId = (text, used) => {
   used.add(id)
   return id
 }
-
-/** 查找页内锚点，解码后直接比较 id 或 name。无效片段返回 null，未匹配到元素时返回 undefined。 */
-export const findFragmentTarget = (container, hash) => {
-  if (!container || !hash.startsWith('#') || hash === '#') {
-    return null
-  }
-  let id
-  try {
-    id = decodeURIComponent(hash.slice(1))
-  } catch {
-    return null
-  }
-  // 直接比较 ID，避免中文、点和括号被当成 CSS 选择器。
-  return Array.from(container.querySelectorAll('[id], a[name]')).find(
-    (node) => node.id === id || node.getAttribute('name') === id
-  )
-}

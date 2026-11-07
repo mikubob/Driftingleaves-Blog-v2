@@ -38,13 +38,15 @@ public class AliOssClient {
      *
      * @param bytes 非空且已按类型限长的文件内容
      * @param extension 已与内容识别一致的受支持扩展名，不使用原文件名
+     * @param publicImage 是否通过公开图片接口读取，OSS 对象仍设为私有
      * @return 专属前缀/分类目录/随机文件名，只有确认上传成功才返回
      */
-    public String upload(byte[] bytes, String extension) {
+    public String upload(byte[] bytes, String extension, boolean publicImage) {
         if (bytes == null || bytes.length == 0 || bytes.length > FileUtils.maxBytes(extension)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "无法上传此文件，请确认文件非空且格式受支持；图片限10 MiB、音频限60 MiB、歌词限1 MiB。");
         }
-        String key = prefix + FileUtils.getFileCategory(extension) + "/" + TokenUtils.random() + "." + extension;
+        String category = publicImage ? FileUtils.PUBLIC_IMAGE_CATEGORY : FileUtils.getFileCategory(extension);
+        String key = prefix + category + "/" + TokenUtils.random() + "." + extension;
         ObjectMetadata metadata = new ObjectMetadata();
         metadata.setContentLength(bytes.length);
         metadata.setContentType(FileUtils.mimeType(extension));

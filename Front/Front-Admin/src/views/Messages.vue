@@ -27,6 +27,7 @@ import 'element-plus/es/components/radio-group/style/css'
 import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/switch/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import RequestError from '../components/RequestError.vue'
 import { useList } from '../composables/useList.js'
@@ -74,11 +75,10 @@ async function view(row, replying = false) {
 async function review(row, status) {
   busy.value = true
   try {
-    const path = `/admin/messages/${row.messageId}`
-    const current = await request(path)
+    const payload = await prepareBatch('/admin/messages', 'messageId', [row])
     await request('/admin/messages/batch-review', {
       method: 'PUT',
-      body: { items: [{ id: row.messageId, revision: current.revision }], status },
+      body: { ...payload, status },
     })
     ElMessage.success('审核状态已更新')
     await load()

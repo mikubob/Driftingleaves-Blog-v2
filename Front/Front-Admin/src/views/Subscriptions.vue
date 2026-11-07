@@ -27,6 +27,7 @@ import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
@@ -66,11 +67,10 @@ async function change(row, status) {
   }
   busy.value = true
   try {
-    const path = `/admin/rss-subscriptions/${row.subscriptionId}`
-    const current = await request(path)
+    const payload = await prepareBatch('/admin/rss-subscriptions', 'subscriptionId', [row])
     await request('/admin/rss-subscriptions/batch-status', {
       method: 'PUT',
-      body: { items: [{ id: row.subscriptionId, revision: current.revision }], status },
+      body: { ...payload, status },
     })
     ElMessage.success('订阅状态已更新')
     load()
@@ -92,9 +92,8 @@ async function remove(row) {
   }
   busy.value = true
   try {
-    const path = `/admin/rss-subscriptions/${row.subscriptionId}`
-    const current = await request(path)
-    await request('/admin/rss-subscriptions/batch-delete', { method: 'POST', body: { items: [{ id: row.subscriptionId, revision: current.revision }] } })
+    const payload = await prepareBatch('/admin/rss-subscriptions', 'subscriptionId', [row])
+    await request('/admin/rss-subscriptions/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('订阅已删除')
     load()
   } catch (failure) {

@@ -1,15 +1,15 @@
 # DriftingLeavesV2 接口文档
 
-接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-05。
+接口先按 Admin、Blog、Home、Cv 四个端划分，再在当前端内按业务细分。更新日期：2026-11-07。
 
-统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **209 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
+统一根路径为 `/api/v1`，紧接根路径的第一个业务前缀必须是所属端名。当前共 **211 个 HTTP 路由、3 个 WebSocket 入口**，包含各端复用同一业务能力的独立路径。
 
-2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态。2026-11-04 移除评论和留言本人编辑接口，保留本人评论详情；按当前 Controller 的多路径映射展开统计共209个HTTP路由（Admin 136个）。
+2026-11-01 将 26 个单条管理写入口合并为[26 个统一操作入口](#admin-batch)，每次支持 1..100 个显式目标；单条操作也提交一项数组，不再提供重复的单条写路由。另增用户批量启用、禁用、删除 3 项及前端未知路由上报 2 项，2026-11-02 增加音乐文件读取及分类批量状态切换，2026-11-03 补充其余 8 类批量状态。2026-11-04 移除评论和留言本人编辑接口，保留本人评论详情。2026-11-07 增加公开展示图片的[上传](#display-image-upload)和[读取](#display-image-content)接口。
 
 | 端 | 完整前缀 | 用途 | HTTP 路由数 |
 | --- | --- | --- | --- |
-| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 136 |
-| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 61 |
+| [Admin 管理端](#client-admin) | `/api/v1/admin` | 登录、本人设置与后台管理 | 137 |
+| [Blog 博客端](#client-blog) | `/api/v1/blog` | 登录、本人互动、公开博客与统计 | 62 |
 | [Home 主页端](#client-home) | `/api/v1/home` | 主人资料、社交、配置与统计 | 5 |
 | [Cv 简历端](#client-cv) | `/api/v1/cv` | 主人资料、社交、简历、配置与统计 | 7 |
 
@@ -30,6 +30,7 @@
 ### 路径与鉴权
 
 - 下文使用完整路径，统一前缀 `/api/v1`。JSON 请求使用 `application/json`，上传使用 `multipart/form-data`。
+- Admin 和 Blog 的登录、注册、OAuth 和本人设置共用后端实现，调用时使用各自的 `/admin/auth`、`/admin/me` 或 `/blog/auth`、`/blog/me` 路径。邮箱验证码发送按端区分，Admin 只提交 `email`，Blog 还提交 `purpose`（`REGISTER` 或 `LOGIN`）。
 - 本站通过 Sa-Token 和 Redis 校验会话。Admin 与 Blog 通过同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，固定 604800 秒（7 天）。博客使用 `__Host-dl-blog-session`，固定 259200 秒（3 天）。两个登录 Cookie 均为 host-only，设置 `HttpOnly; Secure; SameSite=Strict; Path=/`，省略 Domain，访问与刷新均不续期。
 - 账密、邮箱验证码登录及 OAuth LOGIN 成功时，事务提交后通过 `Set-Cookie` 签发对应端会话。会话 JSON 只含 `expiresIn` 和 `user`，OAuth 登录结果另带 `operation`。后台各登录方式均要求 `admin:access`；账密和邮箱登录还要求图形验证码。两端只读取各自的登录 Cookie，旧 Bearer 和旧会话值均无法恢复登录。新版前端启动时删除本端旧的 `dl-admin-session` 或 `dl-blog-session` localStorage 值，切换后需重新登录一次。
 - 刷新后以本端 `/me`、`/me/capabilities` 核验身份和权限，Admin 还读取 `/me/menus` 并确认 `admin:access`。预期的 401 按未登录处理。退出先撤销当前 Cookie 对应的会话，再用同名同属性、`Max-Age=0` 的 Cookie 清除浏览器值。退出幂等，撤销失败返回错误。普通 401 响应不清除 Cookie。
@@ -196,7 +197,7 @@ GET /api/v1/blog/auth/captcha
 | `PUT/DELETE /blog/articles/{articleId}/like` | 两种方法及所有文章共用60秒60次；IP、用户 | 已实现 |
 | `POST /blog/messages` | 60秒10次；IP、用户 | 已实现 |
 | `POST /admin/messages/{messageId}/replies` | 60秒10次；IP、用户，跨父留言ID累计 | 已实现，跨父留言累计 |
-| `POST /admin/files` 上传 | 60秒10次；IP、用户 | 已实现 |
+| `POST /admin/files`、`POST /admin/files/display-images` | 共用60秒10次；IP、用户 | 已实现 |
 | `PUT /blog/me/rss-subscription` 申请/重发 | 共用60秒5次；IP、用户 | 已实现 |
 | `POST /blog/me/rss-subscription/confirm` | 60秒10次；IP、用户，限流在消费票据之前 | 已实现 |
 | `POST /blog/rss-subscriptions/unsubscribe` | 60秒30次/IP，跨票据累计；保持有效票据退订幂等 | 已实现 |
@@ -208,6 +209,7 @@ GET /api/v1/blog/auth/captcha
 | `GET /blog/articles/{slug}` | 另限60秒60次/IP，跨slug累计 | 已实现，跨 slug 累计 |
 | `GET /blog/rss.xml`、`GET /blog/sitemap.xml` | 两种XML及所有子图页共用60秒30次/IP | 已实现，RSS/全部地图页共享 |
 | `GET /blog/articles/{articleId}/files/{fileId}/content` | 60秒120次/IP，跨文章及文件累计，独立于公开内容GET公共窗口 | 已实现，独立预算，保持 PUBLIC 和引用校验 |
+| `GET /blog/display-images/{fileId}` | 60秒120次/IP，展示图片共用，包含 HEAD | 已实现 |
 | `GET /admin/statistics/{overview,page-views,visitors,provinces,articles}` | 五类报表共用60秒30次；IP、用户，跨日期与站点条件累计；花括号内为五个既有路径的简写 | 已实现，实时 ALL 范围与日期检查后累计 |
 
 新增阈值为实现默认值，后续按真实页面请求数、代理/NAT及压测结果调整并同步文档；已在当前实现中启用；部署仍需正确配置可信代理。未列出的普通本人/后台CRUD保持当前鉴权、版本、事务及请求大小约束，不机械增加统一写限流。
@@ -234,6 +236,8 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | 成功 | HTTP 200；`{"code":"OK","msg":"成功","data":null,"errors":[]}` |
 | 错误 | 参数/请求体400，非法来源403/FORBIDDEN，封禁403/ACCESS_BLOCKED，保护不可用503 |
 | 副作用 | 只累计当前可信 IP 的不存在窗口；达到阈值写入带一天TTL的封禁键，不创建浏览或访客记录 |
+
+管理员也可从[访客管理](#batch-visitor-block)手动封禁可信客户端 IP。手动封禁在公开站点的 API 读取、写入和 WebSocket 握手前检查，拒绝时返回 `403/ACCESS_BLOCKED`。Blog、Home 和 Cv 收到该错误时显示封禁提示，统计请求同样处理。后台 API 可用于解封。Nginx 直接提供的静态文件和已经下发的内容仍可访问。
 
 <a id="public-cache"></a>
 
@@ -313,7 +317,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `POST /admin/cv/skills`；`PUT /admin/cv/skills/batch-status`；`PUT/DELETE /admin/cv/skills/{skillId}` | 整个公开技能域，含实际筛选及分页；更新/隐藏/排序/删除均清理 |
 | `POST /admin/music`；`PUT /admin/music/batch-status`；`PUT/DELETE /admin/music/{musicId}` | 整个公开播放列表域，含所有分页；显示、排序和地址变化一并生效 |
 | `POST /blog/analytics/page-views` | 不缓存写入响应，不逐次清空公开统计；PV/UV按0.7允许的5分钟TTL更新；不改变文章累计阅读量 |
-| `DELETE /admin/visitors/{visitorId}`；`DELETE /admin/page-views/{viewId}` | 公开统计域主动失效；封禁/解封统计标识仍实时读库，不创建访客身份缓存 |
+| `POST /admin/visitors/batch-delete`；`POST /admin/page-views/batch-delete` | 公开统计域主动失效；IP 封禁实时读库，不创建访客身份缓存 |
 | 文件上传/删除、留言创建/审核/删除/回复、邮件订阅各类写接口、日志清理及其余身份/授权写接口 | 对应业务响应没有公共查询缓存，不机械清空整站。文件删除先按原规则拒绝仍被引用的文件；留言私密可见性、订阅轮次及会话撤销照旧执行，不能借公共缓存清理删除安全状态 |
 
 无实际业务变化的幂等写入可以不重复清缓存，但仍须完成鉴权、版本及状态检查；前次提交后缓存清理失败且保护尚未解除时，不能因“数据库已是目标值”跳过失效恢复。所有写入口（HTTP或现有内部调用）都在真正落库的Service负责关联清理，不能只在Controller清理。参考项目的异步摘要回填也会主动清理文章缓存；本站今后若增加内部写入，须沿用同一规则，本次不新增摘要任务。
@@ -961,7 +965,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像只接受外部 HTTP(S) 资源，不接受附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）。
+至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
 
 ---
 
@@ -4328,14 +4332,14 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 <a id="api-82"></a>
 
-#### 1.13.3 上传图片
+#### 1.13.3 上传普通附件
 
 ##### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/files` |
-| 接口描述 | 上传图片 |
+| 接口描述 | 上传图片、音频或歌词附件 |
 | Content-Type | multipart/form-data |
 | 访问要求 | 后台：`blog:file:upload` |
 | 成功状态 | 201 Created |
@@ -4441,6 +4445,21 @@ Cache-Control: no-store
 
 ---
 
+<a id="display-image-upload"></a>
+
+#### 1.13.5 上传公开展示图片
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `POST /api/v1/admin/files/display-images` |
+| 访问要求 | 后台 `blog:file:upload`，与普通上传共用限流 |
+| 请求 | `multipart/form-data`，只允许一个 `file`，非空 PNG/JPEG，最多 10 MiB |
+| 响应 | 201 Created，`data` 和 `Location` 为绝对 HTTP(S) 图片地址，使用 `app.sites.api-base-url` 生成 |
+
+上传成功即可匿名读取。后台用返回地址填入头像、Logo 或图标字段，保存表单后应用到对应页面。部署时 `app.sites.api-base-url` 对应的反代须转发 `/api/v1/blog/display-images/`，使公开站点能加载图片。文件管理将此类文件标为公开图片，OSS 对象仍为私有。
+
+---
+
 
 <a id="admin-group-14"></a>
 
@@ -4522,7 +4541,7 @@ X-Revision: "<current-revision>"
 | `nickname` | S(64) | 是 | 公开昵称 |
 | `tagline` | S0(100) | 是 | 个人标签或一句话介绍 |
 | `description` | S(500)? | 是，可null | 公开简介，null清空 |
-| `avatar` | URL? | 是，可null | 公开头像，外部HTTP(S)资源 |
+| `avatar` | URL? | 是，可null | 公开头像，HTTP(S) 图片地址 |
 | `website` | URL? | 是，可null | 个人网站 |
 | `publicEmail` | string&#124;null | 是，可null | ≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱 |
 | `githubUrl` | URL? | 是，可null | GitHub主页 |
@@ -4700,7 +4719,7 @@ X-Revision: "<current-revision>"
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `name` | S(64) | 是 | 社交平台或链接名称 |
-| `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML |
+| `icon` | string&#124;null | 是，可null | ≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML |
 | `url` | URL | 是 | 外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 | `status` | integer | 是 | 0隐藏 1展示 |
@@ -4767,7 +4786,7 @@ Location: /api/v1/admin/home/social-links/21
 | `socialId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `name` | S(64) | 是 | 社交平台或链接名称 |
-| `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML |
+| `icon` | string&#124;null | 是，可null | ≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML |
 | `url` | URL | 是 | 外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 
@@ -4951,7 +4970,7 @@ X-Revision: "<current-revision>"
 | `experienceType` | integer | 是 | 0教育 1工作/实习 2项目 |
 | `title` | S(200) | 是 | 学校、公司或项目名称 |
 | `subtitle` | S(200)? | 是，可null | 专业、职位或项目角色 |
-| `logoUrl` | URL? | 是，可null | 外部HTTP(S)图标URL |
+| `logoUrl` | URL? | 是，可null | 公开 HTTP(S) 图片地址 |
 | `content` | string | 是 | 非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致 |
 | `startDate` | date | 是 | 合法YYYY-MM-DD，1000..9999年 |
 | `endDate` | date&#124;null | 是，可null | 结束日期不得早于开始；null表示至今 |
@@ -5025,7 +5044,7 @@ endDate=null表示至今；非空不得早于startDate。内容使用CommonMark�
 | `experienceType` | integer | 是 | 0教育 1工作/实习 2项目 |
 | `title` | S(200) | 是 | 学校、公司或项目名称 |
 | `subtitle` | S(200)? | 是，可null | 专业、职位或项目角色 |
-| `logoUrl` | URL? | 是，可null | 外部HTTP(S)图标URL |
+| `logoUrl` | URL? | 是，可null | 公开 HTTP(S) 图片地址 |
 | `content` | string | 是 | 非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致 |
 | `startDate` | date | 是 | 合法YYYY-MM-DD，1000..9999年 |
 | `endDate` | date&#124;null | 是，可null | 结束日期不得早于开始；null表示至今 |
@@ -5206,7 +5225,7 @@ X-Revision: "<current-revision>"
 | --- | --- | --- | --- |
 | `name` | S(64) | 是 | 技能名称 |
 | `description` | S(500)? | 是，可null | 技能描述 |
-| `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)URL或注册图标键 |
+| `icon` | string&#124;null | 是，可null | ≤2048；公开 HTTP(S) 图片地址或注册图标键 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 | `status` | integer | 是 | 0隐藏 1展示 |
 
@@ -5272,7 +5291,7 @@ Location: /api/v1/admin/cv/skills/41
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `name` | S(64) | 是 | 技能名称 |
 | `description` | S(500)? | 是，可null | 技能描述 |
-| `icon` | string&#124;null | 是，可null | ≤2048；外部HTTP(S)URL或注册图标键 |
+| `icon` | string&#124;null | 是，可null | ≤2048；公开 HTTP(S) 图片地址或注册图标键 |
 | `sortOrder` | int32 | 是 | 越小越靠前 |
 
 ##### 请求示例
@@ -5311,7 +5330,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-完整替换。图标仅白名单键或外部HTTP(S)资源，不接受任意SVG/HTML。
+完整替换。图标使用白名单键或公开 HTTP(S) 图片地址，不接受任意SVG/HTML。
 
 
 本接口只修改资料，保留当前 status。状态统一使用[批量切换技能状态](#batch-cv-skills-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
@@ -5747,7 +5766,7 @@ Cookie: __Host-dl-admin-session=<opaque>
       {
         "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
         "userAgent": null, "country": "中国", "province": "湖南省", "city": "长沙市",
-        "totalViews": "24", "isBlocked": 0, "blockedUntil": null,
+        "totalViews": "24", "isBlocked": 0, "blockedUntil": null, "blockedIpAddress": null,
         "firstVisitTime": "2026-10-28T00:22:00.000Z", "lastVisitTime": "2026-11-01T12:53:00.000Z"
       }
     ]
@@ -5806,14 +5825,14 @@ X-Revision: "<current-revision>"
   "data": {
     "visitorId": "501", "fingerprint": "d681988a-cbd0-4ef6-bdec-f84bfa234e16", "ipAddress": "192.0.2.1",
     "userAgent": null, "country": "中国", "province": "湖南省", "city": "长沙市",
-    "totalViews": "24", "isBlocked": 0, "blockedUntil": null,
+    "totalViews": "24", "isBlocked": 0, "blockedUntil": null, "blockedIpAddress": null,
     "firstVisitTime": "2026-10-28T00:22:00.000Z", "lastVisitTime": "2026-11-01T12:53:00.000Z"
   },
   "errors": []
 }
 ```
 
-X-Revision仅覆盖isBlocked/blockedUntil，排除会持续变化的浏览次数、最近访问/IP/UA；详情仍返回当前统计字段，包括与列表相同口径的 totalViews。
+X-Revision 覆盖封禁标记、到期时间和封禁目标。未保存封禁 IP 时，最近访问 IP 变化会使版本过期；浏览次数、访问时间及 UA 不参与版本。
 
 ---
 
@@ -6606,7 +6625,7 @@ Content-Type: application/json
 
 <a id="batch-visitor-block"></a>
 
-#### 1.22.19 批量封禁访客统计标识
+#### 1.22.19 批量封禁访客 IP
 
 | 项目 | 说明 |
 | --- | --- |
@@ -6614,13 +6633,13 @@ Content-Type: application/json
 | 业务权限 | `blog:visitor:block`（ALL） |
 | 请求 → 响应 | `BatchBlockRequest` → `BatchVersions` |
 
-继承[既有业务规则](API_CONTRACT.md#model-12-13)，所选标识采用同一 blockedUntil；不接受省略时间而默认封禁一天。仅限制这些统计标识的采集，不禁用本站账号，不阻止公开阅读。
+使用各记录已保存的封禁 IP，首次设置时固定为该记录最近的可信客户端 IP。无可用地址返回 `400/VALIDATION_ERROR`，整批回滚。所选记录使用同一个 `blockedUntil`，明确传 `null` 表示永久。该地址的公开站点 API 返回 `403/ACCESS_BLOCKED`，包括内容读取、评论及留言。旧统计标识封禁维持原有采集限制，直到管理员解封或重新封禁。
 
 <a id="api-141"></a>
 
 <a id="batch-visitor-unblock"></a>
 
-#### 1.22.20 批量解除访客统计限制
+#### 1.22.20 批量解除访客封禁
 
 | 项目 | 说明 |
 | --- | --- |
@@ -6628,7 +6647,7 @@ Content-Type: application/json
 | 业务权限 | `blog:visitor:unblock`（ALL） |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchVersions` |
 
-继承[既有业务规则](API_CONTRACT.md#model-12-13)，将 isBlocked=0、blockedUntil=null；已解封同样先校验版本，不修改最近访问、地域或账号状态。
+将所选记录的 `isBlocked` 设为 0，清空 `blockedUntil` 和 `blockedIpAddress`。同一 IP 若还有其他记录上的有效封禁，仍然受限。已解封同样校验版本。
 
 <a id="api-142"></a>
 
@@ -6643,6 +6662,8 @@ Content-Type: application/json
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
 
 继承[既有业务规则](API_CONTRACT.md#model-12-13)，浏览明细保留且 visitorId 置 null，因此 PV 不变、基于非 null 访客的 UV 可能减少；不删除浏览记录、不减少文章累计阅读、不删除本站用户。同一 fingerprint 后续采集可重新生成访客记录。
+
+记录有生效的 IP 封禁时返回 `409/RESOURCE_IN_USE`，需先解封或等到期。
 
 <a id="api-144"></a>
 
@@ -7614,7 +7635,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像只接受外部 HTTP(S) 资源，不接受附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）。
+至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
 
 ---
 
@@ -10080,6 +10101,20 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 
 ---
 
+<a id="display-image-content"></a>
+
+### 2.20 读取公开展示图片
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `GET /api/v1/blog/display-images/{fileId}`，支持 HEAD |
+| 访问要求 | 匿名，仅允许通过[公开展示图片上传入口](#display-image-upload)上传的图片 |
+| 响应 | PNG/JPEG 原始响应体，含 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff` 和固定的 inline 文件名 |
+
+`fileId` 为十进制正整数 ID。普通附件、不存在和已删除的图片返回 404，存储不可用返回 503。
+
+---
+
 <a id="client-home"></a>
 
 ## 3. Home 主页端
@@ -10770,13 +10805,13 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 
 ### 10. 友链与站点配置
 
-友链仅 status=1 时公开，按 sortOrder/linkId 排序。配置仅支持 site/comment/message：site 按公开标记展示，comment/message 始终私密；不提供任意新增/删除配置键。展示 URL 只用外部 HTTP(S)，不接受本站附件路径。
+友链仅 status=1 时公开，按 sortOrder/linkId 排序。配置仅支持 site/comment/message：site 按公开标记展示，comment/message 始终私密；不提供任意新增/删除配置键。展示图片使用公开 HTTP(S) 地址，附件路径受各自的读取权限约束。
 
 <a id="group-11"></a>
 
 ### 11. 文件与附件
 
-支持图片上传、元数据查询、预览与删除；元数据不可编辑。文件访问由文章公开状态、实际引用及相应权限决定，见 [13.4](#file-consistency)。
+支持上传、元数据查询、预览与删除，元数据不可编辑。普通附件按文章、音乐和文件的访问规则读取，展示图片通过专用入口公开，见 [13.4](#file-consistency)。
 
 <a id="group-15"></a>
 
@@ -10806,7 +10841,7 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 
 ### 19. 访客、浏览记录与统计报表
 
-统计标识与本站账号分开。封禁统计标识只限制采集，不等于禁用账号。页面 PV/UV 与文章累计阅读数口径不同，日期按 UTC。
+统计标识与本站账号分开。旧统计标识封禁只限制采集。手动 IP 封禁影响公开站点 API。页面 PV/UV 与文章累计阅读数口径不同，日期按 UTC。
 
 <a id="group-20"></a>
 
@@ -10842,7 +10877,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
 | `email` | string&#124;null | 未验证联系邮箱，可 null |
-| `avatar` | string&#124;null | 外部头像 URL，可 null |
+| `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
@@ -10864,7 +10899,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `user.username` | string | 登录名 |
 | `user.nickname` | string | 展示昵称 |
 | `user.email` | string&#124;null | 未验证联系邮箱，可 null |
-| `user.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `user.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `user.intro` | string&#124;null | 个人简介，可 null |
 | `user.status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `user.hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
@@ -10898,13 +10933,13 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `operation` | string | LOGIN 或 BIND |
 | `session` | object | LOGIN 分支的本站 Session |
-| `session.expiresIn` | integer | 仅 Blog LOGIN，固定 259200（3 天） |
+| `session.expiresIn` | integer | LOGIN 分支的会话有效秒数。Admin 为 604800（7 天），Blog 为 259200（3 天） |
 | `session.user` | object | 本人资料 Me |
 | `session.user.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `session.user.username` | string | 登录名 |
 | `session.user.nickname` | string | 展示昵称 |
 | `session.user.email` | string&#124;null | 未验证联系邮箱，可 null |
-| `session.user.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `session.user.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `session.user.intro` | string&#124;null | 个人简介，可 null |
 | `session.user.status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `session.user.hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
@@ -10985,7 +11020,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
 | `email` | string&#124;null | 未验证联系邮箱，可 null |
-| `avatar` | string&#124;null | 外部头像 URL，可 null |
+| `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
@@ -11007,7 +11042,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
 | `email` | string&#124;null | 未验证联系邮箱，可 null |
-| `avatar` | string&#124;null | 外部头像 URL，可 null |
+| `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
 | `hasPassword` | boolean | 是否设置有效本站密码，不返回哈希 |
@@ -11084,7 +11119,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
-| `author.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `author.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `category` | object&#124;null | 当前分类，未设置或前台隐藏时 null |
 | `title` | string | 文章或站点标题 |
 | `slug` | string | 稳定 URL 标识，区分大小写 |
@@ -11112,7 +11147,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
-| `author.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `author.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `category` | object&#124;null | 当前分类，未设置或前台隐藏时 null |
 | `title` | string | 文章或站点标题 |
 | `slug` | string | 稳定 URL 标识，区分大小写 |
@@ -11330,7 +11365,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
-| `author.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `author.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `replyCount` | string | 当前读者可见的全部后代回复数 |
 | `replyTarget` | object&#124;null | 直接回复对象；根评论为null |
 | `replyTarget.nickname` | string&#124;null | 回复对象的当前昵称 |
@@ -11377,7 +11412,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `author` | object | 作者公开资料 |
 | `author.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `author.nickname` | string | 展示昵称 |
-| `author.avatar` | string&#124;null | 外部头像 URL，可 null |
+| `author.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `articleTitle` | string | 所属文章标题 |
 | `hasChildren` | boolean&#124;null | 后台列表是否存在直接回复，不限审核状态；详情未查询此标记时为null |
 | `replyTarget` | object&#124;null | 主记录为null；回复返回直接目标的 `nickname` 和最多120字符的 `content` 原文摘要 |
@@ -11404,7 +11439,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `linkId` | ID | 友链 ID |
 | `linkName` | string | 友链名称 |
 | `url` | string | 外部 http(s) 地址 |
-| `avatar` | string&#124;null | 外部头像 URL，可 null |
+| `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
 | `sortOrder` | integer | int32 升序排序值 |
 
@@ -11417,7 +11452,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `linkId` | ID | 友链 ID |
 | `linkName` | string | 友链名称 |
 | `url` | string | 外部 http(s) 地址 |
-| `avatar` | string&#124;null | 外部头像 URL，可 null |
+| `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
 | `sortOrder` | integer | int32 升序排序值 |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -11457,6 +11492,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `storageType` | string | 当前默认 oss，历史 local 按原元数据读取 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `previewUrl` | string | 需后台会话的后台文件内容路径 |
+| `publicImage` | boolean | 是否通过公开展示图片入口上传 |
 
 <a id="response-homeprofilepublic"></a>
 
@@ -11467,7 +11503,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `nickname` | S(64) | 公开昵称 |
 | `tagline` | S0(100) | 个人标签或一句话介绍 |
 | `description` | S(500)? | 公开简介，null清空 |
-| `avatar` | URL? | 公开头像，外部HTTP(S)资源 |
+| `avatar` | URL? | 公开头像，HTTP(S) 图片地址 |
 | `website` | URL? | 个人网站 |
 | `publicEmail` | string&#124;null | ≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱 |
 | `githubUrl` | URL? | GitHub主页 |
@@ -11484,7 +11520,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `nickname` | S(64) | 公开昵称 |
 | `tagline` | S0(100) | 个人标签或一句话介绍 |
 | `description` | S(500)? | 公开简介，null清空 |
-| `avatar` | URL? | 公开头像，外部HTTP(S)资源 |
+| `avatar` | URL? | 公开头像，HTTP(S) 图片地址 |
 | `website` | URL? | 个人网站 |
 | `publicEmail` | string&#124;null | ≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱 |
 | `githubUrl` | URL? | GitHub主页 |
@@ -11500,7 +11536,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `socialId` | ID | 社交链接ID |
 | `name` | S(64) | 社交平台或链接名称 |
-| `icon` | string&#124;null | ≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML |
+| `icon` | string&#124;null | ≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML |
 | `url` | URL | 外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱 |
 | `sortOrder` | int32 | 越小越靠前 |
 
@@ -11512,7 +11548,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | --- | --- | --- |
 | `socialId` | ID | 社交链接ID |
 | `name` | S(64) | 社交平台或链接名称 |
-| `icon` | string&#124;null | ≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML |
+| `icon` | string&#124;null | ≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML |
 | `url` | URL | 外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱 |
 | `sortOrder` | int32 | 越小越靠前 |
 | `status` | integer | 0隐藏 1展示 |
@@ -11529,7 +11565,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `experienceType` | integer | 0教育 1工作/实习 2项目 |
 | `title` | S(200) | 学校、公司或项目名称 |
 | `subtitle` | S(200)? | 专业、职位或项目角色 |
-| `logoUrl` | URL? | 外部HTTP(S)图标URL |
+| `logoUrl` | URL? | 公开 HTTP(S) 图片地址 |
 | `startDate` | date | 合法YYYY-MM-DD，1000..9999年 |
 | `endDate` | date&#124;null | 结束日期不得早于开始；null表示至今 |
 | `sortOrder` | int32 | 越小越靠前 |
@@ -11545,7 +11581,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `experienceType` | integer | 0教育 1工作/实习 2项目 |
 | `title` | S(200) | 学校、公司或项目名称 |
 | `subtitle` | S(200)? | 专业、职位或项目角色 |
-| `logoUrl` | URL? | 外部HTTP(S)图标URL |
+| `logoUrl` | URL? | 公开 HTTP(S) 图片地址 |
 | `content` | string | 非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致 |
 | `startDate` | date | 合法YYYY-MM-DD，1000..9999年 |
 | `endDate` | date&#124;null | 结束日期不得早于开始；null表示至今 |
@@ -11563,7 +11599,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `skillId` | ID | 技能ID |
 | `name` | S(64) | 技能名称 |
 | `description` | S(500)? | 技能描述 |
-| `icon` | string&#124;null | ≤2048；外部HTTP(S)URL或注册图标键 |
+| `icon` | string&#124;null | ≤2048；公开 HTTP(S) 图片地址或注册图标键 |
 | `sortOrder` | int32 | 越小越靠前 |
 
 <a id="response-skill"></a>
@@ -11575,7 +11611,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `skillId` | ID | 技能ID |
 | `name` | S(64) | 技能名称 |
 | `description` | S(500)? | 技能描述 |
-| `icon` | string&#124;null | ≤2048；外部HTTP(S)URL或注册图标键 |
+| `icon` | string&#124;null | ≤2048；公开 HTTP(S) 图片地址或注册图标键 |
 | `sortOrder` | int32 | 越小越靠前 |
 | `status` | integer | 0隐藏 1展示 |
 | `createTime` | Time | 创建时间，UTC |
@@ -11734,6 +11770,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `city` | string&#124;null | 城市 |
 | `isBlocked` | integer | 数据库封禁标记0/1；实际生效还需检查blockedUntil |
 | `blockedUntil` | Time&#124;null | 封禁结束，已封禁且null表示永久 |
+| `blockedIpAddress` | string&#124;null | 此记录固定的封禁 IP；null 时没有 IP 封禁 |
 | `firstVisitTime` | Time | 首次访问时间 |
 | `lastVisitTime` | Time | 最近访问时间 |
 | `createTime` | Time | 创建时间，UTC |
@@ -11979,9 +12016,11 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 先创建草稿取得 articleId，再上传并在正文/封面引用文件；公开附件路径为 `/api/v1/blog/articles/{articleId}/files/{fileId}/content`，必须对应当前文章并实际引用。后台详情的安全 HTML 使用后台附件路径，客户端通过后台会话获取后生成临时 object URL。
 
-公开文章确实引用的文件可从该文章上下文读取；草稿、私密、下架和回收站上下文返回 404。后台读取同时满足文章和文件各自权限范围。音乐使用独立的[公开音乐文件路径](#music-file-content)，保存时检查文件权限与用途；头像、配置和主页/简历图标仍仅用外部资源。
+编辑器预览当前文章时，通过 `GET /api/v1/admin/files/{fileId}/content` 读取尚未保存引用的图片，需要 `blog:file:query` 及该文件的查询范围。保存后，文章详情和公开阅读按各自的文章附件接口检查引用。
 
-仍被任何文章（含回收站）或音乐（含隐藏曲目）引用的文件不可删除。删除文件不要求版本；存储失败保留元数据并返回 503。需要私密隔离的内容应另传文件，不能复用已经公开的 fileId。详细引用、存储补偿与事务规则见 [文件开发约定](API_CONTRACT.md#file-consistency)。
+公开文章确实引用的文件可从该文章上下文读取；草稿、私密、下架和回收站上下文返回 404。后台读取同时满足文章和文件各自权限范围。音乐使用独立的[公开音乐文件路径](#music-file-content)，保存时检查文件权限与用途。头像、友链头像、经历 Logo 和图标可使用外部地址或[公开展示图片地址](#display-image-content)。
+
+文章（含回收站）和音乐（含隐藏曲目）的受管附件引用会阻止删除。公开展示图片地址可以被任意页面引用，删除前需确认影响，删除后地址失效。删除文件不要求版本，存储失败时保留元数据并返回 503。详细规则见 [文件开发约定](API_CONTRACT.md#file-consistency)。
 
 <a id="transactions"></a>
 
@@ -12037,7 +12076,7 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 | 401 | AUTH_FAILED | 账密登录名不存在、密码错误或无本站密码时提示“账号或密码错误”；邮箱登录和发送登录验证码找不到邮箱账号时提示“该邮箱未注册” |
 | 403 | ACCOUNT_DISABLED | 已确认凭据身份后发现本站账号禁用 |
 | 403 | VISITOR_BLOCKED | 仅访问采集接口限制此统计标识；不代表本站账号被禁用，不阻止公开阅读 |
-| 403 | ACCESS_BLOCKED | 反复404导致当前可信IP临时封禁，附Retry-After；不修改账号或访客统计状态 |
+| 403 | ACCESS_BLOCKED | 可信客户端 IP 已被封禁；反复 404 触发的自动封禁附 Retry-After |
 | 403 | FORBIDDEN | 权限不足；全局操作拒绝 |
 | 403 | REAUTH_REQUIRED | 安全操作需最近 5 分钟内重新登录 |
 | 404 | NOT_FOUND | 不存在、非公开文章、SELF 不可访问的他人资源；不泄露目标存在性 |

@@ -4,9 +4,10 @@ import java.math.BigInteger;
 import java.time.LocalDateTime;
 
 /**
- * 只给文件展示资料和需后台会话 的预览地址，不能返回存储键或 Bucket。
+ * 返回文件资料、公开图片标记和后台预览地址，不返回存储键或 Bucket。
  */
 public record FileVO(Long fileId, Long uploaderId, String originalName, String mimeType,
-                     BigInteger sizeBytes, String storageType, LocalDateTime createTime, String previewUrl) {
+                     BigInteger sizeBytes, String storageType, LocalDateTime createTime, String previewUrl,
+                     boolean publicImage) {
 
 }

@@ -193,7 +193,7 @@ function validateData(path, data, method) {
     check = (value) => value === null || subscription(value)
   } else if (read && /^\/blog\/me\/messages\/[1-9]\d*$/.test(route)) {
     check = message
-  } else if (['GET', 'PUT'].includes(method) && /^\/blog\/me\/comments\/[1-9]\d*$/.test(route)) {
+  } else if (read && /^\/blog\/me\/comments\/[1-9]\d*$/.test(route)) {
     check = comment
   } else if (route === '/blog/messages' && method === 'POST') {
     check = message

@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台访客管理接口，只管理统计标识，不改变用户、阅读或互动权限。
+ * 查询访客统计和管理访客 IP 封禁。
  */
 @RestController
 @RequestMapping("/admin/visitors")
@@ -40,14 +40,14 @@ public class VisitorController {
         return Result.ok(visitors.listVisitors(query));
     }
 
-    /** 根据id查询访客详情，最近访问变化不影响访问限制的版本。 */
+    /** 根据id查询访客详情及封禁版本。 */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:visitor:query")
     public ResponseEntity<Result<VisitorVO>> detail(@PathVariable String id) {
         return response(visitors.detail(IdUtils.parse(id)));
     }
 
-    /** 批量限制访客访问，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /** 批量封禁访客 IP，单条也走此接口。 */
     @PutMapping("/batch-block")
     @SaCheckPermission("blog:visitor:block")
     public Result<BatchVersionsVO> block(@Valid @RequestBody BatchBlockDTO body) {

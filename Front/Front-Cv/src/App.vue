@@ -1,11 +1,10 @@
 <script setup>
 import { createOnlineConnection } from './shared/online.mjs'
-import { apiRoot, getOnlineTicket } from './api.js'
+import { apiRoot, getOnlineTicket, getProfile, getSocialLinks, getExperiences, getSkills } from './api.js'
 import { getFingerprint } from './tracking.js'
 import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
-import { getProfile, getSocialLinks, getExperiences, getSkills } from './api.js'
 import CvIcon from './components/CvIcon.vue'
 import ExperienceSection from './components/ExperienceSection.vue'
 
@@ -27,6 +26,7 @@ const labels = { profile: '个人资料', socials: '社交链接', experiences: 
 const controller = new AbortController()
 const theme = reactive({ dark: false })
 const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+const isImageIcon = (icon) => /^https?:/i.test(icon || '')
 
 const experienceGroups = computed(() => [
   { id: 'education', title: '教育经历', icon: 'education', type: 0 },
@@ -135,7 +135,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
         <ul v-if="resources.socials.data.length" class="contact-list social-list" aria-label="社交链接">
           <li v-for="social in resources.socials.data" :key="social.socialId">
             <a :href="social.url" target="_blank" rel="noopener noreferrer">
-              <img v-if="/^https?:/i.test(social.icon || '')" :src="social.icon" alt="" />
+              <img v-if="isImageIcon(social.icon)" :src="social.icon" alt="" />
               <CvIcon v-else :name="social.icon || 'link'" />{{ social.name }}
             </a>
           </li>
@@ -166,7 +166,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
         <h2 id="skills-title" class="section-title"><CvIcon name="code" />专业技能</h2>
         <ul v-if="resources.skills.data.length" class="skill-list">
           <li v-for="skill in resources.skills.data" :key="skill.skillId" class="skill-row">
-            <img v-if="/^https?:/i.test(skill.icon || '')" :src="skill.icon" alt="" class="skill-logo" loading="lazy" />
+            <img v-if="isImageIcon(skill.icon)" :src="skill.icon" alt="" class="skill-logo" loading="lazy" />
             <div v-else-if="skill.icon" class="skill-logo skill-initial"><CvIcon :name="skill.icon" /></div>
             <div v-else class="skill-logo skill-initial" aria-hidden="true">{{ Array.from(skill.name)[0] }}</div>
             <div class="skill-info"><h3>{{ skill.name }}</h3><p v-if="skill.description">{{ skill.description }}</p></div>

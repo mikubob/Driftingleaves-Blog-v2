@@ -17,6 +17,7 @@ import com.xuan.service.IVisitorService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.IpUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
@@ -32,6 +33,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -69,33 +71,8 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "访客统计不存在");
         }
-        return new ResourceVersion<>(row, restrictionRevision(row.isBlocked(), row.blockedUntil()));
-    }
-
-    /** 根据id限制访客访问。 */
-    private ResourceVersion<BlogVisitor> block(long id, String until, String revision) {
-        BlogVisitor row = lock(id, "block");
-        RevisionUtils.check(profile(row).revision(), revision);
-        LocalDateTime end = QueryTimeUtils.parse(until);
-        if (end != null && !end.isAfter(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
-        }
-        row.setIsBlocked(1);
-        row.setBlockedUntil(end);
-        visitors.restriction(row);
-        return profile(visitors.selectById(id));
-    }
-
-    /** 根据id解除访客限制。 */
-    private ResourceVersion<BlogVisitor> unblock(long id, String revision) {
-        BlogVisitor row = lock(id, "unblock");
-        RevisionUtils.check(profile(row).revision(), revision);
-        if (row.getIsBlocked() != 0 || row.getBlockedUntil() != null) {
-            row.setIsBlocked(0);
-            row.setBlockedUntil(null);
-            visitors.restriction(row);
-        }
-        return profile(visitors.selectById(id));
+        return new ResourceVersion<>(row, restrictionRevision(
+                row.isBlocked(), row.blockedUntil(), row.blockedIpAddress(), row.ipAddress()));
     }
 
     /** 操作者和目标锁各自等待后重新检查原会话和独立ALL。 */
@@ -107,14 +84,16 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return required(row);
     }
 
-    /** 限制字段是完整业务版本，不受持续变化的IP/UA和访问时间干扰。 */
-    private ResourceVersion<BlogVisitor> profile(BlogVisitor row) {
-        return new ResourceVersion<>(row, restrictionRevision(row.getIsBlocked(), row.getBlockedUntil()));
+    private String restrictionRevision(BlogVisitor row) {
+        return restrictionRevision(row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(),
+                row.getIpAddress());
     }
 
-    /** 列表和详情新增的浏览次数不参与封禁版本，持续采集不会造成管理冲突。 */
-    private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil) {
-        return "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(isBlocked, blockedUntil))) + "\"";
+    /** 将封禁目标计入版本，防止访客换网后封错地址。 */
+    private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil, String blockedIp, String lastIp) {
+        String targetIp = blockedIp == null ? lastIp : blockedIp;
+        return "\"" + TokenUtils.digest(json.writeValueAsString(
+                Arrays.asList(isBlocked, blockedUntil, blockedIp, targetIp))) + "\"";
     }
 
     /** 无独立ALL时不能查看或修改全站统计标识。 */
@@ -146,7 +125,11 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
             BlogVisitor row = lock(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(restrictionRevision(row), revision);
+            LocalDateTime end = row.getBlockedUntil();
+            if (row.getBlockedIpAddress() != null && (end == null || end.isAfter(now()))) {
+                throw new BusinessException(409, "RESOURCE_IN_USE", "请先解除该记录的 IP 封禁再删除");
+            }
         }
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -155,26 +138,37 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     }
 
 
-    /** 批量限制访客访问，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
+    /** 批量封禁访客 IP，先锁定并检查全部目标，再一起保存。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-block", target = "blog:visitor", permission = "blog:visitor:block")
     public BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until) {
         var sorted = BatchUtils.sorted(items);
+        List<BlogVisitor> rows = new ArrayList<>();
+        LocalDateTime end = QueryTimeUtils.parse(until);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
-            String revision = item.revision();
             BlogVisitor row = lock(id, "block");
-            RevisionUtils.check(profile(row).revision(), revision);
-            LocalDateTime end = QueryTimeUtils.parse(until);
-            if (end != null && !end.isAfter(LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
+            RevisionUtils.check(restrictionRevision(row), item.revision());
+            String ip = row.getBlockedIpAddress();
+            if (ip == null) {
+                ip = IpUtils.normalize(row.getIpAddress());
             }
+            if (ip == null) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "该访客没有可封禁的 IP 地址");
+            }
+            row.setIsBlocked(1);
+            row.setBlockedUntil(end);
+            row.setBlockedIpAddress(ip);
+            rows.add(row);
+        }
+        if (end != null && !end.isAfter(now())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
         }
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, block(id, until, item.revision()).revision());
+        for (BlogVisitor row : rows) {
+            visitors.restriction(row);
+            versions.put(row.getVisitorId(), restrictionRevision(visitors.selectById(row.getVisitorId())));
         }
         return BatchUtils.versions(items, versions);
     }
@@ -185,18 +179,28 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @OperationLog(type = "batch-unblock", target = "blog:visitor", permission = "blog:visitor:unblock")
     public BatchVersionsVO unblockBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
+        List<BlogVisitor> rows = new ArrayList<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
-            String revision = item.revision();
             BlogVisitor row = lock(id, "unblock");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(restrictionRevision(row), item.revision());
+            rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, unblock(id, item.revision()).revision());
+        for (BlogVisitor row : rows) {
+            if (row.getIsBlocked() == 1) {
+                row.setIsBlocked(0);
+                row.setBlockedUntil(null);
+                row.setBlockedIpAddress(null);
+                visitors.restriction(row);
+            }
+            versions.put(row.getVisitorId(), restrictionRevision(row));
         }
         return BatchUtils.versions(items, versions);
+    }
+
+    private LocalDateTime now() {
+        return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
 
 }

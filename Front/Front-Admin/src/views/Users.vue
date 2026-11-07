@@ -1,5 +1,5 @@
 <script setup>
-import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import UserDetail from '../components/UserDetail.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
 import {
@@ -70,6 +70,7 @@ const detailUserId = ref('')
 const dialog = ref(false)
 const roleDialog = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -120,6 +121,9 @@ async function edit(row) {
 }
 
 async function save() {
+  if (saving.value || uploading.value) {
+    return
+  }
   formError.value = ''
   if (!id.value && !validatePassword(form.password)) {
     formError.value = '密码须为 8–64 个字符且 UTF-8 不超过 72 字节。'
@@ -382,8 +386,8 @@ onMounted(async () => {
       :title="id ? '编辑用户' : '创建用户'"
       width="600px"
       :close-on-click-modal="false"
-      :show-close="!saving"
-      :close-on-press-escape="!saving"
+      :show-close="!saving && !uploading"
+      :close-on-press-escape="!saving && !uploading"
       @closed="form.password = ''"
     >
       <form class="edit-form" @submit.prevent="save">
@@ -417,11 +421,12 @@ onMounted(async () => {
           联系邮箱
           <el-input v-model="form.email" type="email" maxlength="254" />
         </label>
-        <label>
-          头像地址
-          <el-input v-model="form.avatar" type="url" maxlength="2048" />
-          <ImagePreview :src="form.avatar" alt="用户头像预览" />
-        </label>
+        <DisplayImageField
+          v-model="form.avatar"
+          v-model:uploading="uploading"
+          label="头像地址"
+          :disabled="saving"
+        />
         <label>
           个人简介
           <el-input v-model="form.intro" type="textarea" :rows="3" maxlength="500" />
@@ -432,8 +437,8 @@ onMounted(async () => {
         </label>
         <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
-          <el-button :disabled="saving" @click="dialog = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :loading="saving">保存用户</el-button>
+          <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
+          <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存用户</el-button>
         </div>
       </form>
     </el-dialog>

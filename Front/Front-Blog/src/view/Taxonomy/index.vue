@@ -1,9 +1,8 @@
 <script setup>
 import { computed, inject } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { getPage, pageNumber, request } from '@/api.js'
-import { articleView } from '@/shared/presentation.js'
-import { useResource } from '@/composables/useResource.js'
+import { useRoute } from 'vue-router'
+import { request } from '@/api.js'
+import { useArticleList } from '@/composables/useArticleList.js'
 import ArticleCard from '@/components/ArticleCard.vue'
 import SidebarCard from '@/components/SidebarCard.vue'
 import ListPager from '@/components/ListPager.vue'
@@ -14,36 +13,15 @@ const taxonomy = computed(() => props.kind === 'category'
   ? { path: 'categories', id: 'categoryId', name: 'categoryName' }
   : { path: 'tags', id: 'tagId', name: 'tagName' })
 const route = useRoute()
-const router = useRouter()
 const { articleTitle, articleMeta } = inject('setHero')
-const searchKeyword = computed(() => typeof route.query.search === 'string' ? route.query.search.trim() : '')
-const page = computed(() => pageNumber(route.query.page))
-const pageSize = 10
-const listing = useResource(() => route.fullPath.split('#')[0], async (signal) => {
-  const params = { page: page.value, pageSize }
-  if (searchKeyword.value) {
-    if ([...searchKeyword.value].length > 100) {
-      throw new Error('搜索关键词最多 100 个字符')
-    }
-    params.keyword = searchKeyword.value
-  }
-
-  const { data } = await request(`/blog/${taxonomy.value.path}/${encodeURIComponent(route.params.slug)}`, { signal })
-  params[taxonomy.value.id] = data[taxonomy.value.id]
-  articleTitle.value = data[taxonomy.value.name]
+const { listing, articles, changePage } = useArticleList(10, async (signal) => {
+  const { path, id, name } = taxonomy.value
+  const { data } = await request(`/blog/${path}/${encodeURIComponent(route.params.slug)}`, { signal })
+  articleTitle.value = data[name]
   articleMeta.value = (data.description || '') + ' · 共 ' + data.articleCount + ' 篇文章'
 
-  return getPage('/blog/articles', params, signal)
+  return { [id]: data[id] }
 })
-const articles = computed(() => listing.data?.records.map(articleView) || [])
-const loading = computed(() => listing.loading)
-function handlePageChange(page) {
-  router.push({ query: { ...route.query, page: String(page) } })
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth',
-  })
-}
 </script>
 
 <template>
@@ -54,7 +32,7 @@ function handlePageChange(page) {
           {{ listing.error }}
           <button @click="listing.reload">重试</button>
         </p>
-        <div v-if="loading" class="loading-placeholder">
+        <div v-if="listing.loading" class="loading-placeholder">
           <div v-for="i in 3" :key="i" class="skeleton-card">
             <div class="skeleton-cover" />
             <div class="skeleton-body">
@@ -67,7 +45,7 @@ function handlePageChange(page) {
         <template v-else-if="articles.length">
           <ArticleCard v-for="a in articles" :key="a.id" :article="a" />
           <div v-if="listing.data && BigInt(listing.data.totalPages) > 1n" class="pager">
-            <ListPager v-if="listing.data" :data="listing.data" @change="handlePageChange" />
+            <ListPager :data="listing.data" @change="changePage" />
           </div>
         </template>
         <div v-else-if="!listing.error" class="empty-card">

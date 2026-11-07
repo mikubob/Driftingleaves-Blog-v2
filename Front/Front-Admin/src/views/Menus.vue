@@ -33,6 +33,7 @@ import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import 'element-plus/es/components/tag/style/css'
 import { getOptions, request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { flattenMenus, pageRegistry } from '../navigation.js'
 import { nullable } from '../form.js'
@@ -228,9 +229,8 @@ async function remove(row) {
     return
   }
   try {
-    const path = `/admin/menus/${row.menuId}`
-    const current = await request(path)
-    await request('/admin/menus/batch-delete', { method: 'POST', body: { items: [{ id: row.menuId, revision: current.revision }] } })
+    const payload = await prepareBatch('/admin/menus', 'menuId', [row])
+    await request('/admin/menus/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('菜单已删除')
     load()
   } catch (failure) {

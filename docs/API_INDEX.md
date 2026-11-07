@@ -2,11 +2,13 @@
 
 先选择端，再按业务或完整路径查找。参数、响应、示例和特殊规则见 [接口文档](API.md)。
 
+Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人设置路径，详见[路径与鉴权](API.md#路径与鉴权)。
+
 评论和留言创建时的管理员、作者免审条件及状态说明见[审核规则](API.md#discussion-review)，根内容与回复使用同一规则。
 
-当前共 209 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
+当前共 211 个 HTTP 路由、3 个 WebSocket 入口。同一路径的 authorId 扩展不重复计数。
 
-**38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项；另增未知路由上报2项及音乐文件读取1项，当前共 209 个路由（Admin 136 个）。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
+**38 个后台动作统一支持单条和批量操作**，每次提交 1..100 项；原有 26 项替换旧单条写路由，新增用户批量启用、禁用和删除 3 项及分类及其他资源批量状态切换 9 项。公共参数、版本、事务与逐项结果见[统一操作](API.md#admin-batch)，实现与验收规则见[开发约定](API_CONTRACT.md#batch-contract)。
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
@@ -166,7 +168,8 @@
 | --- | --- |
 | [分页查询文件元数据](API.md#api-80) | `GET /api/v1/admin/files` |
 | [查询文件元数据](API.md#api-81) | `GET /api/v1/admin/files/{fileId}` |
-| [上传图片](API.md#api-82) | `POST /api/v1/admin/files` |
+| [上传普通附件](API.md#api-82) | `POST /api/v1/admin/files` |
+| [上传公开展示图片](API.md#display-image-upload) | `POST /api/v1/admin/files/display-images` |
 | [预览后台原文件](API.md#api-83) | `GET /api/v1/admin/files/{fileId}/content` |
 | [批量删除文件](API.md#batch-file-delete) | `POST /api/v1/admin/files/batch-delete` |
 
@@ -226,8 +229,8 @@
 | --- | --- |
 | [分页查询访客](API.md#api-138) | `GET /api/v1/admin/visitors` |
 | [查询访客详情](API.md#api-139) | `GET /api/v1/admin/visitors/{visitorId}` |
-| [批量封禁访客统计标识](API.md#batch-visitor-block) | `PUT /api/v1/admin/visitors/batch-block` |
-| [批量解除访客统计限制](API.md#batch-visitor-unblock) | `PUT /api/v1/admin/visitors/batch-unblock` |
+| [批量封禁访客 IP](API.md#batch-visitor-block) | `PUT /api/v1/admin/visitors/batch-block` |
+| [批量解除访客封禁](API.md#batch-visitor-unblock) | `PUT /api/v1/admin/visitors/batch-unblock` |
 | [批量删除访客统计记录](API.md#batch-visitor-delete) | `POST /api/v1/admin/visitors/batch-delete` |
 
 ### 1.19 浏览记录管理
@@ -417,6 +420,12 @@
 | --- | --- |
 | [申请一次性在线票据](API.md#api-160) | `POST /api/v1/blog/analytics/online/tickets` |
 | [加入原生 WebSocket 并接收快照](API.md#online-websocket) | `WebSocket /api/v1/blog/ws/online` |
+
+### 2.20 公开展示图片
+
+| 接口 | 方法与完整路径 |
+| --- | --- |
+| [读取公开展示图片](API.md#display-image-content) | `GET /api/v1/blog/display-images/{fileId}` |
 
 ## 3. [Home 主页端](API.md#client-home)
 

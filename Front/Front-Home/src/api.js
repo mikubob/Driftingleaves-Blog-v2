@@ -4,6 +4,7 @@ import { reportRequestFailure } from './shared/requestFailure.mjs'
 export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
 const isText = (value) => typeof value === 'string'
 const isNullableText = (value) => value === null || isText(value)
+const isNullableWebUrl = (value) => value === null || isWebUrl(value)
 const isId = (value) => isText(value) && /^[1-9]\d{0,18}$/.test(value)
   && BigInt(value) <= 9223372036854775807n
 
@@ -104,10 +105,10 @@ export async function getProfile(signal) {
     nickname: isText,
     tagline: isText,
     description: isNullableText,
-    avatar: (value) => value === null || isWebUrl(value),
-    website: (value) => value === null || isWebUrl(value),
+    avatar: isNullableWebUrl,
+    website: isNullableWebUrl,
     publicEmail: (value) => value === null || isEmail(value),
-    githubUrl: (value) => value === null || isWebUrl(value),
+    githubUrl: isNullableWebUrl,
     location: isNullableText,
   }))
   return data

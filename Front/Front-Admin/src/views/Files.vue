@@ -100,9 +100,12 @@ async function upload(event) {
 }
 
 async function remove(row) {
+  const consequence = row.publicImage
+    ? '删除后，引用此公开图片的页面将无法显示图片。'
+    : '仍被文章（含回收站）或音乐（含隐藏曲目）引用的文件无法删除。'
   try {
     await ElMessageBox.confirm(
-      `删除文件「${row.originalName}」？仍被文章（含回收站）或音乐（含隐藏曲目）引用的文件无法删除。`,
+      `删除文件「${row.originalName}」？${consequence}`,
       '删除文件',
       { confirmButtonText: '删除', cancelButtonText: '取消' },
     )
@@ -137,7 +140,7 @@ const batchActions = computed(() => {
       revision: false,
       fileResults: true,
       danger: true,
-      warning: '文件将逐项清理，仍被文章或音乐引用的文件不会删除；每个文件的结果会单独显示。',
+      warning: '文件将逐项清理。删除公开图片会使其地址失效；受文章或音乐保护的附件无法删除。',
     })
   }
   return actions
@@ -225,6 +228,9 @@ const batchActions = computed(() => {
         <el-table-column prop="originalName" label="文件名" min-width="220" show-overflow-tooltip />
         <el-table-column prop="fileId" label="文件 ID" min-width="175" />
         <el-table-column prop="mimeType" label="类型" width="120" />
+        <el-table-column label="用途" width="100">
+          <template #default="{ row }">{{ row.publicImage ? '公开图片' : '附件' }}</template>
+        </el-table-column>
         <el-table-column label="大小" width="130">
           <template #default="{ row }">{{ formatCount(row.sizeBytes) }} B</template>
         </el-table-column>

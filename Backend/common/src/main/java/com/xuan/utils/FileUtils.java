@@ -3,6 +3,8 @@ package com.xuan.utils;
 /** 文件类型工具，根据扩展名确定存储目录，上传允许的类型另行校验。 */
 public final class FileUtils {
 
+    public static final String PUBLIC_IMAGE_CATEGORY = "publicimage";
+
     private FileUtils() {
     }
 
@@ -56,6 +58,9 @@ public final class FileUtils {
             return false;
         }
         String extension = key.substring(key.lastIndexOf('.') + 1);
+        if (key.startsWith(PUBLIC_IMAGE_CATEGORY + "/")) {
+            return "png".equals(extension) || "jpg".equals(extension) || "jpeg".equals(extension);
+        }
         return mimeType(extension) != null && key.startsWith(getFileCategory(extension) + "/");
     }
 }

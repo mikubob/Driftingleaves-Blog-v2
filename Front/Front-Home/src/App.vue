@@ -1,10 +1,9 @@
 <script setup>
 import { createOnlineConnection } from './shared/online.mjs'
-import { apiRoot, getOnlineTicket } from './api.js'
+import { apiRoot, getOnlineTicket, getProfile, getSocialLinks, getSiteConfig, recordPageView } from './api.js'
 import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watchEffect } from 'vue'
-import { getProfile, getSocialLinks, getSiteConfig, recordPageView } from './api.js'
 import { createPageView, getFingerprint } from './tracking.js'
 import HomeIcon from './components/HomeIcon.vue'
 

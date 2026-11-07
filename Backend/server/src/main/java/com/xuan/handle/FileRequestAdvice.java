@@ -24,7 +24,7 @@ public class FileRequestAdvice {
         if ("POST /admin/files/batch-delete".equals(route)) {
             return;
         }
-        if ("POST /admin/files".equals(route)) {
+        if ("POST /admin/files".equals(route) || "POST /admin/files/display-images".equals(route)) {
             if (request.getContentLengthLong() > 61 * 1024 * 1024) {
                 throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "单次上传不能超过61 MiB，请缩小文件后重试。");
             }

@@ -9,7 +9,9 @@ import com.xuan.store.RedisOAuthStore;
 import lombok.RequiredArgsConstructor;
 import me.zhyd.oauth.config.AuthConfig;
 import me.zhyd.oauth.config.AuthDefaultSource;
+import me.zhyd.oauth.exception.AuthException;
 import me.zhyd.oauth.model.AuthCallback;
+import me.zhyd.oauth.model.AuthToken;
 import me.zhyd.oauth.model.AuthUser;
 import me.zhyd.oauth.request.AuthGiteeRequest;
 import me.zhyd.oauth.request.AuthGithubRequest;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class JustAuthClient implements OAuthProviderClient {
 
+    private static final System.Logger LOGGER = System.getLogger(JustAuthClient.class.getName());
     private static final Map<String, String> SOURCES = Map.of("GITHUB", "GitHub", "GITEE", "Gitee", "QQ", "QQ");
     private final AuthProperties properties;
     private final PublicSiteProperties sites;
@@ -90,13 +93,35 @@ public class JustAuthClient implements OAuthProviderClient {
         AuthCallback callback = AuthCallback.builder().state(state).code(code).build();
         AuthRequest request = request(source);
 
-        // 2. 这里自己执行 JustAuth 的同样检查，避免 login() 把带平台响应的异常打进日志。
-        AuthChecker.checkCode(AuthDefaultSource.valueOf(source), callback);
-        AuthChecker.checkState(state, AuthDefaultSource.valueOf(source), states);
+        String stage = "校验回调";
+        try {
+            // 2. 自行执行 JustAuth 的同样检查，避免 login() 记录原始平台响应。
+            AuthChecker.checkCode(AuthDefaultSource.valueOf(source), callback);
+            AuthChecker.checkState(state, AuthDefaultSource.valueOf(source), states);
 
-        // 3. 用授权码换取平台确认的身份，只向本站传必要资料，不传平台 Token。
-        AuthUser user = request.getUserInfo(request.getAccessToken(callback));
-        return new Identity(user.getUuid(), user.getNickname(), user.getAvatar());
+            // 3. 用授权码换取平台确认的身份，只向本站传必要资料。
+            stage = "兑换授权码";
+            AuthToken token = request.getAccessToken(callback);
+            stage = "读取平台身份";
+            AuthUser user = request.getUserInfo(token);
+            return new Identity(user.getUuid(), user.getNickname(), user.getAvatar());
+        } catch (AuthException exception) {
+            String reason = "GITHUB".equals(source) ? githubError(exception.getErrorMsg()) : "UNKNOWN";
+            LOGGER.log(System.Logger.Level.WARNING, "平台授权被拒绝，平台={0}，阶段={1}，SDK错误码={2}，平台错误={3}",
+                    source, stage, Integer.toString(exception.getErrorCode()), reason);
+            throw exception;
+        }
+    }
+
+    /** 识别 GitHub 的固定错误，只记录已知类别，避免把平台响应内容写入日志。 */
+    private static String githubError(String message) {
+        return switch (message) {
+            case "The client_id and/or client_secret passed are incorrect." -> "incorrect_client_credentials";
+            case "The redirect_uri MUST match the registered callback URL for this application." -> "redirect_uri_mismatch";
+            case "The code passed is incorrect or expired." -> "bad_verification_code";
+            case "The user must have a verified primary email." -> "unverified_user_email";
+            case null, default -> "UNKNOWN";
+        };
     }
 
     /**

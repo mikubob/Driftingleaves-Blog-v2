@@ -1,5 +1,6 @@
 <script setup>
 import ImagePreview from '../components/ImagePreview.vue'
+import FileUploadButton from '../components/FileUploadButton.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
@@ -28,7 +29,8 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { fileAccept, uploadFile } from '../fileUpload.js'
+import { prepareBatch } from '../batch.js'
+import { uploadFile } from '../fileUpload.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -49,6 +51,7 @@ const {
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref('')
+const canUpload = computed(() => can('blog:file:upload') && can('blog:file:query'))
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -65,10 +68,8 @@ const form = reactive({
 })
 
 /** 上传音乐附件，由文件接口检查权限并处理失败清理；成功后填写表单，保存曲目后才建立公开引用。 */
-async function upload(event, kind) {
-  const file = event.target.files?.[0]
-  event.target.value = ''
-  if (!file || saving.value || uploading.value) {
+async function upload(file, kind) {
+  if (saving.value || uploading.value) {
     return
   }
   uploading.value = kind
@@ -175,8 +176,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/music/${row.musicId}`)
-    await request('/admin/music/batch-delete', { method: 'POST', body: { items: [{ id: row.musicId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/music', 'musicId', [row])
+    await request('/admin/music/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('音乐已删除')
     load()
   } catch (failure) {
@@ -309,23 +310,35 @@ const batchActions = computed(() => {
           歌手 / 作者
           <el-input v-model="form.artist" type="text" maxlength="200" />
         </label>
-        <label>
-          音频地址
-          <el-input v-model="form.audioUrl" maxlength="2048" required placeholder="外部 HTTP(S) 地址或上传文件" />
-        </label>
-        <label v-if="can('blog:file:upload') && can('blog:file:query')">
-          上传音频（MP3/WAV/OGG/FLAC，≤60 MiB）
-          <input type="file" :accept="fileAccept.audio" :disabled="saving || !!uploading" @change="upload($event, 'audio')" />
-        </label>
-        <label>
-          封面地址
-          <el-input v-model="form.coverUrl" maxlength="2048" />
+        <div class="file-url-row">
+          <label>
+            音频地址
+            <el-input v-model="form.audioUrl" maxlength="2048" required :disabled="uploading === 'audio'" />
+          </label>
+          <FileUploadButton
+            v-if="canUpload"
+            kind="audio"
+            :disabled="saving || !!uploading"
+            :loading="uploading === 'audio'"
+            @select="upload($event, 'audio')"
+          >上传音频</FileUploadButton>
+        </div>
+        <div class="file-url-field">
+          <div class="file-url-row">
+            <label>
+              封面地址
+              <el-input v-model="form.coverUrl" maxlength="2048" :disabled="uploading === 'image'" />
+            </label>
+            <FileUploadButton
+              v-if="canUpload"
+              kind="image"
+              :disabled="saving || !!uploading"
+              :loading="uploading === 'image'"
+              @select="upload($event, 'image')"
+            >上传封面</FileUploadButton>
+          </div>
           <ImagePreview :src="form.coverUrl" alt="音乐封面预览" />
-        </label>
-        <label v-if="can('blog:file:upload') && can('blog:file:query')">
-          上传封面（PNG/JPEG，≤10 MiB）
-          <input type="file" :accept="fileAccept.image" :disabled="saving || !!uploading" @change="upload($event, 'image')" />
-        </label>
+        </div>
         <label>
           时长（秒，留空为未知）
           <el-input-number
@@ -335,18 +348,22 @@ const batchActions = computed(() => {
             :precision="0"
           />
         </label>
-        <label>
-          歌词地址
-          <el-input v-model="form.lyricUrl" maxlength="2048" />
-        </label>
-        <label v-if="can('blog:file:upload') && can('blog:file:query')">
-          上传歌词（UTF-8 LRC/TXT/JSON，≤1 MiB，自动填写格式）
-          <input type="file" :accept="fileAccept.lyric" :disabled="saving || !!uploading" @change="upload($event, 'lyric')" />
-          <span class="muted-text">JSON 为 [{"time":0,"text":"歌词"}]，time 单位为秒。</span>
-        </label>
+        <div class="file-url-row">
+          <label>
+            歌词地址
+            <el-input v-model="form.lyricUrl" maxlength="2048" :disabled="uploading === 'lyric'" />
+          </label>
+          <FileUploadButton
+            v-if="canUpload"
+            kind="lyric"
+            :disabled="saving || !!uploading"
+            :loading="uploading === 'lyric'"
+            @select="upload($event, 'lyric')"
+          >上传歌词</FileUploadButton>
+        </div>
         <label>
           歌词格式
-          <el-select v-model="form.lyricType" clearable>
+          <el-select v-model="form.lyricType" :disabled="uploading === 'lyric'" clearable>
             <el-option label="LRC" value="lrc" />
             <el-option label="JSON" value="json" />
             <el-option label="TXT" value="txt" />

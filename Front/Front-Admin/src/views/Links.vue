@@ -1,6 +1,7 @@
 <script setup>
 import ResourceDetail from '../components/ResourceDetail.vue'
 import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
@@ -29,6 +30,7 @@ import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -49,6 +51,7 @@ const {
 const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -94,6 +97,9 @@ async function edit(row) {
 }
 
 async function save() {
+  if (saving.value || uploading.value) {
+    return
+  }
   formError.value = ''
 
   saving.value = true
@@ -133,8 +139,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/links/${row.linkId}`)
-    await request('/admin/links/batch-delete', { method: 'POST', body: { items: [{ id: row.linkId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/links', 'linkId', [row])
+    await request('/admin/links/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('友链已删除')
     load()
   } catch (failure) {
@@ -283,8 +289,8 @@ const batchActions = computed(() => {
       :title="id ? '编辑友链' : '新建友链'"
       width="620px"
       :close-on-click-modal="false"
-      :show-close="!saving"
-      :close-on-press-escape="!saving"
+      :show-close="!saving && !uploading"
+      :close-on-press-escape="!saving && !uploading"
     >
       <form class="edit-form" @submit.prevent="save">
         <label>
@@ -295,11 +301,12 @@ const batchActions = computed(() => {
           站点地址
           <el-input v-model="form.url" type="url" maxlength="2048" required />
         </label>
-        <label>
-          头像地址
-          <el-input v-model="form.avatar" type="url" maxlength="2048" />
-          <ImagePreview :src="form.avatar" alt="友链头像预览" />
-        </label>
+        <DisplayImageField
+          v-model="form.avatar"
+          v-model:uploading="uploading"
+          label="头像地址"
+          :disabled="saving"
+        />
         <label>
           站点介绍
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="255" />
@@ -323,8 +330,8 @@ const batchActions = computed(() => {
         </label>
         <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
-          <el-button :disabled="saving" @click="dialog = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :loading="saving">保存友链</el-button>
+          <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
+          <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存友链</el-button>
         </div>
       </form>
     </el-dialog>

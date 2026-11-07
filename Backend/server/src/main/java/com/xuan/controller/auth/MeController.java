@@ -1,4 +1,4 @@
-package com.xuan.controller.admin;
+package com.xuan.controller.auth;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.PasswordClearDTO;
@@ -30,8 +30,8 @@ import java.util.List;
 /**
  * 本人资料和安全设置接口，用户取当前会话，不接受目标用户id。
  */
-@RestController("adminMeController")
-@RequestMapping("/admin/me")
+@RestController
+@RequestMapping({"/admin/me", "/blog/me"})
 @RequiredArgsConstructor
 public class MeController {
 

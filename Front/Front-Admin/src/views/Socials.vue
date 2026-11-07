@@ -1,5 +1,5 @@
 <script setup>
-import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
@@ -28,6 +28,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -47,6 +48,7 @@ const {
 )
 const dialog = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -77,6 +79,9 @@ async function edit(row) {
 }
 
 async function save() {
+  if (saving.value || uploading.value) {
+    return
+  }
   formError.value = ''
 
   saving.value = true
@@ -115,8 +120,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/home/social-links/${row.socialId}`)
-    await request('/admin/home/social-links/batch-delete', { method: 'POST', body: { items: [{ id: row.socialId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/home/social-links', 'socialId', [row])
+    await request('/admin/home/social-links/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('社交链接已删除')
     load()
   } catch (failure) {
@@ -236,8 +241,8 @@ const batchActions = computed(() => {
       :title="id ? '编辑社交链接' : '新建社交链接'"
       width="620px"
       :close-on-click-modal="false"
-      :show-close="!saving"
-      :close-on-press-escape="!saving"
+      :show-close="!saving && !uploading"
+      :close-on-press-escape="!saving && !uploading"
     >
       <form class="edit-form" @submit.prevent="save">
         <label>
@@ -248,11 +253,13 @@ const batchActions = computed(() => {
           链接地址（HTTP / HTTPS / mailto）
           <el-input v-model="form.url" type="text" maxlength="2048" required />
         </label>
-        <label>
-          图标键或外部图片地址
-          <el-input v-model="form.icon" type="text" maxlength="2048" />
-          <ImagePreview :src="form.icon" alt="社交图标预览" />
-        </label>
+        <DisplayImageField
+          v-model="form.icon"
+          v-model:uploading="uploading"
+          label="图标键或图片地址"
+          type="text"
+          :disabled="saving"
+        />
         <label>
           排序
           <el-input-number
@@ -268,8 +275,8 @@ const batchActions = computed(() => {
         </label>
         <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
-          <el-button :disabled="saving" @click="dialog = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :loading="saving">保存社交链接</el-button>
+          <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
+          <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存社交链接</el-button>
         </div>
       </form>
     </el-dialog>

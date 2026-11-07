@@ -107,7 +107,7 @@ async function execute(action, rows = selected.value, extra = {}) {
   busy.value = true
   try {
     // 1. 读取选中记录的版本，列表已刷新时要求重新选择。
-    const payload = await prepareBatch(props.resource, props.idKey, targets, action.revision !== false)
+    const payload = await prepareBatch(props.resource, props.idKey, targets, action.revision !== false, action.matchDetail)
     if (originalGeneration !== generation) {
       throw new Error('列表已刷新，请重新选择记录。')
     }
@@ -115,7 +115,7 @@ async function execute(action, rows = selected.value, extra = {}) {
     // 2. 展示影响范围，确认后再次检查列表是否刷新。
     let warning = action.warning || ''
     if (action.block) {
-      warning += extra.blockedUntil ? ` 限制至 ${new Date(extra.blockedUntil).toLocaleString()}。` : ' 将永久限制这些统计标识。'
+      warning += extra.blockedUntil ? ` 封禁至 ${new Date(extra.blockedUntil).toLocaleString()}。` : ' 此次为永久封禁。'
     }
     try {
       await ElMessageBox.confirm(`确认${action.label}选中的 ${targets.length} 条记录？${warning}`, action.label, {
@@ -177,9 +177,9 @@ defineExpose({ select, selectable, busy, execute })
         <li v-for="item in failures" :key="item.id">文件 {{ item.id }}：{{ item.msg }}（{{ item.code }}）</li>
       </ul>
     </el-alert>
-    <el-dialog v-model="blockVisible" title="批量限制访客采集" width="460px" :close-on-click-modal="!busy">
-      <p>仅限制所选统计标识的访问采集，不禁用账号，也不阻止公开阅读。</p>
-      <el-checkbox v-model="permanent" :disabled="busy">永久限制</el-checkbox>
+    <el-dialog v-model="blockVisible" title="批量封禁 IP" width="460px" :close-on-click-modal="!busy">
+      <p>{{ blockAction?.warning }}</p>
+      <el-checkbox v-model="permanent" :disabled="busy">永久封禁</el-checkbox>
       <el-date-picker
         v-model="blockedUntil" type="datetime" placeholder="选择限制结束时间"
         aria-label="批量限制结束时间" :disabled="permanent || busy"

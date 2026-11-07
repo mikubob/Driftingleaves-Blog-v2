@@ -5,7 +5,6 @@ import { useResource } from '../composables/useResource.js'
 import { formatDate } from '../format.js'
 import ResourceState from '../components/ResourceState.vue'
 import ListPager from '../components/ListPager.vue'
-import BlogIcon from '../components/BlogIcon.vue'
 const route = useRoute()
 const router = useRouter()
 const type = route.meta.directory
@@ -23,34 +22,7 @@ function changePage(page) {
     <h2>{{ route.meta.title }}</h2>
     <ResourceState :resource="listing" />
     <template v-if="listing.data">
-      <div v-if="type === 'archives'" class="archive-list">
-        <router-link v-for="item in listing.data.records" :key="item.month" :to="`/archive/${item.month}`">
-          <BlogIcon name="calendar" />
-          <strong>{{ item.month }}</strong>
-          <span>{{ item.articleCount }} 篇记录</span>
-          <BlogIcon name="arrow" />
-        </router-link>
-      </div>
-      <div v-else-if="type === 'links'" class="directory-grid">
-        <a
-          v-for="item in listing.data.records"
-          :key="item.linkId"
-          :href="item.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="friend-card"
-        >
-          <img v-if="item.avatar" :src="item.avatar" alt="" loading="lazy" />
-          <span v-else class="friend-avatar">
-            <BlogIcon name="link" />
-          </span>
-          <div>
-            <h3>{{ item.linkName }} ↗</h3>
-            <p v-if="item.description">{{ item.description }}</p>
-          </div>
-        </a>
-      </div>
-      <div v-else-if="type === 'authors'" class="directory-grid">
+      <div v-if="type === 'authors'" class="directory-grid">
         <router-link
           v-for="item in listing.data.records"
           :key="item.userId"

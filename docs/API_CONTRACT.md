@@ -1,6 +1,6 @@
 # 接口开发约定
 
-本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 209 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；当前检查入口及恢复步骤见运行说明，既有路由数本身不代表缓存验收。项目尚未上线；当前配置与检查入口见[后端运行说明](后端运行说明.md)。
+本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 211 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；当前检查入口及恢复步骤见运行说明，既有路由数本身不代表缓存验收。项目尚未上线；当前配置与检查入口见[后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
 - [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口说明.md)
@@ -59,6 +59,8 @@ X-Revision 是本站自定义业务版本，不承担HTTP缓存校验；If-Revis
 
 Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下的同源 `/api/v1` 反代访问 API。生产使用不同 HTTPS 主机名，`dev` 可使用回环 HTTP。后台使用 `__Host-dl-admin-session`，博客使用 `__Host-dl-blog-session`。两个 Cookie 固定为 host-only、HttpOnly、Secure、SameSite=Strict、Path=/，不设置 Domain。入口只选取所属端 Cookie，同一枚会话不能跨端使用。两端均支持账密、邮箱和 OAuth LOGIN。账密和邮箱登录要求图形验证码，OAuth LOGIN 免图形验证码；后台签发会话前还要求 `admin:access`。
 
+`controller/auth/AuthController` 和 `MeController` 分别承载两端的认证和本人设置。`WebSession` 根据请求路径选择所属端，来源与 Cookie 由原有鉴权入口核对。后台绑定还须检查后台认证标记。发送邮箱验证码使用各端自己的请求模型与限流规则。
+
 | Session 字段 | 类型 | 含义 |
 | --- | --- | --- |
 | expiresIn | number | 固定有效秒数，Blog 为 259200（3 天），Admin 为 604800（7 天） |
@@ -104,7 +106,7 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 
 ### 0.7 鉴权组件落地要求
 
-错误页与自动封禁遵守[反复404保护](API.md#not-found-protection)：页面使用固定提示，协议保留真实错误；后端404与两个前端未知路由上报入口共享可信IP预算，Redis原子计数与封禁，不使用客户端指纹执行访问封禁。全局封禁检查先于业务副作用；预检不计数，原有业务限流和统计标识限制保持各自职责。
+后端 404 与两个前端未知路由上报入口共享可信 IP 预算，Redis 原子计数和封禁。管理员也可手动封禁可信 IP，详见[访客封禁接口](API.md#batch-visitor-block)。手动和自动封禁都先于业务处理检查，OPTIONS 预检不受影响。[反复 404 保护](API.md#not-found-protection)
 
 Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验证的身份；应用负责查用户、查绑定和加载授权。注册、绑定、菜单、ALL/SELF 不由 starter 自动完成。下表为本项目要求，需在实现时配置并验证：
 
@@ -293,7 +295,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 留言批量审核 | 持有 message 配置与完整父链，先计算所选节点的目标状态，按整批最终状态检查所有待通过节点的祖先；所选祖先也通过可共同提交，未选隐藏祖先仍阻止通过，不依赖数组或主键顺序；私密性不变 |
 | 评论/留言批量分支删除 | 先验证全部显式 ID 在写入前均存在且有权限，再收集目标子树并求并集；父子混选不会因内部先后删除而出现伪 404；锁定并按子到父清理全部后代，保留祖先和兄弟，不改挂回复 |
 | 订阅批量状态 | 先按用户 ID 升序锁操作者和全部所属用户，再锁订阅；激活逐项检查当前邮箱 verifiedAt 及账号启用；不批量确认邮箱、不写验证时间、不发送确认邮件，实际再激活才更换投递轮次 |
-| 访客与浏览明细清理 | 访客删除保留明细并将 visitorId 置 null；浏览明细删除影响其 PV/UV，不反向扣文章累计阅读；封禁仅限制采集，不扩大为账号封禁 |
+| 访客封禁与浏览明细清理 | 手动封禁固定记录上的可信 IP，拦截公开站点 API。旧标记只限制采集。仍有有效 IP 封禁的记录须先解封才能删除；访客删除保留明细并将 visitorId 置 null；浏览明细删除影响其 PV/UV，不反向扣文章累计阅读 |
 | 用户批量启停/删除 | 先锁固定管理员保护行，再升序锁操作者及全部目标，整批校验存在性和用户整体版本；启停仅改 status，实际禁用和删除撤销目标会话；按最终结果保护最后管理员。删除遇文章/评论/文件/主页/留言引用整批 409/RESOURCE_IN_USE，按既有外键清理关联及保留历史；单个删除也使用一项 items |
 | 角色/权限批量删除 | 先固定管理员保护锁，再按数值升序锁操作者及所有受影响用户、角色/权限；按整批最终授权结果保护最后管理员。内置角色/固定权限拒绝删除，被菜单引用的权限拒绝；删除关联、会话撤销和授权缓存处理不能遗漏后半批目标 |
 | 菜单批量删除 | 保护锁下按写入前整树校验每个目标都是叶子，有子节点整批 409，即使子节点也被选中；只删除目标及角色菜单关联，不隐式删除子树或接口权限 |
@@ -533,7 +535,7 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 | 模型 | 字段与约束 |
 | --- | --- |
-| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口，非公开直链） |
+| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口）、publicImage:boolean（是否为公开展示图片） |
 | Upload | multipart只有file，单个、非空；不接uploaderId、文件路径、bucket、objectKey、isPublic |
 
 支持PNG/JPEG图片≤10MiB，MP3/WAV/OGG/FLAC音频≤60MiB，UTF-8 LRC/TXT/JSON歌词≤1MiB；单次multipart总大小≤61MiB。扩展名必须与服务端内容识别一致，不信Content-Type。音频检查容器及首个音频头（WAV使用JDK音频解析），不承诺对整首曲目解码或转码；浏览器需支持对应编码。MP3检查ID3后的MPEG Layer III帧头和帧长度，OGG限Vorbis/Opus。歌词拒绝空文本、非法UTF-8和除换行/回车/Tab外的控制字符；LRC必须含有效时间标签，JSON行结构见12.11。MIME依次为image/png、image/jpeg、audio/mpeg、audio/wav、audio/ogg、audio/flac、text/plain（LRC/TXT）、application/json（JSON）。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。新上传校验并解码一次后按 app.image.compress 压缩，默认启用、目标500KiB、JPEG起始质量0.9、最长边2560px；保留PNG/JPEG格式和PNG透明通道，只采用更小的产物。JPEG每轮从同一像素源编码，最低质量0.3；PNG无损编码，不通过降质量反复尝试。大小和最长边是优化目标，结果未缩小时保留原字节，不能承诺都达到目标。不另存原图，关闭压缩时原样存储；历史对象不重写。本次不扩展其他附件类型。
@@ -546,26 +548,26 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 ### 12.9 主页与简历模型
 
-实施状态：第15章21个入口已使用真实HomeProfile/Social/Experience/Skill服务及Mapper/XML；公开资料与账号资料分离，后台逐操作检查ALL。主页首次设置使用既有管理保护锁串行空资源版本，再升序锁操作者/所选主人、固定资料行。图标键沿用已有菜单键并增加文档示例github，其他图标使用外部HTTP(S)地址。
+实施状态：第15章21个入口已使用真实HomeProfile/Social/Experience/Skill服务及Mapper/XML；公开资料与账号资料分离，后台逐操作检查ALL。主页首次设置使用既有管理保护锁串行空资源版本，再升序锁操作者/所选主人、固定资料行。图标键沿用已有菜单键并增加文档示例github，其他图标使用公开 HTTP(S) 图片地址。
 
 新增Write/Create/Edit模型均为明确的字段白名单；本章写接口要求表中字段完整出现，可空字段用null清空。响应中的createTime/updateTime由数据库维护，不接收客户端值。Date使用合法YYYY-MM-DD，1000..9999年，与Time区分。
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
-| `HomeProfileWrite` | `userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
-| `HomeProfile` | `profileId`:ID（固定为1）；`userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `HomeProfilePublic` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，外部HTTP(S)资源）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
-| `SocialWrite` | `name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
-| `Social` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `SocialPublic` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；外部HTTP(S)图标URL或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前） |
-| `ExperienceWrite` | `experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
-| `Experience` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `ExperiencePublic` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（外部HTTP(S)图标URL）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`htmlContent`:string（安全渲染HTML） |
-| `SkillWrite` | `name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
-| `Skill` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `SkillPublic` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；外部HTTP(S)URL或注册图标键）；`sortOrder`:int32（越小越靠前） |
+| `HomeProfileWrite` | `userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
+| `HomeProfile` | `profileId`:ID（固定为1）；`userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `HomeProfilePublic` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
+| `SocialWrite` | `name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
+| `Social` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `SocialPublic` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前） |
+| `ExperienceWrite` | `experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（公开 HTTP(S) 图片地址）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
+| `Experience` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（公开 HTTP(S) 图片地址）；`content`:string（非空Markdown，UTF-8最多65535字节，与MySQL TEXT容量一致）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `ExperiencePublic` | `experienceId`:ID（经历ID）；`experienceType`:integer（0教育 1工作/实习 2项目）；`title`:S(200)（学校、公司或项目名称）；`subtitle`:S(200)?（专业、职位或项目角色）；`logoUrl`:URL?（公开 HTTP(S) 图片地址）；`startDate`:date（合法YYYY-MM-DD，1000..9999年）；`endDate`:date&#124;null（结束日期不得早于开始；null表示至今）；`sortOrder`:int32（越小越靠前）；`htmlContent`:string（安全渲染HTML） |
+| `SkillWrite` | `name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或注册图标键）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
+| `Skill` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或注册图标键）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `SkillPublic` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或注册图标键）；`sortOrder`:int32（越小越靠前） |
 
-主页固定profileId=1，userId只供后台选择本站主人；公开响应没有userId或登录邮箱。未设置资料时公开/后台GET返回data=null，后台GET仍提供空资源X-Revision，PUT以该版本首次创建。社交、经历、技能为全站资源，需要ALL管理权限，不根据站点主人ID自动获得修改权。社交url是通用URL规则的明确例外：允许mailto:后接单一合法邮箱，拒绝额外参数、控制字符；其他展示URL仍只允许外部HTTP(S)。
+主页固定profileId=1，userId只供后台选择本站主人；公开响应没有userId或登录邮箱。未设置资料时公开/后台GET返回data=null，后台GET仍提供空资源X-Revision，PUT以该版本首次创建。社交、经历、技能为全站资源，需要ALL管理权限，不根据站点主人ID自动获得修改权。社交url是通用URL规则的明确例外：允许mailto:后接单一合法邮箱，拒绝额外参数、控制字符；其他展示 URL 使用绝对 HTTP(S) 地址。
 
 <a id="message-rules"></a>
 
@@ -665,7 +667,7 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 | `ProvinceMetric` | `province`:string&#124;null（最新访客省份；null表示未知）；`visitorCount`:string（区间内访问的不同非NULL visitorId数） |
 | `ArticleViewMetric` | `articleId`:ID（未回收文章ID）；`title`:string（当前标题）；`slug`:string（当前slug）；`pageViewCount`:string（日期范围内文章浏览明细数，不是view_count累计值） |
 
-analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode只能home/blog/cv，由服务端与配置的Origin/站点规范路径核验；articleId必须属于PUBLIC文章并与页面slug一致，未关联文章时为null。只有博客可以从有效登录 Cookie 识别 userId，Home 和 Cv 仅匿名，客户端不能上传IP/UA/访问时间。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回recorded=true；采集失败不影响前端公开内容读取。
+analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode只能home/blog/cv，由服务端与配置的Origin/站点规范路径核验；articleId必须属于PUBLIC文章并与页面slug一致，未关联文章时为null。只有博客可以从有效登录 Cookie 识别 userId，Home 和 Cv 仅匿名，客户端不能上传IP/UA/访问时间。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回 recorded=true。旧统计标识封禁只影响采集，手动 IP 封禁同时限制公开内容读取。
 
 PV是保留的page_view条数；UV是所选区间内不同非null visitorId数量，不能把IP、session或sys_user计数当成同一指标。删除访客将关联置null，会使UV减少，PV不变；删除浏览明细改变基于明细的报表；不反向扣减blog_article.view_count。文章详情成功读取每次原子增加view_count，独立采集POST只写明细，避免一页计两次累计阅读。封禁统计标识仅约束采集入口，不承诺阻止伪造者阅读网站。
 
@@ -754,7 +756,9 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 
 文章写入时，每个引用必须存在，写作者须有`blog:file:query`及对应文件范围；不能通过引用他人私密文件让其公开。发布时再检查所有引用可用。前台HTML保留上述公开上下文；后台详情HTML将这些路径改为相应`/admin/articles/.../content`，前端通过同源后台 API 获取后替换临时object URL，原始Markdown不改写。一个文件被多篇文章引用时，只要某篇PUBLIC且确实引用，就可从该篇上下文公开读取；**需要私密隔离时必须另传一份文件，不能在公开文章复用同一fileId**。修改/撤销引用或下架后立即按当前状态鉴权。
 
-音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链图标、配置、主页与简历图标仍不接受本站附件API路径（包括等价绝对URL），仅用外部http(s)资源；不新增文件用途/公开状态字段。不能把私密附件URL粘贴进头像或公开配置实现匿名访问。
+音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链头像、经历 Logo、社交和技能图标使用公开 HTTP(S) 地址，可填外部地址或[公开展示图片](API.md#display-image-content)地址。普通附件 API 路径及等价绝对 URL 不能当作公开图片地址。
+
+公开展示图片由[专用上传入口](API.md#display-image-upload)校验并写入 `publicimage` 存储目录，沿用原有文件元数据、存储 ACL、限流和失败清理。上传成功即公开，普通附件继续按原权限访问。删除时保留文章、音乐附件引用检查，直接引用公开图片 URL 的页面不阻止删除，文件管理在删除前提示地址会失效。
 
 先写临时文件并完成校验，再原子移动为随机最终存储键，最后插入元数据并提交；任一步失败不得返回File成功结果，数据库写失败时删除刚写文件，补偿失败记录运维错误以清理孤立对象。没有成功元数据的存储对象永不通过API读取。
 

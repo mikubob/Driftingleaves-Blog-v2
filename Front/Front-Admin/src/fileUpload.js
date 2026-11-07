@@ -6,8 +6,8 @@ export const fileAccept = {
   lyric: '.lrc,.txt,.json',
 }
 
-/** 文件页和音乐表单共用上传入口；扩展名只用于交互提示，内容仍由服务端识别。 */
-export async function uploadFile(file, kind) {
+/** 准备上传表单，文件内容仍由服务端校验。 */
+function prepareUpload(file, kind) {
   const extension = file.name.split('.').pop().toLowerCase()
   const actualKind = Object.keys(fileAccept).find((key) =>
     fileAccept[key].split(',').includes(`.${extension}`))
@@ -20,6 +20,22 @@ export async function uploadFile(file, kind) {
   }
   const body = new FormData()
   body.append('file', file)
+  return { body, extension }
+}
+
+/** 上传普通附件。 */
+export async function uploadFile(file, kind) {
+  const { body, extension } = prepareUpload(file, kind)
   const { data } = await request('/admin/files', { method: 'POST', body })
   return { file: data, extension }
+}
+
+/** 上传公开展示图片，返回可用于前台的地址。 */
+export async function uploadDisplayImage(file) {
+  const { body } = prepareUpload(file, 'image')
+  const { data } = await request('/admin/files/display-images', { method: 'POST', body })
+  if (typeof data !== 'string' || !/^https?:\/\//i.test(data)) {
+    throw new Error('未收到可用的图片地址，请在文件管理中检查上传结果。')
+  }
+  return data
 }

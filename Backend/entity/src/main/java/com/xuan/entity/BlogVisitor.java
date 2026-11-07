@@ -24,6 +24,7 @@ public class BlogVisitor {
     private String city;
     private Integer isBlocked;
     private LocalDateTime blockedUntil;
+    private String blockedIpAddress;
     private LocalDateTime firstVisitTime;
     private LocalDateTime lastVisitTime;
     private LocalDateTime createTime;

@@ -428,6 +428,21 @@ h2 {
   margin-left: 0;
 }
 
+.file-url-field {
+  display: grid;
+  gap: 9px;
+}
+
+.file-url-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.file-url-row > label {
+  flex: 1;
+}
+
 .form-row {
   display: flex;
   gap: 20px;

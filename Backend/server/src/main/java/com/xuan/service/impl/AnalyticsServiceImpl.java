@@ -83,7 +83,9 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         visitors.ensure(request.getFingerprint(), at);
         BlogVisitor visitor = visitors.lockFingerprint(request.getFingerprint());
         current();
-        if (visitor.getIsBlocked() == 1 && (visitor.getBlockedUntil() == null || visitor.getBlockedUntil()
+        // 旧记录只限制采集，新封禁已在请求入口按 IP 检查。
+        if (visitor.getBlockedIpAddress() == null && visitor.getIsBlocked() == 1
+                && (visitor.getBlockedUntil() == null || visitor.getBlockedUntil()
                 .isAfter(now()))) {
             throw new BusinessException(403, "VISITOR_BLOCKED", "此统计标识暂不接收采集");
         }

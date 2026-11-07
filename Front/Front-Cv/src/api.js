@@ -4,6 +4,7 @@ import { reportRequestFailure } from './shared/requestFailure.mjs'
 export const apiRoot = `${(import.meta.env?.VITE_API_ORIGIN || '').replace(/\/$/, '')}/api/v1`
 const isText = (value) => typeof value === 'string'
 const isNullableText = (value) => value === null || isText(value)
+const isNullableWebUrl = (value) => value === null || isWebUrl(value)
 const isId = (value) => isText(value) && /^[1-9]\d*$/.test(value)
   && BigInt(value) <= 9223372036854775807n
 const isCount = (value) => isText(value) && /^(0|[1-9]\d*)$/.test(value)
@@ -52,10 +53,10 @@ const profileFields = {
   nickname: isText,
   tagline: isText,
   description: isNullableText,
-  avatar: (value) => value === null || isWebUrl(value),
-  website: (value) => value === null || isWebUrl(value),
+  avatar: isNullableWebUrl,
+  website: isNullableWebUrl,
   publicEmail: (value) => value === null || isEmail(value),
-  githubUrl: (value) => value === null || isWebUrl(value),
+  githubUrl: isNullableWebUrl,
   location: isNullableText,
 }
 
@@ -72,7 +73,7 @@ const experienceFields = {
   experienceType: (value) => [0, 1, 2].includes(value),
   title: isText,
   subtitle: isNullableText,
-  logoUrl: (value) => value === null || isWebUrl(value),
+  logoUrl: isNullableWebUrl,
   startDate: isDate,
   endDate: (value) => value === null || isDate(value),
   htmlContent: isText,

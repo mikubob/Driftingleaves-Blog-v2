@@ -340,15 +340,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @OperationLog(type = "batch-delete", target = "blog:rss", permission = "blog:rss:delete")
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
-        requireAdmin("delete");
-        Set<Long> userIds = new TreeSet<>();
-        userIds.add(sessions.currentUserId());
-        for (var item : sorted) {
-            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
-        }
-        for (long id : userIds) {
-            users.lockById(id);
-        }
+        lockBatchUsers(sorted, "delete");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -367,15 +359,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @OperationLog(type = "batch-status", target = "blog:rss", permission = "blog:rss:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
-        requireAdmin("update");
-        Set<Long> userIds = new TreeSet<>();
-        userIds.add(sessions.currentUserId());
-        for (var item : sorted) {
-            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
-        }
-        for (long id : userIds) {
-            users.lockById(id);
-        }
+        lockBatchUsers(sorted, "update");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -391,6 +375,19 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             versions.put(id, changeStatus(id, status, item.revision()).revision());
         }
         return BatchUtils.versions(items, versions);
+    }
+
+    /** 批量操作先查权限，再按用户 id 升序锁住操作者和所有订阅者。 */
+    private void lockBatchUsers(List<BatchItemDTO> items, String operation) {
+        requireAdmin(operation);
+        Set<Long> userIds = new TreeSet<>();
+        userIds.add(sessions.currentUserId());
+        for (var item : items) {
+            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
+        }
+        for (long id : userIds) {
+            users.lockById(id);
+        }
     }
 
 }

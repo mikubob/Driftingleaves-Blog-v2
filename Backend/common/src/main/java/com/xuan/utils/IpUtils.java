@@ -5,7 +5,6 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -41,21 +40,6 @@ public final class IpUtils {
             }
         }
         return current;
-    }
-
-    /** 隐藏 IP 的部分地址，返回 IPv4 /24 或 IPv6 /48 网段。 */
-    public static String anonymize(String value) {
-        String ip = normalize(value);
-        if (ip == null) {
-            return null;
-        }
-        try {
-            byte[] bytes = InetAddress.getByName(ip).getAddress();
-            Arrays.fill(bytes, bytes.length == 4 ? 3 : 6, bytes.length, (byte) 0);
-            return InetAddress.getByAddress(bytes).getHostAddress();
-        } catch (UnknownHostException error) {
-            return null;
-        }
     }
 
     /** 检查是否为可信代理，先统一地址格式，避免漏掉同一 IPv6 地址的不同写法。 */

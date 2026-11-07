@@ -1,9 +1,8 @@
 <script setup>
 import { computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getPage, isId, pageNumber, request } from '@/api.js'
-import { articleView } from '@/shared/presentation.js'
-import { useResource } from '@/composables/useResource.js'
+import { isId, request } from '@/api.js'
+import { useArticleList } from '@/composables/useArticleList.js'
 import ArticleCard from '@/components/ArticleCard.vue'
 import SidebarCard from '@/components/SidebarCard.vue'
 import ListPager from '@/components/ListPager.vue'
@@ -21,24 +20,14 @@ onMounted(() => {
   widgetMediaQuery.addEventListener('change', syncWidgets)
 })
 onUnmounted(() => widgetMediaQuery.removeEventListener('change', syncWidgets))
-const searchKeyword = computed(() => typeof route.query.search === 'string' ? route.query.search.trim() : '')
-const page = computed(() => pageNumber(route.query.page))
-const pageSize = 6
-const listing = useResource(() => route.fullPath.split('#')[0], async (signal) => {
-  const params = { page: page.value, pageSize }
-  if (searchKeyword.value) {
-    if ([...searchKeyword.value].length > 100) {
-      throw new Error('搜索关键词最多 100 个字符')
-    }
-    params.keyword = searchKeyword.value
-  }
-  
+const { searchKeyword, listing, articles, changePage } = useArticleList(6, async (signal) => {
+  const filters = {}
   if (route.params.userId) {
     if (!isId(route.params.userId)) {
       throw new Error('作者地址无效')
     }
     const { data } = await request('/blog/authors/' + route.params.userId, { signal })
-    params.authorId = data.userId
+    filters.authorId = data.userId
     articleTitle.value = data.nickname + '的文章'
     articleMeta.value = data.intro || ''
   }
@@ -46,23 +35,14 @@ const listing = useResource(() => route.fullPath.split('#')[0], async (signal) =
     if (!/^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(route.params.month)) {
       throw new Error('归档月份无效')
     }
-    params.month = route.params.month
-    articleTitle.value = params.month + ' 的文章'
+    filters.month = route.params.month
+    articleTitle.value = filters.month + ' 的文章'
     articleMeta.value = '按 UTC 月份归档'
   }
-  
-  return getPage('/blog/articles', params, signal)
+
+  return filters
 })
-const articles = computed(() => listing.data?.records.map(articleView) || [])
 const total = computed(() => listing.data?.total || '0')
-const loading = computed(() => listing.loading)
-function handlePageChange(page) {
-  router.push({ query: { ...route.query, page: String(page) } })
-  window.scrollTo({
-    top: 0,
-    behavior: 'smooth',
-  })
-}
 </script>
 
 <template>
@@ -84,7 +64,7 @@ function handlePageChange(page) {
           {{ listing.error }}
           <button @click="listing.reload">重试</button>
         </p>
-        <div v-if="loading" class="loading-placeholder">
+        <div v-if="listing.loading" class="loading-placeholder">
           <div v-for="i in 4" :key="i" class="skeleton-card">
             <div class="skeleton-cover" />
             <div class="skeleton-body">
@@ -97,7 +77,7 @@ function handlePageChange(page) {
         <template v-else-if="articles.length">
           <ArticleCard v-for="article in articles" :key="article.id" :article="article" />
           <div v-if="listing.data && BigInt(listing.data.totalPages) > 1n" class="pagination-wrap">
-            <ListPager v-if="listing.data" :data="listing.data" @change="handlePageChange" />
+            <ListPager :data="listing.data" @change="changePage" />
           </div>
         </template>
         <div v-else-if="!listing.error" class="empty-tip">暂无文章</div>

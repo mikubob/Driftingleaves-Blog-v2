@@ -450,8 +450,9 @@ CREATE TABLE blog_visitor (
   country VARCHAR(64) DEFAULT NULL COMMENT '国家',
   province VARCHAR(64) DEFAULT NULL COMMENT '省份',
   city VARCHAR(64) DEFAULT NULL COMMENT '城市',
-  is_blocked TINYINT NOT NULL DEFAULT 0 COMMENT '0正常 1限制此统计标识；不能替代sys_user.status',
+  is_blocked TINYINT NOT NULL DEFAULT 0 COMMENT '0正常 1已标记封禁；不能替代sys_user.status',
   blocked_until DATETIME(3) DEFAULT NULL COMMENT '封禁到期时间；已封禁且NULL表示不自动到期',
+  blocked_ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL COMMENT '封禁时固定的IP；NULL表示没有IP封禁',
   first_visit_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '首次访问时间',
   last_visit_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '最近访问时间',
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
@@ -461,9 +462,11 @@ CREATE TABLE blog_visitor (
   KEY idx_visitor_first_visit (first_visit_time, visitor_id),
   KEY idx_visitor_last_visit (last_visit_time DESC, visitor_id),
   KEY idx_visitor_blocked (is_blocked, blocked_until, visitor_id),
+  KEY idx_visitor_blocked_ip (blocked_ip_address, blocked_until),
   CONSTRAINT ck_visitor_fingerprint CHECK (CHAR_LENGTH(TRIM(fingerprint)) > 0),
   CONSTRAINT ck_visitor_blocked CHECK (is_blocked IN (0, 1)),
   CONSTRAINT ck_visitor_block_time CHECK (is_blocked = 1 OR blocked_until IS NULL),
+  CONSTRAINT ck_visitor_block_ip CHECK (is_blocked = 1 OR blocked_ip_address IS NULL),
   CONSTRAINT ck_visitor_times CHECK (last_visit_time >= first_visit_time)
 ) ENGINE=InnoDB COMMENT='跨主页、博客和简历的匿名访客统计；访问次数按浏览明细聚合';
 
@@ -605,8 +608,8 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (183, 'blog:rss:subscribe', '管理本人邮件订阅及邮箱确认', 'blog'),
   (184, 'blog:rss:unsubscribe', '取消本人邮件订阅', 'blog'),
   (190, 'blog:visitor:query', '查询访客统计', 'blog'),
-  (191, 'blog:visitor:block', '封禁访客统计标识', 'blog'),
-  (192, 'blog:visitor:unblock', '解封访客统计标识', 'blog'),
+  (191, 'blog:visitor:block', '封禁访客 IP', 'blog'),
+  (192, 'blog:visitor:unblock', '解除访客封禁', 'blog'),
   (193, 'blog:visitor:delete', '删除访客统计记录', 'blog'),
   (200, 'blog:view:query', '查询浏览记录', 'blog'),
   (201, 'blog:view:delete', '删除浏览记录', 'blog'),

@@ -1,5 +1,5 @@
 <script setup>
-import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElButton, ElCard, ElEmpty, ElInput, ElMessage, ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
@@ -15,6 +15,7 @@ import RequestError from '../components/RequestError.vue'
 
 const loading = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const error = ref('')
 const formError = ref('')
 const revision = ref('')
@@ -53,6 +54,9 @@ async function load() {
 }
 
 async function saveProfile() {
+  if (saving.value || uploading.value) {
+    return
+  }
   saving.value = true
   formError.value = ''
   try {
@@ -245,16 +249,17 @@ onBeforeUnmount(() => {
             <el-input v-model="form.email" type="email" maxlength="254" />
             <small class="muted-text">仅作联系资料，不代表已经验证的订阅邮箱。</small>
           </label>
-          <label>
-            头像地址
-            <el-input v-model="form.avatar" type="url" maxlength="2048" />
-            <ImagePreview :src="form.avatar" alt="头像预览" />
-          </label>
+          <DisplayImageField
+            v-model="form.avatar"
+            v-model:uploading="uploading"
+            label="头像地址"
+            :disabled="saving"
+          />
           <label>
             个人简介
             <el-input v-model="form.intro" type="textarea" :rows="4" maxlength="500" />
           </label>
-          <el-button type="primary" native-type="submit" :loading="saving">保存资料</el-button>
+          <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存资料</el-button>
         </form>
       </el-card>
       <div class="settings-stack">

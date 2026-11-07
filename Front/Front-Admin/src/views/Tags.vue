@@ -22,6 +22,7 @@ import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { useList } from '../composables/useList.js'
@@ -91,8 +92,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/tags/${row.tagId}`)
-    await request('/admin/tags/batch-delete', { method: 'POST', body: { items: [{ id: row.tagId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/tags', 'tagId', [row])
+    await request('/admin/tags/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('标签已删除')
     load()
   } catch (failure) {

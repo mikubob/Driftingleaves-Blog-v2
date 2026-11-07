@@ -369,21 +369,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     private ArticleProfileVO changeStatus(long id, int status, String revision) {
         LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
+        validateStatusChange(id, status, locked);
         ArticleRow article = locked.article();
-        requireNormal(article);
-        if (article.getStatus() == 0 && status == 2) {
-            throw new BusinessException(409, "STATE_CONFLICT", "草稿须先发布");
-        }
         boolean firstPublic = status == 1 && article.getPublishTime() == null && article.getVisibility() == 1;
-        if (status == 1) {
-            String markdown = content(id).getMarkdownContent();
-            requirePublishable(markdown, article.getArticleType(), article.getOriginalUrl());
-            References references = resources.inspect(id, markdown, article.getCoverUrl());
-            validateFiles(references.fileIds(), locked.files());
-            lockAssociations(article.getCategoryId(), articles.tags(id).stream().map(BlogTag::getTagId).toList());
-            if (article.getPublishTime() == null) {
-                article.setPublishTime(now());
-            }
+        if (status == 1 && article.getPublishTime() == null) {
+            article.setPublishTime(now());
         }
         article.setStatus(status);
         articles.updateArticle(article, requireAdmin("publish"));
@@ -391,6 +381,22 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             notifications.afterArticlePublished(id);
         }
         return profile(articles.scoped(id, null, false));
+    }
+
+    /** 检查发布或下架条件，发布时校验正文和附件并锁住分类、标签。 */
+    private void validateStatusChange(long id, int status, LockedArticle locked) {
+        ArticleRow article = locked.article();
+        requireNormal(article);
+        if (article.getStatus() == 0 && status == 2) {
+            throw new BusinessException(409, "STATE_CONFLICT", "草稿须先发布");
+        }
+        if (status == 1) {
+            String markdown = content(id).getMarkdownContent();
+            requirePublishable(markdown, article.getArticleType(), article.getOriginalUrl());
+            References references = resources.inspect(id, markdown, article.getCoverUrl());
+            validateFiles(references.fileIds(), locked.files());
+            lockAssociations(article.getCategoryId(), articles.tags(id).stream().map(BlogTag::getTagId).toList());
+        }
     }
 
     /**
@@ -845,20 +851,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         lockBatchFiles(sorted, "publish");
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
-            String revision = item.revision();
-            LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
-            ArticleRow article = locked.article();
-            requireNormal(article);
-            if (article.getStatus() == 0 && status == 2) {
-                throw new BusinessException(409, "STATE_CONFLICT", "草稿须先发布");
-            }
-            if (status == 1) {
-                String markdown = content(id).getMarkdownContent();
-                requirePublishable(markdown, article.getArticleType(), article.getOriginalUrl());
-                References references = resources.inspect(id, markdown, article.getCoverUrl());
-                validateFiles(references.fileIds(), locked.files());
-                lockAssociations(article.getCategoryId(), articles.tags(id).stream().map(BlogTag::getTagId).toList());
-            }
+            LockedArticle locked = lockArticle(id, "publish", item.revision(), Set.of());
+            validateStatusChange(id, status, locked);
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {

@@ -1,5 +1,5 @@
 <script setup>
-import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
@@ -28,6 +28,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -47,6 +48,7 @@ const {
 )
 const dialog = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const formError = ref('')
 const id = ref('')
 const revision = ref('')
@@ -101,6 +103,9 @@ async function edit(row) {
 }
 
 async function save() {
+  if (saving.value || uploading.value) {
+    return
+  }
   formError.value = ''
   if (new TextEncoder().encode(form.content).length > 65535 || !form.content.trim()) {
     formError.value = '经历内容不能为空，UTF-8 不能超过 65,535 字节。'
@@ -150,8 +155,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/cv/experiences/${row.experienceId}`)
-    await request('/admin/cv/experiences/batch-delete', { method: 'POST', body: { items: [{ id: row.experienceId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/cv/experiences', 'experienceId', [row])
+    await request('/admin/cv/experiences/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('简历经历已删除')
     load()
   } catch (failure) {
@@ -292,8 +297,8 @@ const batchActions = computed(() => {
       :title="id ? '编辑简历经历' : '新建简历经历'"
       width="620px"
       :close-on-click-modal="false"
-      :show-close="!saving"
-      :close-on-press-escape="!saving"
+      :show-close="!saving && !uploading"
+      :close-on-press-escape="!saving && !uploading"
     >
       <form class="edit-form" @submit.prevent="save">
         <label>
@@ -312,11 +317,12 @@ const batchActions = computed(() => {
           专业 / 职位 / 角色
           <el-input v-model="form.subtitle" type="text" maxlength="200" />
         </label>
-        <label>
-          标志图片地址
-          <el-input v-model="form.logoUrl" type="url" maxlength="2048" />
-          <ImagePreview :src="form.logoUrl" alt="经历标志预览" />
-        </label>
+        <DisplayImageField
+          v-model="form.logoUrl"
+          v-model:uploading="uploading"
+          label="Logo 地址"
+          :disabled="saving"
+        />
         <label>
           Markdown 内容
           <el-input v-model="form.content" type="textarea" :rows="8" required />
@@ -346,8 +352,8 @@ const batchActions = computed(() => {
         </label>
         <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
-          <el-button :disabled="saving" @click="dialog = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :loading="saving">保存简历经历</el-button>
+          <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
+          <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存简历经历</el-button>
         </div>
       </form>
     </el-dialog>

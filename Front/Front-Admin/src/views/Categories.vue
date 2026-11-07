@@ -145,8 +145,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/categories/${row.categoryId}`)
-    await request('/admin/categories/batch-delete', { method: 'POST', body: { items: [{ id: row.categoryId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/categories', 'categoryId', [row])
+    await request('/admin/categories/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('分类已删除')
     load()
   } catch (failure) {

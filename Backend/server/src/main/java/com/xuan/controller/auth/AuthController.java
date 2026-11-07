@@ -1,7 +1,8 @@
-package com.xuan.controller.blog;
+package com.xuan.controller.auth;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.client.OAuthProviderClient;
+import com.xuan.dto.AdminEmailCodeDTO;
 import com.xuan.dto.EmailCodeDTO;
 import com.xuan.dto.EmailLoginDTO;
 import com.xuan.dto.LoginDTO;
@@ -34,7 +35,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -45,13 +45,12 @@ import java.util.List;
 /**
  * 登录和第三方授权接口，登录 Cookie 与 OAuth 浏览器标识分开。
  */
-@RestController("blogAuthController")
-@RequestMapping("/blog/auth")
+@RestController
 @RequiredArgsConstructor
 public class AuthController {
 
     /** 第三方授权的浏览器标识 Cookie，不作为登录凭据。 */
-    public static final String BROWSER_COOKIE = "__Host-dl-oauth-browser";
+    private static final String BROWSER_COOKIE = "__Host-dl-oauth-browser";
     private final IUserService users;
     private final SessionManager sessions;
     private final IOAuthService oauth;
@@ -67,34 +66,35 @@ public class AuthController {
      * @param browser 已有 OAuth 浏览器标识，可缺失
      * @return 201 响应及不含密码哈希的本人资料
      */
-    @PostMapping("/register")
+    @PostMapping({"/admin/auth/register", "/blog/auth/register"})
     public ResponseEntity<Result<MeVO>> register(@Valid @RequestBody RegisterDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
         // 1. 注册写库前先检查 IP 和浏览器对应的请求次数。
         limiter.register(request, browser);
-        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        verifyCaptcha(request);
 
         // 2. 交给业务事务创建账号，只返回资料和 201，不在注册时自动登录。
         return ResponseEntity.status(201).body(Result.ok(users.register(body)));
     }
 
     /**
-     * 使用用户名和密码登录，先检查失败次数，只在凭据错误时计数，密码校验、加锁和 Token 创建由业务层处理。
+     * 使用用户名密码和图形验证码登录，后台入口权限由用户服务检查。
      *
-     * @param body 已校验的用户名和密码长度的登录请求
+     * @param body 已校验的登录凭据
      * @param request 用于按 IP 和统一格式后的用户名限流的请求
      * @return 登录 Cookie 和脱敏资料
      */
-    @PostMapping("/login")
+    @PostMapping({"/admin/auth/login", "/blog/auth/login"})
     @RateLimit(value = "login-total", limit = 30)
     public ResponseEntity<Result<SessionVO>> login(@Valid @RequestBody LoginDTO body, HttpServletRequest request) {
         // 1. 先看失败次数是否超限，超限后就不再验证密码。
         limiter.checkLogin(request, body.username());
-        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        verifyCaptcha(request);
 
         // 2. 用户业务一起完成凭据验证、会话签发和登录时间写入。
+        WebSession side = WebSession.forPath(request.getServletPath());
         try {
-            return WebSession.BLOG.login(users.login(body, SessionManager.BLOG_TIMEOUT_SECONDS));
+            return side.login(users.login(body, side.timeoutSeconds()));
         } catch (BusinessException exception) {
             // 3. 只累计凭据错误，基础服务出错或账号禁用不能算密码输错。
             if ("AUTH_FAILED".equals(exception.getCode())) {
@@ -104,23 +104,42 @@ public class AuthController {
         }
     }
 
-    /** 发送注册或前台登录验证码，先校验图形验证码，不返回邮件中的数字。 */
-    @PostMapping("/email-code")
-    public Result<Void> emailCode(@Valid @RequestBody EmailCodeDTO body, HttpServletRequest request) {
-        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+    /** 发送后台登录验证码，先校验图形验证码和后台权限，只发送到账号当前邮箱。 */
+    @PostMapping("/admin/auth/email-code")
+    @RateLimit(value = "login-total", limit = 30)
+    public Result<Void> adminEmailCode(@Valid @RequestBody AdminEmailCodeDTO body, HttpServletRequest request) {
+        limiter.checkLogin(request, body.email());
+        verifyCaptcha(request);
+        limiter.email(request, body.email());
+        try {
+            users.sendAdminEmailCode(body);
+            return Result.ok(null);
+        } catch (BusinessException exception) {
+            if ("AUTH_FAILED".equals(exception.getCode())) {
+                limiter.loginFailed(request, body.email());
+            }
+            throw exception;
+        }
+    }
+
+    /** 发送注册或博客登录验证码，先校验图形验证码。 */
+    @PostMapping("/blog/auth/email-code")
+    public Result<Void> blogEmailCode(@Valid @RequestBody EmailCodeDTO body, HttpServletRequest request) {
+        verifyCaptcha(request);
         limiter.email(request, body.email());
         users.sendEmailCode(body);
         return Result.ok(null);
     }
 
-    /** 使用邮箱验证码登录，图形验证码也必须通过，会话有效期与密码登录一致。 */
-    @PostMapping("/email-login")
+    /** 使用邮箱验证码和图形验证码登录，会话有效期与密码登录一致。 */
+    @PostMapping({"/admin/auth/email-login", "/blog/auth/email-login"})
     @RateLimit(value = "login-total", limit = 30)
     public ResponseEntity<Result<SessionVO>> emailLogin(@Valid @RequestBody EmailLoginDTO body, HttpServletRequest request) {
         limiter.checkLogin(request, body.email());
-        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
+        verifyCaptcha(request);
+        WebSession side = WebSession.forPath(request.getServletPath());
         try {
-            return WebSession.BLOG.login(users.loginEmail(body, SessionManager.BLOG_TIMEOUT_SECONDS));
+            return side.login(users.loginEmail(body, side.timeoutSeconds()));
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
                 limiter.loginFailed(request, body.email());
@@ -134,9 +153,9 @@ public class AuthController {
      *
      * @return data 为 null 的成功结果
      */
-    @PostMapping("/logout")
-    public ResponseEntity<Result<Void>> logout() {
-        return WebSession.BLOG.logout(sessions);
+    @PostMapping({"/admin/auth/logout", "/blog/auth/logout"})
+    public ResponseEntity<Result<Void>> logout(HttpServletRequest request) {
+        return WebSession.forPath(request.getServletPath()).logout(sessions);
     }
 
     /**
@@ -144,9 +163,10 @@ public class AuthController {
      *
      * @return 仅含平台标识和展示名称的列表，无可用平台时为空列表
      */
-    @GetMapping("/oauth/providers")
-    public Result<List<ProviderVO>> providers() {
-        return Result.ok(providers.providers(WebSession.BLOG.site()).stream()
+    @GetMapping({"/admin/auth/oauth/providers", "/blog/auth/oauth/providers"})
+    public Result<List<ProviderVO>> providers(HttpServletRequest request) {
+        WebSession side = WebSession.forPath(request.getServletPath());
+        return Result.ok(providers.providers(side.site()).stream()
                 .map(provider -> new ProviderVO(provider.source(), provider.displayName())).toList());
     }
 
@@ -159,11 +179,15 @@ public class AuthController {
      * @param browser 已有浏览器标识；缺失或格式无效时重新生成
      * @return 授权 URL、state 有效秒数及安全 Cookie 响应头
      */
-    @PostMapping("/oauth/{source}/authorize")
+    @PostMapping({"/admin/auth/oauth/{source}/authorize", "/blog/auth/oauth/{source}/authorize"})
     public ResponseEntity<Result<OAuthAuthorizeVO>> authorize(@PathVariable String source,
             @Valid @RequestBody OAuthAuthorizeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
+        WebSession side = WebSession.forPath(request.getServletPath());
         if (body.operation() == OAuthAuthorizeDTO.Operation.BIND) {
+            if (side == WebSession.ADMIN) {
+                sessions.requireAdminAuthentication();
+            }
             WebSession.requireExpectedUser(request.getHeader(WebSession.EXPECTED_USER), sessions.currentUserId());
         }
         // 1. 复用或创建只用于 OAuth 流程的浏览器标识。
@@ -175,7 +199,7 @@ public class AuthController {
         } else {
             limiter.oauth(request, id);
         }
-        OAuthAuthorizeVO result = oauth.authorize(WebSession.BLOG, source, body.operation(), id);
+        OAuthAuthorizeVO result = oauth.authorize(side, source, body.operation(), id);
 
         // 3. 设置只关联流程的安全 Cookie，再返回授权 URL。
         ResponseCookie cookie = ResponseCookie.from(BROWSER_COOKIE, id).secure(true).httpOnly(true)
@@ -193,12 +217,14 @@ public class AuthController {
      * @param browser 当前浏览器关联 Cookie，必须匹配发起流程
      * @return 可信流程的 303 Location 响应，不直接返回本站 Token
      */
-    @GetMapping("/oauth/{source}/callback")
+    @GetMapping({"/admin/auth/oauth/{source}/callback", "/blog/auth/oauth/{source}/callback"})
     @RateLimit(value = "oauth-callback", limit = 30)
     public ResponseEntity<Void> callback(@PathVariable String source, @RequestParam(required = false) String state,
             @RequestParam(required = false) String code, @RequestParam(required = false) String error,
+            HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        String redirect = oauth.callback(WebSession.BLOG, source, state, code, error, browser);
+        WebSession side = WebSession.forPath(request.getServletPath());
+        String redirect = oauth.callback(side, source, state, code, error, browser);
         return ResponseEntity.status(303).location(URI.create(redirect)).build();
     }
 
@@ -208,21 +234,26 @@ public class AuthController {
      * @param body 通过格式校验的 60 秒一次性结果票据
      * @param request 用于 IP 限流的当前请求
      * @param browser 必须与票据关联一致的浏览器标识
-     * @return LOGIN 的会话分支或 BIND 的绑定分支，二者不混合
+     * @return 登录会话或绑定结果
      */
-    @PostMapping("/oauth/exchange")
+    @PostMapping({"/admin/auth/oauth/exchange", "/blog/auth/oauth/exchange"})
     public ResponseEntity<Result<?>> exchange(@Valid @RequestBody OAuthExchangeDTO body, HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
         // 限流后核对浏览器和一次性票据。
         limiter.oauth(request, browser);
 
-        // 2. 登录会返回新会话，绑定只确认原账号的绑定结果，不发新会话，也不切换账号。
-        Object result = oauth.exchange(WebSession.BLOG, body.ticket(), browser,
+        WebSession side = WebSession.forPath(request.getServletPath());
+        Object result = oauth.exchange(side, body.ticket(), browser,
                 request.getHeader(WebSession.EXPECTED_USER));
         if (result instanceof LoginSession login) {
-            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, WebSession.BLOG.issue(login))
+            return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, side.issue(login))
                     .body(Result.ok(new OAuthLoginResultVO("LOGIN", login.response())));
         }
         return ResponseEntity.ok().body(Result.ok(result));
+    }
+
+    /** 从当前请求读取图形验证码并校验。 */
+    private void verifyCaptcha(HttpServletRequest request) {
+        captchas.verify(request.getHeader("X-Captcha-Id"), request.getHeader("X-Captcha-Code"));
     }
 }

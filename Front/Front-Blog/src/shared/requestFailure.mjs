@@ -8,13 +8,10 @@ export function setRequestFailureHandler(handler = () => {}) {
 /** 报告请求错误，认证限流和局部请求失败由当前界面提示。 */
 export function reportRequestFailure(error, path) {
   const route = path.split('?')[0]
-  if (error.status === 429 && /^\/(admin|blog)\/auth\//.test(route)) {
+  if (error.status === 429 && route.startsWith('/blog/auth/')) {
     return error
   }
-  if (/^\/admin\/(comments|messages)\/[1-9]\d*\/conversation$/.test(route)) {
-    return error
-  }
-  if (!/^\/(home|blog|cv)\/analytics\/(page-views|online\/tickets)$/.test(route)) {
+  if (error.code === 'ACCESS_BLOCKED' || !/^\/blog\/analytics\/(page-views|online\/tickets)$/.test(route)) {
     onFailure(error)
   }
   return error

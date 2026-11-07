@@ -201,6 +201,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
     /** 判断公开接口，涉及身份的讨论和统计接口仍单独处理。 */
     private static boolean isPublic(String method, String path) {
+        if (("GET".equals(method) || "HEAD".equals(method)) && path.matches("/blog/display-images/[^/]+")) {
+            return true;
+        }
         return PUBLIC.contains(method + " " + path) || ("GET".equals(method)
                 && (path.matches("/blog/articles/[^/]+") || path.matches("/blog/articles/[^/]+/comments")
                 || path.matches("/blog/articles/[^/]+/files/[^/]+/content")

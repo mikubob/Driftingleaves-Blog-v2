@@ -25,6 +25,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -124,8 +125,8 @@ async function remove(row) {
     return
   }
   try {
-    const detail = await request(`/admin/permissions/${row.permissionId}`)
-    await request('/admin/permissions/batch-delete', { method: 'POST', body: { items: [{ id: row.permissionId, revision: detail.revision }] } })
+    const payload = await prepareBatch('/admin/permissions', 'permissionId', [row])
+    await request('/admin/permissions/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('权限已删除')
     load()
   } catch (failure) {

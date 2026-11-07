@@ -32,7 +32,7 @@ import 'md-editor-v3/lib/style.css'
 import { getImage, getOptions, isId, request } from '../api.js'
 import { can } from '../session.js'
 import { nullable } from '../form.js'
-import { adminArticleUrl } from '../editorPreview.mjs'
+import { adminArticleUrl, editorImageUrl } from '../editorPreview.mjs'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../shared/useMarkdownPreview.js'
 import RequestError from '../components/RequestError.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
@@ -72,7 +72,7 @@ const previewTheme = useMarkdownPreferences('author')
 const { renderer: mdEditor, error: imageError, sanitize, headingId, onRendered } = useMarkdownRendering(
   computed(() => form.markdownContent),
   adminArticleUrl,
-  getImage,
+  (url, signal) => getImage(editorImageUrl(url, id.value), signal),
 )
 const saved = ref(JSON.stringify(form))
 const dirty = computed(() => JSON.stringify(form) !== saved.value)
@@ -473,7 +473,12 @@ onBeforeUnmount(() => {
               accept="image/png,image/jpeg"
               class="cover-uploader"
             >
-              <ImagePreview v-if="form.coverUrl.trim()" :src="form.coverUrl" alt="文章封面预览" class="cover-preview" />
+              <ImagePreview
+                v-if="form.coverUrl.trim()"
+                :src="editorImageUrl(form.coverUrl.trim(), id)"
+                alt="文章封面预览"
+                class="cover-preview"
+              />
               <div v-else class="cover-placeholder">{{ uploading ? '上传中…' : '点击上传封面' }}</div>
             </el-upload>
             封面地址
@@ -481,7 +486,6 @@ onBeforeUnmount(() => {
               v-model="form.coverUrl"
               maxlength="2048"
               :disabled="!editable"
-              placeholder="外部 URL 或当前文章附件路径"
             />
           </label>
           <label>

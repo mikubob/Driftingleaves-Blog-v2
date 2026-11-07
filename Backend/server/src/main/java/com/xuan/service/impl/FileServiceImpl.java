@@ -108,7 +108,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "upload", target = "blog:file", permission = "blog:file:upload")
-    public FileVO upload(MultipartFile upload) {
+    public FileVO upload(MultipartFile upload, boolean publicImage) {
         users.lockById(sessions.currentUserId());
         requireAdmin("upload");
         String name = upload.getOriginalFilename();
@@ -120,6 +120,10 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         int limit = FileUtils.maxBytes(extension);
         if (name.lastIndexOf('.') < 0 || limit == 0) {
             throw new BusinessException(400, "VALIDATION_ERROR", "不支持此文件类型，请选择 PNG/JPEG 图片、MP3/WAV/OGG/FLAC 音频或 LRC/JSON/TXT 歌词。");
+        }
+        String mime = FileUtils.mimeType(extension);
+        if (publicImage && !mime.startsWith("image/")) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "请选择 PNG 或 JPEG 图片。");
         }
         if (upload.getSize() > limit) {
             throw tooLarge();
@@ -144,7 +148,6 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 throw invalid();
             }
             Files.write(temporary, bytes);
-            String mime = FileUtils.mimeType(extension);
             if (mime.startsWith("image/")) {
                 BufferedImage image = validateImage(temporary, extension);
                 byte[] compressed = ImageCompressUtils.compress(bytes, image, extension, imageProperties);
@@ -161,7 +164,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             row.setOriginalName(name);
             row.setMimeType(mime);
             row.setSizeBytes(BigInteger.valueOf(bytes.length));
-            storage.store(temporary, extension, row);
+            storage.store(temporary, extension, row, publicImage);
             // 内容处理和存储可能耗时，提交前还要确认原 Token 没被撤销。
             requireAdmin("upload");
             files.insert(row);
@@ -178,6 +181,18 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         requireAdmin("query");
         articles.lockFile(id);
         return content(requireFile(articles.scopedFile(id, requireAdmin("query"))));
+    }
+
+    /** 只读取专门公开上传的图片，使用固定文件名，避免公开原始文件名。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public FileContent displayImage(long id) {
+        BlogFile file = requireFile(articles.lockFile(id));
+        if (!storage.isPublicImage(file)) {
+            throw missing();
+        }
+        String name = "image/png".equals(file.getMimeType()) ? "image.png" : "image.jpg";
+        return new FileContent(name, file.getMimeType(), storage.read(file));
     }
 
     /** 删除文件，锁住文件后检查所有文章的正文和封面引用；先删除存储文件，再一起提交文件记录删除和成功日志。 */
@@ -423,7 +438,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     private FileVO view(BlogFile row) {
         return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), row.getMimeType(),
                 row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
-                "/api/v1/admin/files/" + row.getFileId() + "/content");
+                "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row));
     }
 
     /** 检查文件是否存在，先校验权限和范围；文件不存在或无权访问时都返回 404。 */

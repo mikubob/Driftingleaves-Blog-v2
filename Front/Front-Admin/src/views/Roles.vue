@@ -31,6 +31,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { getOptions, request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import { flattenMenus } from '../navigation.js'
 import { nullable } from '../form.js'
@@ -168,9 +169,8 @@ async function remove(row) {
     return
   }
   try {
-    const path = `/admin/roles/${row.roleId}`
-    const current = await request(path)
-    await request('/admin/roles/batch-delete', { method: 'POST', body: { items: [{ id: row.roleId, revision: current.revision }] } })
+    const payload = await prepareBatch('/admin/roles', 'roleId', [row])
+    await request('/admin/roles/batch-delete', { method: 'POST', body: payload })
     ElMessage.success('角色已删除')
     load()
   } catch (failure) {

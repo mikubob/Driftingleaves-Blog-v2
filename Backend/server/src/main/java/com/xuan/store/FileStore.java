@@ -67,13 +67,13 @@ public class FileStore {
     }
 
     /** 保存已校验的文件，按类型分目录，使用服务端随机文件名，不使用展示名称作为路径。 */
-    public void store(Path temporary, String extension, BlogFile file) {
+    public void store(Path temporary, String extension, BlogFile file, boolean publicImage) {
         AliOssClient client = oss.getIfAvailable();
         if (client != null) {
             file.setStorageType("oss");
             file.setBucket(ossProperties.getBucket());
             try {
-                file.setObjectKey(client.upload(Files.readAllBytes(temporary), extension));
+                file.setObjectKey(client.upload(Files.readAllBytes(temporary), extension, publicImage));
             } catch (IOException exception) {
                 throw unavailable();
             }
@@ -81,7 +81,8 @@ public class FileStore {
         }
         file.setStorageType("local");
         file.setBucket("");
-        file.setObjectKey(FileUtils.getFileCategory(extension) + "/" + TokenUtils.random() + "." + extension);
+        String category = publicImage ? FileUtils.PUBLIC_IMAGE_CATEGORY : FileUtils.getFileCategory(extension);
+        file.setObjectKey(category + "/" + TokenUtils.random() + "." + extension);
         try {
             Path target = localTarget(file);
             Files.createDirectories(target.getParent());
@@ -89,6 +90,12 @@ public class FileStore {
         } catch (IOException exception) {
             throw unavailable();
         }
+    }
+
+    /** 根据服务端保存的目录区分公开图片和普通附件。 */
+    public boolean isPublicImage(BlogFile file) {
+        String prefix = "oss".equals(file.getStorageType()) ? ossProperties.getKeyPrefix() : "";
+        return file.getObjectKey().startsWith(prefix + FileUtils.PUBLIC_IMAGE_CATEGORY + "/");
     }
 
     /** 读取文件内容，必须在业务锁内调用并限制大小，关闭流后返回；文件缺失或大小变化时返回 503。 */

@@ -7,10 +7,10 @@ import com.xuan.controller.admin.PermissionController;
 import com.xuan.controller.admin.RoleController;
 import com.xuan.controller.admin.TagController;
 import com.xuan.controller.admin.UserController;
+import com.xuan.controller.auth.AuthController;
 import com.xuan.controller.auth.CaptchaController;
-import com.xuan.controller.blog.AuthController;
+import com.xuan.controller.auth.MeController;
 import com.xuan.controller.blog.AuthorController;
-import com.xuan.controller.blog.MeController;
 import com.xuan.controller.blog.MyArticleController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,9 +22,8 @@ import java.util.Map;
 import java.util.Set;
 
 /** 检查登录、系统管理和文章分类标签接口的参数，拒绝未声明的字段。 */
-@ControllerAdvice(assignableTypes = {AuthController.class, CaptchaController.class,
-        com.xuan.controller.admin.AuthController.class, com.xuan.controller.admin.MeController.class,
-        MeController.class, UserController.class,
+@ControllerAdvice(assignableTypes = {AuthController.class, CaptchaController.class, MeController.class,
+        UserController.class,
         RoleController.class, PermissionController.class,
         MenuController.class, ArticleController.class,
         CategoryController.class, TagController.class,

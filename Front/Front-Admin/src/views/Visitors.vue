@@ -56,6 +56,16 @@ function isBlocked(row) {
   )
 }
 
+/** 有效的 IP 封禁记录要先解封，才能删除。 */
+function canDelete(row) {
+  return !row.blockedIpAddress || !isBlocked(row)
+}
+
+/** 已有封禁时沿用原地址，否则使用最近访问的 IP。 */
+function blockTarget(row) {
+  return row.blockedIpAddress || row.ipAddress
+}
+
 async function view(row, block = false) {
   try {
     const result = await request(`/admin/visitors/${row.visitorId}`)
@@ -89,7 +99,7 @@ async function block() {
       },
     })
     blockVisible.value = false
-    ElMessage.success('已限制该访客统计标识')
+    ElMessage.success('已封禁该 IP')
     load()
   } catch (failure) {
     formError.value = failure.message
@@ -99,14 +109,18 @@ async function block() {
 }
 
 async function action(row, operation) {
+  let confirmation = '解除该访客统计标识的采集限制？'
+  if (operation === 'delete') {
+    if (!canDelete(row)) {
+      ElMessage.warning('请先解除该记录的 IP 封禁再删除。')
+      return
+    }
+    confirmation = '删除该访客统计记录？关联浏览明细中的访客 ID 会置空。'
+  } else if (row.blockedIpAddress) {
+    confirmation = `解除本条记录对 ${row.blockedIpAddress} 的封禁？同 IP 的其他封禁仍然有效。`
+  }
   try {
-    await ElMessageBox.confirm(
-      operation === 'delete'
-        ? '删除该访客统计记录？关联浏览明细中的访客 ID 会置空。'
-        : '解除该访客统计标识的限制？',
-      '管理访客',
-      { confirmButtonText: '确认', cancelButtonText: '取消' },
-    )
+    await ElMessageBox.confirm(confirmation, '管理访客', { confirmButtonText: '确认', cancelButtonText: '取消' })
   } catch {
     return
   }
@@ -114,6 +128,9 @@ async function action(row, operation) {
   try {
     const path = `/admin/visitors/${row.visitorId}`
     const result = await request(path)
+    if (operation === 'unblock' && row.blockedIpAddress !== result.data.blockedIpAddress) {
+      throw new Error('封禁地址已变化，请刷新列表后重试。')
+    }
     await request(`/admin/visitors/${operation === 'delete' ? 'batch-delete' : 'batch-unblock'}`, {
       method: operation === 'delete' ? 'POST' : 'PUT',
       body: { items: [{ id: row.visitorId, revision: result.revision }] },
@@ -134,11 +151,15 @@ const batchActions = computed(() => {
   const actions = []
   if (can('blog:visitor:block', true)) {
     actions.push({
-      label: '批量封禁',
+      label: '批量封禁 IP',
       type: 'warning',
       path: 'batch-block',
       method: 'PUT',
       block: true,
+      accept: (row) => !!blockTarget(row),
+      invalidMessage: '所选记录中有访客没有可封禁的 IP。',
+      matchDetail: (row, latest) => blockTarget(row) === blockTarget(latest),
+      warning: '使用已保存的封禁地址或最近访问 IP。同一 IP 下的访客均无法读取公开内容、评论或留言。',
     })
   }
   if (can('blog:visitor:unblock', true)) {
@@ -147,6 +168,8 @@ const batchActions = computed(() => {
       type: 'success',
       path: 'batch-unblock',
       method: 'PUT',
+      matchDetail: (row, latest) => row.blockedIpAddress === latest.blockedIpAddress,
+      warning: '解除所选记录的封禁。同 IP 的其他封禁仍然有效。',
     })
   }
   if (can('blog:visitor:delete', true)) {
@@ -154,6 +177,8 @@ const batchActions = computed(() => {
       label: '批量删除',
       path: 'batch-delete',
       danger: true,
+      accept: canDelete,
+      invalidMessage: '请先解除所选记录中的有效 IP 封禁。',
       warning: '浏览明细保留，访客关联置空，UV可能减少，PV不变。',
     })
   }
@@ -208,7 +233,7 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>访客列表</h2>
-        <span class="muted-text">统计标识不代表登录身份</span>
+        <span class="muted-text">IP 封禁会影响共用该地址的访客</span>
       </div>
             <BatchActions
         ref="batch" resource="/admin/visitors" id-key="visitorId"
@@ -234,11 +259,12 @@ const batchActions = computed(() => {
         <el-table-column label="浏览次数" min-width="100" align="center">
           <template #default="{ row }">{{ formatCount(row.totalViews) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="100" align="center">
+        <el-table-column label="本条封禁" width="110" align="center">
           <template #default="{ row }">
             <span :class="['status-tag', isBlocked(row) ? 'is-danger' : 'is-success']">
               <i aria-hidden="true"></i>
-              {{ isBlocked(row) ? '已封禁' : '正常' }}
+              <template v-if="isBlocked(row)">{{ row.blockedIpAddress ? 'IP 已封禁' : '限制采集' }}</template>
+              <template v-else>正常</template>
             </span>
           </template>
         </el-table-column>
@@ -258,8 +284,8 @@ const batchActions = computed(() => {
         <el-table-column label="操作" width="220" align="center" fixed="right">
           <template #default="{ row }">
             <el-button type="primary" link @click="view(row)">详情</el-button>
-            <el-button type="warning" v-if="can('blog:visitor:block', true)" link @click="view(row, true)">
-              封禁
+            <el-button type="warning" v-if="can('blog:visitor:block', true) && blockTarget(row)" link @click="view(row, true)">
+              封禁 IP
             </el-button>
             <el-button
               type="success"
@@ -290,6 +316,9 @@ const batchActions = computed(() => {
         <el-descriptions-item label="访客 ID">{{ detail.visitorId }}</el-descriptions-item>
         <el-descriptions-item label="统计标识">{{ detail.fingerprint }}</el-descriptions-item>
         <el-descriptions-item label="IP 地址">{{ detail.ipAddress || '—' }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.blockedIpAddress" label="封禁 IP">
+          {{ detail.blockedIpAddress }}
+        </el-descriptions-item>
         <el-descriptions-item label="地域">
           {{ [detail.country, detail.province, detail.city].filter(Boolean).join(' / ') || '未知' }}
         </el-descriptions-item>
@@ -314,13 +343,15 @@ const batchActions = computed(() => {
     </el-dialog>
     <el-dialog
       v-model="blockVisible"
-      title="限制访客统计标识"
+      title="封禁 IP"
       width="500px"
       :close-on-click-modal="false"
       :show-close="!busy"
     >
       <form class="edit-form" @submit.prevent="block">
-        <p class="muted-text">仅限制该统计标识继续采集访问数据。</p>
+        <p v-if="detail" class="muted-text">
+          {{ blockTarget(detail) }} 下的访客将无法读取公开内容、发表评论或留言。
+        </p>
         <label>
           结束时间（留空为永久）
           <el-date-picker v-model="blockedUntil" type="datetime" placeholder="选择结束时间" />
@@ -328,7 +359,7 @@ const batchActions = computed(() => {
         <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="busy" @click="blockVisible = false">取消</el-button>
-          <el-button type="primary" native-type="submit" :loading="busy">确认限制</el-button>
+          <el-button type="primary" native-type="submit" :loading="busy" :disabled="!detail || !blockTarget(detail)">确认封禁</el-button>
         </div>
       </form>
     </el-dialog>

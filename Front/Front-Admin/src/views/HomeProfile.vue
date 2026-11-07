@@ -1,5 +1,5 @@
 <script setup>
-import ImagePreview from '../components/ImagePreview.vue'
+import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref } from 'vue'
 import { ElButton, ElCard, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
@@ -27,6 +27,7 @@ const form = reactive({
 const users = ref([])
 const loading = ref(false)
 const saving = ref(false)
+const uploading = ref(false)
 const error = ref('')
 const formError = ref('')
 const revision = ref('')
@@ -62,6 +63,9 @@ async function load() {
 }
 
 async function save() {
+  if (saving.value || uploading.value) {
+    return
+  }
   saving.value = true
   formError.value = ''
   try {
@@ -134,11 +138,12 @@ onMounted(load)
           公开简介
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="500" />
         </label>
-        <label>
-          公开头像 URL
-          <el-input v-model="form.avatar" type="url" maxlength="2048" />
-          <ImagePreview :src="form.avatar" alt="公开头像预览" />
-        </label>
+        <DisplayImageField
+          v-model="form.avatar"
+          v-model:uploading="uploading"
+          label="公开头像"
+          :disabled="saving || !can('home:profile:update', true)"
+        />
         <div class="form-row">
           <label>
             个人网站
@@ -166,6 +171,7 @@ onMounted(load)
             type="primary"
             native-type="submit"
             :loading="saving"
+            :disabled="uploading"
           >
             保存公开资料
           </el-button>

@@ -6,6 +6,20 @@
 
 初始化脚本已包含用户最近登录 IP/地域，以及评论和留言发布时的地域、系统和浏览器字段，不需要额外执行升级脚本。新评论和留言由服务端从可信请求 IP 查询省市，从 User-Agent 识别系统与浏览器；公开响应不返回完整 IP 和原始 UA，未知字段允许为空。
 
+### 已有数据库启用手动 IP 封禁
+
+新库直接使用初始化基线。已有库在部署新版后端前，在对应的 V2 数据库中执行一次以下变更。
+
+```sql
+ALTER TABLE blog_visitor
+  ADD COLUMN blocked_ip_address VARCHAR(45) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL
+    COMMENT '封禁时固定的IP；NULL表示没有IP封禁' AFTER blocked_until,
+  ADD KEY idx_visitor_blocked_ip (blocked_ip_address, blocked_until),
+  ADD CONSTRAINT ck_visitor_block_ip CHECK (is_blocked = 1 OR blocked_ip_address IS NULL);
+```
+
+旧的封禁标记仍只限制访问统计。部署后在访客管理里重新选择「封禁 IP」，才会拦截对应地址的公开站点 API。
+
 用户 IP/地域在成功登录时更新，访客 IP/省市在采集时更新；访客和浏览明细保存完整 IP，仅后台相应权限可见。地域取离线库结果，无法识别时显示未知，回环地址显示本地。
 
 ## 文件与执行
@@ -223,7 +237,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 ### 邮箱登录与后台认证
 
-注册保存验证过的 `sys_user.email`。后台仅接受账密、账号当前邮箱的邮件验证码和图形验证码组合认证；初始管理员需先维护可收信的账号邮箱及本站密码。账号邮箱与订阅邮箱各自验证，不相互覆盖。
+注册保存验证过的 `sys_user.email`。后台支持账号密码、当前邮箱验证码和已绑定的第三方账号登录。密码和邮箱登录须通过图形验证码，三种登录方式都要求 `admin:access`。账号邮箱与订阅邮箱各自验证。
 
 ### 评论和留言权限（2026-11-04）
 

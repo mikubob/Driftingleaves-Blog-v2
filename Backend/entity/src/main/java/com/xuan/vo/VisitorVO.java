@@ -8,6 +8,6 @@ import java.time.LocalDateTime;
 public record VisitorVO(
         Long visitorId, String fingerprint, String ipAddress, String userAgent,
         String country, String province, String city, Long totalViews,
-        Integer isBlocked, LocalDateTime blockedUntil, LocalDateTime firstVisitTime,
+        Integer isBlocked, LocalDateTime blockedUntil, String blockedIpAddress, LocalDateTime firstVisitTime,
         LocalDateTime lastVisitTime, LocalDateTime createTime, LocalDateTime updateTime) {
 }

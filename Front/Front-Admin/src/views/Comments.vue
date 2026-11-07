@@ -19,6 +19,7 @@ import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/option/style/css'
 import 'element-plus/es/components/select/style/css'
 import { request } from '../api.js'
+import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
 import RequestError from '../components/RequestError.vue'
 import { useList } from '../composables/useList.js'
@@ -57,11 +58,10 @@ async function view(row) {
 async function review(row, status) {
   busy.value = true
   try {
-    const path = `/admin/comments/${row.commentId}`
-    const current = await request(path)
+    const payload = await prepareBatch('/admin/comments', 'commentId', [row])
     await request('/admin/comments/batch-review', {
       method: 'PUT',
-      body: { items: [{ id: row.commentId, revision: current.revision }], status },
+      body: { ...payload, status },
     })
     ElMessage.success(status === 1 ? '评论已通过' : '评论已驳回')
     await load()
