@@ -22,6 +22,12 @@ public class OssConfig {
     @Bean(destroyMethod = "shutdown")
     public OSS oss(AliOssProperties properties) {
         properties.validateEnabled();
+        String securityToken = properties.getSecurityToken();
+        // SDK 只在令牌为 null 时省略 STS 请求头。
+        if (securityToken != null && securityToken.isBlank()) {
+            securityToken = null;
+        }
+
         ClientBuilderConfiguration config = new ClientBuilderConfiguration();
         config.setSignatureVersion(SignVersion.V4);
         config.setConnectionTimeout(2_000);
@@ -29,7 +35,7 @@ public class OssConfig {
         config.setMaxErrorRetry(0);
         return OSSClientBuilder.create().endpoint(properties.getEndpoint()).region(properties.getRegion())
                 .credentialsProvider(new DefaultCredentialProvider(properties.getAccessKeyId(),
-                        properties.getAccessKeySecret(), properties.getSecurityToken()))
+                        properties.getAccessKeySecret(), securityToken))
                 .clientConfiguration(config).build();
     }
 

@@ -16,6 +16,10 @@ AGENT.md
 # application主配置和各环境配置仅保留本地，不上传GitHub。
 /Backend/server/src/main/resources/application*.yml
 /Backend/server/src/main/resources/application*.yaml
+# Docker 部署产物和 TLS 私钥留在本地。
+/DockerForDriftingLeaves/backend/*.jar
+/DockerForDriftingLeaves/html/*/dist/
+/DockerForDriftingLeaves/SSL/**/*.key
 
 # 浏览器检查、临时输出与 JVM 崩溃记录。
 /.playwright-cli/

@@ -607,11 +607,12 @@ LOGIN 使用已有第三方绑定，兑换时检查账号状态和 `admin:access
 | `code` | string | 成功时 | 所选平台 GET 回调授权码；适配器负责平台实际参数 |
 | `error` | string | 拒绝时 | 平台取消/错误标记，不透传平台说明 |
 | `error_description` | string | 否 | 平台错误说明，仅允许带回；不交给业务、不写日志、不回显 |
+| `iss` | string | 否 | 仅 GitHub 回调可带，值必须为 `https://github.com/login/oauth`，校验后不转发 |
 
 ##### 请求示例
 
 ```http
-GET /api/v1/admin/auth/oauth/GITHUB/callback?code=<platform-code>&state=<random-state>
+GET /api/v1/admin/auth/oauth/GITHUB/callback?code=<platform-code>&state=<random-state>&iss=https%3A%2F%2Fgithub.com%2Flogin%2Foauth
 Cookie: __Host-dl-oauth-browser=<browser-id>
 ```
 
@@ -7217,11 +7218,12 @@ LOGIN 公开且仅接受已绑定第三方身份；未绑定返回 OAUTH_NOT_BOU
 | `code` | string | 成功时 | 所选平台 GET 回调授权码；适配器负责平台实际参数 |
 | `error` | string | 拒绝时 | 平台取消/错误标记，不透传平台说明 |
 | `error_description` | string | 否 | 平台错误说明，仅允许带回；不交给业务、不写日志、不回显 |
+| `iss` | string | 否 | 仅 GitHub 回调可带，值必须为 `https://github.com/login/oauth`，校验后不转发 |
 
 ##### 请求示例
 
 ```http
-GET /api/v1/blog/auth/oauth/GITHUB/callback?code=<platform-code>&state=<random-state>
+GET /api/v1/blog/auth/oauth/GITHUB/callback?code=<platform-code>&state=<random-state>&iss=https%3A%2F%2Fgithub.com%2Flogin%2Foauth
 Cookie: __Host-dl-oauth-browser=<browser-id>
 ```
 

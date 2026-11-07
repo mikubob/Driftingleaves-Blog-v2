@@ -717,7 +717,7 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 
 1. 前端通过本端 HTTPS Origin 调用 authorize。后端设置随机 `__Host-dl-oauth-browser` 流程 Cookie，Secure、HttpOnly、SameSite=Lax、Path=/、无 Domain，最多 600 秒。BIND 使用本端原登录 Cookie 和 `X-Expected-User-Id`。Redis 流程记录发起端，完成页使用该端 HTTPS Origin。
 2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留弹窗引用；授权 URL 带 state。
-3. 平台回调代理地址为 `/api/v1/<登记端>/auth/oauth/{source}/callback`。请求包含 state 和 code，或 error/error_description。登记端和发起端不同时，先按有效 state 和 source 记录将请求转到发起端的固定回调路径，只转发 state 和授权码或通用取消标记。发起端核对流程 Cookie 和原会话，再用 Redis 原子 compare-and-consume 消费流程。浏览器不匹配不消耗有效流程，重放或过期返回 OAUTH_STATE_INVALID。
+3. 平台回调代理地址为 `/api/v1/<登记端>/auth/oauth/{source}/callback`。请求包含 state 和 code，或 error/error_description。GitHub 回调可携带一个 `iss`，入口校验其值为 `https://github.com/login/oauth`。登记端和发起端不同时，先按有效 state 和 source 记录将请求转到发起端的固定回调路径，只转发 state 和授权码或通用取消标记。发起端核对流程 Cookie 和原会话，再用 Redis 原子 compare-and-consume 消费流程。浏览器不匹配不消耗有效流程，重放或过期返回 OAUTH_STATE_INVALID。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
 5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。两端 LOGIN 共用已有绑定，先锁本站用户，再重查绑定归属及启用状态。未绑定返回 OAUTH_NOT_BOUND，不创建或合并账号。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。

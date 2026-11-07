@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.servlet.HandlerMapping;
 
+import java.util.Map;
 import java.util.Set;
 
 /** 检查登录、系统管理和文章分类标签接口的参数，拒绝未声明的字段。 */
@@ -55,12 +56,20 @@ public class ModelRequestAdvice {
                  "GET /blog/me/liked-articles" -> Set.of("page", "pageSize");
             case "GET /blog/article-rankings" -> Set.of("period", "metric", "limit");
             // 平台错误说明可以带回，但不传给业务层，也不写日志或回跳地址。
-            case "GET /blog/auth/oauth/{source}/callback", "GET /admin/auth/oauth/{source}/callback" -> Set.of("state", "code", "error", "error_description");
+            case "GET /blog/auth/oauth/{source}/callback", "GET /admin/auth/oauth/{source}/callback" ->
+                    Set.of("state", "code", "error", "error_description", "iss");
             default -> Set.of();
         };
         request.getParameterMap().forEach((name, values) -> {
             if (!allowed.contains(name) || values.length != 1 || values[0].isBlank()) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "筛选条件包含不支持、重复或空白的项目，请清空筛选后重新选择。");
+            }
+            if ("iss".equals(name)) {
+                Object pathVariables = request.getAttribute(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE);
+                if (!(pathVariables instanceof Map<?, ?> variables) || !"GITHUB".equals(variables.get("source"))
+                        || !"https://github.com/login/oauth".equals(values[0])) {
+                    throw new BusinessException(400, "VALIDATION_ERROR", "第三方授权回调的发行方不匹配，请重新发起授权。");
+                }
             }
         });
     }

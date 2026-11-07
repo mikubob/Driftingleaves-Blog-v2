@@ -17,6 +17,7 @@ import com.xuan.vo.OAuthAuthorizeVO;
 import com.xuan.vo.OAuthBindResultVO;
 import com.xuan.vo.OAuthBindingVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.TransactionException;
@@ -33,6 +34,8 @@ import java.util.Objects;
 @Service
 @RequiredArgsConstructor
 public class OAuthServiceImpl implements IOAuthService {
+
+    private static final System.Logger LOGGER = System.getLogger(OAuthServiceImpl.class.getName());
 
     private final OAuthProviderClient providers;
     private final RedisOAuthStore store;
@@ -143,6 +146,9 @@ public class OAuthServiceImpl implements IOAuthService {
             } catch (DataAccessException exception) {
                 throw exception;
             } catch (Exception exception) {
+                Throwable cause = NestedExceptionUtils.getMostSpecificCause(exception);
+                LOGGER.log(System.Logger.Level.WARNING, "第三方授权验证失败，平台={0}，异常类型={1}，原因类型={2}",
+                        source, exception.getClass().getSimpleName(), cause.getClass().getSimpleName());
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方授权失败，请重新发起");
             }
 
@@ -171,9 +177,13 @@ public class OAuthServiceImpl implements IOAuthService {
             store.save("ticket", ticket, json.writeValueAsString(result), Duration.ofSeconds(60));
             return complete + "#ticket=" + ticket + "&operation=" + flow.operation();
         } catch (BusinessException exception) {
+            LOGGER.log(System.Logger.Level.WARNING, "第三方授权未完成，平台={0}，操作={1}，错误码={2}",
+                    source, flow.operation(), exception.getCode());
             return complete + "#error=" + exception.getCode();
         } catch (DataAccessException | TransactionException exception) {
             // 可信流程消费后，业务或提交失败都跳固定完成页，不能再发票据。
+            LOGGER.log(System.Logger.Level.ERROR, "第三方授权保存失败，平台={0}，操作={1}，异常类型={2}",
+                    source, flow.operation(), exception.getClass().getSimpleName());
             return complete + "#error=SERVICE_UNAVAILABLE";
         } finally {
             // 7. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。

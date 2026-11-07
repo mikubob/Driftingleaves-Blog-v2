@@ -19,6 +19,8 @@ import java.io.InputStream;
  */
 public class AliOssClient {
 
+    private static final System.Logger LOGGER = System.getLogger(AliOssClient.class.getName());
+
     private final OSS oss;
     private final String bucket;
     private final String prefix;
@@ -52,12 +54,12 @@ public class AliOssClient {
             oss.putObject(new PutObjectRequest(bucket, key, new ByteArrayInputStream(bytes), metadata));
             return key;
         } catch (OSSException | ClientException exception) {
-            // 云端可能已保存文件但响应丢失，按本次随机文件名尝试删除，失败时只记录固定错误。
+            logWriteFailure("OSS 上传失败", exception);
+            // 云端可能已保存文件但响应丢失，按本次随机文件名尝试删除。
             try {
                 oss.deleteObject(bucket, key);
             } catch (OSSException | ClientException cleanupFailure) {
-                System.getLogger(getClass().getName())
-                        .log(System.Logger.Level.ERROR, "上传失败后的OSS对象清理失败，需要检查孤立对象");
+                logWriteFailure("OSS 上传失败后的对象清理失败", cleanupFailure);
             }
             throw unavailable();
         }
@@ -101,6 +103,26 @@ public class AliOssClient {
         } catch (OSSException | ClientException exception) {
             throw unavailable();
         }
+    }
+
+    /** 记录写入失败的错误编号和请求 ID，不记录响应正文、签名或存储路径。 */
+    private void logWriteFailure(String action, RuntimeException exception) {
+        if (exception instanceof OSSException error) {
+            LOGGER.log(System.Logger.Level.ERROR, "{0}，错误码={1}，EC={2}，RequestId={3}",
+                    action, logIdentifier(error.getErrorCode()), logIdentifier(error.getEC()),
+                    logIdentifier(error.getRequestId()));
+            return;
+        }
+        ClientException error = (ClientException) exception;
+        Throwable cause = error.getCause();
+        LOGGER.log(System.Logger.Level.ERROR, "{0}，客户端错误码={1}，原因类型={2}，RequestId={3}",
+                action, logIdentifier(error.getErrorCode()), cause == null ? "-" : cause.getClass().getSimpleName(),
+                logIdentifier(error.getRequestId()));
+    }
+
+    /** OSS 错误编号只记录单行标识，丢弃空值和异常格式。 */
+    private String logIdentifier(String value) {
+        return value != null && value.matches("[A-Za-z0-9_-]{1,80}") ? value : "-";
     }
 
     /** 检查 OSS 文件路径，只接受完整合法的对象键，不通过解码或整理路径放宽检查。 */
