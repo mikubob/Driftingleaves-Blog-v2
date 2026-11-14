@@ -209,7 +209,7 @@ const batchActions = computed(() => {
         />
         <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <el-option label="展示中" :value="1" />
-          <el-option label="IN展示中" :value="0" />
+          <el-option label="已隐藏" :value="0" />
         </el-select>
         <el-select
           v-model="filters.experienceType"

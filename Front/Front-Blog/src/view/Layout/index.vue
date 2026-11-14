@@ -185,4 +185,10 @@ onUnmounted(() => window.removeEventListener('scroll', onScroll))
     height: 38px;
   }
 }
+
+@supports (corner-shape: squircle) {
+  .back-to-top {
+    corner-shape: round;
+  }
+}
 </style>

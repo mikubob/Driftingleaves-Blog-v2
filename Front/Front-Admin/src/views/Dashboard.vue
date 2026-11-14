@@ -26,6 +26,7 @@ import TrendChart from '../components/TrendChart.vue'
 import ReportChart from '../components/ReportChart.vue'
 import { makeArticleOption, makeProvinceOption } from '../chartOptions.js'
 import AdminIcon from '../components/AdminIcon.vue'
+import RollingNumber from '../components/RollingNumber.vue'
 
 const today = new Date().toISOString().slice(0, 10)
 const weekAgo = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10)
@@ -146,7 +147,7 @@ onBeforeUnmount(() => controller?.abort())
         <article v-for="card in cards" :key="card.key" :class="['stat-card', `tone-${card.tone}`]">
           <span class="stat-icon"><AdminIcon :name="card.icon" /></span>
           <div class="stat-info">
-            <strong class="stat-value">{{ formatCount(overview?.[card.key]) }}</strong>
+            <strong class="stat-value"><RollingNumber :value="overview?.[card.key]" /></strong>
             <p class="stat-label">{{ card.label }}</p>
           </div>
         </article>

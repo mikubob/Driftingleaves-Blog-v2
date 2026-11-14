@@ -8,6 +8,9 @@ import { restoreSession, session } from './session.js'
 import './assets/styles/ali-iconfont.css'
 import './assets/styles/main.css'
 import './style.css'
+import { installAdminMotion } from './utils/motion.js'
+
+installAdminMotion()
 
 const app = createApp(App)
 app.directive('loading', ElLoading.directive)

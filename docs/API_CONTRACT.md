@@ -1,6 +1,6 @@
 # 接口开发约定
 
-本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 211 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；当前检查入口及恢复步骤见运行说明，既有路由数本身不代表缓存验收。项目尚未上线；当前配置与检查入口见[后端运行说明](后端运行说明.md)。
+本文保留接口实现需要的完整输入约束、状态、鉴权、事务与存储规则。日常调用请先阅读 [接口文档](API.md) 或 [接口索引](API_INDEX.md)。调用接口已按四端重组，共 211 个 HTTP 路由及 3 个 WebSocket 入口；本文技术章节保留原编号。2026-10-31新增的业务查询缓存与补充限流已接入，见[0.8](#cache-contract)；当前检查入口及恢复步骤见运行说明，既有路由数本身不代表缓存验收。当前配置与检查入口见[后端运行说明](后端运行说明.md)。
 
 - [通用协议与鉴权](#common)
 - [实时在线人数：票据、WebSocket 与已实现约定](实时在线人数接口说明.md)
@@ -68,7 +68,7 @@ Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下�
 
 登录事务提交后通过 `Set-Cookie` 签发会话。Cookie 与 Redis 使用相同固定有效期，访问和刷新均不续期。会话值不进入 JSON、URL、日志、前端存储或 WebSocket 协议。刷新后重新读取本端 `/me` 与 `/me/capabilities`，Admin 还读取 `/me/menus` 并确认 `admin:access`。前端启动清理本端旧 localStorage 键，拒绝恢复旧 Bearer，用户需重新登录一次。
 
-同源标签页共享 Cookie。登录、退出或安全操作撤销会话后，前端用不带身份信息的广播通知同端标签页重新核验。写请求携带页面预期账号 `X-Expected-User-Id`，服务端在副作用前与 Cookie 认证的用户 ID 比较。认证写入、有效会话的退出和 OAuth BIND 发起及兑换必须提供该头。受保护读取提供该头时也核对。缺失或不匹配返回 409/SESSION_ACCOUNT_CHANGED，不修改会话 Cookie，前端不重发原请求。博客讨论和统计等可选身份入口无该头时保持匿名，有该头时核验有效会话。显式登录及独立邮件退订票据使用各自的校验规则。
+同源标签页共享 Cookie。登录、退出或安全操作撤销会话后，前端用不带身份信息的广播通知同端标签页重新核验。需要登录的写请求、有效会话的退出和 OAuth BIND 发起及兑换必须携带页面预期账号 `X-Expected-User-Id`。服务端在副作用前与 Cookie 认证的用户 ID 比较。受保护读取提供该头时也核对。缺失或不匹配返回 409/SESSION_ACCOUNT_CHANGED，不修改会话 Cookie，前端不重发原请求。博客讨论和统计等可选身份入口无该头时保持匿名，有该头时核验有效会话。显式登录及独立邮件退订票据使用各自的校验规则。
 
 退出先撤销当前会话，再清除同名同属性 Cookie。没有有效会话时仍可幂等退出；Redis 撤销失败返回错误。普通 401 只表示本次请求未登录，不修改 Cookie。带身份的响应以及认证响应采用 `Cache-Control: no-store`。
 
@@ -90,9 +90,9 @@ Sa-Token 和 Redis 管理本站会话。Admin 与 Blog 通过各自 Origin 下�
 
 ### 0.6 请求保护与跨域
 
-Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。第三方登录发起按 IP 和浏览器分别限制为 60 秒内最多三次，两端和各平台共享额度，绑定、回调和兑换不占用此额度。其他认证入口阈值可按部署配置；已实现的 PUT/DELETE `/blog/me/password` 共用 IP+当前用户的60秒10次窗口，两种方法共同计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Cookie、OAuth code/state/ticket 或第三方 Token。Admin、Blog 写请求在副作用前核对该端配置的 Origin。缺失 Origin 时才从 Referer 提取来源，缺失、无法解析、Origin:null、跨端或不匹配均返回 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据和匿名 404 上报分别按各自契约处理。Admin 和 Blog 通过同源反代访问。HTTP 跨域只向 Home、Cv 自身的来源开放各自公开的 GET 和 POST，允许 Content-Type 并暴露 Retry-After。在线 WebSocket 分别核对所属站点 Origin。
+Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）与账号/Token 双维度；登录失败按 IP+归一 username 限制，注册/OAuth 发起/交换也按浏览器+IP，评论/点赞/上传按用户+IP。第三方登录发起按 IP 和浏览器分别限制为 60 秒内最多三次，两端和各平台共享额度，绑定、回调和兑换不占用此额度。其他认证入口阈值可按部署配置；PUT/DELETE `/{admin,blog}/me/password` 共用 60 秒 10 次窗口，两端和两种方法按可信 IP 和当前用户分别计数，不与登录失败计数混用。429 使用 Retry-After，图形验证码遵守下文独立契约。日志不得记录密码、Cookie、OAuth code/state/ticket 或第三方 Token。Admin、Blog 写请求在副作用前核对该端配置的 Origin。缺失 Origin 时才从 Referer 提取来源，缺失、无法解析、Origin:null、跨端或不匹配均返回 403。独立校验的 OAuth 顶层 GET 回调、邮件退订票据和匿名 404 上报分别按各自契约处理。Admin 和 Blog 通过同源反代访问。HTTP 跨域只向 Home、Cv 自身的来源开放各自公开的 GET 和 POST，允许 Content-Type 并暴露 Retry-After。在线 WebSocket 分别核对所属站点 Origin。
 
-全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，留言创建窗口按表中要求执行。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口仍只累计AUTH_FAILED，新增登录总请求窗口不改变此语义。
+全部入口、窗口、独立/共享维度及当前实施状态统一见[接口限流表](API.md#request-protection)，避免在不同章节维护不一致阈值。缓存命中请求也限流，匿名与登录用户访问公开接口都不能绕过IP窗口；不按查询条件创建新的限流预算。Redis限流沿用固定窗口，拒绝时不延长窗口，Lua原子累计多个维度并设置过期；复用现有RedisRateLimiter、AuthRateLimiter及RateLimitAspect，不引入Bucket4j本地限流或第二套认证计数。新增窗口键与现有失败登录、密码、订阅等业务窗口分开，留言创建窗口按表中要求执行。已经执行到限流阶段的请求即使业务随后失败也不返还配额；登录失败窗口累计 AUTH_FAILED，邮箱登录的 EMAIL_CODE_INVALID 也计入。图形验证码错误不计入失败窗口。
 
 初始角色按当前 SQL 显式授权；匿名访客不对应数据库角色：
 
@@ -106,7 +106,7 @@ Redis 限流采用服务端识别 IP（仅信任明确配置的反向代理）�
 
 ### 0.7 鉴权组件落地要求
 
-后端 404 与两个前端未知路由上报入口共享可信 IP 预算，Redis 原子计数和封禁。管理员也可手动封禁可信 IP，详见[访客封禁接口](API.md#batch-visitor-block)。手动和自动封禁都先于业务处理检查，OPTIONS 预检不受影响。[反复 404 保护](API.md#not-found-protection)
+后端 404 与两个前端未知路由上报入口共享可信 IP 预算，Redis 原子计数和封禁。管理员也可手动封禁可信 IP，详见[访客封禁接口](API_ADMIN.md#batch-visitor-block)。手动和自动封禁都先于业务处理检查，OPTIONS 预检不受影响。[反复 404 保护](API.md#not-found-protection)
 
 Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验证的身份；应用负责查用户、查绑定和加载授权。注册、绑定、菜单、ALL/SELF 不由 starter 自动完成。下表为本项目要求，需在实现时配置并验证：
 
@@ -246,7 +246,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 并发及故障 | 旧快照回填遇到代次变化被拒；写保护期间旁路；并发写不误清标记；回滚、提交后Redis故障、进程中断遗留标记、Redis恢复不暴露旧PUBLIC数据；缓存降级不能绕过安全Redis失败 |
 | 限流 | 每个新增入口的阈值前后边界、共享窗口、独立IP/用户维度、并发原子计数、TTL不被拒绝请求续期；换slug/关键词/日期/fingerprint不重置IP预算；登录成功也消耗总请求预算，AUTH_FAILED单独计失败；冷/热缓存、不同实例共享限制；429含Retry-After且无写入/消费/邮件/计数副作用 |
 
-实现与运行说明同步维护；当前159个路由数、历史测试记录及参考项目存在Cacheable均不能代替本节真实行为验收。
+实现与运行说明同步维护；路由数量及历史测试记录只用于说明覆盖范围，缓存与限流行为按本节验收。
 
 ---
 
@@ -254,7 +254,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 ### 0.9 后台统一操作实现与验收要求
 
-2026-11-01 已将 [API 1.22](API.md#admin-batch) 的 26 个管理动作落实为支持 1..100 项的统一入口，并移除对应的 26 个旧单条管理写路由。现有前端单条按钮以一项数组提交；创建、完整编辑、详情、本人设置和本人互动不变。新增用户批量启用、禁用、删除后统一入口共 38 个（含分类及其余 8 类资源状态切换），当前 HTTP 路由总数及多端独立路径见[接口索引](API_INDEX.md)，WebSocket 仍为 3 个。实际验证范围见运行说明。
+2026-11-01 已将 [API 1.22](API_ADMIN.md#admin-batch) 的 26 个管理动作落实为支持 1..100 项的统一入口，并移除对应的 26 个旧单条管理写路由。现有前端单条按钮以一项数组提交；创建、完整编辑、详情、本人设置和本人互动不变。新增用户批量启用、禁用、删除后统一入口共 38 个（含分类及其余 8 类资源状态切换），当前 HTTP 路由总数及多端独立路径见[接口索引](API_INDEX.md)，WebSocket 仍为 3 个。实际验证范围见运行说明。
 
 #### 0.9.1 来源与范围
 
@@ -274,7 +274,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 
 #### 0.9.2 请求、权限与版本
 
-- 精确路由、请求模型、成功响应和错误格式以 [API 1.22](API.md#admin-batch)为准。删除使用 POST `/batch-delete`，文章回收/恢复/永久删除使用独立动作路径，状态/审核/封禁/解封使用 PUT。入口只在 Admin 下增加，不开放 Blog/Home/Cv 或匿名批量写入口。
+- 精确路由、请求模型、成功响应和错误格式以 [API 1.22](API_ADMIN.md#admin-batch)为准。删除使用 POST `/batch-delete`，文章回收/恢复/永久删除使用独立动作路径，状态/审核/封禁/解封使用 PUT。入口只在 Admin 下增加，不开放 Blog/Home/Cv 或匿名批量写入口。
 - 每次最多 100 个显式 ID；空、null、非法或重复 ID 直接 400，不静默忽略不存在目标、去重或截断。分支后代不占显式 ID 配额，也不能被 100 项上限截断。数组上限不保证分支删除只影响 100 行，界面确认必须说明会删除全部回复。
 - 入口检查当前账号、原 Token、admin:access 和本次业务权限，锁等待后再次复核；多项权限分别计算范围。文章按 authorId、文件按 uploaderId、后台评论按所属文章 authorId 检查 ALL/SELF，范围外与不存在统一 404。全局资源沿用各单条规则，不把所有权限强制升级为 ALL，也不把必须 ALL 的留言/订阅/统计/展示资源放宽为 SELF。
 - 不新增 `*:batch` 权限码，不新增角色、表或业务版本列；每个批量动作复用对应单条业务权限。获取版本的详情查询仍独立要求 query 权限，批量写响应只返回 ID 和新版本，不能顺带泄露 query 范围外详情。
@@ -453,7 +453,7 @@ tags/tagIds 均按 tagId ASC；commentCount 只统计 status=1 且祖先均为1�
 
 分类之外，友链、音乐、社交链接、经历、技能、角色、权限和菜单统一使用各自 `/batch-status`；用户仅使用已有 `/batch-enable`、`/batch-disable`。单条操作提交一项，与批量操作共用版本、权限和失败规则。九类资料编辑 DTO 均不接受 status（含null），创建 DTO 保留原初始状态及校验。二值状态共用 BatchBinaryStatusDTO，友链独立使用0/1/2状态模型，不放宽文章、审核和订阅的1/2状态限制。
 
-批量入口先检查全部目标，按数值升序加锁，状态 SQL 只写 status；同状态仍校验版本，没有实际变化不写入、不主动撤销会话。结果按请求顺序返回。角色/权限按整批最终状态保护最后管理员，先算完版本再去重撤销受影响会话；菜单保留结构保护锁和分支用户锁，不级联修改后代或改变独立接口权限；音乐展示前按全部文件→曲目加锁并复核文件权限、类型和可用性。详细路径、权限范围、事务与缓存见[新增状态入口](API.md#batch-links-status)。
+批量入口先检查全部目标，按数值升序加锁，状态 SQL 只写 status；同状态仍校验版本，没有实际变化不写入、不主动撤销会话。结果按请求顺序返回。角色/权限按整批最终状态保护最后管理员，先算完版本再去重撤销受影响会话；菜单保留结构保护锁和分支用户锁，不级联修改后代或改变独立接口权限；音乐展示前按全部文件→曲目加锁并复核文件权限、类型和可用性。详细路径、权限范围、事务与缓存见[新增状态入口](API_ADMIN.md#batch-links-status)。
 
 菜单多选允许父节点参与状态修改，只有批量删除要求全部选择都是叶子。isVisible、keepAlive、文章置顶/评论开关及授权集合属于原资料或独立业务设置，本轮不新增批量变更。
 
@@ -523,7 +523,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | comment | `{enabled:boolean,reviewRequired:boolean}`，两项必填 | isPublic必须0；初始true/true，不向前端公开审核策略 |
 | message | `{enabled:boolean,reviewRequired:boolean}`，两项必填 | isPublic必须0；初始true/true，关闭后保留历史查询、本人删除和后台审核 |
 
-`reviewRequired=true` 表示默认待审（status=0），`false` 表示直接通过（status=1）。有效admin发表或回复评论、留言均免审；有效author仅在自己的文章下评论或回复时免审。角色已禁用时不参与免审判断，文章归属不能替代有效author角色。免审不放宽enabled、文章allowComment、发表权限、验证码、限流、父链可回复性和留言私密范围。客户端按创建响应的status展示结果；历史待审记录不自动变更，接口路径和请求/响应结构不变。规则对照见[接口文档](API.md#discussion-review)。
+`reviewRequired=true` 表示默认待审（status=0），`false` 表示直接通过（status=1）。有效admin发表或回复评论、留言均免审；有效author仅在自己的文章下评论或回复时免审。角色已禁用时不参与免审判断，文章归属不能替代有效author角色。免审不放宽enabled、文章allowComment、发表权限、验证码、限流、父链可回复性和留言私密范围。客户端按创建响应的status展示结果；历史待审记录不自动变更，接口路径和请求/响应结构不变。规则对照见[接口文档](API_BLOG.md#discussion-review)。
 
 不存数据库、Redis、SMTP、第三方App Secret或对象存储凭据；未知键404。不提供任意新增/删除配置键接口。comment/message.enabled关闭后保留历史内容；message开关规则见12.10。前台通过文章allowComment及新增失败反馈交互；服务端仍检查站点开关，不依赖前端按钮是否显示。
 
@@ -535,12 +535,12 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 | 模型 | 字段与约束 |
 | --- | --- |
-| File | fileId/uploaderId:ID、originalName:string（1..255）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口）、publicImage:boolean（是否为公开展示图片） |
+| File | fileId/uploaderId:ID、originalName:string（1..255）、storedName:string（存储生成的文件名）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口）、publicImage:boolean（是否为公开展示图片） |
 | Upload | multipart只有file，单个、非空；不接uploaderId、文件路径、bucket、objectKey、isPublic |
 
 支持PNG/JPEG图片≤10MiB，MP3/WAV/OGG/FLAC音频≤60MiB，UTF-8 LRC/TXT/JSON歌词≤1MiB；单次multipart总大小≤61MiB。扩展名必须与服务端内容识别一致，不信Content-Type。音频检查容器及首个音频头（WAV使用JDK音频解析），不承诺对整首曲目解码或转码；浏览器需支持对应编码。MP3检查ID3后的MPEG Layer III帧头和帧长度，OGG限Vorbis/Opus。歌词拒绝空文本、非法UTF-8和除换行/回车/Tab外的控制字符；LRC必须含有效时间标签，JSON行结构见12.11。MIME依次为image/png、image/jpeg、audio/mpeg、audio/wav、audio/ogg、audio/flac、text/plain（LRC/TXT）、application/json（JSON）。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。新上传校验并解码一次后按 app.image.compress 压缩，默认启用、目标500KiB、JPEG起始质量0.9、最长边2560px；保留PNG/JPEG格式和PNG透明通道，只采用更小的产物。JPEG每轮从同一像素源编码，最低质量0.3；PNG无损编码，不通过降质量反复尝试。大小和最长边是优化目标，结果未缩小时保留原字节，不能承诺都达到目标。不另存原图，关闭压缩时原样存储；历史对象不重写。本次不扩展其他附件类型。
 
-原文件名仅展示，移除路径分隔符/控制字符，结果空或>255报400；服务端生成ASCII object_key（≤512），按分类目录/随机文件名组织。PNG/JPEG存入image、音频存入audio、LRC存入lyric、TXT/JSON存入text目录；OSS对象键为专属前缀/分类/随机文件名，本地对象键为分类/随机文件名。normalize后的绝对路径必须仍位于上传根目录内，防目录穿越和符号链接越界。不接收旧版无分类目录的对象键。存储根目录不能被Nginx/静态资源映射公开。File模型不返回bucket/objectKey/磁盘路径。
+原始文件名用于展示和搜索，移除路径分隔符/控制字符，结果空或>255报400；服务端生成ASCII object_key（≤512），按分类目录/随机文件名组织。PNG/JPEG存入image、音频存入audio、LRC存入lyric、TXT/JSON存入text目录；OSS对象键为专属前缀/分类/随机文件名，本地对象键为分类/随机文件名。normalize后的绝对路径必须仍位于上传根目录内，防目录穿越和符号链接越界。不接收旧版无分类目录的对象键。存储根目录不能被Nginx/静态资源映射公开。File模型的storedName只取对象键最后一段，不返回Bucket、完整对象键或磁盘路径。后台分页keyword最长255字符，按原始文件名或存储文件名的字面内容匹配，仍受上传者和MIME筛选限制。
 
 成功内容响应为实际存储的文件字节（图片可能已压缩），非Result：`Content-Type`取服务端确认的MIME，文本附UTF-8 charset、`Content-Length`取实际字节数、`X-Content-Type-Options:nosniff`、`Content-Disposition:inline; filename*=UTF-8''...`安全编码文件名。读取以Spring MVC Resource响应支持Range：完整200、有效范围206（含Content-Range）、不可满足范围416；不支持分片或断点上传。文件响应`Cache-Control:no-store`，避免下架/私密后缓存绕过。业务失败仍返回对应HTTP的JSON Result；Range错误由Spring MVC处理。前端通过同源后台 API 获取内容，以临时object URL预览图片/音频，歌词以纯文本预览，不能把Token拼接进img URL。
 
@@ -667,7 +667,7 @@ status为0待验证、1已订阅、2已退订。每用户一条、每规范化�
 | `ProvinceMetric` | `province`:string&#124;null（最新访客省份；null表示未知）；`visitorCount`:string（区间内访问的不同非NULL visitorId数） |
 | `ArticleViewMetric` | `articleId`:ID（未回收文章ID）；`title`:string（当前标题）；`slug`:string（当前slug）；`pageViewCount`:string（日期范围内文章浏览明细数，不是view_count累计值） |
 
-analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode只能home/blog/cv，由服务端与配置的Origin/站点规范路径核验；articleId必须属于PUBLIC文章并与页面slug一致，未关联文章时为null。只有博客可以从有效登录 Cookie 识别 userId，Home 和 Cv 仅匿名，客户端不能上传IP/UA/访问时间。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回 recorded=true。旧统计标识封禁只影响采集，手动 IP 封禁同时限制公开内容读取。
+analytics/page-views是公开采集入口，不颁发Token或可信身份。fingerprint是浏览器随机统计标识，可伪造；不用于账号封禁、内容归属或恢复旧内容。siteCode 必须与调用端一致，并通过 Origin 和站点规范路径检查。只有博客的公开文章详情路径可以携带与 slug 对应的 articleId，传 null 时仍检查路径对应的文章是否公开。其他路径的 articleId 必须为 null。博客仅在提供 X-Expected-User-Id 时读取并核验有效登录 Cookie。Home 和 Cv 始终匿名。IP、UA 和访问时间由服务端读取。pagePath与referer存储前剔除query及fragment，不能写入凭据。事务写入访客及一次浏览后返回 recorded=true。旧统计标识封禁只影响采集，手动 IP 封禁同时限制公开内容读取。
 
 PV是保留的page_view条数；UV是所选区间内不同非null visitorId数量，不能把IP、session或sys_user计数当成同一指标。删除访客将关联置null，会使UV减少，PV不变；删除浏览明细改变基于明细的报表；不反向扣减blog_article.view_count。文章详情成功读取每次原子增加view_count，独立采集POST只写明细，避免一页计两次累计阅读。封禁统计标识仅约束采集入口，不承诺阻止伪造者阅读网站。
 
@@ -721,7 +721,7 @@ ArticlePublicDetail在原有字段上增加wordCount:string、readingMinutes:int
 2. 服务端生成不可预测、至少 128 bit 随机 state。Redis 存有效期 300 秒的流程：state 摘要、浏览器标识摘要、source、operation、发起时间，BIND 还包括从 Token 取得的 userId 和原会话标识摘要。一个浏览器允许多个流程，逐 state 区分。返回 authorizationUrl，LOGIN 可整页跳转；BIND 必须由原页面打开授权弹窗（不使用 iframe），原页面保留弹窗引用；授权 URL 带 state。
 3. 平台回调代理地址为 `/api/v1/<登记端>/auth/oauth/{source}/callback`。请求包含 state 和 code，或 error/error_description。GitHub 回调可携带一个 `iss`，入口校验其值为 `https://github.com/login/oauth`。登记端和发起端不同时，先按有效 state 和 source 记录将请求转到发起端的固定回调路径，只转发 state 和授权码或通用取消标记。发起端核对流程 Cookie 和原会话，再用 Redis 原子 compare-and-consume 消费流程。浏览器不匹配不消耗有效流程，重放或过期返回 OAUTH_STATE_INVALID。
 4. **不得把 JustAuth 的存在性检查当成一次性消费。** `AuthStateCache.cache` timeout 单位毫秒，适配 Redis TTL 不得误当秒。本站流程与 JustAuth 所需 state 缓存分键：先原子消费本站流程，保留该次处理需要的 JustAuth 校验值，调用 JustAuth 保持 state 校验开启，并在本次成功/失败结束时删除该缓存值。失败也不恢复已消费流程，用户重新发起。并发请求在调用平台前即被本站消费门禁拒绝。
-5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid必须非空白且≤255字符，否则502；除拒绝非法值外原样保留，不trim、改大小写或重选身份策略。两端 LOGIN 共用已有绑定，先锁本站用户，再重查绑定归属及启用状态。未绑定返回 OAUTH_NOT_BOUND，不创建或合并账号。
+5. JustAuth 验证平台授权并获取身份后再处理业务。AuthUser.uuid 必须非空白且不超过 255 个字符，合法值原样保留。非法身份通过完成页 fragment 返回 `OAUTH_UPSTREAM_ERROR`。两端 LOGIN 共用已有绑定，先锁本站用户，再重查绑定归属及启用状态。未绑定返回 OAUTH_NOT_BOUND，不创建或合并账号。
 6. BIND：回调再次检查原会话仍有效、用户相同且发起认证仍在 5 分钟窗口内；不在回调中新建其他用户或切换账号。锁用户后写绑定。同一用户相同 source+uuid 已绑定可作为成功；属于他人或同用户同平台另一个 uuid 为 OAUTH_BIND_CONFLICT，绝不转移绑定。
 7. 成功后生成 60 秒、一次性的随机 ticket，在 Redis 绑定发起端、同浏览器、operation、结果 userId（BIND 还绑定原会话）。303 跳到发起端 `/oauth/complete#ticket=<opaque>&operation=<LOGIN或BIND>`。完成页 URL 不包含本站 Token、平台 code 或第三方 Token，回调设置 no-store 和 Referrer-Policy:no-referrer。
 8. LOGIN 完成页读 fragment 后立即 history.replaceState 移除 ticket，同源调用 exchange。BIND 完成页通过 postMessage 将 ticket 发给发起弹窗的原页面（精确 targetOrigin）；原页面校验 event.origin、event.source 为刚开的弹窗和对应流程后，使用本端原会话 Cookie 和 `X-Expected-User-Id` 调用 exchange。后端核对发起端和浏览器，再原子消费 ticket。LOGIN 在用户行锁内重查账号启用及绑定归属，Admin 另查 `admin:access`，提交后签发本端 Cookie 并返回 Session JSON。认证时间沿用平台验证成功的时间。BIND 只返回绑定结果。重放、过期、跨端或浏览器不符统一返回 OAUTH_STATE_INVALID，网络响应丢失需重新发起。
@@ -756,9 +756,9 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 
 文章写入时，每个引用必须存在，写作者须有`blog:file:query`及对应文件范围；不能通过引用他人私密文件让其公开。发布时再检查所有引用可用。前台HTML保留上述公开上下文；后台详情HTML将这些路径改为相应`/admin/articles/.../content`，前端通过同源后台 API 获取后替换临时object URL，原始Markdown不改写。一个文件被多篇文章引用时，只要某篇PUBLIC且确实引用，就可从该篇上下文公开读取；**需要私密隔离时必须另传一份文件，不能在公开文章复用同一fileId**。修改/撤销引用或下架后立即按当前状态鉴权。
 
-音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链头像、经历 Logo、社交和技能图标使用公开 HTTP(S) 地址，可填外部地址或[公开展示图片](API.md#display-image-content)地址。普通附件 API 路径及等价绝对 URL 不能当作公开图片地址。
+音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链头像、经历 Logo、社交和技能图标使用公开 HTTP(S) 地址，可填外部地址或[公开展示图片](API_BLOG.md#display-image-content)地址。普通附件 API 路径及等价绝对 URL 不能当作公开图片地址。
 
-公开展示图片由[专用上传入口](API.md#display-image-upload)校验并写入 `publicimage` 存储目录，沿用原有文件元数据、存储 ACL、限流和失败清理。上传成功即公开，普通附件继续按原权限访问。删除时保留文章、音乐附件引用检查，直接引用公开图片 URL 的页面不阻止删除，文件管理在删除前提示地址会失效。
+公开展示图片由[专用上传入口](API_ADMIN.md#display-image-upload)校验并写入 `publicimage` 存储目录，沿用原有文件元数据、存储 ACL、限流和失败清理。上传成功即公开，普通附件继续按原权限访问。删除时保留文章、音乐附件引用检查，直接引用公开图片 URL 的页面不阻止删除，文件管理在删除前提示地址会失效。
 
 先写临时文件并完成校验，再原子移动为随机最终存储键，最后插入元数据并提交；任一步失败不得返回File成功结果，数据库写失败时删除刚写文件，补偿失败记录运维错误以清理孤立对象。没有成功元数据的存储对象永不通过API读取。
 
@@ -848,7 +848,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 必须先按现有接口移入回收站；仅 `deletedAt != null` 可永久删除，正常文章返回 `409/STATE_CONFLICT`，不允许用参数绕过。需要有效 admin:access，delete 与 purge 的 ALL/SELF 分别检查；任何一个权限仅 SELF 都要求当前用户为文章作者，不把一个权限的 ALL 扩大到另一个。新 purge 权限须实施时显式初始化并授权，不自动赋予 author/member，也不因角色名为 admin 而绕过授权。查看详情另外遵循既有 query 权限范围。
 
-按现有事务及锁后复核规则检查原 Token、权限、范围、版本与回收状态；先权限/范围，再校验版本和状态。缺版本 428、过期 412、无权限 403、不存在或超出任一数据范围 404。重复删除已不存在目标返回 404；前端超时后先重新查询确认，不承诺永久删除响应幂等。拒绝请求体及所有查询参数。
+按现有事务及锁后复核规则检查原 Token、权限、范围、版本与回收状态；先权限/范围，再校验版本和状态。缺版本 428、过期 412、无权限 403、不存在或超出任一数据范围 404。重复删除已不存在目标返回 404；前端超时后先重新查询确认，不承诺永久删除响应幂等。通过[批量永久删除](API_ADMIN.md#batch-article-permanent)提交 JSON `items`，逐项提供 ID 和版本。请求拒绝查询参数及 `If-Revision` 请求头。任一目标失败时整批回滚。
 
 | 数据 | 永久删除的处理规则 |
 | --- | --- |
@@ -856,10 +856,10 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | 该文章全部评论及回复 | 包括待审、通过和驳回，均不可恢复；现有评论外键为 RESTRICT，须在持有文章及相关评论锁后按子节点到父节点顺序删除，再删文章，不能直接假设级联或关闭外键校验 |
 | 文件元数据与 OSS/本地对象 | 保留，不把引用文件当作文章私有对象自动删除；仍由既有文件删除入口检查全部引用与自身权限 |
 | 浏览明细 | 保留已有历史采集，articleId 按现有外键 SET NULL；pagePath/pageTitle 历史快照保留，按文章 ID 的排行不再关联该文章，站点 PV 趋势仍含原浏览 |
-| 操作日志 | 保留历史审计，新增 purge 成功审计与数据库清理同事务提交；失败回滚，沿用既有失败审计，不记录已删正文 |
+| 操作日志 | 保留历史审计，`batch-purge` 成功日志与数据库清理同事务提交。失败沿用后台批量操作的审计规则 |
 | slug、公开入口与恢复 | 删除后释放文章 slug；文章详情、关联文件的该文章访问上下文返回 404；不再进入 Feed/站点地图/公开推荐，恢复接口返回 404 |
 
-前端操作放在回收站并明确提示“永久删除文章及全部评论、点赞，无法恢复”，与普通删除分开。后端已实现；验证只在隔离数据库执行删除，不修改现有 SQL 外键或实际存储对象。前端页面尚未建设。
+管理端回收站提供永久删除和批量永久删除，确认弹窗提示删除后的数据无法恢复。验证删除仅使用隔离数据库。
 
 ---
 
@@ -867,7 +867,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 
 ### 22.8 实施范围与验收条件
 
-本章后端已复用当前 Controller→Service 接口/实现→Mapper/XML、DTO/VO、ArticleFilter、公开响应转换、权限范围、分页与审计机制；没有新增数据库表或改变既有公开列表字段。权限及菜单统一由[初始化脚本](../sql/drifting_leaves_v2.sql)创建，显式授予内置管理员角色，不授予 author/member。项目尚未上线，不再维护单独的权限增量脚本。
+本章后端已复用当前 Controller→Service 接口/实现→Mapper/XML、DTO/VO、ArticleFilter、公开响应转换、权限范围、分页与审计机制；没有新增数据库表或改变既有公开列表字段。权限及菜单统一由[初始化脚本](../sql/drifting_leaves_v2.sql)创建，显式授予内置管理员角色，不授予 author/member。权限变更统一维护在初始化脚本。
 
 | 改动位置 | 必须完成的业务及验证 |
 | --- | --- |
@@ -875,14 +875,14 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | 公开作者、分类/标签详情入口及公开准入白名单 | 按方法/路径逐项增加 4 个公开路由；验证分页排序、公开计数、空集合、隐藏分类、slug 大小写及作者资料白名单，管理员 Token 不扩大公开结果 |
 | 本人点赞列表入口与本人路由校验 | 身份来自会话，验证账号 A 不能查 B、拒绝 userId、过期会话 401；取消/重复/再次点赞的时间顺序，以及文章下架后 records/total 同时排除 |
 | 永久删除业务、权限初始化/固定码保护、事务审计 | 复用 delete 与新增 purge 的独立范围；验证正常文章拒删、SELF 越权、缺失/过期版本、锁等待后的会话/权限/状态复核，多层评论 RESTRICT 顺序清理、成功审计及失败整笔回滚；确认字典/文件保留、浏览关联置 null、删除后不能恢复或公开读取 |
-| 文档与客户端 | 后端已实现并通过隔离集成测试，路由统计为 159；前端尚无工程，作者主页/筛选页、分类/标签页、个人点赞页与回收站后续分别接入对应接口，永久删除必须明确说明不可恢复 |
+| 文档与客户端 | 博客端已接入作者主页、分类与标签详情及本人点赞列表，管理端回收站已接入永久删除。接口路径见[四端接口索引](API_INDEX.md)，验证范围见[后端运行说明](后端运行说明.md) |
 
 错误沿用 [第 14 章](API.md#errors)：严格输入 400/VALIDATION_ERROR，未认证 401/UNAUTHENTICATED，权限不足 403/FORBIDDEN，隐藏/不存在/范围外 404/NOT_FOUND，状态冲突 409/STATE_CONFLICT，旧版本 412/REVISION_CONFLICT，缺版本 428/PRECONDITION_REQUIRED，业务存储不可用按既有规则返回 503。本章没有新增错误码，不能将存储故障转换为成功空页或删除成功。
 
 
 ## 23. 在线连接与统计身份
 
-完整 HTTP/消息定义见 [API 第23章](API.md#group-23)与[在线说明](实时在线人数接口说明.md)。三个公开端都可匿名领取在线票据。Blog 提供预期账号时核对当前有效会话，缺失预期账号时按匿名处理。精确 `GET /<端>/ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
+完整 HTTP/消息定义见 [实时在线人数共用规则](API.md#group-23)与[在线说明](实时在线人数接口说明.md)。三个公开端都可匿名领取在线票据。Blog 提供预期账号时核对当前有效会话，缺失预期账号时按匿名处理。精确 `GET /<端>/ws/online` 进入专用握手校验，普通GET、查询参数、非约定来源和Header/子协议身份均拒绝，不开放整个路径段。
 
 在线服务只签发用途隔离的30秒随机票据，键保存摘要，载荷只保存服务端确认的userId、原Token摘要与到期时间；浏览器不能自报userId。join按Origin、原会话、账号状态重查后Lua比较完整载荷并删除。长连接通过 `SessionManager.requireOriginalActive` 只查绑定用户的原会话，不扫描Redis全键；现有敏感操作的 `originalToken/requireRecent` 仍要求最近300秒认证。心跳不续期Token、不写PV。
 

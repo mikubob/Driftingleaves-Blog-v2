@@ -1,0 +1,5 @@
+**
+!DockerFile
+!backend/
+backend/**
+!backend/DriftingLeaves.jar

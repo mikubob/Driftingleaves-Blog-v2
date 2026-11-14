@@ -8,6 +8,7 @@ import { useBlogStore } from '@/stores'
 import { request } from '@/api.js'
 import { can, session } from '@/session.js'
 import { safeLink } from '@shared/links.mjs'
+import RollingNumber from '@/components/RollingNumber.vue'
 const router = useRouter()
 const route = useRoute()
 const blogStore = useBlogStore()
@@ -110,7 +111,7 @@ function goTag(slug) {
       <!-- 数据统计栏 -->
       <div class="info-stats">
         <div class="info-stat" role="link" tabindex="0" @keydown.enter="goArchive" @click="goArchive">
-          <span class="stat-num">{{ report.articleTotalCount ?? 0 }}</span>
+          <span class="stat-num"><RollingNumber :value="report.articleTotalCount ?? 0" /></span>
           <span class="stat-label">文章</span>
         </div>
         <div
@@ -120,7 +121,7 @@ function goTag(slug) {
           @keydown.enter="showCatModal = true"
           @click="showCatModal = true"
         >
-          <span class="stat-num">{{ report.categoryTotalCount ?? 0 }}</span>
+          <span class="stat-num"><RollingNumber :value="report.categoryTotalCount ?? 0" /></span>
           <span class="stat-label">分类</span>
         </div>
         <div
@@ -130,7 +131,7 @@ function goTag(slug) {
           @keydown.enter="showTagModal = true"
           @click="showTagModal = true"
         >
-          <span class="stat-num">{{ report.tagTotalCount ?? 0 }}</span>
+          <span class="stat-num"><RollingNumber :value="report.tagTotalCount ?? 0" /></span>
           <span class="stat-label">标签</span>
         </div>
       </div>
@@ -176,15 +177,15 @@ function goTag(slug) {
       <div class="stats-grid">
         <div class="sg-item">
           <span class="sg-label">今日浏览</span>
-          <span class="sg-val">{{ report.viewTodayCount ?? 0 }}</span>
+          <span class="sg-val"><RollingNumber :value="report.viewTodayCount ?? 0" /></span>
         </div>
         <div class="sg-item">
           <span class="sg-label">总浏览量</span>
-          <span class="sg-val">{{ report.viewTotalCount ?? 0 }}</span>
+          <span class="sg-val"><RollingNumber :value="report.viewTotalCount ?? 0" /></span>
         </div>
         <div class="sg-item">
           <span class="sg-label">总访客量</span>
-          <span class="sg-val">{{ report.visitorTotalCount ?? 0 }}</span>
+          <span class="sg-val"><RollingNumber :value="report.visitorTotalCount ?? 0" /></span>
         </div>
         <div class="sg-item">
           <span class="sg-label">稳定运行</span>
@@ -638,5 +639,16 @@ function goTag(slug) {
 }
 .rss-unsub-btn:disabled {
   opacity: 0.5;
+}
+
+@supports (corner-shape: squircle) {
+  .side-card {
+    border-radius: 12px;
+  }
+
+  .info-avatar,
+  .social-link {
+    corner-shape: round;
+  }
 }
 </style>

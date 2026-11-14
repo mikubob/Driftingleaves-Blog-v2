@@ -230,4 +230,12 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
     padding: 16px;
   }
 }
+
+@supports (corner-shape: squircle) {
+  /* 归档时间线节点圆点保持正圆。 */
+  .year-node::before,
+  .item-dot {
+    corner-shape: round;
+  }
+}
 </style>

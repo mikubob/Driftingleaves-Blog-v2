@@ -221,4 +221,12 @@ const changePage = (page) => router.push({ query: { page: String(page) } })
     -webkit-box-orient: vertical;
   }
 }
+
+@supports (corner-shape: squircle) {
+  /* 友链正圆头像与全站头像形态保持一致。 */
+  .link-avatar,
+  .link-avatar-letter {
+    corner-shape: round;
+  }
+}
 </style>

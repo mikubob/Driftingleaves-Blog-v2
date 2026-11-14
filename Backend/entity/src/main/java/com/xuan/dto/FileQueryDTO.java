@@ -7,11 +7,11 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Pattern;
 
 /**
- * 文件分页只筛展示名称、上传者和已确认 MIME，不接收存储路径。
+ * 按原始文件名或存储文件名、上传者和 MIME 筛选文件。
  */
 public record FileQueryDTO(@Min(1) @Max(100000) Integer page,
                            @Min(1) @Max(100) Integer pageSize,
-                           @TextLength(min = 1, max = 100) String keyword,
+                           @TextLength(min = 1, max = 255) String keyword,
                            @Pattern(regexp = "[1-9][0-9]{0,18}", message = "所选记录无效，请刷新页面后重新选择") String uploaderId,
                            @TextLength(min = 1, max = 100) String mimeType) {
 

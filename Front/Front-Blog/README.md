@@ -2,11 +2,11 @@
 
 本工程独立维护，可单独复制、安装依赖、构建和部署。组件、工具和样式均位于本工程的 `src/`，修改只影响本端。
 
-项目尚未上线，当前说明用于本地开发与构建。
+部署步骤见 [Docker 部署说明](../../DockerForDriftingLeaves/README.md)。
 
 文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
 
-直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [API.md](../../docs/API.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
+直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [博客端接口文档](../../docs/API_BLOG.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
 
 ## 音乐与歌词播放
 
@@ -17,7 +17,7 @@
 | 原文件 | 本项目位置与适配 |
 | --- | --- |
 | `view/Layout/index.vue` | 同路径；保留布局、页面过渡、返回顶部；改为 V2 加载与浏览采集 |
-| `components/BlogHeader.vue` | 保留透明导航、响应式菜单、搜索、主题和音乐播放器；链接与曲目改接 V2 |
+| `components/BlogHeader.vue` | 桌面显示阅读栏目、探索菜单和独立账户入口，窄屏使用右侧抽屉，提供主题和音乐播放控制 |
 | `components/HeroBanner.vue` | 保留原横幅和背景资源 |
 | `components/ArticleCard.vue` | 保留原卡片模板和完整样式；通过 `shared/presentation.js` 映射 V2 属性 |
 | `components/HomeTimeWidgets.vue` | 直接复用时钟、日历、黄历、时间进度组件及原样式 |

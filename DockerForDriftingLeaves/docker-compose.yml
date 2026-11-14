@@ -1,0 +1,93 @@
+# 按 2 核 4 GB 服务器限制资源。
+services:
+  backend:
+    image: driftingleaves-v2-backend:local
+    build:
+      context: .
+      dockerfile: DockerFile
+    container_name: driftingleaves-backend
+    restart: unless-stopped
+    networks:
+      - driftingleaves
+    ports:
+      - "127.0.0.1:5922:5922"
+    environment:
+      SPRING_PROFILES_ACTIVE: prd
+      SERVER_PORT: "5922"
+      SERVER_FORWARD_HEADERS_STRATEGY: none
+      TRUSTED_PROXIES: "${TRUSTED_PROXIES:-172.19.0.5}"
+      OSS_ENABLED: "${OSS_ENABLED:-true}"
+      OSS_ENDPOINT: "${OSS_ENDPOINT:-https://oss-cn-beijing.aliyuncs.com}"
+      OSS_REGION: "${OSS_REGION:-cn-beijing}"
+      OSS_BUCKET: "${OSS_BUCKET:-dl-blog}"
+      OSS_ACCESS_KEY_ID: "${OSS_ACCESS_KEY_ID:-}"
+      OSS_ACCESS_KEY_SECRET: "${OSS_ACCESS_KEY_SECRET:-}"
+      OSS_SECURITY_TOKEN: "${OSS_SECURITY_TOKEN:-}"
+      OSS_KEY_PREFIX: "${OSS_KEY_PREFIX:-drifting-leaves-v2/}"
+      UPLOAD_ROOT: /app/uploads
+      TZ: Asia/Shanghai
+      JAVA_OPTS: -Xms512m -Xmx1024m
+    volumes:
+      - uploads:/app/uploads
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1536M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5922/api/v1/home/profile"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  nginx:
+    image: nginx:alpine
+    container_name: driftingleaves-nginx
+    restart: unless-stopped
+    networks:
+      - driftingleaves
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./html:/usr/share/nginx/html:ro
+      - ./SSL:/etc/nginx/ssl:ro
+    depends_on:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t -q && wget --no-check-certificate -q -O /dev/null https://127.0.0.1/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  uploads:
+
+networks:
+  driftingleaves:
+    external: true
+    name: driftingleaves

@@ -436,7 +436,8 @@ html.dark .skeleton-cover,
 html.dark .skeleton-line,
 html.dark .sk-card,
 html.dark .sk-line {
-  background: #333 !important;
+  background: linear-gradient(90deg, #2d2d2d 25%, #383838 37%, #2d2d2d 63%) !important;
+  background-size: 400% 100% !important;
 }
 
 html.dark .card-tag {
@@ -826,4 +827,128 @@ html.dark .comment-children {
 }
 html.dark .comment-item.child {
   border-bottom-color: var(--blog-border) !important;
+}
+
+/* === 骨架屏流光与减弱动态效果 === */
+.skeleton-cover,
+.skeleton-line {
+  background: linear-gradient(90deg, #ebeef5 25%, #f5f7fa 37%, #ebeef5 63%);
+  background-size: 400% 100%;
+  animation: blog-shimmer 1.4s ease infinite;
+}
+
+@keyframes blog-shimmer {
+  from {
+    background-position: 100% 50%;
+  }
+  to {
+    background-position: 0 50%;
+  }
+}
+
+/* 苹果式连续曲率圆角（Squircle），不支持的浏览器自动回退普通圆角。 */
+@supports (corner-shape: squircle) {
+  :root {
+    --el-border-radius-base: 8px;
+    --el-border-radius-small: 6px;
+    --el-border-radius-round: 16px;
+  }
+
+  *,
+  *::before,
+  *::after {
+    corner-shape: squircle;
+  }
+
+  /* 正圆头像、加载环、滚动条与单选/开关圆球保持标准圆形。 */
+  .boot-loader-ring,
+  .loading-state .spinner,
+  .c-avatar-img,
+  .c-avatar-letter,
+  .msg-avatar-img,
+  .msg-avatar-letter,
+  .friend-card img,
+  .friend-avatar,
+  .el-radio__inner,
+  .el-switch__action,
+  .el-badge__content.is-dot,
+  .el-avatar--circle,
+  ::-webkit-scrollbar-thumb {
+    corner-shape: round;
+  }
+
+  /* 连续曲率下适度放大卡片与弹窗圆角，保持苹果视觉饱满度。 */
+  .el-card {
+    border-radius: 14px;
+  }
+
+  .el-dialog {
+    border-radius: 16px;
+  }
+}
+
+/* === 交互微动效：按压回弹、跟手波纹、弹性开关、手写勾选 === */
+.is-pressing {
+  transform: scale(0.96) !important;
+}
+
+.is-rebounding {
+  animation: dl-press-rebound 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes dl-press-rebound {
+  0% {
+    transform: scale(0.96);
+  }
+  55% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.dl-ripple-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dl-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.16;
+  pointer-events: none;
+  transform: scale(0);
+  animation: dl-ripple-expand 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes dl-ripple-expand {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 弹性开关：圆点移动时横向拉成胶囊形，到达终点缩回圆形带轻微回弹。 */
+.el-switch__action.is-stretching {
+  animation: dl-switch-capsule 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes dl-switch-capsule {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  40% {
+    transform: scaleX(1.38) scaleY(0.86);
+  }
+  75% {
+    transform: scaleX(0.94) scaleY(1.04);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
 }

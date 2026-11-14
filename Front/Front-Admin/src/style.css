@@ -977,6 +977,7 @@ h2 {
 .login-box {
   width: 100%;
   max-width: 370px;
+  animation: admin-reveal 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both;
 }
 
 .login-brand {
@@ -1111,4 +1112,143 @@ h2 {
   .login-panel {
     padding: 40px 25px;
   }
+}
+
+@keyframes admin-reveal {
+  from {
+    opacity: 0;
+    translate: 0 12px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+/* 苹果式连续曲率圆角（Squircle），不支持的浏览器自动回退普通圆角。 */
+@supports (corner-shape: squircle) {
+  :root,
+  .login-page {
+    --admin-radius: 10px;
+    --el-border-radius-base: 8px;
+    --el-border-radius-small: 6px;
+    --el-border-radius-round: 16px;
+  }
+
+  *,
+  *::before,
+  *::after {
+    corner-shape: squircle;
+  }
+
+  /* 正圆加载环、状态点、背景装饰圆环与单选/开关圆球保持标准圆形。 */
+  .boot-loader-ring,
+  .status-tag i,
+  .login-decoration .decoration-line,
+  .el-radio__inner,
+  .el-switch__action,
+  .el-badge__content.is-dot,
+  .el-avatar--circle,
+  ::-webkit-scrollbar-thumb {
+    corner-shape: round;
+  }
+
+  /* 连续曲率下适度放大卡片、弹窗与品牌图标圆角，保持苹果视觉饱满度。 */
+  .el-card {
+    border-radius: 14px;
+  }
+
+  .el-dialog {
+    border-radius: 16px;
+  }
+
+  .brand-symbol {
+    border-radius: 10px;
+  }
+
+  .login-brand {
+    border-radius: 13px;
+  }
+}
+
+/* === 交互微动效：按压回弹、跟手波纹、弹性开关、一笔画出勾选 === */
+.is-pressing {
+  transform: scale(0.96) !important;
+}
+
+.is-rebounding {
+  animation: dl-press-rebound 0.34s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@keyframes dl-press-rebound {
+  0% {
+    transform: scale(0.96);
+  }
+  55% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.dl-ripple-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dl-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.16;
+  pointer-events: none;
+  transform: scale(0);
+  animation: dl-ripple-expand 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes dl-ripple-expand {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+/* 弹性开关：圆点移动时横向拉成胶囊形，到达终点缩回圆形带轻微回弹。 */
+.el-switch__action.is-stretching {
+  animation: dl-switch-capsule 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes dl-switch-capsule {
+  0% {
+    transform: scaleX(1) scaleY(1);
+  }
+  40% {
+    transform: scaleX(1.38) scaleY(0.86);
+  }
+  75% {
+    transform: scaleX(0.94) scaleY(1.04);
+  }
+  100% {
+    transform: scaleX(1) scaleY(1);
+  }
+}
+
+/* 勾选画出来：复选框选中时对勾在约 200ms 内从左下到右上画出（保留半选横杠）。 */
+.el-checkbox__input:not(.is-indeterminate) .el-checkbox__inner::after {
+  clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+  transition:
+    transform 0.15s ease-in 0.05s,
+    clip-path 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.el-checkbox__input.is-checked:not(.is-indeterminate) .el-checkbox__inner::after {
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+}
+
+.el-checkbox__input.is-indeterminate .el-checkbox__inner::after {
+  clip-path: none;
 }

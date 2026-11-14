@@ -37,6 +37,29 @@ fieldset {
   color: var(--blog-text3);
 }
 
+.loading-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.loading-state .spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--blog-border);
+  border-top-color: var(--blog-text);
+  border-radius: 50%;
+  animation: account-spin 0.8s linear infinite;
+}
+
+@keyframes account-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .error-state {
   color: var(--blog-error-text);
 }

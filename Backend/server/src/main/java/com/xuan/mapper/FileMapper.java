@@ -16,7 +16,7 @@ import java.util.List;
 @Mapper
 public interface FileMapper extends BaseMapper<BlogFile> {
 
-    /** 列表与总数共用操作范围，keyword 按文件展示名称字面包含。 */
+    /** 分页查询文件，按原始文件名或存储文件名字面匹配，列表和总数共用上传者范围。 */
     IPage<BlogFile> filePage(IPage<BlogFile> page, @Param("query") FileQueryDTO query,
             @Param("uploader") Long uploader, @Param("filterUploader") Long filterUploader);
 

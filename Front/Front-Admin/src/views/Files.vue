@@ -3,6 +3,8 @@ import { onBeforeUnmount, onMounted, ref, computed } from 'vue'
 import {
   ElButton,
   ElCard,
+  ElDescriptions,
+  ElDescriptionsItem,
   ElDialog,
   ElInput,
   ElMessage,
@@ -15,6 +17,8 @@ import {
 } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/descriptions/style/css'
+import 'element-plus/es/components/descriptions-item/style/css'
 import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
@@ -42,41 +46,75 @@ const {
 )
 const input = ref(null)
 const busy = ref(false)
-const imageUrl = ref('')
-const imageName = ref('')
-const previewType = ref('')
+const detailVisible = ref(false)
+const detailId = ref('')
+const detail = ref(null)
+const detailError = ref('')
+const previewUrl = ref('')
 const previewText = ref('')
-const previewVisible = ref(false)
+const previewLoading = ref(false)
+const previewError = ref('')
 let controller
 
-function releaseImage() {
+/** 取消详情和预览请求，释放预览使用的临时地址。 */
+function releasePreview() {
   controller?.abort()
   previewText.value = ''
-  if (imageUrl.value) {
-    URL.revokeObjectURL(imageUrl.value)
-    imageUrl.value = ''
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
   }
 }
 
-async function preview(row) {
-  releaseImage()
+/** 查询文件详情，资料加载成功后再读取预览。 */
+async function openDetail(fileId) {
+  releasePreview()
   controller = new AbortController()
-  const current = controller
+  const { signal } = controller
+  detailId.value = fileId
+  detail.value = null
+  detailError.value = ''
+  detailVisible.value = true
+
   try {
-    const result = await getFile(`/api/v1/admin/files/${row.fileId}/content`, current.signal)
-    const text = row.mimeType.startsWith('audio/') || row.mimeType.startsWith('image/')
-      ? '' : await result.text()
-    if (current.signal.aborted) {
+    const { data } = await request(`/admin/files/${fileId}`, { signal })
+    if (signal.aborted) {
       return
     }
-    previewType.value = row.mimeType
-    previewText.value = text
-    imageUrl.value = text ? '' : URL.createObjectURL(result)
-    imageName.value = row.originalName
-    previewVisible.value = true
+    detail.value = data
+    loadPreview()
   } catch (failure) {
-    if (failure.name !== 'AbortError') {
-      ElMessage.error(failure.message)
+    if (!signal.aborted) {
+      detailError.value = failure.message
+    }
+  }
+}
+
+/** 读取预览内容，失败时保留已加载的文件资料。 */
+async function loadPreview() {
+  const { signal } = controller
+  const { mimeType, previewUrl: contentPath } = detail.value
+  previewLoading.value = true
+  previewError.value = ''
+  try {
+    const file = await getFile(contentPath, signal)
+    if (mimeType.startsWith('image/') || mimeType.startsWith('audio/')) {
+      if (!signal.aborted) {
+        previewUrl.value = URL.createObjectURL(file)
+      }
+    } else {
+      const content = await file.text()
+      if (!signal.aborted) {
+        previewText.value = content
+      }
+    }
+  } catch (failure) {
+    if (!signal.aborted) {
+      previewError.value = failure.message
+    }
+  } finally {
+    if (!signal.aborted) {
+      previewLoading.value = false
     }
   }
 }
@@ -127,7 +165,7 @@ async function remove(row) {
   }
 }
 onMounted(load)
-onBeforeUnmount(releaseImage)
+onBeforeUnmount(releasePreview)
 
 const batch = ref(null)
 const batchTable = ref(null)
@@ -172,10 +210,10 @@ const batchActions = computed(() => {
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
           v-model="filters.keyword"
-          aria-label="文件名"
-          placeholder="搜索文件名"
+          aria-label="原始文件名或存储文件名"
+          placeholder="原始文件名 / 存储文件名"
           clearable
-          maxlength="100"
+          maxlength="255"
         />
         <el-input
           v-model="filters.uploaderId"
@@ -225,7 +263,8 @@ const batchActions = computed(() => {
         empty-text="暂无文件"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column prop="originalName" label="文件名" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="originalName" label="原始文件名" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="storedName" label="存储文件名" min-width="220" show-overflow-tooltip />
         <el-table-column prop="fileId" label="文件 ID" min-width="175" />
         <el-table-column prop="mimeType" label="类型" width="120" />
         <el-table-column label="用途" width="100">
@@ -240,7 +279,7 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="操作" align="center" width="140">
           <template #default="{ row }">
-            <el-button type="primary" link @click="preview(row)">预览</el-button>
+            <el-button type="primary" link @click="openDetail(row.fileId)">详情</el-button>
             <el-button type="danger" v-if="can('blog:file:delete')" link @click="remove(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -255,15 +294,57 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
-    <el-dialog v-model="previewVisible" :title="imageName" width="760px" @closed="releaseImage">
-      <img v-if="imageUrl && previewType.startsWith('image/')" :src="imageUrl" :alt="imageName" class="file-preview" />
-      <audio v-else-if="imageUrl && previewType.startsWith('audio/')" :src="imageUrl" controls :aria-label="imageName" />
-      <pre v-else class="lyric-preview">{{ previewText }}</pre>
+    <el-dialog v-model="detailVisible" title="文件详情" width="760px" @close="releasePreview">
+      <RequestError v-if="detailError" :message="detailError" @retry="openDetail(detailId)" />
+      <p v-else-if="!detail" role="status">正在加载文件详情…</p>
+      <template v-else>
+        <el-descriptions class="file-detail" :column="2" border>
+          <el-descriptions-item label="原始文件名" :span="2">{{ detail.originalName }}</el-descriptions-item>
+          <el-descriptions-item label="存储文件名" :span="2">{{ detail.storedName }}</el-descriptions-item>
+          <el-descriptions-item label="文件 ID">{{ detail.fileId }}</el-descriptions-item>
+          <el-descriptions-item label="上传者 ID">{{ detail.uploaderId }}</el-descriptions-item>
+          <el-descriptions-item label="类型">{{ detail.mimeType }}</el-descriptions-item>
+          <el-descriptions-item label="大小">{{ formatCount(detail.sizeBytes) }} B</el-descriptions-item>
+          <el-descriptions-item label="用途">{{ detail.publicImage ? '公开图片' : '附件' }}</el-descriptions-item>
+          <el-descriptions-item label="存储">{{ detail.storageType }}</el-descriptions-item>
+          <el-descriptions-item label="上传时间" :span="2">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+        </el-descriptions>
+        <div class="card-heading preview-heading"><h2>文件预览</h2></div>
+        <RequestError v-if="previewError" :message="previewError" @retry="loadPreview" />
+        <p v-else-if="previewLoading" role="status">正在加载预览…</p>
+        <img
+          v-else-if="previewUrl && detail.mimeType.startsWith('image/')"
+          :src="previewUrl" :alt="detail.originalName" class="file-preview"
+        />
+        <audio
+          v-else-if="previewUrl && detail.mimeType.startsWith('audio/')"
+          :src="previewUrl" :aria-label="detail.originalName" controls
+        />
+        <pre v-else class="lyric-preview">{{ previewText }}</pre>
+      </template>
     </el-dialog>
   </section>
 </template>
 
 <style scoped>
+.file-detail {
+  overflow-wrap: anywhere;
+}
+
+.preview-heading {
+  margin-top: 20px;
+}
+
+.file-preview {
+  display: block;
+  max-height: 45vh;
+  object-fit: contain;
+}
+
+audio {
+  max-width: 100%;
+}
+
 .lyric-preview {
   max-height: 480px;
   overflow: auto;

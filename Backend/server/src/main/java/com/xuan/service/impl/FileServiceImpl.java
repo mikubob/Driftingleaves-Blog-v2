@@ -97,7 +97,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 requireAdmin("query"), filter).convert(this::view));
     }
 
-    /** 根据id查询文件资料，资料不可编辑，不返回版本或内部存储信息。 */
+    /** 根据id查询文件详情，不返回编辑版本或存储目录。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FileVO detail(long id) {
@@ -436,7 +436,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
 
     /** 整理文件响应，只返回允许的字段，不直接返回数据库实体。 */
     private FileVO view(BlogFile row) {
-        return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), row.getMimeType(),
+        String objectKey = row.getObjectKey();
+        String storedName = objectKey.substring(objectKey.lastIndexOf('/') + 1);
+        return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), storedName, row.getMimeType(),
                 row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
                 "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row));
     }

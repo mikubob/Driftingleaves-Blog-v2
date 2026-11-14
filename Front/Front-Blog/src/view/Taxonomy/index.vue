@@ -74,22 +74,25 @@ const { listing, articles, changePage } = useArticleList(10, async (signal) => {
 /* 骨架屏 */
 .skeleton-card {
   display: flex;
-  gap: 16px;
-  padding: 20px;
+  gap: 0;
   background: #fff;
   border-radius: 8px;
+  overflow: hidden;
   margin-bottom: 16px;
   border: 1px solid #ebeef5;
 }
 .skeleton-cover {
-  width: 200px;
-  height: 130px;
+  width: 230px;
+  min-height: 170px;
   background: #ebeef5;
-  border-radius: 6px;
   flex-shrink: 0;
 }
 .skeleton-body {
   flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .skeleton-line {
   height: 14px;

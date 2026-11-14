@@ -8,6 +8,9 @@ import './shared/element-focus.css'
 import './assets/styles/ali-iconfont.css'
 import './assets/styles/main.scss'
 import './assets/styles/account.scss'
+import { installBlogMotion } from './utils/motion.js'
+
+installBlogMotion()
 
 const app = createApp(App)
 app.use(createPinia())

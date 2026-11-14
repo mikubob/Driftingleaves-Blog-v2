@@ -1,5 +1,6 @@
 <script setup>
 import CvIcon from './CvIcon.vue'
+import { vReveal } from '../reveal.js'
 
 /** 同一时间线用于教育、工作和项目；正文仅接收后端清理后的 htmlContent。 */
 defineProps({
@@ -19,9 +20,10 @@ function formatDate(date) {
 
 <template>
   <section :id="id" class="resume-section" :aria-labelledby="`${id}-title`">
-    <h2 :id="`${id}-title`" class="section-title"><CvIcon :name="icon" />{{ title }}</h2>
+    <h2 :id="`${id}-title`" v-reveal class="section-title"><CvIcon :name="icon" />{{ title }}</h2>
     <ol class="timeline">
-      <li v-for="item in items" :key="item.experienceId" class="timeline-item">
+      <li v-for="(item, index) in items" :key="item.experienceId" v-reveal class="timeline-item"
+        :style="{ '--reveal-index': Math.min(index, 6) }">
         <article class="experience-card">
           <div class="experience-heading">
             <img v-if="item.logoUrl" :src="item.logoUrl" alt="" class="experience-logo" loading="lazy" />

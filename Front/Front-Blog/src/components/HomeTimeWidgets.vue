@@ -601,9 +601,10 @@ onUnmounted(() => {
 .time-progress-card {
   position: relative;
   min-height: 204px;
-  overflow: hidden;
   padding: 14px 18px 16px;
   border-radius: 28px;
+  perspective: 1000px;
+  transform-style: preserve-3d;
   background:
     radial-gradient(
       circle at top left,
@@ -650,40 +651,32 @@ onUnmounted(() => {
   inset: 18px;
   display: flex;
   flex-direction: column;
-  transition:
-    opacity 0.42s ease,
-    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
-    filter 0.42s ease;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .time-progress-panel--front {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  filter: blur(0);
+  transform: rotateY(0deg);
 }
 
 .time-progress-panel--back {
   justify-content: center;
-  opacity: 0;
-  transform: translateY(16px) scale(0.96);
-  filter: blur(6px);
+  transform: rotateY(180deg);
   pointer-events: none;
 }
 
 .time-progress-card:hover .time-progress-panel--front,
 .time-progress-card:focus-visible .time-progress-panel--front,
 .time-progress-card:focus-within .time-progress-panel--front {
-  opacity: 0;
-  transform: translateY(-14px) scale(0.97);
-  filter: blur(8px);
+  transform: rotateY(-180deg);
+  pointer-events: none;
 }
 
 .time-progress-card:hover .time-progress-panel--back,
 .time-progress-card:focus-visible .time-progress-panel--back,
 .time-progress-card:focus-within .time-progress-panel--back {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  filter: blur(0);
+  transform: rotateY(0deg);
   pointer-events: auto;
 }
 
@@ -1078,5 +1071,13 @@ onUnmounted(() => {
   box-shadow:
     inset 0 1px 2px rgba(0, 0, 0, 0.28),
     0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+@supports (corner-shape: squircle) {
+  /* 模拟时钟表盘与中心轴保持正圆。 */
+  .analog-clock,
+  .clock-center {
+    corner-shape: round;
+  }
 }
 </style>

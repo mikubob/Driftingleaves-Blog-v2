@@ -10,6 +10,7 @@ import SidebarCard from '@/components/SidebarCard.vue'
 import CaptchaField from '../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import EmojiPicker from '../../shared/EmojiPicker.vue'
+import DrawnCheckbox from '@/components/DrawnCheckbox.vue'
 const route = useRoute()
 const { articleTitle, articleMeta } = inject('setHero')
 articleTitle.value = '留言板'
@@ -96,22 +97,13 @@ async function handleSubmit() {
           </div>
           <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/math-captcha" arithmetic :disabled="submitting" />
           <div class="form-options">
-            <label class="option-check">
-              <input
-                type="checkbox"
-                v-model="form.isSecret"
-                :disabled="replyTarget?.isSecret === 1"
-              />
-              悄悄话
-            </label>
-            <label class="option-check">
-              <input type="checkbox" v-model="form.isNotice" />
-              邮件提醒
-            </label>
-            <label class="option-check">
-              <input type="checkbox" v-model="form.isMarkdown" />
-              Markdown
-            </label>
+            <DrawnCheckbox
+              v-model="form.isSecret"
+              :disabled="replyTarget?.isSecret === 1"
+              label="悄悄话"
+            />
+            <DrawnCheckbox v-model="form.isNotice" label="邮件提醒" />
+            <DrawnCheckbox v-model="form.isMarkdown" label="Markdown" />
             <div class="form-actions">
               <EmojiPicker @select="insertMsgEmoji">
                 <template #trigger>

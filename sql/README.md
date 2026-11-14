@@ -1,6 +1,6 @@
 # DriftingLeavesV2 数据库设计
 
-项目尚未上线。适用 MySQL **8.0.16+**、InnoDB、utf8mb4；当前 28 张表已有实体和业务消费者，四个前端工程均已建立。表结构、权限、菜单和种子数据统一维护在[空库初始化基线](drifting_leaves_v2.sql)，不维护旧版本增量升级脚本。运行配置见[后端运行说明](../docs/后端运行说明.md)。
+适用 MySQL **8.0.16+**、InnoDB、utf8mb4；当前 28 张表已有实体和业务消费者，四个前端工程均已建立。表结构、权限、菜单和种子数据统一维护在[空库初始化基线](drifting_leaves_v2.sql)，不维护旧版本增量升级脚本。运行配置见[后端运行说明](../docs/后端运行说明.md)。
 
 ## 地域与设备字段
 
@@ -188,7 +188,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 新增模块继续采用独立权限和菜单授权。`home:profile:*`、`home:social:*`、`cv:experience:*`、`cv:skill:*`、`blog:music:*`，以及留言审核、订阅管理、访客/浏览/报表和日志均为全站资源，后台接口需 `admin:access`、对应权限及 ALL 范围；SELF 不生成虚构的归属条件。新增权限仅管理员默认获得这些管理能力；作者和会员只新增 `blog:message:create/deleteOwn`、`blog:rss:subscribe/unsubscribe`，共 4 项前台权限。本人接口始终按会话 `user_id` 限定，不能被 ALL 扩大。
 
-新增模块逐接口契约已补入[API文档](../docs/API.md)第15..20章，旧业务取舍见该文档第21章。新菜单的组件键均为后续前端实现约定。第15..20章已有对应Controller、Service和Mapper/XML，后台独立权限及ALL、本人归属SQL均在实际消费者中检查。
+新增模块的请求和响应见[四端接口索引](../docs/API_INDEX.md)，旧业务取舍见[迁移对照](../docs/API.md#legacy-sources)。后台通过前端组件注册表解析菜单组件键。第15..20章已有对应Controller、Service和Mapper/XML，后台独立权限及ALL、本人归属SQL均在实际消费者中检查。
 
 ### 菜单计算
 
@@ -243,4 +243,4 @@ WHERE u.user_id = ? AND u.status = 1;
 
 评论和留言发表后不可修改。初始化基线不包含 `blog:comment:updateOwn`、`blog:message:updateOwn`，直接创建发表、回复、查询、删除及后台审核所需的最终权限，不再提供权限增补或停用脚本。
 
-项目尚未上线，表结构、字段、权限和种子数据统一维护在 [drifting_leaves_v2.sql](drifting_leaves_v2.sql)。原地域字段升级与评论/留言编辑权限脚本已由初始化基线覆盖并删除。演示数据仍按需导入，不混入初始化脚本；本次未连接或修改现有数据库。
+演示数据按需导入，操作步骤见 [DEMO_DATA.md](DEMO_DATA.md)。

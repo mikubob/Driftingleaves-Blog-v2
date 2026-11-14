@@ -17,6 +17,7 @@ import CaptchaField from '../../shared/CaptchaField.vue'
 import DiscussionList from '@/components/DiscussionList.vue'
 import TableOfContents from '@/components/TableOfContents.vue'
 import EmojiPicker from '../../shared/EmojiPicker.vue'
+import RollingNumber from '@/components/RollingNumber.vue'
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
@@ -214,7 +215,7 @@ onUnmounted(() => {
                     <polygon points="80,80 70,70"></polygon>
                   </svg>
                 </div>
-                <span>{{ article.likeCount ?? 0 }}</span>
+                <span><RollingNumber :value="article.likeCount ?? 0" /></span>
               </div>
               <button class="action-icon" @click="copyLink" title="复制链接">
                 <i class="iconfont icon-zhuanfa" />

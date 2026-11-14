@@ -587,5 +587,17 @@ const goArticle = (slug) => router.push('/articles/' + slug)
     width: 100%;
     height: 160px;
   }
+  .sk-card {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .sk-rank {
+    width: 100%;
+    height: 36px;
+  }
+  .sk-cover {
+    width: 100%;
+    height: 160px;
+  }
 }
 </style>

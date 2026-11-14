@@ -1,13 +1,15 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
+import { ElDrawer, ElMessage } from 'element-plus'
+import 'element-plus/es/components/drawer/style/css'
 import 'element-plus/es/components/message/style/css'
-import { session } from '@/session.js'
+import { logout, session } from '@/session.js'
 import { useBlogStore, useThemeStore } from '@/stores'
 import { loadLyrics } from '@/shared/lyrics.js'
 
 const router = useRouter()
+const route = useRoute()
 const blogStore = useBlogStore()
 const themeStore = useThemeStore()
 
@@ -23,21 +25,19 @@ onMounted(() => {
   window.addEventListener('scroll', handleScroll, { passive: true })
 })
 
-/* 搜索 */
-const searchVisible = ref(false)
-const keyword = ref('')
-const searchInputRef = ref(null)
+/* 导航布局 */
 const mobileNavVisible = ref(false)
 const compactNav = ref(false)
+const openPopover = ref('')
+const signingOut = ref(false)
+const failedAvatarUrl = ref('')
 const headerInnerRef = ref(null)
-const headerLeftRef = ref(null)
 const headerRightRef = ref(null)
 const siteTitleRef = ref(null)
 const navDesktopRef = ref(null)
-const searchBoxRef = ref(null)
+const accountControlRef = ref(null)
 const miniPlayerWrapRef = ref(null)
 const themeSwitchRef = ref(null)
-const searchAreaRef = ref(null)
 
 /* 音乐播放 */
 const isPlaying = ref(false)
@@ -92,83 +92,47 @@ async function loadCurrentLyrics() {
 
 watch([() => currentTrack.value?.id, musicListVisible], loadCurrentLyrics)
 onUnmounted(() => lyricController?.abort())
-const DESKTOP_SEARCH_EXPANDED_WIDTH = 180
-const HEADER_LAYOUT_BUFFER = 12
 let headerResizeObserver = null
 
 const syncHeaderLayout = () => {
   nextTick(() => {
     const headerInnerEl = headerInnerRef.value
-    const headerLeftEl = headerLeftRef.value
     const siteTitleEl = siteTitleRef.value?.$el ?? siteTitleRef.value
     const navDesktopEl = navDesktopRef.value
-    const searchBoxEl = searchBoxRef.value
-    const miniPlayerWrapEl = miniPlayerWrapRef.value
-    const themeSwitchEl = themeSwitchRef.value
-    const searchAreaEl = searchAreaRef.value
-
-    if (!headerInnerEl || !headerLeftEl || !navDesktopEl) {
+    const headerRightEl = headerRightRef.value
+    if (!headerInnerEl || !siteTitleEl || !navDesktopEl || !headerRightEl) {
       return
     }
 
-    if (!siteTitleEl) {
-      return
-    }
-
-    const leftGap = parseFloat(getComputedStyle(headerLeftEl).gap || '0')
-    const rightGap = parseFloat(
-      getComputedStyle(headerRightRef.value).gap || '0'
-    )
     const titleWidth = siteTitleEl.getBoundingClientRect().width
-    const navWidth = navDesktopEl.scrollWidth
-    const leftWidth = titleWidth + leftGap + navWidth
-    const currentSearchWidth = searchBoxEl?.getBoundingClientRect().width ?? 0
-    const expandedSearchDelta = Math.max(
-      0,
-      DESKTOP_SEARCH_EXPANDED_WIDTH - currentSearchWidth
-    )
-    const rightItems = []
+    const navWidth = navDesktopEl.getBoundingClientRect().width
+    // 窄屏时桌面工具仍保留测量宽度，放宽窗口后可以恢复桌面导航。
+    const rightItems = [miniPlayerWrapRef.value, themeSwitchRef.value, accountControlRef.value].filter(Boolean)
+    const rightGap = parseFloat(getComputedStyle(headerRightEl).gap)
+    const rightWidth = rightItems.reduce((sum, item) => sum + item.getBoundingClientRect().width, 0)
+      + (rightItems.length - 1) * rightGap
+    const headerStyle = getComputedStyle(headerInnerEl)
+    const padding = 2 * parseFloat(headerStyle.getPropertyValue('--desktop-header-padding'))
+    const requiredWidth = navWidth + 2 * Math.max(titleWidth, rightWidth) + 2 * parseFloat(headerStyle.columnGap) + padding
 
-    if (currentTrack.value && miniPlayerWrapEl) {
-      rightItems.push(miniPlayerWrapEl.getBoundingClientRect().width)
-    }
-
-    if (themeSwitchEl) {
-      rightItems.push(themeSwitchEl.getBoundingClientRect().width)
-    }
-
-    if (searchAreaEl) {
-      rightItems.push(
-        searchAreaEl.getBoundingClientRect().width + expandedSearchDelta
-      )
-    }
-
-    const rightWidth =
-      rightItems.reduce((sum, width) => sum + width, 0) +
-      Math.max(0, rightItems.length - 1) * rightGap
-    const requiredWidth = leftWidth + rightWidth + HEADER_LAYOUT_BUFFER
-    const shouldCompact = requiredWidth > headerInnerEl.clientWidth
-
-    compactNav.value = shouldCompact
-
-    if (!shouldCompact) {
-      mobileNavVisible.value = false
-    }
+    compactNav.value = requiredWidth > headerInnerEl.clientWidth
   })
 }
 
 const togglePlay = async () => {
-  if (!audioRef.value || !currentTrack.value) {
+  const audio = audioRef.value
+  if (!audio || !currentTrack.value) {
     return
   }
-  if (isPlaying.value) {
-    audioRef.value.pause()
-  } else {
-    try {
-      await audioRef.value.play()
-    } catch {
+  if (!audio.paused) {
+    audio.pause()
+    return
+  }
+  try {
+    await audio.play()
+  } catch (failure) {
+    if (failure.name !== 'AbortError') {
       ElMessage.error('音频暂时无法播放，请重试或切换曲目')
-      return
     }
   }
 }
@@ -180,12 +144,11 @@ const playTrack = (index) => {
   nextTick(() => {
     if (audioRef.value) {
       audioRef.value.load()
-      audioRef.value
-        .play()
-        .then(() => {
-          isPlaying.value = true
-        })
-        .catch(() => ElMessage.error('音频暂时无法播放，请切换曲目'))
+      audioRef.value.play().catch((failure) => {
+        if (failure.name !== 'AbortError') {
+          ElMessage.error('音频暂时无法播放，请切换曲目')
+        }
+      })
     }
   })
 }
@@ -201,65 +164,85 @@ const toggleMusicList = () => {
   musicListVisible.value = !musicListVisible.value
 }
 
-const navItems = computed(() => [
-  {
-    label: '主页',
-    icon: 'icon-zhuye',
-    href: blogStore.personalInfo.website,
-    external: true
-  },
-  { label: '博客', icon: 'icon-boke', to: '/' },
-  { label: '归档', icon: 'icon-guidang', to: '/archive' },
-  { label: '热门', icon: 'icon-fire', to: '/hot', isSvg: true },
-  { label: '友链', icon: 'icon-lianjie', to: '/links' },
-  { label: '留言', icon: 'icon-liuyan', to: '/message' },
-  { label: '关于', icon: 'icon-guanyu', to: '/about' },
-  { label: session.user?.nickname || '登录', icon: 'icon-user', to: session.user ? '/account' : '/login' },
-  {
-    label: '开往',
-    icon: 'icon-subway',
-    href: 'https://www.travellings.cn/go.html',
-    external: true
-  }
-].filter((item) => !item.external || item.href))
+const readingLinks = [
+  { label: '博客', to: '/', icon: 'icon-boke' },
+  { label: '归档', to: '/archive', icon: 'icon-guidang' },
+  { label: '热门', to: '/hot', icon: 'fire' },
+  { label: '关于', to: '/about', icon: 'icon-guanyu' },
+]
+const exploreLinks = computed(() => [
+  { label: '主页', href: blogStore.personalInfo.website, icon: 'icon-zhuye' },
+  { label: '友链', to: '/links', icon: 'icon-lianjie' },
+  { label: '留言', to: '/message', icon: 'icon-liuyan' },
+  { label: '开往', href: 'https://www.travellings.cn/go.html', icon: 'icon-subway' },
+].filter((item) => item.to || item.href))
+const drawerGroups = computed(() => [
+  { label: '阅读', links: readingLinks },
+  { label: '探索', links: exploreLinks.value },
+])
 
-const doSearch = () => {
-  const kw = keyword.value.trim()
-  if (!kw) {
-    return
-  }
-  searchVisible.value = false
-  keyword.value = ''
-  router.push({ path: '/', query: { search: kw } })
+function togglePopover(name) {
+  musicListVisible.value = false
+  openPopover.value = openPopover.value === name ? '' : name
 }
 
-const toggleSearch = () => {
+function closePopoverOnFocusOut(event) {
+  if (!event.currentTarget.contains(event.relatedTarget)) {
+    openPopover.value = ''
+  }
+}
+
+function closePopoverOnEscape(event) {
+  if (openPopover.value) {
+    openPopover.value = ''
+    event.currentTarget.querySelector('button').focus()
+  }
+}
+
+function closePopoverOnOutsideClick(event) {
+  if (openPopover.value && !event.target.closest('[data-header-popover]')) {
+    openPopover.value = ''
+  }
+}
+
+function openMobileNav() {
+  openPopover.value = ''
+  mobileNavVisible.value = true
+}
+
+async function signOut() {
+  signingOut.value = true
+  try {
+    await logout()
+    await router.push('/')
+  } catch (failure) {
+    ElMessage.error(failure.message)
+  } finally {
+    signingOut.value = false
+  }
+}
+
+watch(() => route.fullPath, () => {
+  openPopover.value = ''
   mobileNavVisible.value = false
-  searchVisible.value = !searchVisible.value
-  if (!searchVisible.value) {
-    keyword.value = ''
-  } else {
-    nextTick(() => searchInputRef.value?.focus())
+})
+
+watch(() => session.user, (user) => {
+  if (!user && openPopover.value === 'account') {
+    openPopover.value = ''
   }
-}
+})
 
-const toggleMobileNav = () => {
-  mobileNavVisible.value = !mobileNavVisible.value
-}
-
-const navTo = (item) => {
-  mobileNavVisible.value = false
-  if (item.external) {
-    window.open(item.href, '_blank', 'noopener,noreferrer')
+watch(compactNav, (compact) => {
+  if (compact) {
+    musicListVisible.value = false
+    if (openPopover.value === 'explore') {
+      openPopover.value = ''
+    }
   } else {
-    router.push(item.to)
+    mobileNavVisible.value = false
   }
-}
-
-watch(
-  () => blogStore.musics.length,
-  () => syncHeaderLayout()
-)
+})
 
 watch(currentTrack, () => syncHeaderLayout())
 
@@ -269,21 +252,25 @@ const handleWindowResize = () => {
 
 onMounted(() => {
   window.addEventListener('resize', handleWindowResize, { passive: true })
+  document.addEventListener('pointerdown', closePopoverOnOutsideClick)
   syncHeaderLayout()
 
   if (typeof ResizeObserver !== 'undefined') {
     headerResizeObserver = new ResizeObserver(() => {
       syncHeaderLayout()
     })
-    headerInnerRef.value && headerResizeObserver.observe(headerInnerRef.value)
-    headerLeftRef.value && headerResizeObserver.observe(headerLeftRef.value)
-    headerRightRef.value && headerResizeObserver.observe(headerRightRef.value)
+    for (const target of [headerInnerRef.value, headerRightRef.value, navDesktopRef.value, siteTitleRef.value?.$el]) {
+      if (target) {
+        headerResizeObserver.observe(target)
+      }
+    }
   }
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('resize', handleWindowResize)
+  document.removeEventListener('pointerdown', closePopoverOnOutsideClick)
   headerResizeObserver?.disconnect()
   headerResizeObserver = null
 })
@@ -294,56 +281,61 @@ onUnmounted(() => {
     class="site-header"
     :class="{ scrolled, dark: isDark, compact: compactNav }"
   >
+    <svg class="nav-icon-definitions" width="0" height="0" aria-hidden="true">
+      <symbol id="blog-nav-fire" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z" />
+      </symbol>
+    </svg>
     <div ref="headerInnerRef" class="header-inner">
-      <div ref="headerLeftRef" class="header-left">
-        <router-link ref="siteTitleRef" to="/" class="site-title"
-          >{{ blogStore.site.title || 'DriftingLeaves Blog' }}</router-link
+      <router-link ref="siteTitleRef" to="/" class="site-title">
+        {{ blogStore.site.title || 'DriftingLeaves Blog' }}
+      </router-link>
+      <nav ref="navDesktopRef" class="nav-desktop" aria-label="博客导航">
+        <router-link v-for="item in readingLinks" :key="item.to" :to="item.to" class="nav-link">
+          <svg v-if="item.icon === 'fire'" class="nav-item-icon" aria-hidden="true">
+            <use href="#blog-nav-fire" />
+          </svg>
+          <i v-else :class="['nav-item-icon', 'iconfont', item.icon]" aria-hidden="true" />
+          {{ item.label }}
+        </router-link>
+        <div
+          class="header-popover"
+          data-header-popover
+          @focusout="closePopoverOnFocusOut"
+          @keydown.esc="closePopoverOnEscape"
         >
-        <nav ref="navDesktopRef" class="nav-desktop">
-          <template v-for="item in navItems" :key="item.label">
-            <a
-              v-if="item.external"
-              :href="item.href"
-              target="_blank"
-              rel="noopener"
-              class="nav-link"
+          <button
+            type="button"
+            class="nav-link"
+            aria-controls="blog-explore-menu"
+            :aria-expanded="openPopover === 'explore'"
+            @click="togglePopover('explore')"
+          >
+            探索 <span class="nav-chevron" aria-hidden="true" />
+          </button>
+          <Transition name="fade">
+            <div
+              v-show="openPopover === 'explore'"
+              id="blog-explore-menu"
+              class="header-popover-panel"
+              :inert="openPopover !== 'explore'"
             >
-              <svg
-                v-if="item.isSvg"
-                class="nav-svg-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+              <component
+                :is="item.href ? 'a' : RouterLink"
+                v-for="item in exploreLinks"
+                :key="item.label"
+                v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
+                class="header-popover-item"
+                @click="openPopover = ''"
               >
-                <path
-                  d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
-                />
-              </svg>
-              <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
-            </a>
-            <router-link v-else :to="item.to" class="nav-link">
-              <svg
-                v-if="item.isSvg"
-                class="nav-svg-icon"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path
-                  d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
-                />
-              </svg>
-              <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
-            </router-link>
-          </template>
-        </nav>
-      </div>
+                <i :class="['nav-item-icon', 'iconfont', item.icon]" aria-hidden="true" />
+                {{ item.label }} <span v-if="item.href" aria-label="在新标签页打开">↗</span>
+              </component>
+            </div>
+          </Transition>
+        </div>
+      </nav>
 
       <div ref="headerRightRef" class="header-right">
         <div
@@ -479,117 +471,136 @@ onUnmounted(() => {
           </div>
         </label>
 
-        <div ref="searchAreaRef" class="search-area">
-          <div
-            ref="searchBoxRef"
-            class="search-box"
-            :class="{ expanded: searchVisible }"
-          >
-            <input
-              ref="searchInputRef"
-              v-show="searchVisible"
-              v-model="keyword"
-              type="text"
-              placeholder="搜索文章..."
-              aria-label="搜索文章"
-              maxlength="100"
-              class="search-input"
-              @keyup.enter="doSearch"
-              @blur="searchVisible = false"
-            />
-          </div>
-          <button
-            class="search-toggle"
-            aria-label="搜索"
-            :aria-expanded="searchVisible"
-            title="搜索"
-            @click="toggleSearch"
-          >
-            <i aria-hidden="true" class="iconfont icon-sousuo" />
-          </button>
-        </div>
-
-        <button class="mobile-menu-btn" aria-label="展开导航" :aria-expanded="mobileNavVisible" @click="toggleMobileNav">
-          <span :class="['bar', { open: mobileNavVisible }]" />
+        <button
+          type="button"
+          class="mobile-menu-btn"
+          :class="{ 'is-open': mobileNavVisible }"
+          :aria-label="mobileNavVisible ? '关闭栏目菜单' : '打开栏目菜单'"
+          aria-controls="blog-mobile-drawer"
+          :aria-expanded="mobileNavVisible"
+          @click="mobileNavVisible = !mobileNavVisible"
+        >
+          <span class="bar" aria-hidden="true" />
         </button>
+        <div
+          ref="accountControlRef"
+          class="header-popover"
+          data-header-popover
+          @focusout="closePopoverOnFocusOut"
+          @keydown.esc="closePopoverOnEscape"
+        >
+          <template v-if="session.user">
+            <button
+              type="button"
+              class="account-trigger"
+              aria-label="打开账户菜单"
+              aria-controls="blog-account-menu"
+              :aria-expanded="openPopover === 'account'"
+              @click="togglePopover('account')"
+            >
+              <img
+                v-if="session.user.avatar && session.user.avatar !== failedAvatarUrl"
+                :src="session.user.avatar"
+                alt=""
+                @error="failedAvatarUrl = session.user.avatar"
+              />
+              <i v-else class="iconfont icon-user" aria-hidden="true" />
+            </button>
+            <Transition name="fade">
+              <div
+                v-show="openPopover === 'account'"
+                id="blog-account-menu"
+                class="header-popover-panel account-panel"
+                :inert="openPopover !== 'account'"
+              >
+                <strong class="account-name">{{ session.user.nickname }}</strong>
+                <router-link to="/account" class="header-popover-item" @click="openPopover = ''">
+                  个人中心
+                </router-link>
+                <button type="button" class="header-popover-item" :disabled="signingOut" @click="signOut">
+                  {{ signingOut ? '正在退出…' : '退出登录' }}
+                </button>
+              </div>
+            </Transition>
+          </template>
+          <router-link v-else to="/login" class="account-trigger login-link">
+            <i class="nav-item-icon iconfont icon-user" aria-hidden="true" /> 登录
+          </router-link>
+        </div>
       </div>
     </div>
-
-    <nav v-show="mobileNavVisible" class="nav-mobile">
-      <a
-        v-for="item in navItems"
-        :key="item.label"
-        :href="item.external ? item.href : item.to"
-        class="nav-mobile-link"
-        @click.prevent="navTo(item)"
-      >
-        <svg
-          v-if="item.isSvg"
-          class="nav-mobile-svg-icon"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        >
-          <path
-            d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
-          />
-        </svg>
-        <i v-else aria-hidden="true" :class="['iconfont', item.icon]" /> {{ item.label }}
-      </a>
-      <button type="button" class="nav-mobile-link" @click="toggleSearch">
-        <i aria-hidden="true" class="iconfont icon-sousuo" /> 搜索
-      </button>
-      <button type="button" class="nav-mobile-link" @click="themeStore.toggle">
-        <template v-if="isDark">
-          <svg
-            viewBox="0 0 24 24"
-            width="15"
-            height="15"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            style="vertical-align: -2px; margin-right: 4px"
-          >
-            <circle cx="12" cy="12" r="5" />
-            <line x1="12" y1="1" x2="12" y2="3" />
-            <line x1="12" y1="21" x2="12" y2="23" />
-            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
-            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
-            <line x1="1" y1="12" x2="3" y2="12" />
-            <line x1="21" y1="12" x2="23" y2="12" />
-            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
-            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
-          </svg>
-          浅色模式
-        </template>
-        <template v-else>
-          <svg
-            viewBox="0 0 24 24"
-            width="15"
-            height="15"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            style="vertical-align: -2px; margin-right: 4px"
-          >
-            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
-          </svg>
-          深色模式
-        </template>
-      </button>
-    </nav>
   </header>
+
+  <ElDrawer
+    id="blog-mobile-drawer"
+    v-model="mobileNavVisible"
+    title="导航"
+    direction="rtl"
+    size="min(84vw, 340px)"
+    class="blog-nav-drawer"
+    modal-class="blog-nav-overlay"
+    header-class="blog-nav-drawer-header"
+    body-class="blog-nav-drawer-body"
+    :append-to-body="true"
+    :lock-scroll="false"
+    :show-close="false"
+    @close="mobileNavVisible = false"
+  >
+    <template #header="{ close }">
+      <strong>导航</strong>
+      <button type="button" class="drawer-close" aria-label="关闭栏目菜单" @click="close">×</button>
+    </template>
+    <nav class="drawer-nav" aria-label="博客栏目">
+      <div v-for="group in drawerGroups" :key="group.label">
+        <h2>{{ group.label }}</h2>
+        <div class="drawer-links">
+          <component
+            :is="item.href ? 'a' : RouterLink"
+            v-for="item in group.links"
+            :key="item.label"
+            v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
+            class="drawer-link"
+            @click="mobileNavVisible = false"
+          >
+            <svg v-if="item.icon === 'fire'" class="nav-item-icon" aria-hidden="true">
+              <use href="#blog-nav-fire" />
+            </svg>
+            <i v-else :class="['nav-item-icon', 'iconfont', item.icon]" aria-hidden="true" />
+            {{ item.label }} <span v-if="item.href" aria-label="在新标签页打开">↗</span>
+          </component>
+        </div>
+      </div>
+    </nav>
+    <div class="drawer-tools">
+      <button
+        type="button"
+        :aria-label="isDark ? '切换到浅色模式' : '切换到深色模式'"
+        @click="themeStore.toggle"
+      >
+        <span aria-hidden="true">{{ isDark ? '☾' : '☀' }}</span>
+        {{ isDark ? '深色' : '浅色' }}
+      </button>
+      <template v-if="currentTrack">
+        <button
+          type="button"
+          class="drawer-track"
+          :aria-label="`${isPlaying ? '暂停' : '播放'} ${currentTrack.title}`"
+          @click="togglePlay"
+        >
+          <i aria-hidden="true" class="iconfont" :class="isPlaying ? 'icon-zanting' : 'icon-play-full'" />
+          <span>{{ currentTrack.title }}</span>
+        </button>
+        <button type="button" aria-label="下一首" @click="nextTrack">
+          <i aria-hidden="true" class="iconfont icon-next" />
+        </button>
+      </template>
+    </div>
+  </ElDrawer>
 </template>
 
 <style scoped>
 .site-header {
+  --header-action: #fff;
   position: fixed;
   top: 0;
   left: 0;
@@ -602,6 +613,7 @@ onUnmounted(() => {
     box-shadow 0.3s;
 }
 .site-header.scrolled {
+  --header-action: var(--blog-text);
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(8px);
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.06);
@@ -611,20 +623,22 @@ onUnmounted(() => {
   box-shadow: 0 1px 8px rgba(0, 0, 0, 0.3);
 }
 .header-inner {
+  --desktop-header-padding: 28px;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 28px;
+  padding: 0 var(--desktop-header-padding);
   height: 58px;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
-}
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 28px;
+  column-gap: 12px;
 }
 .site-title {
+  justify-self: start;
+  min-width: 0;
+  max-width: min(100%, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-family: var(--blog-serif);
   font-size: 18px;
   font-weight: 800;
@@ -648,32 +662,43 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 2px;
+  width: max-content;
+}
+.nav-icon-definitions {
+  position: absolute;
+}
+.nav-item-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  font-size: 14px;
+  line-height: 1;
 }
 .nav-link {
+  border: 0;
+  background: transparent;
+  font-family: inherit;
   font-size: 13px;
+  line-height: 1;
   color: rgba(255, 255, 255, 0.9);
   text-decoration: none;
-  padding: 6px 10px;
+  height: 32px;
+  padding: 0 10px;
   border-radius: 4px;
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  box-sizing: border-box;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition:
     color 0.2s,
     background 0.2s,
     text-shadow 0.3s;
 }
-.nav-link .iconfont {
-  font-size: 14px;
-}
-.nav-link .nav-svg-icon {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-}
-.nav-link:hover {
+.nav-link:hover,
+.nav-link[aria-expanded='true'],
+.nav-link.router-link-exact-active {
   color: #fff;
   background: rgba(255, 255, 255, 0.15);
 }
@@ -681,14 +706,18 @@ onUnmounted(() => {
   color: #606266;
   text-shadow: none;
 }
-.scrolled .nav-link:hover {
+.scrolled .nav-link:hover,
+.scrolled .nav-link[aria-expanded='true'],
+.scrolled .nav-link.router-link-exact-active {
   color: #303133;
   background: #f5f7fa;
 }
 .dark.scrolled .nav-link {
   color: #b0b0b0;
 }
-.dark.scrolled .nav-link:hover {
+.dark.scrolled .nav-link:hover,
+.dark.scrolled .nav-link[aria-expanded='true'],
+.dark.scrolled .nav-link.router-link-exact-active {
   color: #e5e5e5;
   background: #333;
 }
@@ -696,6 +725,102 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
+  justify-self: end;
+}
+
+.header-popover {
+  position: relative;
+  flex-shrink: 0;
+}
+.nav-chevron {
+  width: 6px;
+  height: 6px;
+  margin: 0 1px 3px 3px;
+  border: solid currentColor;
+  border-width: 0 1px 1px 0;
+  transform: rotate(45deg);
+}
+.header-popover-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  display: grid;
+  min-width: 128px;
+  padding: 6px;
+  border: 1px solid var(--blog-border);
+  border-radius: 10px;
+  background: var(--blog-card);
+  color: var(--blog-text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.account-panel {
+  width: 168px;
+}
+.account-name {
+  padding: 7px 9px;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--blog-border);
+  font-size: 14px;
+}
+.header-popover-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 44px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--blog-text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.header-popover-item:hover,
+.header-popover-item.router-link-exact-active {
+  background: var(--blog-hover);
+}
+.header-popover-item:disabled {
+  color: var(--blog-text3);
+  cursor: wait;
+}
+.account-trigger {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 22px;
+  background: transparent;
+  color: var(--header-action);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+.account-trigger img,
+button.account-trigger .iconfont {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--blog-border);
+  border-radius: 50%;
+  background: var(--blog-card);
+  color: var(--blog-text);
+  object-fit: cover;
+}
+.login-link {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  font-size: 14px;
 }
 
 /* 迷你播放器 */
@@ -704,6 +829,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 4px;
   position: relative;
+  flex-shrink: 0;
 }
 .mini-player {
   font: inherit;
@@ -1161,194 +1287,196 @@ onUnmounted(() => {
   transform: translateY(-50%);
 }
 
-/* 搜索 */
-.search-area {
-  display: flex;
-  align-items: center;
-}
-.search-box {
-  overflow: hidden;
-  width: 0;
-  transition: width 0.3s ease;
-}
-.search-box.expanded {
-  width: 180px;
-}
-.search-input {
-  width: 100%;
-  border: 1px solid var(--blog-border);
-  border-radius: 4px;
-  padding: 5px 10px;
-  font-size: 13px;
-  background: var(--blog-card);
-  color: var(--blog-text);
-  outline: none;
-  font-family: inherit;
-}
-.search-input:focus {
-  border-color: #000;
-}
-.dark .search-input:focus {
-  border-color: #aaa;
-}
-.search-toggle {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 6px;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 16px;
-  transition: color 0.2s;
-  display: flex;
-  align-items: center;
-}
-.search-toggle:hover {
-  color: #fff;
-}
-.scrolled .search-toggle {
-  color: #606266;
-}
-.scrolled .search-toggle:hover {
-  color: #000;
-}
-.dark.scrolled .search-toggle {
-  color: #b0b0b0;
-}
-.dark.scrolled .search-toggle:hover {
-  color: #fff;
-}
-
 /* 移动端 */
 .mobile-menu-btn {
-  display: none;
-  background: none;
-  border: none;
-  cursor: pointer;
-  width: 28px;
-  height: 28px;
   position: relative;
+  display: none;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--header-action);
+  cursor: pointer;
 }
 .bar,
 .bar::before,
 .bar::after {
-  display: block;
+  position: absolute;
   width: 18px;
   height: 2px;
-  background: #fff;
-  position: absolute;
-  left: 5px;
+  border-radius: 2px;
+  background: currentColor;
   transition:
-    transform 0.2s,
-    background 0.3s;
-}
-.scrolled .bar,
-.scrolled .bar::before,
-.scrolled .bar::after {
-  background: #303133;
-}
-.dark.scrolled .bar,
-.dark.scrolled .bar::before,
-.dark.scrolled .bar::after {
-  background: #e5e5e5;
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.2s ease,
+    opacity 0.2s ease;
 }
 .bar {
-  top: 13px;
+  top: 21px;
+  left: 13px;
+}
+.bar::before,
+.bar::after {
+  left: 0;
+  content: '';
 }
 .bar::before {
-  content: '';
   top: -6px;
 }
 .bar::after {
-  content: '';
   top: 6px;
 }
-.bar.open {
-  background: transparent;
+/* 汉堡变叉：打开时上下两条横线旋转交叉成叉，中间一条淡出；关闭时反向还原。 */
+.mobile-menu-btn.is-open .bar {
+  background-color: transparent;
 }
-.bar.open::before {
-  top: 0;
-  transform: rotate(45deg);
+.mobile-menu-btn.is-open .bar::before {
+  transform: translateY(6px) rotate(45deg);
 }
-.bar.open::after {
-  top: 0;
-  transform: rotate(-45deg);
-}
-.nav-mobile {
-  display: none;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(8px);
-  padding: 8px 24px 12px;
-  border-top: 1px solid #ebeef5;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.04);
-}
-.dark .nav-mobile {
-  background: rgba(35, 35, 35, 0.96);
-  border-top-color: #333;
-}
-.nav-mobile-link {
-  width: 100%;
-  border: 0;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 0;
-  font-size: 14px;
-  color: #606266;
-  text-decoration: none;
-  border-bottom: 1px solid #f2f6fc;
-  cursor: pointer;
-}
-.nav-mobile-link .iconfont {
-  font-size: 15px;
-}
-.nav-mobile-link .nav-mobile-svg-icon {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-}
-.nav-mobile-link:hover {
-  color: #303133;
-}
-.dark .nav-mobile-link {
-  color: #b0b0b0;
-  border-bottom-color: #333;
-}
-.dark .nav-mobile-link:hover {
-  color: #e5e5e5;
+.mobile-menu-btn.is-open .bar::after {
+  transform: translateY(-6px) rotate(-45deg);
 }
 
-.site-header.compact .nav-desktop {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
-  opacity: 0;
-}
-.site-header.compact .mini-player-wrap {
-  position: absolute;
-  visibility: hidden;
-  pointer-events: none;
-  opacity: 0;
-}
+.site-header.compact .nav-desktop,
+.site-header.compact .mini-player-wrap,
 .site-header.compact .theme-switch {
   position: absolute;
   visibility: hidden;
   pointer-events: none;
-  opacity: 0;
-}
-.site-header.compact .search-box.expanded {
-  width: 120px;
 }
 .site-header.compact .mobile-menu-btn {
   display: block;
 }
-.site-header.compact .nav-mobile {
-  display: flex;
-  flex-direction: column;
-}
 .site-header.compact .header-inner {
-  padding: 0 16px;
+  display: flex;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+
+/* 页面由 html 滚动，抽屉收回后再恢复背景滚动。 */
+:global(html:has(.blog-nav-drawer.open, .blog-nav-overlay.el-drawer-fade-leave-active)) {
+  overflow-y: hidden;
+  scrollbar-gutter: stable;
+}
+:global(.blog-nav-overlay.el-drawer-fade-enter-active) {
+  --el-transition-duration: 260ms;
+}
+:global(.blog-nav-overlay.el-drawer-fade-leave-active) {
+  --el-transition-duration: 200ms;
+}
+:global(.blog-nav-overlay.el-drawer-fade-enter-from),
+:global(.blog-nav-overlay.el-drawer-fade-leave-to) {
+  opacity: 0;
+}
+:global(.blog-nav-drawer.el-drawer) {
+  --el-drawer-bg-color: var(--blog-card);
+  border-radius: 16px 0 0 16px;
+  color: var(--blog-text);
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.22, 1, 0.36, 1);
+}
+:global(.blog-nav-overlay.el-drawer-fade-leave-active .blog-nav-drawer) {
+  transition-timing-function: ease-in;
+}
+:global(.blog-nav-drawer-header.el-drawer__header) {
+  margin-bottom: 0;
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 0 18px;
+  color: var(--blog-text);
+}
+:global(.blog-nav-drawer-body.el-drawer__body) {
+  padding: 6px max(12px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) 12px;
+  overscroll-behavior: contain;
+}
+.drawer-close {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--blog-text2);
+  font: 26px/1 var(--blog-sans);
+  cursor: pointer;
+}
+.drawer-nav {
+  display: grid;
+  gap: 12px;
+}
+.drawer-nav h2 {
+  margin: 0 0 4px;
+  padding-inline: 8px;
+  color: var(--blog-text3);
+  font-size: 13px;
+  font-weight: 500;
+}
+.drawer-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+.drawer-link,
+.drawer-tools button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  color: var(--blog-text);
+  font: inherit;
+  font-size: 14px;
+  text-decoration: none;
+}
+.drawer-link:hover,
+.drawer-link.router-link-exact-active,
+.drawer-close:hover {
+  background: var(--blog-hover);
+}
+.drawer-link.router-link-exact-active {
+  font-weight: 600;
+}
+.drawer-tools {
+  display: flex;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--blog-border);
+}
+.drawer-tools button {
+  flex-shrink: 0;
+  justify-content: center;
+  min-width: 44px;
+  background: var(--blog-hover);
+  cursor: pointer;
+}
+.drawer-tools .drawer-track {
+  flex-shrink: 1;
+}
+.drawer-track span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@supports (corner-shape: squircle) {
+  /* 主题切换开关内部图形、旋转唱片封面与用户头像保持正圆。 */
+  .theme-switch,
+  .theme-switch *,
+  .theme-switch *::before,
+  .theme-switch *::after,
+  .player-cover,
+  .account-trigger img,
+  button.account-trigger .iconfont {
+    corner-shape: round;
+  }
+
+  /* 弹出面板外圆角 = 内层菜单项圆角(6px) + 内边距(6px)，保持同心。 */
+  .header-popover-panel {
+    border-radius: 12px;
+  }
 }
 </style>

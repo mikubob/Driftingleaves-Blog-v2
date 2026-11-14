@@ -57,6 +57,7 @@ body {
   background: var(--cv-bg);
   color: var(--cv-text);
   line-height: 1.7;
+  transition: background-color .3s, color .3s;
 }
 
 button,
@@ -106,6 +107,8 @@ svg {
 }
 
 .icon-button {
+  position: relative;
+  overflow: hidden;
   display: grid;
   place-items: center;
   width: 42px;
@@ -116,10 +119,18 @@ svg {
   border: 1px solid var(--cv-border);
   border-radius: 8px;
   box-shadow: var(--cv-shadow);
+  transition: background-color .2s, border-color .2s, transform .16s cubic-bezier(.2, .8, .2, 1);
 }
 
 .icon-button:hover:not(:disabled) {
   background: var(--cv-hover);
+  border-color: var(--cv-dot);
+  transform: translateY(-1px);
+}
+
+.icon-button:active:not(:disabled),
+.icon-button.is-pressing:not(:disabled) {
+  transform: scale(.96);
 }
 
 .icon-button:disabled {
@@ -149,6 +160,14 @@ svg {
   border: 1px solid var(--cv-border);
   border-radius: 50%;
   object-fit: cover;
+  transition: transform .25s ease, box-shadow .25s ease;
+}
+
+@media (hover: hover) {
+  .avatar:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 14px rgb(0 0 0 / 10%);
+  }
 }
 
 h1 {
@@ -193,10 +212,26 @@ h1 {
 }
 
 .contact-list li {
+  position: relative;
+  overflow: hidden;
   padding: 5px 12px;
   border: 1px solid var(--cv-border);
   border-radius: 20px;
   background: var(--cv-hover);
+  transition: transform .16s cubic-bezier(.2, .8, .2, 1), border-color .2s, background-color .2s;
+}
+
+@media (hover: hover) {
+  .contact-list li:has(a):hover {
+    border-color: var(--cv-dot);
+    background: var(--cv-card);
+    transform: translateY(-2px);
+  }
+}
+
+.contact-list li:has(a):active,
+.contact-list li:has(a).is-pressing {
+  transform: scale(.96);
 }
 
 .contact-list a {
@@ -240,11 +275,22 @@ h1 {
 }
 
 .section-nav a {
+  position: relative;
+  overflow: hidden;
+  padding: 3px 10px;
+  border-radius: 999px;
   text-decoration: none;
+  transition: color .2s, background-color .2s, transform .16s cubic-bezier(.2, .8, .2, 1);
 }
 
 .section-nav a:hover {
   color: var(--cv-text);
+  background: var(--cv-hover);
+}
+
+.section-nav a:active,
+.section-nav a.is-pressing {
+  transform: scale(.96);
 }
 
 .resume-section {
@@ -286,6 +332,8 @@ h1 {
 
 .timeline-item {
   position: relative;
+  min-width: 0;
+  max-width: 100%;
   margin-bottom: 22px;
 }
 
@@ -303,24 +351,40 @@ h1 {
   border-radius: 50%;
   background: var(--cv-bg);
   content: '';
+  transition: border-color .22s, transform .22s;
+}
+
+@media (hover: hover) {
+  .timeline-item:hover::before {
+    border-color: var(--cv-text);
+    transform: scale(1.15);
+  }
 }
 
 .experience-card,
 .skill-row {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   border: 1px solid var(--cv-border);
   border-radius: 10px;
   background: var(--cv-card);
   box-shadow: var(--cv-shadow);
-  transition: box-shadow .2s, transform .2s;
+  transition: box-shadow .22s, border-color .22s, transform .22s;
 }
 
 .experience-card {
+  display: flex;
+  flex-direction: column;
+  max-height: min(65vh, 520px);
   padding: 18px 22px;
 }
 
 @media (hover: hover) {
   .experience-card:hover,
   .skill-row:hover {
+    border-color: var(--cv-dot);
     box-shadow: 0 4px 16px rgb(0 0 0 / 8%);
     transform: translateY(-2px);
   }
@@ -367,10 +431,40 @@ h1 {
 }
 
 .experience-content {
+  flex: 1;
+  min-height: 0;
   margin-top: 12px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
   color: var(--cv-muted);
   font-size: 14px;
   line-height: 1.8;
+}
+
+.experience-card:hover .experience-content,
+.experience-card:focus-within .experience-content {
+  scrollbar-color: var(--cv-dot) transparent;
+}
+
+.experience-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.experience-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.experience-content::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 999px;
+}
+
+.experience-card:hover .experience-content::-webkit-scrollbar-thumb,
+.experience-card:focus-within .experience-content::-webkit-scrollbar-thumb {
+  background: var(--cv-dot);
 }
 
 .experience-content > :first-child {
@@ -459,26 +553,106 @@ h1 {
   display: none;
 }
 
-.loading-message,
 .empty-message {
   margin: 0 0 28px;
   color: var(--cv-muted);
   font-size: 14px;
 }
 
-.loading-message {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+/* 骨架屏：数据返回前占住版面，并用流光提示正在加载。 */
+.skeleton {
+  display: block;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--cv-hover) 25%, var(--cv-border) 37%, var(--cv-hover) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
 }
 
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--cv-border);
-  border-top-color: var(--cv-text);
+.hero-skeleton {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.skeleton-avatar {
+  width: 72px;
+  height: 72px;
+  margin-bottom: 4px;
   border-radius: 50%;
-  animation: spin .8s linear infinite;
+}
+
+.skeleton-title {
+  width: 140px;
+  height: 32px;
+}
+
+.skeleton-text {
+  width: min(320px, 80%);
+  height: 14px;
+}
+
+.skeleton-text.short {
+  width: min(200px, 50%);
+}
+
+.contact-skeleton {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 12px;
+  margin-top: 20px;
+}
+
+.skeleton-pill {
+  width: 88px;
+  height: 30px;
+  border-radius: 20px;
+}
+
+.skeleton-heading {
+  width: 130px;
+  height: 26px;
+  margin-bottom: 22px;
+}
+
+/* 骨架卡片立即显示且不响应悬停，避免占位内容像可点击的卡片。 */
+.skeleton-group {
+  pointer-events: none;
+}
+
+.skeleton-group .timeline-item,
+.skeleton-group .skill-row {
+  animation-delay: 0s;
+}
+
+.skeleton-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.skeleton-logo {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 8px;
+}
+
+.skeleton-lines {
+  display: grid;
+  flex: 1;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.skeleton-line {
+  width: 70%;
+  height: 14px;
+}
+
+.skeleton-line.short {
+  width: 40%;
 }
 
 .error-message {
@@ -495,11 +669,60 @@ h1 {
 }
 
 .error-message button {
+  position: relative;
+  overflow: hidden;
   padding: 6px 12px;
   border: 1px solid var(--cv-border);
   border-radius: 5px;
   background: var(--cv-card);
   color: var(--cv-text);
+  transition: background-color .18s, border-color .18s, transform .16s cubic-bezier(.2, .8, .2, 1);
+}
+
+.error-message button:hover {
+  background: var(--cv-hover);
+  border-color: var(--cv-dot);
+}
+
+.error-message button:active,
+.error-message button.is-pressing {
+  transform: scale(.96);
+}
+
+.icon-button.is-rebounding,
+.contact-list li.is-rebounding,
+.section-nav a.is-rebounding,
+.error-message button.is-rebounding {
+  animation: dl-press-rebound .34s cubic-bezier(.22, 1, .36, 1) forwards;
+}
+
+@keyframes dl-press-rebound {
+  0% {
+    transform: scale(.96);
+  }
+  55% {
+    transform: scale(1.03);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.dl-ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: .16;
+  pointer-events: none;
+  transform: scale(0);
+  animation: dl-ripple-expand .5s cubic-bezier(.2, .8, .2, 1) forwards;
+}
+
+@keyframes dl-ripple-expand {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
 }
 
 .page-footer {
@@ -537,8 +760,83 @@ h1 {
   color: var(--cv-muted);
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
+/* 首屏头部与导航入场动画。 */
+.toolbar,
+.hero > *,
+.section-nav,
+.contact-list li,
+.error-message {
+  animation: reveal-up .55s cubic-bezier(.22, .8, .3, 1) both;
+}
+
+/* 滚动弹出动画：下方区块进入视口后再平滑弹出。 */
+.reveal-pop {
+  opacity: 0;
+  translate: 0 22px;
+  scale: .985;
+  transition:
+    opacity .55s cubic-bezier(.22, 1, .36, 1),
+    translate .55s cubic-bezier(.22, 1, .36, 1),
+    scale .55s cubic-bezier(.22, 1, .36, 1);
+  transition-delay: calc(var(--reveal-index, 0) * 55ms);
+}
+
+/* 技能卡片同时保留悬停即时响应，不继承入场延迟。 */
+.skill-row.reveal-pop {
+  transition:
+    opacity .55s cubic-bezier(.22, 1, .36, 1),
+    translate .55s cubic-bezier(.22, 1, .36, 1),
+    scale .55s cubic-bezier(.22, 1, .36, 1),
+    box-shadow .22s,
+    border-color .22s,
+    transform .22s;
+  transition-delay:
+    calc(var(--reveal-index, 0) * 55ms),
+    calc(var(--reveal-index, 0) * 55ms),
+    calc(var(--reveal-index, 0) * 55ms),
+    0s,
+    0s,
+    0s;
+}
+
+.reveal-pop.is-visible {
+  opacity: 1;
+  translate: 0 0;
+  scale: 1;
+}
+
+/* 头部各行依次出现。 */
+.hero > :nth-child(2) { animation-delay: 60ms; }
+.hero > :nth-child(3) { animation-delay: 120ms; }
+.hero > :nth-child(4) { animation-delay: 180ms; }
+.hero > :nth-child(5) { animation-delay: 240ms; }
+.hero > :nth-child(n + 6) { animation-delay: 300ms; }
+
+/* 联系方式排在头部文字之后出现。 */
+.contact-list li {
+  animation-delay: calc(200ms + var(--reveal-index, 0) * 60ms);
+}
+
+/* 社交链接所在的 ul 本身不再动画，避免与 li 的位移叠加。 */
+.hero > .contact-list {
+  animation: none;
+}
+
+@keyframes reveal-up {
+  from {
+    opacity: 0;
+    translate: 0 14px;
+  }
+
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+@keyframes shimmer {
+  from { background-position: 100% 50%; }
+  to { background-position: 0 50%; }
 }
 
 @media (max-width: 600px) {
@@ -586,6 +884,38 @@ h1 {
   }
 }
 
+/* 苹果式连续曲率圆角（Squircle），不支持的浏览器自动回退普通圆角。 */
+@supports (corner-shape: squircle) {
+  *,
+  *::before,
+  *::after {
+    corner-shape: squircle;
+  }
+
+  /* 正圆头像、时间线节点、加载环与滚动条保持标准圆形，避免旋转或小圆点变形。 */
+  .avatar,
+  .skeleton-avatar,
+  .timeline-item::before,
+  .boot-loader-ring,
+  .experience-content::-webkit-scrollbar-thumb {
+    corner-shape: round;
+  }
+
+  /* 连续曲率在相同半径下视觉更收紧，适度放大卡片与图标圆角以保持柔和质感。 */
+  .experience-card,
+  .skill-row {
+    border-radius: 14px;
+  }
+
+  .icon-button,
+  .experience-logo,
+  .skill-logo,
+  .skeleton-logo,
+  .error-message {
+    border-radius: 10px;
+  }
+}
+
 @media print {
   :root,
   [data-theme] {
@@ -602,6 +932,20 @@ h1 {
 
   .no-print {
     display: none !important;
+  }
+
+  /* 打印时不播放动画，防止内容停在半透明或未弹出状态。 */
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .reveal-pop {
+    opacity: 1 !important;
+    translate: none !important;
+    scale: 1 !important;
   }
 
   .cv-page {
@@ -625,9 +969,29 @@ h1 {
 
   .experience-card,
   .skill-row {
+    overflow: visible;
+    max-width: none;
+    max-height: none;
     box-shadow: none;
     transform: none;
     break-inside: avoid;
+  }
+
+  .experience-content {
+    overflow: visible;
+    max-height: none;
+    padding-right: 0;
+  }
+
+  .experience-content pre,
+  .experience-content table {
+    overflow: visible;
+    max-width: none;
+  }
+
+  .experience-content table {
+    display: table;
+    width: 100%;
   }
 
   .experience-content pre {

@@ -14,6 +14,10 @@ export function reportRequestFailure(error, path) {
   if (/^\/admin\/(comments|messages)\/[1-9]\d*\/conversation$/.test(route)) {
     return error
   }
+  // 原文件预览失败时保留文件详情，站点封禁仍显示全局错误页。
+  if (error.code !== 'ACCESS_BLOCKED' && /^\/admin\/files\/[1-9]\d*\/content$/.test(route)) {
+    return error
+  }
   onFailure(error)
   return error
 }

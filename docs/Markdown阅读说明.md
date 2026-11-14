@@ -24,7 +24,7 @@
 
 ## 接口
 
-文章详情统一返回 `markdownContent:string`，不返回 HTML 正文。列表不返回正文。Markdown 在文章锁定、PUBLIC 检查及附件检查之后返回；网页请求边界要求该字段存在且类型正确，空字符串是有效原文。公开条件、阅读计数和目录交互保留。RSS 独立生成并清理 HTML。真实字段见 [API](API.md#response-articlepublicdetail) 和 [API_CONTRACT](API_CONTRACT.md)。
+文章详情统一返回 `markdownContent:string`，不返回 HTML 正文。列表不返回正文。Markdown 在文章锁定、PUBLIC 检查及附件检查之后返回；网页请求边界要求该字段存在且类型正确，空字符串是有效原文。公开条件、阅读计数和目录交互保留。RSS 独立生成并清理 HTML。真实字段见 [API](API_BLOG.md#response-articlepublicdetail) 和 [API_CONTRACT](API_CONTRACT.md)。
 
 ## 语法对齐与差异
 

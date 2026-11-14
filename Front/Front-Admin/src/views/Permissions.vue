@@ -180,7 +180,7 @@ const batchActions = computed(() => {
         />
         <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <el-option label="已启用" :value="1" />
-          <el-option label="IN已启用" :value="0" />
+          <el-option label="已禁用" :value="0" />
         </el-select>
         <el-input
           v-model="filters.module"

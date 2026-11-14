@@ -109,7 +109,13 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </div>
 
           <template v-if="resources.profile.loading">
-            <h1 class="loading-title" role="status">正在加载主页</h1>
+            <h1 class="sr-only" role="status">正在加载主页</h1>
+            <!-- 资料返回前用骨架屏占住标题和简介的位置。 -->
+            <div class="profile-skeleton" aria-hidden="true">
+              <span class="skeleton skeleton-title"></span>
+              <span class="skeleton skeleton-text"></span>
+              <span class="skeleton skeleton-text short"></span>
+            </div>
           </template>
           <div v-else-if="resources.profile.error" class="feedback" role="status">
             <h1>{{ displayName }}</h1>
@@ -142,7 +148,12 @@ onBeforeUnmount(() => setRequestFailureHandler())
         </section>
 
         <section class="social-section" aria-label="社交链接" :aria-busy="resources.socials.loading">
-          <p v-if="resources.socials.loading" class="empty-state" role="status">正在加载社交链接…</p>
+          <template v-if="resources.socials.loading">
+            <p class="sr-only" role="status">正在加载社交链接…</p>
+            <div class="links" aria-hidden="true">
+              <span v-for="index in 4" :key="index" class="skeleton skeleton-link"></span>
+            </div>
+          </template>
           <div v-else-if="resources.socials.error" class="feedback" role="status">
             <p>社交链接加载失败：{{ resources.socials.error }}</p>
             <button type="button" @click="loadResource('socials')">重新加载社交链接</button>
@@ -162,7 +173,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
         </section>
 
         <footer :aria-busy="resources.config.loading">
-          <p v-if="resources.config.loading" class="config-status" role="status">正在加载站点信息…</p>
+          <p v-if="resources.config.loading" class="sr-only" role="status">正在加载站点信息…</p>
           <div v-else-if="resources.config.error" class="feedback config-status" role="status">
             <p>站点信息加载失败：{{ resources.config.error }}</p>
             <button type="button" @click="loadResource('config')">重新加载站点信息</button>

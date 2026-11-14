@@ -74,12 +74,26 @@ const fmtDate = formatDateTime
   color: inherit;
   transition:
     box-shadow 0.2s,
+    border-color 0.2s,
     transform 0.2s;
+  animation: article-reveal 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both;
   margin-bottom: 16px;
 }
 .article-card:hover {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
   transform: translateY(-2px);
+}
+.article-card:active {
+  transform: translateY(-1px) scale(0.995);
+}
+
+@keyframes article-reveal {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .card-cover {
   flex-shrink: 0;
@@ -203,6 +217,13 @@ const fmtDate = formatDateTime
   .card-cover {
     width: 100%;
     min-height: 180px;
+  }
+}
+
+@supports (corner-shape: squircle) {
+  /* 连续曲率下适度放大文章卡片圆角。 */
+  .article-card {
+    border-radius: 12px;
   }
 }
 </style>

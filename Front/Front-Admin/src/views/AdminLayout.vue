@@ -128,12 +128,13 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
       <header class="topbar">
         <button
           class="mobile-menu-btn"
+          :class="{ 'is-open': mobileOpen }"
           type="button"
           aria-label="打开导航"
           :aria-expanded="mobileOpen"
           @click="mobileOpen = !mobileOpen"
         >
-          <span class="iconfont icon-guanliduan" aria-hidden="true" />
+          <span class="hamburger-bar" aria-hidden="true" />
         </button>
         <div class="topbar-breadcrumb">
           <el-breadcrumb separator="/">
@@ -163,13 +164,14 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
         :class="{ 'editor-page': route.name === 'article-editor' }"
         tabindex="-1"
       >
+        <!-- appear 让刷新后的首屏也有淡入，而不只是切换页面时才有。 -->
         <router-view v-slot="{ Component }">
-          <transition name="page-fade" mode="out-in">
+          <transition name="page-fade" mode="out-in" appear>
             <keep-alive>
               <component :is="Component" v-if="route.meta.keepAlive" :key="route.path" />
             </keep-alive>
           </transition>
-          <transition name="page-fade" mode="out-in">
+          <transition name="page-fade" mode="out-in" appear>
             <component
               :is="Component"
               v-if="!route.meta.keepAlive"
@@ -447,6 +449,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
   }
 
   .mobile-menu-btn {
+    position: relative;
     width: 36px;
     height: 36px;
     display: inline-flex;
@@ -459,8 +462,43 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
     color: #303133;
   }
 
-  .mobile-menu-btn .iconfont {
-    font-size: 18px;
+  .hamburger-bar,
+  .hamburger-bar::before,
+  .hamburger-bar::after {
+    position: absolute;
+    width: 16px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+    transition:
+      transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      background-color 0.2s ease;
+  }
+
+  .hamburger-bar::before,
+  .hamburger-bar::after {
+    left: 0;
+    content: '';
+  }
+
+  .hamburger-bar::before {
+    top: -5px;
+  }
+
+  .hamburger-bar::after {
+    top: 5px;
+  }
+
+  .mobile-menu-btn.is-open .hamburger-bar {
+    background-color: transparent;
+  }
+
+  .mobile-menu-btn.is-open .hamburger-bar::before {
+    transform: translateY(5px) rotate(45deg);
+  }
+
+  .mobile-menu-btn.is-open .hamburger-bar::after {
+    transform: translateY(-5px) rotate(-45deg);
   }
 
   .topbar-breadcrumb {

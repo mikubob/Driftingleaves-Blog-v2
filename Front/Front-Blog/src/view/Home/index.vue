@@ -1,5 +1,5 @@
 <script setup>
-import { computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref } from 'vue'
+import { computed, defineAsyncComponent, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { isId, request } from '@/api.js'
 import { useArticleList } from '@/composables/useArticleList.js'
@@ -43,6 +43,22 @@ const { searchKeyword, listing, articles, changePage } = useArticleList(6, async
   return filters
 })
 const total = computed(() => listing.data?.total || '0')
+const keyword = ref(searchKeyword.value)
+
+watch(searchKeyword, (search) => {
+  keyword.value = search
+})
+
+function submitSearch() {
+  const search = keyword.value.trim()
+  keyword.value = search
+  router.push({ path: '/', query: search ? { search } : {} })
+}
+
+function clearSearch() {
+  keyword.value = ''
+  router.push('/')
+}
 </script>
 
 <template>
@@ -52,13 +68,29 @@ const total = computed(() => listing.data?.total || '0')
         <HomeTimeWidgets />
       </div>
       <div class="article-col">
+        <header v-if="route.name === 'home'" class="article-toolbar">
+          <h2>{{ searchKeyword ? '搜索结果' : '最新文章' }}</h2>
+          <form class="article-search" role="search" @submit.prevent="submitSearch">
+            <input
+              v-model="keyword"
+              type="search"
+              placeholder="搜索文章…"
+              aria-label="搜索文章"
+              maxlength="100"
+            />
+            <button type="submit">
+              <i aria-hidden="true" class="iconfont icon-sousuo" />
+              搜索
+            </button>
+          </form>
+        </header>
         <div v-if="searchKeyword" class="search-result-tip">
           <span>
             搜索:
             <strong>{{ searchKeyword }}</strong>
           </span>
           <span class="search-count">{{ total }} 篇结果</span>
-          <button type="button" class="clear-search" @click="router.push('/')">清除搜索</button>
+          <button type="button" class="clear-search" @click="clearSearch">清除搜索</button>
         </div>
         <p v-if="listing.error" role="alert">
           {{ listing.error }}
@@ -113,6 +145,73 @@ const total = computed(() => listing.data?.total || '0')
   min-width: 0;
 }
 
+.article-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  border: 1px solid var(--blog-border);
+  border-radius: 8px;
+  background: var(--blog-card);
+}
+
+.article-toolbar h2 {
+  flex-shrink: 0;
+  margin: 0;
+  font-family: var(--blog-serif);
+  font-size: 17px;
+}
+
+.article-search {
+  display: flex;
+  flex: 0 1 296px;
+  min-width: 0;
+  min-height: 36px;
+  border: 1px solid var(--blog-border);
+  border-radius: 6px;
+  background: var(--blog-hover);
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.article-search:focus-within {
+  border-color: var(--blog-text3);
+}
+
+.article-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 5px 0 0 5px;
+  background: transparent;
+  color: var(--blog-text);
+  font: inherit;
+  outline: none;
+}
+
+.article-search button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px;
+  border: 0;
+  border-left: 1px solid var(--blog-border);
+  border-radius: 0 5px 5px 0;
+  background: var(--blog-card);
+  color: var(--blog-text);
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.article-search button:hover {
+  background: var(--blog-hover);
+}
+
 .search-result-tip {
   padding: 12px 16px;
   font-size: 14px;
@@ -155,24 +254,27 @@ const total = computed(() => listing.data?.total || '0')
 
 .skeleton-card {
   display: flex;
-  gap: 16px;
-  padding: 20px;
+  gap: 0;
   background: #fff;
   border-radius: 8px;
+  overflow: hidden;
   margin-bottom: 16px;
   border: 1px solid #ebeef5;
 }
 
 .skeleton-cover {
-  width: 200px;
-  height: 130px;
+  width: 230px;
+  min-height: 170px;
   background: #ebeef5;
-  border-radius: 6px;
   flex-shrink: 0;
 }
 
 .skeleton-body {
   flex: 1;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .skeleton-line {
@@ -208,6 +310,17 @@ const total = computed(() => listing.data?.total || '0')
   background: #fff;
   border-radius: 8px;
   border: 1px solid #ebeef5;
+}
+
+.article-toolbar:has(+ .empty-tip) {
+  margin-bottom: 0;
+  border-radius: 8px 8px 0 0;
+}
+
+.article-toolbar + .empty-tip {
+  border-color: var(--blog-border);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
 }
 
 @media (max-width: 1440px) {
@@ -254,6 +367,19 @@ const total = computed(() => listing.data?.total || '0')
 }
 
 @media (max-width: 600px) {
+  .article-toolbar {
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .article-search {
+    min-height: 40px;
+  }
+
+  .article-search input {
+    font-size: 16px;
+  }
+
   .search-result-tip {
     font-size: 13px;
     padding: 10px 12px;
