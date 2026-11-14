@@ -28,6 +28,7 @@ import com.xuan.service.ICommentService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
+import com.xuan.utils.DiscussionLocationUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UserAgentUtils;
@@ -216,14 +217,44 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return ownView(comments.scoped(comment.getCommentId(), null, actor, false), new CommentOwnVO());
     }
 
-    /** 用户只能取会话本人，SQL 不按文章公开状态删掉历史评论。 */
+    /** 查询本人评论及其前台跳转位置，下架文章的历史评论仍可读取。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query) {
         long actor = requireMember(null);
-        return PageResult.from(comments.commentPage(new Page<>(query.page(), query.pageSize()),
-                        IdUtils.parse(query.articleId()), actor, query.status(), null)
-                .convert(row -> ownView(row, new CommentOwnVO())));
+        var result = comments.commentPage(new Page<>(query.page(), query.pageSize()),
+                IdUtils.parse(query.articleId()), actor, query.status(), LocalDateTime.now(ZoneOffset.UTC));
+        Map<Long, List<CommentRow>> byArticle = new HashMap<>();
+        for (CommentRow row : result.getRecords()) {
+            byArticle.computeIfAbsent(row.getArticleId(), id -> new ArrayList<>()).add(row);
+        }
+        Map<Long, CommentOwnVO> records = new HashMap<>();
+        for (var entry : byArticle.entrySet()) {
+            List<CommentNode> nodes = articles.commentNodes(entry.getKey());
+            Map<Long, CommentNode> index = new HashMap<>();
+            for (CommentNode node : nodes) {
+                index.put(node.getCommentId(), node);
+            }
+            boolean publicArticle = entry.getValue().getFirst().getArticleSlug() != null;
+            Set<Long> visible = publicArticle ? CommentVisibilityPolicy.visible(nodes, actor) : Set.of();
+            List<Long> roots = nodes.reversed().stream()
+                    .filter(node -> node.getParentId() == null && visible.contains(node.getCommentId()))
+                    .map(CommentNode::getCommentId)
+                    .toList();
+            Map<Long, Integer> pages = DiscussionLocationUtils.rootPages(roots);
+            for (CommentRow row : entry.getValue()) {
+                CommentOwnVO value = ownView(row, new CommentOwnVO());
+                Long root = DiscussionLocationUtils.rootId(row.getCommentId(), index, CommentNode::getParentId);
+                value.setArticleTitle(row.getArticleTitle());
+                value.setArticleSlug(row.getArticleSlug());
+                value.setRootParentId(row.getParentId() == null ? null : root);
+                if (root != null && row.getStatus() == 1 && visible.contains(row.getCommentId())) {
+                    value.setPage(pages.get(root));
+                }
+                records.put(row.getCommentId(), value);
+            }
+        }
+        return PageResult.from(result.convert(row -> records.get(row.getCommentId())));
     }
 
     /** 根据id查询本人评论及版本，不受文章公开状态影响。 */

@@ -1,7 +1,7 @@
 <script setup>
 import ImagePreview from '../components/ImagePreview.vue'
 import FileUploadButton from '../components/FileUploadButton.vue'
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref, computed, watch } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -187,6 +187,72 @@ async function remove(row) {
 
 onMounted(load)
 
+const playingId = ref('')
+let audioInstance = null
+
+/** 停止当前试听并释放音频实例。 */
+function stopAudio() {
+  if (audioInstance) {
+    audioInstance.onended = null
+    audioInstance.onerror = null
+    audioInstance.pause()
+    audioInstance.removeAttribute('src')
+    audioInstance.load()
+    audioInstance = null
+  }
+  playingId.value = ''
+}
+
+/** 切换列表曲目的试听与暂停状态。 */
+async function togglePlay(row) {
+  if (playingId.value === row.musicId) {
+    stopAudio()
+    return
+  }
+  stopAudio()
+
+  // 站内音频用后台会话 Cookie 读取，浏览器负责缓冲和分段请求。
+  const fileId = row.audioUrl.match(/^\/api\/v1\/blog\/music\/files\/([1-9]\d*)\/content$/)?.[1]
+  const source = fileId ? `/api/v1/admin/files/${fileId}/content` : row.audioUrl
+  const audio = new Audio(source)
+  audioInstance = audio
+  playingId.value = row.musicId
+  const fail = () => {
+    if (audioInstance !== audio) {
+      return
+    }
+    stopAudio()
+    ElMessage.error('播放失败，请检查音频地址或访问权限。')
+  }
+  audio.onended = stopAudio
+  audio.onerror = fail
+  try {
+    await audio.play()
+  } catch {
+    fail()
+  }
+}
+
+/** 将秒数格式化为 mm:ss，空值或无效值显示占位符。 */
+function formatDuration(seconds) {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) {
+    return '—'
+  }
+  const totalSeconds = Math.floor(seconds)
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = String(totalSeconds % 60).padStart(2, '0')
+  return `${mins}:${secs}`
+}
+
+watch(rows, stopAudio)
+onBeforeUnmount(stopAudio)
+
+/** 切换顶部展示状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -220,19 +286,29 @@ const batchActions = computed(() => {
         新建音乐
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部音乐' },
+          { value: 1, label: '展示中' },
+          { value: 0, label: '已隐藏' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
           v-model="filters.keyword"
           aria-label="搜索关键词"
-          placeholder="搜索名称或标题"
+          placeholder="搜索曲目名称或歌手"
           maxlength="100"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
-          <el-option label="展示中" :value="1" />
-          <el-option label="已隐藏" :value="0" />
-        </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
@@ -262,17 +338,39 @@ const batchActions = computed(() => {
         empty-text="暂无音乐"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column prop="title" label="曲目名称" min-width="180" show-overflow-tooltip />
-        <el-table-column prop="artist" label="歌手" min-width="150" show-overflow-tooltip />
-        <el-table-column prop="audioUrl" label="音频地址" min-width="240" show-overflow-tooltip />
+        <el-table-column label="封面" width="76" align="center">
+          <template #default="{ row }">
+            <ImagePreview v-if="row.coverUrl" :src="row.coverUrl" :alt="row.title" compact />
+            <span v-else class="muted-text">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="title" label="曲目名称" min-width="160" show-overflow-tooltip />
+        <el-table-column label="歌手" min-width="130" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.artist || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="时长" width="80" align="center">
+          <template #default="{ row }">{{ formatDuration(row.durationSeconds) }}</template>
+        </el-table-column>
+        <el-table-column label="歌词" width="85" align="center">
+          <template #default="{ row }">{{ row.lyricUrl ? (row.lyricType || '有').toUpperCase() : '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="display" /></template>
         </el-table-column>
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" align="center" width="240" fixed="right">
+        <el-table-column label="操作" align="center" width="280" fixed="right">
           <template #default="{ row }">
+            <el-button
+              type="primary"
+              link
+              :disabled="!row.audioUrl?.trim() || batch?.busy"
+              @click="togglePlay(row)"
+            >
+              {{ playingId === row.musicId ? '暂停' : '试听' }}
+            </el-button>
             <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('blog:music:update', true)" link @click="edit(row)">
               编辑

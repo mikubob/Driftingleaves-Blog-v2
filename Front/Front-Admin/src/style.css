@@ -252,6 +252,12 @@ h2 {
   font-size: 11px;
 }
 
+.heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .heading-count {
   min-width: 25px;
   padding: 2px 7px;
@@ -380,13 +386,16 @@ h2 {
 .page-tabs {
   display: flex;
   gap: 23px;
+  max-width: 100%;
   margin-bottom: 20px;
   border-bottom: 1px solid #e4e7ed;
+  overflow-x: auto;
 }
 
 .page-tabs > button {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 7px;
   padding: 0 1px 13px;
   color: var(--admin-text-3);
@@ -394,6 +403,16 @@ h2 {
   border: 0;
   border-bottom: 2px solid transparent;
   font-size: 13px;
+  white-space: nowrap;
+  transition: color 0.16s, border-color 0.16s, transform 0.14s;
+}
+
+.page-tabs > button:hover:not(.active) {
+  color: var(--admin-text-1);
+}
+
+.page-tabs > button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .page-tabs > button.active {
@@ -674,19 +693,55 @@ h2 {
   background: #258552;
 }
 
-.chart-details {
-  margin-top: 12px;
-  color: var(--admin-text-3);
-  font-size: 11px;
+.card-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.chart-details summary {
+.chart-view-toggle {
+  appearance: none;
+  border: 1px solid var(--admin-border, #e5e7eb);
+  background: #ffffff;
+  color: var(--admin-text-2, #52525b);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  line-height: 1.4;
   cursor: pointer;
+  transition: background-color 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+}
+
+.chart-view-toggle:hover {
+  background: #f4f4f5;
+  color: var(--admin-text-1, #18181b);
+}
+
+.chart-view-toggle[aria-pressed='true'] {
+  background: var(--admin-text-1, #18181b);
+  border-color: var(--admin-text-1, #18181b);
+  color: #ffffff;
+}
+
+/* 与 ReportChart 保持一致的 260px 固定高度，切换图表与数据表时不引起卡片高度变化。 */
+.chart-table-pane {
+  height: 260px;
+  overflow-y: auto;
+}
+
+.chart-swap-enter-active,
+.chart-swap-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.chart-swap-enter-from,
+.chart-swap-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
 }
 
 .data-table {
   width: 100%;
-  margin-top: 12px;
   border-collapse: collapse;
 }
 
@@ -695,11 +750,19 @@ h2 {
   padding: 8px;
   border-bottom: 1px solid #eee;
   text-align: left;
+  font-size: 12px;
+}
+
+.data-table th {
+  position: sticky;
+  top: 0;
+  background: #ffffff;
+  color: var(--admin-text-3);
+  font-weight: 500;
 }
 
 .province-list {
-  max-height: 460px;
-  overflow: auto;
+  padding-right: 4px;
 }
 
 .province-row {

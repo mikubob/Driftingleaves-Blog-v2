@@ -10,8 +10,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -24,8 +22,6 @@ import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
@@ -35,6 +31,9 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import AdminIcon from '../components/AdminIcon.vue'
+
+const siteLabels = { home: '主页', blog: '博客', cv: '简历' }
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -87,6 +86,12 @@ async function remove(row) {
 }
 onMounted(load)
 
+/** 切换顶部站点分栏并立即查询第一页。 */
+function switchSite(siteCode) {
+  filters.siteCode = siteCode
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -110,6 +115,21 @@ const batchActions = computed(() => {
       <div>
         <h1>浏览记录</h1>
       </div>
+    </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部站点' },
+          { value: 'home', label: '主页' },
+          { value: 'blog', label: '博客' },
+          { value: 'cv', label: '简历' },
+        ]"
+        :key="tab.value"
+        :class="{ active: filters.siteCode === tab.value }"
+        @click="switchSite(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
     </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
@@ -137,11 +157,6 @@ const batchActions = computed(() => {
           clearable
           pattern="[1-9][0-9]{0,18}"
         />
-        <el-select v-model="filters.siteCode" aria-label="站点" placeholder="全部站点" clearable>
-          <el-option label="主页" value="home" />
-          <el-option label="博客" value="blog" />
-          <el-option label="简历" value="cv" />
-        </el-select>
         <el-input
           v-model="filters.pagePath"
           aria-label="页面路径（精确）"
@@ -176,7 +191,12 @@ const batchActions = computed(() => {
     </el-card>
     <RequestError :message="error" @retry="load()" />
     <el-card shadow="never">
-      <div class="card-heading"><h2>浏览记录列表</h2></div>
+      <div class="card-heading">
+        <h2>浏览记录列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
+      </div>
             <BatchActions
         ref="batch" resource="/admin/page-views" id-key="viewId"
         :rows="rows" :table="batchTable" :actions="batchActions"
@@ -194,10 +214,19 @@ const batchActions = computed(() => {
         empty-text="暂无记录"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
-        <el-table-column prop="pageTitle" label="页面标题" min-width="260" show-overflow-tooltip />
-        <el-table-column prop="pagePath" label="页面路径" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="ipAddress" label="访客 IP" width="180" show-overflow-tooltip />
-        <el-table-column prop="referer" label="来源" min-width="200" show-overflow-tooltip />
+        <el-table-column label="站点" width="90" align="center">
+          <template #default="{ row }">{{ siteLabels[row.siteCode] || row.siteCode }}</template>
+        </el-table-column>
+        <el-table-column label="页面标题" min-width="240" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.pageTitle || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="pagePath" label="页面路径" min-width="220" show-overflow-tooltip />
+        <el-table-column label="访客 IP" width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.ipAddress || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="来源" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.referer || '—' }}</template>
+        </el-table-column>
         <el-table-column label="浏览时间" width="180" align="center">
           <template #default="{ row }">{{ formatTime(row.viewTime) }}</template>
         </el-table-column>
@@ -227,7 +256,7 @@ const batchActions = computed(() => {
         <el-descriptions-item label="用户 ID">{{ detail.userId || '—' }}</el-descriptions-item>
         <el-descriptions-item label="文章 ID">{{ detail.articleId || '—' }}</el-descriptions-item>
         <el-descriptions-item label="页面标题">{{ detail.pageTitle || '—' }}</el-descriptions-item>
-        <el-descriptions-item label="站点">{{ detail.siteCode }}</el-descriptions-item>
+        <el-descriptions-item label="站点">{{ siteLabels[detail.siteCode] || detail.siteCode }}</el-descriptions-item>
         <el-descriptions-item label="页面路径">{{ detail.pagePath }}</el-descriptions-item>
         <el-descriptions-item label="来源">{{ detail.referer || '—' }}</el-descriptions-item>
         <el-descriptions-item label="IP 地址">{{ detail.ipAddress || '—' }}</el-descriptions-item>

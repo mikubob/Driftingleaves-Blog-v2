@@ -259,8 +259,8 @@ const goArticle = (slug) => router.push('/articles/' + slug)
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
-/* focus */
-.hot-filter-switch:focus-within {
+/* 仅键盘焦点时显示轮廓，避免鼠标或触屏点击出现黑框。 */
+.hot-filter-switch:has(input:focus-visible) {
   outline: 2px solid var(--blog-text2);
   outline-offset: -1px;
 }

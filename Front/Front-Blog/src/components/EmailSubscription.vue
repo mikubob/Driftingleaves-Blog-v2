@@ -51,34 +51,43 @@ async function update(cancel = false) {
 </script>
 
 <template>
-  <section class="panel">
-    <h2>邮件订阅</h2>
+  <section class="bento-card account-sub-card">
+    <div class="bento-card-head">
+      <h2 class="bento-card-title">邮件订阅</h2>
+      <span
+        v-if="subscription.data"
+        :class="[
+          'status-pill',
+          subscription.data.status === 1
+            ? 'pill-success'
+            : subscription.data.status === 0
+              ? 'pill-warning'
+              : 'pill-neutral',
+        ]"
+      >
+        {{ ['等待邮箱验证', '已订阅', '已退订'][subscription.data.status] }}
+      </span>
+    </div>
     <ResourceState :resource="subscription" />
     <template v-if="!subscription.loading && !subscription.error">
-      <p v-if="subscription.data">
-        当前状态：
-        <strong>{{ ['等待邮箱验证', '已订阅', '已退订'][subscription.data.status] }}</strong>
-        ·
-        {{ subscription.data.email }}
-      </p>
-      <form v-if="can('blog:rss:subscribe')" @submit.prevent="update(false)">
-        <fieldset :disabled="busy">
-          <label for="subscription-email">账号邮箱</label>
-          <input
-            id="subscription-email"
-            :value="email"
-            type="email"
-            maxlength="254"
-            autocomplete="email"
-            required
-            readonly
-            :aria-describedby="email ? undefined : 'subscription-email-hint'"
-          />
-          <p v-if="!email" id="subscription-email-hint" class="form-hint">请先在个人资料中设置账号邮箱。</p>
-          <div class="row">
-            <button class="primary" :disabled="busy || !email">{{ submitLabel }}</button>
+      <div class="sub-compact-body">
+        <div class="sub-compact-row">
+          <span class="sub-email-text">
+            {{ email || '请先在个人资料中设置账号邮箱' }}
+          </span>
+          <div class="sub-compact-actions">
+            <a :href="`${apiRoot}/blog/rss.xml`" target="_blank" rel="noopener noreferrer" class="text-button">RSS ↗</a>
             <button
-              v-if="subscription.data && subscription.data.status !== 2"
+              v-if="can('blog:rss:subscribe')"
+              type="button"
+              class="primary"
+              :disabled="busy || !email"
+              @click="update(false)"
+            >
+              {{ submitLabel }}
+            </button>
+            <button
+              v-if="can('blog:rss:unsubscribe') && subscription.data && subscription.data.status !== 2"
               type="button"
               :disabled="busy"
               @click="update(true)"
@@ -86,14 +95,13 @@ async function update(cancel = false) {
               取消订阅
             </button>
           </div>
-        </fieldset>
-      </form>
-      <p v-else class="muted">当前账号没有申请邮件订阅的权限。</p>
+        </div>
+        <p v-if="!can('blog:rss:subscribe') && !can('blog:rss:unsubscribe')" class="muted">
+          当前账号没有管理邮件订阅的权限。
+        </p>
+      </div>
     </template>
     <p v-if="error" class="error-text" role="alert">{{ error }}</p>
     <p v-if="feedback" class="success-text" role="status">{{ feedback }}</p>
-    <p class="form-hint">
-      <a :href="`${apiRoot}/blog/rss.xml`" target="_blank" rel="noopener noreferrer" class="text-button">RSS Feed ↗</a>
-    </p>
   </section>
 </template>

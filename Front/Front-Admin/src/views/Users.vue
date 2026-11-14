@@ -231,6 +231,12 @@ onMounted(async () => {
     }
   }
 })
+
+/** 切换顶部账号状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
 </script>
 
 <template>
@@ -244,6 +250,20 @@ onMounted(async () => {
         创建用户
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部用户' },
+          { value: 1, label: '已启用' },
+          { value: 0, label: '已禁用' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
@@ -253,10 +273,6 @@ onMounted(async () => {
           maxlength="100"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="账号状态" placeholder="全部状态" clearable>
-          <el-option label="已启用" :value="1" />
-          <el-option label="已禁用" :value="0" />
-        </el-select>
         <el-select
           v-if="can('sys:role:query')"
           v-model="filters.roleId"
@@ -280,7 +296,12 @@ onMounted(async () => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>用户列表</h2>
-        <span class="muted-text">停用账号将撤销该账号的全部会话</span>
+        <div class="heading-actions">
+          <span class="muted-text">停用账号将撤销该账号的全部会话</span>
+          <el-button text aria-label="刷新列表" @click="load()">
+            <AdminIcon name="refresh" />
+          </el-button>
+        </div>
       </div>
       <BatchActions
         ref="batch"

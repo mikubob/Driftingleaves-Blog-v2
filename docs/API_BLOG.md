@@ -2055,7 +2055,8 @@ Cookie: __Host-dl-blog-session=<opaque>
     "records": [
       {
         "commentId": "201", "articleId": "101", "userId": "12", "parentId": null, "content": "感谢分享。",
-        "status": 0
+        "articleTitle": "秋日笔记", "articleSlug": "autumn-notes",
+        "rootParentId": null, "page": 2, "status": 1
       }
     ]
   },
@@ -2063,7 +2064,7 @@ Cookie: __Host-dl-blog-session=<opaque>
 }
 ```
 
-每页最多 50；createTime DESC,commentId DESC。下架文章的本人记录仍可管理，不返回文章正文。
+每页最多 50；createTime DESC,commentId DESC。下架文章的本人记录仍可管理。记录内的 `page` 按当前登录用户看到的文章评论根列表计算，每页固定 10 条，与本人列表的筛选和分页参数无关。回复使用所属根评论的页码。目标未通过审核、父链不可见或文章不公开时，`page` 为 null。
 
 ---
 
@@ -2166,7 +2167,7 @@ Cookie: __Host-dl-blog-session=<opaque>
     "page": 1, "pageSize": 10, "total": "1", "totalPages": "1",
     "records": [
       {
-        "messageId": "301", "parentId": null,
+        "messageId": "301", "parentId": "302", "rootParentId": "290", "page": 2,
         "author": {
           "userId": "12", "nickname": "落叶", "avatar": null
         },
@@ -2180,6 +2181,8 @@ Cookie: __Host-dl-blog-session=<opaque>
 ```
 
 仅user_id=当前用户，包括待审、驳回和私密记录；createTime DESC,messageId DESC。无额外后台查询权限要求。
+
+记录内的 `page` 按当前登录用户看到的留言板根列表计算，每页固定 10 条，与本人列表的筛选和分页参数无关。回复使用所属根留言的页码。目标未通过审核或父链对当前登录用户不可见时，`page` 为 null。
 
 ---
 
@@ -3319,6 +3322,10 @@ join 的票据和身份查询异步执行，五秒期限包含查询等待；查
 | `articleId` | ID | 文章 ID |
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `parentId` | ID&#124;null | 父节点 ID，根为 null |
+| `articleTitle` | string&#124;null | 本人列表中当前公开文章的标题；文章不公开或为本人详情、发表响应时为 null |
+| `articleSlug` | string&#124;null | 本人列表中当前公开文章的 slug；文章不公开或为本人详情、发表响应时为 null |
+| `rootParentId` | ID&#124;null | 本人列表中回复所属的根评论 ID，按十进制字符串返回；根评论、本人详情及发表响应为 null |
+| `page` | integer&#124;null | 本人列表中目标根评论在当前读者文章评论列表的页码，从 1 起，每页 10 条；文章不公开、目标未通过审核、父链不可见或为本人详情、发表响应时为 null |
 | `content` | string | 纯文本评论 |
 | `location` | string&#124;null | 发布时的省市或国家；回环为本地，未知时可 null |
 | `userAgentOs` | string&#124;null | 从请求 User-Agent 识别的操作系统类型，未知为 null |

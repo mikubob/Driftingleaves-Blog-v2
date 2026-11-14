@@ -10,8 +10,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -24,8 +22,6 @@ import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
@@ -35,6 +31,7 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import AdminIcon from '../components/AdminIcon.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -145,6 +142,12 @@ async function action(row, operation) {
 }
 onMounted(load)
 
+/** 切换顶部封禁状态分栏并立即查询第一页。 */
+function switchBlocked(isBlocked) {
+  filters.isBlocked = isBlocked
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -193,6 +196,20 @@ const batchActions = computed(() => {
         <h1>访客管理</h1>
       </div>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部访客' },
+          { value: 0, label: '正常访客' },
+          { value: 1, label: '已标记封禁' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.isBlocked === tab.value }"
+        @click="switchBlocked(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
@@ -216,15 +233,6 @@ const batchActions = computed(() => {
           maxlength="64"
           clearable
         />
-        <el-select
-          v-model="filters.isBlocked"
-          aria-label="持久化封禁标记"
-          placeholder="全部封禁标记"
-          clearable
-        >
-          <el-option label="已标记封禁" :value="1" />
-          <el-option label="未标记封禁" :value="0" />
-        </el-select>
         <el-button native-type="submit" type="primary">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
@@ -233,7 +241,12 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>访客列表</h2>
-        <span class="muted-text">IP 封禁会影响共用该地址的访客</span>
+        <div class="heading-actions">
+          <span class="muted-text">IP 封禁会影响共用该地址的访客</span>
+          <el-button text aria-label="刷新列表" @click="load()">
+            <AdminIcon name="refresh" />
+          </el-button>
+        </div>
       </div>
             <BatchActions
         ref="batch" resource="/admin/visitors" id-key="visitorId"

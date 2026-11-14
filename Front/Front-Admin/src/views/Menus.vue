@@ -311,8 +311,13 @@ const batchActions = computed(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="path" label="路由路径" min-width="180" />
-        <el-table-column prop="component" label="组件键" min-width="210" show-overflow-tooltip />
+        <el-table-column label="路由路径" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.path || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="组件键" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.component || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
         <el-table-column label="显示" width="80">
           <template #default="{ row }">
             <el-tag :type="row.isVisible ? 'success' : 'info'" size="small">

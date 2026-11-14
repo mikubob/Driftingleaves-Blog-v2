@@ -1432,9 +1432,16 @@ button.account-trigger .iconfont {
   text-decoration: none;
 }
 .drawer-link:hover,
+.drawer-link:active,
 .drawer-link.router-link-exact-active,
-.drawer-close:hover {
+.drawer-close:hover,
+.drawer-close:active {
   background: var(--blog-hover);
+}
+.drawer-link:active,
+.drawer-close:active,
+.drawer-tools button:active {
+  transform: scale(0.97);
 }
 .drawer-link.router-link-exact-active {
   font-weight: 600;

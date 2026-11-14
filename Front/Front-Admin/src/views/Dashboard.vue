@@ -4,8 +4,6 @@ import {
   ElCard,
   ElDatePicker,
   ElEmpty,
-  ElOption,
-  ElSelect,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -13,8 +11,6 @@ import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
 import 'element-plus/es/components/date-picker/style/css'
 import 'element-plus/es/components/empty/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
@@ -40,6 +36,13 @@ const articleOption = computed(() => makeArticleOption(articles.value))
 const provinceOption = computed(() => makeProvinceOption(provinces.value))
 const loading = ref(false)
 const error = ref('')
+// 各图表卡片独立维护“图表 / 数据表”视图状态，保持卡片高度固定不互相拉伸。
+const tableView = reactive({
+  views: false,
+  visitors: false,
+  articles: false,
+  provinces: false,
+})
 let controller
 const cards = [
   { key: 'pageViewCount', label: '区间浏览量', icon: 'chart', tone: 'blue' },
@@ -99,6 +102,17 @@ async function load() {
     }
   }
 }
+/** 切换顶部站点分栏并刷新统计报表。 */
+function switchSite(siteCode) {
+  filters.siteCode = siteCode
+  load()
+}
+
+/** 切换指定图表卡片的图表与数据表视图。 */
+function toggleTableView(key) {
+  tableView[key] = !tableView[key]
+}
+
 onMounted(load)
 onBeforeUnmount(() => controller?.abort())
 </script>
@@ -113,6 +127,21 @@ onBeforeUnmount(() => controller?.abort())
         </h1>
       </div>
       <span class="date-caption">站点数据概览</span>
+    </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部站点' },
+          { value: 'home', label: '主页' },
+          { value: 'blog', label: '博客' },
+          { value: 'cv', label: '简历' },
+        ]"
+        :key="tab.value"
+        :class="{ active: filters.siteCode === tab.value }"
+        @click="switchSite(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
     </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load">
@@ -132,11 +161,6 @@ onBeforeUnmount(() => controller?.abort())
           placeholder="结束日期"
           value-format="YYYY-MM-DD"
         />
-        <el-select v-model="filters.siteCode" aria-label="站点" placeholder="全部站点" clearable>
-          <el-option label="主页" value="home" />
-          <el-option label="博客" value="blog" />
-          <el-option label="简历" value="cv" />
-        </el-select>
         <el-button type="primary" native-type="submit" :loading="loading">更新报表</el-button>
         <span class="muted-text">UTC 自然日</span>
       </form>
@@ -158,66 +182,140 @@ onBeforeUnmount(() => controller?.abort())
             <div>
               <h2>浏览趋势</h2>
             </div>
-            <span class="chart-legend">
-              <i></i>
-              浏览量
-            </span>
+            <div class="card-heading-actions">
+              <span class="chart-legend">
+                <i></i>
+                浏览量
+              </span>
+              <button
+                v-if="views.length"
+                type="button"
+                class="chart-view-toggle"
+                :aria-pressed="tableView.views"
+                @click="toggleTableView('views')"
+              >
+                {{ tableView.views ? '返回图表' : '查看数据' }}
+              </button>
+            </div>
           </div>
-          <TrendChart :rows="views" value-key="pageViewCount" label="浏览量" color="#2563eb" />
+          <TrendChart
+            :rows="views"
+            value-key="pageViewCount"
+            label="浏览量"
+            color="#2563eb"
+            :show-table="tableView.views"
+          />
         </el-card>
         <el-card shadow="never">
           <div class="card-heading">
             <div>
               <h2>新访客趋势</h2>
             </div>
-            <span class="chart-legend is-visitors">
-              <i></i>
-              新访客
-            </span>
+            <div class="card-heading-actions">
+              <span class="chart-legend is-visitors">
+                <i></i>
+                新访客
+              </span>
+              <button
+                v-if="visitors.length"
+                type="button"
+                class="chart-view-toggle"
+                :aria-pressed="tableView.visitors"
+                @click="toggleTableView('visitors')"
+              >
+                {{ tableView.visitors ? '返回图表' : '查看数据' }}
+              </button>
+            </div>
           </div>
-          <TrendChart :rows="visitors" value-key="newVisitorCount" label="新访客数" color="#258552" />
+          <TrendChart
+            :rows="visitors"
+            value-key="newVisitorCount"
+            label="新访客数"
+            color="#258552"
+            :show-table="tableView.visitors"
+          />
         </el-card>
       </div>
       <div class="charts-grid">
         <el-card shadow="never">
           <div class="card-heading">
             <h2>文章访问排行</h2>
-            <span class="muted-text">区间内 · 全部博客文章</span>
+            <div class="card-heading-actions">
+              <span class="muted-text">区间内 · 全部博客文章</span>
+              <button
+                v-if="articles.length"
+                type="button"
+                class="chart-view-toggle"
+                :aria-pressed="tableView.articles"
+                @click="toggleTableView('articles')"
+              >
+                {{ tableView.articles ? '返回图表' : '查看数据' }}
+              </button>
+            </div>
           </div>
-          <ReportChart v-if="articles.length" :option="articleOption" label="文章访问排行柱状图" />
-          <details v-if="articles.length" class="chart-details">
-            <summary>查看文章访问明细</summary>
-            <el-table :data="articles">
-              <el-table-column type="index" label="#" width="50" />
-              <el-table-column prop="title" label="文章标题" min-width="180" show-overflow-tooltip />
-              <el-table-column label="浏览量" width="110" align="center">
-                <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
-              </el-table-column>
-            </el-table>
-          </details>
+          <template v-if="articles.length">
+            <Transition name="chart-swap" mode="out-in">
+              <ReportChart
+                v-if="!tableView.articles"
+                :option="articleOption"
+                label="文章访问排行柱状图"
+              />
+              <div v-else class="chart-table-pane">
+                <el-table :data="articles">
+                  <el-table-column type="index" label="#" width="50" />
+                  <el-table-column
+                    prop="title"
+                    label="文章标题"
+                    min-width="180"
+                    show-overflow-tooltip
+                  />
+                  <el-table-column label="浏览量" width="110" align="center">
+                    <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </Transition>
+          </template>
           <el-empty v-else description="暂无文章访问数据" :image-size="70" />
         </el-card>
         <el-card shadow="never">
           <div class="card-heading">
             <h2>访客省份分布</h2>
-          </div>
-          <ReportChart v-if="provinces.length" :option="provinceOption" label="访客省份分布环形图" />
-          <details v-if="provinces.length" class="chart-details">
-            <summary>查看省份数据</summary>
-            <div class="province-list">
-              <div
-                v-for="province in provinces"
-                :key="province.province || 'unknown'"
-                class="province-row"
+            <div v-if="provinces.length" class="card-heading-actions">
+              <button
+                type="button"
+                class="chart-view-toggle"
+                :aria-pressed="tableView.provinces"
+                @click="toggleTableView('provinces')"
               >
-                <span>{{ province.province || '未知' }}</span>
-                <span class="province-track">
-                  <span :style="{ width: `${ratio(province.visitorCount, provinceMax)}%` }"></span>
-                </span>
-                <strong>{{ formatCount(province.visitorCount) }}</strong>
-              </div>
+                {{ tableView.provinces ? '返回图表' : '查看数据' }}
+              </button>
             </div>
-          </details>
+          </div>
+          <template v-if="provinces.length">
+            <Transition name="chart-swap" mode="out-in">
+              <ReportChart
+                v-if="!tableView.provinces"
+                :option="provinceOption"
+                label="访客省份分布环形图"
+              />
+              <div v-else class="chart-table-pane">
+                <div class="province-list">
+                  <div
+                    v-for="province in provinces"
+                    :key="province.province || 'unknown'"
+                    class="province-row"
+                  >
+                    <span>{{ province.province || '未知' }}</span>
+                    <span class="province-track">
+                      <span :style="{ width: `${ratio(province.visitorCount, provinceMax)}%` }"></span>
+                    </span>
+                    <strong>{{ formatCount(province.visitorCount) }}</strong>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </template>
           <el-empty v-else description="暂无地域数据" :image-size="70" />
         </el-card>
       </div>

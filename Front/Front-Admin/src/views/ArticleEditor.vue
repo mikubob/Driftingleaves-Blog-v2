@@ -490,11 +490,11 @@ onBeforeUnmount(() => {
           </label>
           <label>
             文章类型
-            <el-select v-model="form.articleType" :disabled="!editable">
-              <el-option label="原创" :value="1" />
-              <el-option label="转载" :value="2" />
-              <el-option label="翻译" :value="3" />
-            </el-select>
+            <el-radio-group v-model="form.articleType" :disabled="!editable">
+              <el-radio :value="1">原创</el-radio>
+              <el-radio :value="2">转载</el-radio>
+              <el-radio :value="3">翻译</el-radio>
+            </el-radio-group>
           </label>
           <label v-if="form.articleType !== 1">
             原文地址

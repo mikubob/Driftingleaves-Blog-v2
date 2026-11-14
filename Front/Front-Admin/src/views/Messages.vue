@@ -50,6 +50,13 @@ function reset() {
   return list.reset()
 }
 
+/** 切换顶部审核状态分栏并同步筛选条件后查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  Object.assign(list.filters, filters)
+  return load(true)
+}
+
 const detail = ref(null)
 const detailVisible = ref(false)
 const replyVisible = ref(false)
@@ -170,6 +177,21 @@ const batchActions = computed(() => {
         <h1>留言管理</h1>
       </div>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部留言' },
+          { value: 0, label: '待审核' },
+          { value: 1, label: '已通过' },
+          { value: 2, label: '已驳回' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" aria-label="筛选留言" @submit.prevent="search">
         <el-input
@@ -179,11 +201,6 @@ const batchActions = computed(() => {
           pattern="[1-9][0-9]{0,18}"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="审核状态" placeholder="全部状态" clearable>
-          <el-option label="待审核" :value="0" />
-          <el-option label="已通过" :value="1" />
-          <el-option label="已驳回" :value="2" />
-        </el-select>
         <el-select
           v-model="filters.isSecret"
           aria-label="私密状态"

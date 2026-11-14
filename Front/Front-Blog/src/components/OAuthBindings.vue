@@ -8,6 +8,7 @@ import ResourceState from './ResourceState.vue'
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
+const confirmingUnbind = ref('')
 let popup
 let popupTimer
 const platforms = useResource(() => session.user?.userId, async (signal) => {
@@ -90,6 +91,7 @@ async function unbind(source) {
   busy.value = true
   try {
     await request(`/blog/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
+    confirmingUnbind.value = ''
     sessionRevoked()
   } catch (failure) {
     error.value = failure.message
@@ -106,16 +108,50 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="panel">
-    <h2>第三方账号绑定</h2>
-    <p class="muted">请在登录后五分钟内操作；解绑成功后需要重新登录。</p>
+  <section class="bento-card account-oauth-card">
+    <div class="bento-card-head">
+      <div class="bento-card-title-wrap">
+        <h2 class="bento-card-title">账号与安全</h2>
+        <span
+          class="info-tip"
+          tabindex="0"
+          role="note"
+          aria-label="请在登录后五分钟内操作；解绑成功后需要重新登录。"
+          data-tip="请在登录后五分钟内操作；解绑成功后需要重新登录。"
+        >?</span>
+      </div>
+      <slot name="header-action" />
+    </div>
     <ResourceState :resource="platforms" />
     <p v-if="error" role="alert" class="error-text">{{ error }}</p>
     <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
-    <div v-for="provider in platforms.data" :key="provider.source" class="row">
-      <span>{{ provider.displayName }} · {{ provider.bound ? '已绑定' : '未绑定' }}</span>
-      <button v-if="provider.bound" :disabled="busy" @click="unbind(provider.source)">解除绑定</button>
-      <button v-else :disabled="busy" @click="bind(provider.source)">绑定账号</button>
+    <div v-if="platforms.data?.length" class="bento-compact-list">
+      <div v-for="provider in platforms.data" :key="provider.source" class="bento-compact-item">
+        <div class="bento-compact-row">
+          <span class="bento-provider-name">
+            {{ provider.displayName }}
+            <span :class="['status-pill', provider.bound ? 'pill-success' : 'pill-neutral']">
+              {{ provider.bound ? '已绑定' : '未绑定' }}
+            </span>
+          </span>
+          <button
+            v-if="provider.bound"
+            type="button"
+            :disabled="busy"
+            @click="confirmingUnbind = confirmingUnbind === provider.source ? '' : provider.source"
+          >
+            解除绑定
+          </button>
+          <button v-else type="button" class="primary" :disabled="busy" @click="bind(provider.source)">绑定账号</button>
+        </div>
+        <div v-if="confirmingUnbind === provider.source" class="inline-confirm" role="group" aria-label="确认解除绑定">
+          <span>确认解除 {{ provider.displayName }} 绑定？解绑后将退出当前登录状态。</span>
+          <div class="confirm-actions">
+            <button type="button" :disabled="busy" @click="unbind(provider.source)">确认解绑</button>
+            <button type="button" :disabled="busy" @click="confirmingUnbind = ''">取消</button>
+          </div>
+        </div>
+      </div>
     </div>
     <p v-if="platforms.data && !platforms.data.length" class="muted">本站暂未启用第三方平台。</p>
   </section>

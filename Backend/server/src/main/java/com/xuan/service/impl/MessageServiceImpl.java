@@ -30,6 +30,7 @@ import com.xuan.service.IMessageService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
+import com.xuan.utils.DiscussionLocationUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.QueryTimeUtils;
@@ -172,15 +173,33 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), actor)), actor);
     }
 
-    /** 分页查询本人留言。 */
+    /** 分页查询本人留言及其前台跳转位置。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query) {
         long actor = requireMember(null);
-        return PageResult.from(
-                messages.messagePage(new Page<>(query.page(), query.pageSize()), actor, query.status(), null, null,
-                                null)
-                        .convert(row -> privateView(row, actor)));
+        var result = messages.messagePage(new Page<>(query.page(), query.pageSize()), actor, query.status(),
+                null, null, null);
+        if (result.getRecords().isEmpty()) {
+            return PageResult.from(result.convert(row -> privateView(row, actor)));
+        }
+        List<MessageNode> nodes = messages.nodes();
+        Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
+        List<Long> roots = nodes.stream()
+                .filter(node -> node.getParentId() == null
+                        && MessageVisibilityPolicy.visible(node.getMessageId(), index, actor))
+                .map(MessageNode::getMessageId)
+                .toList();
+        Map<Long, Integer> pages = DiscussionLocationUtils.rootPages(roots);
+        return PageResult.from(result.convert(row -> {
+            Long root = DiscussionLocationUtils.rootId(row.getMessageId(), index, MessageNode::getParentId);
+            Integer page = null;
+            if (root != null && row.getStatus() == 1
+                    && MessageVisibilityPolicy.visible(row.getMessageId(), index, actor)) {
+                page = pages.get(root);
+            }
+            return privateView(row, actor, row.getParentId() == null ? null : root, page);
+        }));
     }
 
     /** 根据id查询本人留言及版本。 */
@@ -472,13 +491,19 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
 
     /** 整理本人留言资料，复用公开响应中的已处理字段，额外返回回复通知设置。 */
     private MessagePrivateVO privateView(MessageRow row, Long viewer) {
+        return privateView(row, viewer, null, null);
+    }
+
+    /** 组装留言响应，跳转位置仅由本人列表计算。 */
+    private MessagePrivateVO privateView(MessageRow row, Long viewer, Long rootParentId, Integer page) {
         MessagePublicVO value = publicView(row, viewer);
         return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
                 value.htmlContent(), value.contentFormat(),
                 value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
                 value.updateTime(), row.getNotifyReply(), value.location(),
                 value.userAgentOs(), value.userAgentBrowser(), row.getHasChildren(),
-                row.getReplyToContent() == null ? null : value.replyTarget(), value.siteAuthor(), value.siteAdmin());
+                row.getReplyToContent() == null ? null : value.replyTarget(), value.siteAuthor(), value.siteAdmin(),
+                rootParentId, page);
     }
 
     /** 组装留言展示内容，纯文本转义并保留换行。 */

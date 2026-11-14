@@ -601,10 +601,9 @@ onUnmounted(() => {
 .time-progress-card {
   position: relative;
   min-height: 204px;
+  overflow: hidden;
   padding: 14px 18px 16px;
   border-radius: 28px;
-  perspective: 1000px;
-  transform-style: preserve-3d;
   background:
     radial-gradient(
       circle at top left,
@@ -651,32 +650,40 @@ onUnmounted(() => {
   inset: 18px;
   display: flex;
   flex-direction: column;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  transition: transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    opacity 0.42s ease,
+    transform 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.42s ease;
 }
 
 .time-progress-panel--front {
-  transform: rotateY(0deg);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
 }
 
 .time-progress-panel--back {
   justify-content: center;
-  transform: rotateY(180deg);
+  opacity: 0;
+  transform: translateY(16px) scale(0.96);
+  filter: blur(6px);
   pointer-events: none;
 }
 
 .time-progress-card:hover .time-progress-panel--front,
 .time-progress-card:focus-visible .time-progress-panel--front,
 .time-progress-card:focus-within .time-progress-panel--front {
-  transform: rotateY(-180deg);
-  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-14px) scale(0.97);
+  filter: blur(8px);
 }
 
 .time-progress-card:hover .time-progress-panel--back,
 .time-progress-card:focus-visible .time-progress-panel--back,
 .time-progress-card:focus-within .time-progress-panel--back {
-  transform: rotateY(0deg);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
   pointer-events: auto;
 }
 

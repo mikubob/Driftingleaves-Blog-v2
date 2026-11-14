@@ -69,7 +69,8 @@ export function installCvMotion() {
     cancelPress()
     activeTarget = target
     target.classList.remove('is-rebounding')
-    target.classList.add('is-pressing')
+    // 交互后即锁定为已入场状态，避免回弹动画结束时重播入场动画。
+    target.classList.add('is-revealed', 'is-pressing')
     target.addEventListener('pointerleave', cancelPress, { once: true })
     spawnRipple(target, event)
   })

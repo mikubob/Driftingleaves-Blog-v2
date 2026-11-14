@@ -10,8 +10,6 @@ import {
   ElInputNumber,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElSwitch,
   ElTable,
   ElTableColumn,
@@ -24,8 +22,6 @@ import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/input-number/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
@@ -156,6 +152,12 @@ async function remove(row) {
 
 onMounted(load)
 
+/** 切换顶部展示状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -189,6 +191,20 @@ const batchActions = computed(() => {
         新建分类
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部分类' },
+          { value: 1, label: '展示中' },
+          { value: 0, label: '已隐藏' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
@@ -198,10 +214,6 @@ const batchActions = computed(() => {
           clearable
           maxlength="100"
         />
-        <el-select v-model="filters.status" aria-label="展示状态" placeholder="全部状态" clearable>
-          <el-option label="展示中" :value="1" />
-          <el-option label="已隐藏" :value="0" />
-        </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>

@@ -11,7 +11,6 @@
         <if test="article != null">AND c.article_id = #{article}</if>
         <if test="user != null">AND c.user_id = #{user}</if>
         <if test="status != null">AND c.status = #{status}</if>
-        <if test="author != null">AND a.author_id = #{author}</if>
     </sql>
 
     <!-- 配置最先锁，配置关闭与评论写入才有明确的提交顺序。 -->
@@ -38,10 +37,11 @@
 
     <!-- total 和列表共用过滤；非公开文章不影响本人和后台处理历史评论。 -->
     <select id="commentPage" resultType="com.xuan.model.CommentRow">
-        SELECT
-        <include refid="columns"/>
+        SELECT c.*,
+            CASE WHEN <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/> THEN a.title END AS article_title,
+            CASE WHEN <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/> THEN a.slug END AS article_slug
         FROM blog_comment c
-        JOIN blog_article a ON a.article_id = c.article_id JOIN sys_user u ON u.user_id = c.user_id
+        JOIN blog_article a ON a.article_id = c.article_id
         <where>
             <include refid="pageFilters"/>
         </where>
@@ -62,6 +62,7 @@
         LEFT JOIN sys_user ru ON ru.user_id = p.user_id
         <where>
             <include refid="pageFilters"/>
+            <if test="author != null">AND a.author_id = #{author}</if>
             <choose>
                 <when test="parent != null and parent == 0">AND c.parent_id IS NULL</when>
                 <when test="parent != null">AND c.parent_id = #{parent}</when>

@@ -75,16 +75,22 @@ const fmtDate = formatDateTime
   transition:
     box-shadow 0.2s,
     border-color 0.2s,
-    transform 0.2s;
+    background-color 0.15s,
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
   animation: article-reveal 0.45s cubic-bezier(0.22, 0.8, 0.3, 1) both;
   margin-bottom: 16px;
 }
-.article-card:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
-  transform: translateY(-2px);
+/* 仅桌面悬停设备上浮，避免移动端点击后悬停态粘滞。 */
+@media (hover: hover) {
+  .article-card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    transform: translateY(-2px);
+  }
 }
 .article-card:active {
-  transform: translateY(-1px) scale(0.995);
+  background: #f5f7fa;
+  border-color: #dcdfe6;
+  transform: scale(0.988);
 }
 
 @keyframes article-reveal {
@@ -108,8 +114,10 @@ const fmtDate = formatDateTime
   display: block;
   transition: transform 0.3s;
 }
-.article-card:hover .card-cover img {
-  transform: scale(1.05);
+@media (hover: hover) {
+  .article-card:hover .card-cover img {
+    transform: scale(1.05);
+  }
 }
 
 .card-body {

@@ -524,3 +524,11 @@
     display: none;
   }
 }
+
+/* 从个人中心跳转定位到具体评论或留言时的高亮提示。 */
+.comment-item.is-targeted,
+.msg-item-card.is-targeted {
+  border-color: var(--blog-text);
+  box-shadow: 0 0 0 2px var(--blog-border);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}

@@ -34,5 +34,12 @@
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-annotation</artifactId>
         </dependency>
+        <!-- 编译时解析字段注解的 JdbcType，版本与 MyBatis-Plus 一致，运行时由 server 提供。 -->
+        <dependency>
+            <groupId>org.mybatis</groupId>
+            <artifactId>mybatis</artifactId>
+            <version>3.5.19</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 </project>

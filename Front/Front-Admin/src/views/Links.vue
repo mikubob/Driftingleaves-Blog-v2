@@ -12,8 +12,8 @@ import {
   ElInputNumber,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
+  ElRadio,
+  ElRadioGroup,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -25,8 +25,8 @@ import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/input-number/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/radio/style/css'
+import 'element-plus/es/components/radio-group/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
@@ -150,6 +150,12 @@ async function remove(row) {
 
 onMounted(load)
 
+/** 切换顶部状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -183,20 +189,30 @@ const batchActions = computed(() => {
         新建友链
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部友链' },
+          { value: 1, label: '展示中' },
+          { value: 0, label: '待审核' },
+          { value: 2, label: '已下架' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
           v-model="filters.keyword"
           aria-label="搜索关键词"
-          placeholder="搜索名称或标题"
+          placeholder="搜索站点名称或网址"
           maxlength="100"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
-          <el-option label="展示中" :value="1" />
-          <el-option label="待审核" :value="0" />
-          <el-option label="已下架" :value="2" />
-        </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
@@ -227,8 +243,11 @@ const batchActions = computed(() => {
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="linkName" label="站点名称" min-width="160" show-overflow-tooltip />
-        <el-table-column prop="url" label="站点地址" min-width="240" show-overflow-tooltip />
-        <el-table-column prop="description" label="介绍" min-width="200" show-overflow-tooltip />
+        <el-table-column prop="url" label="站点地址" min-width="220" show-overflow-tooltip />
+        <el-table-column label="介绍" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.description || '—' }}</template>
+        </el-table-column>
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="link" /></template>
         </el-table-column>
@@ -322,11 +341,11 @@ const batchActions = computed(() => {
         </label>
         <label v-if="!id">
           审核状态
-          <el-select v-model="form.status">
-            <el-option label="待审核" :value="0" />
-            <el-option label="展示中" :value="1" />
-            <el-option label="驳回 / 下架" :value="2" />
-          </el-select>
+          <el-radio-group v-model="form.status">
+            <el-radio :value="0">待审核</el-radio>
+            <el-radio :value="1">展示中</el-radio>
+            <el-radio :value="2">驳回 / 下架</el-radio>
+          </el-radio-group>
         </label>
         <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">

@@ -146,6 +146,9 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>标签列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
       </div>
             <BatchActions
         ref="batch" resource="/admin/tags" id-key="tagId"

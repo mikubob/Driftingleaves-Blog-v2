@@ -9,8 +9,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElTable,
   ElTableColumn,
 } from 'element-plus'
@@ -22,8 +20,6 @@ import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
@@ -35,6 +31,7 @@ import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
+import AdminIcon from '../components/AdminIcon.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -104,6 +101,12 @@ async function remove(row) {
 }
 onMounted(load)
 
+/** 切换顶部订阅状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -146,6 +149,21 @@ const batchActions = computed(() => {
         <h1>邮件订阅</h1>
       </div>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部订阅' },
+          { value: 0, label: '待验证' },
+          { value: 1, label: '已订阅' },
+          { value: 2, label: '已退订' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
@@ -162,11 +180,6 @@ const batchActions = computed(() => {
           pattern="[1-9][0-9]{0,18}"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="订阅状态" placeholder="全部状态" clearable>
-          <el-option label="待验证" :value="0" />
-          <el-option label="已订阅" :value="1" />
-          <el-option label="已退订" :value="2" />
-        </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
@@ -175,6 +188,9 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>订阅列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
       </div>
             <BatchActions
         ref="batch" resource="/admin/rss-subscriptions" id-key="subscriptionId"

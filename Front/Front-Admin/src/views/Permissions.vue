@@ -7,8 +7,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
   ElSwitch,
   ElTable,
   ElTableColumn,
@@ -19,8 +17,6 @@ import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
@@ -136,6 +132,12 @@ async function remove(row) {
 
 onMounted(load)
 
+/** 切换顶部启用状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -169,19 +171,29 @@ const batchActions = computed(() => {
         新建权限
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部权限' },
+          { value: 1, label: '已启用' },
+          { value: 0, label: '已禁用' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
           v-model="filters.keyword"
           aria-label="搜索关键词"
-          placeholder="搜索名称或标题"
+          placeholder="搜索权限名称或权限码"
           maxlength="100"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
-          <el-option label="已启用" :value="1" />
-          <el-option label="已禁用" :value="0" />
-        </el-select>
         <el-input
           v-model="filters.module"
           aria-label="权限模块"
@@ -232,6 +244,9 @@ const batchActions = computed(() => {
           show-overflow-tooltip
         />
         <el-table-column prop="module" label="模块" min-width="100" show-overflow-tooltip />
+        <el-table-column label="说明" min-width="200" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.description || '—' }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="enabled" /></template>
         </el-table-column>
@@ -290,7 +305,7 @@ const batchActions = computed(() => {
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="255" />
         </label>
         <label v-if="!id">
-          展示状态
+          启用状态
           <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
         </label>
         <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>

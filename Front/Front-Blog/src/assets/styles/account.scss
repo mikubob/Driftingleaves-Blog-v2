@@ -348,3 +348,724 @@ fieldset {
   }
 }
 
+/* === 个人中心 Bento + 时间线 + 瀑布流 === */
+.v2-page .account-page {
+  --acc-surface: var(--blog-bg);
+  --acc-pill-ok: #248a3d;
+  --acc-pill-ok-bg: rgba(36, 138, 61, 0.1);
+  --acc-pill-wait: #b25000;
+  --acc-pill-wait-bg: rgba(255, 149, 0, 0.12);
+  --acc-pill-no: #d70015;
+  --acc-pill-no-bg: rgba(255, 59, 48, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+
+  .account-banner {
+    margin: 0;
+    padding: 12px 16px;
+    border-radius: 12px;
+    background: var(--blog-card);
+    border: 1px solid var(--blog-border-light);
+    text-align: left;
+  }
+  .success-banner {
+    color: var(--acc-pill-ok);
+    background: var(--acc-pill-ok-bg);
+    border-color: transparent;
+  }
+
+  .account-bento-grid {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    gap: 18px;
+    align-items: stretch;
+  }
+  .account-bento-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    height: 100%;
+  }
+  .bento-card {
+    background: var(--blog-card);
+    border: 1px solid var(--blog-border-light);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+  }
+  .profile-card {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+  }
+  .profile-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .profile-id {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-width: 0;
+  }
+  .profile-avatar-wrap {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    border: 2px solid var(--blog-border);
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--acc-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .profile-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+  .profile-avatar-letter {
+    font-family: var(--blog-serif);
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--blog-text2);
+  }
+  .profile-identity {
+    min-width: 0;
+  }
+  .profile-name {
+    margin: 0;
+    font-family: var(--blog-serif);
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+  .profile-sub {
+    margin: 3px 0 0;
+    color: var(--blog-text3);
+    font-size: 12.5px;
+    overflow-wrap: anywhere;
+  }
+  .profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .profile-bio {
+    margin: 16px 0;
+    color: var(--blog-text2);
+    line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: auto;
+  }
+  .stat-box {
+    background: var(--acc-surface);
+    border: 1px solid var(--blog-border-light);
+    border-radius: 14px;
+    padding: 12px 14px;
+  }
+  .stat-num {
+    font-family: var(--blog-serif);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+  .stat-label {
+    font-size: 11.5px;
+    color: var(--blog-text3);
+    margin-top: 2px;
+  }
+
+  /* 右侧绑定与订阅卡 */
+  .bento-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .bento-card-title-wrap,
+  .sheet-title-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bento-card-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .bento-compact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .bento-compact-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .bento-compact-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--acc-surface);
+  }
+  .bento-provider-name {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+  }
+  .sub-compact-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .sub-email-text {
+    color: var(--blog-text2);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .sub-compact-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  /* 信息提示气泡 */
+  .info-tip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid var(--blog-border);
+    color: var(--blog-text3);
+    font-size: 11px;
+    font-family: var(--blog-sans);
+    cursor: help;
+  }
+  .info-tip:hover::after,
+  .info-tip:focus-visible::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: max-content;
+    max-width: 240px;
+    padding: 7px 11px;
+    border-radius: 8px;
+    background: var(--blog-text);
+    color: var(--blog-card);
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 1.4;
+    z-index: 120;
+  }
+
+  /* 状态胶囊 */
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 500;
+  }
+  .pill-success {
+    background: var(--acc-pill-ok-bg);
+    color: var(--acc-pill-ok);
+  }
+  .pill-warning {
+    background: var(--acc-pill-wait-bg);
+    color: var(--acc-pill-wait);
+  }
+  .pill-danger {
+    background: var(--acc-pill-no-bg);
+    color: var(--acc-pill-no);
+  }
+  .pill-neutral,
+  .pill-tag {
+    background: var(--blog-card);
+    border: 1px solid var(--blog-border);
+    color: var(--blog-text2);
+  }
+  .article-link-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    max-width: 340px;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: var(--blog-card);
+    border: 1px solid var(--blog-border);
+    color: var(--blog-text);
+    font-size: 12px;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .article-link-pill:hover {
+    border-color: var(--blog-text);
+    background: var(--blog-hover);
+  }
+  .article-link-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 按钮微调：圆角、无鼠标点击黑框、显眼红字操作 */
+  button,
+  .button {
+    border-radius: 10px;
+  }
+  button:focus:not(:focus-visible),
+  .button:focus:not(:focus-visible),
+  a:focus:not(:focus-visible) {
+    outline: none;
+  }
+  .btn-unlike {
+    background: var(--blog-card);
+    color: var(--acc-pill-no);
+    border-color: transparent;
+    font-weight: 500;
+    padding: 6px 12px;
+  }
+  .btn-unlike:hover:not(:disabled) {
+    background: var(--acc-pill-no-bg);
+    color: var(--acc-pill-no);
+  }
+
+  /* 足迹舞台 */
+  .stage-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 22px;
+  }
+  .stage-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .stage-title {
+    margin: 0;
+    font-size: 20px;
+  }
+  .segmented {
+    --seg-pad: 4px;
+    --seg-ease: cubic-bezier(0.47, 1.64, 0.41, 0.8);
+    position: relative;
+    isolation: isolate;
+    display: inline-grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    background: var(--acc-surface);
+    padding: var(--seg-pad);
+    border-radius: 12px;
+    border: 1px solid var(--blog-border-light);
+  }
+  /* 滑动胶囊指示器，复用热门页弹性曲线。 */
+  .segmented::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    top: var(--seg-pad);
+    bottom: var(--seg-pad);
+    left: var(--seg-pad);
+    width: calc((100% - var(--seg-pad) * 2) / 3);
+    border-radius: 9px;
+    background: var(--blog-card);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+    transform: translateX(calc(var(--seg-index, 0) * 100%));
+    transition:
+      transform 460ms var(--seg-ease),
+      background-color 250ms ease;
+  }
+  .segmented button {
+    border: 0;
+    background: transparent;
+    color: var(--blog-text2);
+    padding: 7px 16px;
+    border-radius: 9px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: color 200ms ease;
+  }
+  .segmented button:hover {
+    color: var(--blog-text);
+  }
+  .segmented button.active {
+    color: var(--blog-text);
+  }
+  .filter-pills {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .filter-pill {
+    padding: 5px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--blog-border);
+    background: transparent;
+    color: var(--blog-text2);
+    font-size: 12px;
+    transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+  }
+  .filter-pill.active {
+    background: var(--blog-text);
+    color: var(--blog-card);
+    border-color: var(--blog-text);
+  }
+
+  /* 足迹切换与骨架屏过渡 */
+  .footprint-fade-enter-active,
+  .footprint-fade-leave-active {
+    transition:
+      opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .footprint-fade-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  .footprint-fade-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  .sk-footprint-card {
+    pointer-events: none;
+  }
+  .sk-cover-box {
+    width: 100%;
+    height: 156px;
+    background: var(--blog-hover);
+  }
+  .sk-line {
+    height: 13px;
+    border-radius: 6px;
+    background: var(--blog-hover);
+    margin-bottom: 10px;
+  }
+  .sk-line:last-child {
+    margin-bottom: 0;
+  }
+  .sk-w40 { width: 40%; }
+  .sk-w55 { width: 55%; }
+  .sk-w75 { width: 75%; }
+  .sk-w85 { width: 85%; }
+
+  /* 喜欢的文章：双列瀑布流 */
+  .likes-masonry {
+    column-count: 2;
+    column-gap: 16px;
+  }
+  .like-masonry-card {
+    break-inside: avoid;
+    margin-bottom: 16px;
+    border-radius: 14px;
+    border: 1px solid var(--blog-border-light);
+    background: var(--acc-surface);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.16s, background-color 0.16s, transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .like-masonry-card:hover {
+    border-color: var(--blog-border);
+    background: var(--blog-card);
+    transform: translateY(-2px);
+  }
+  .like-masonry-cover {
+    display: block;
+    width: 100%;
+    height: 156px;
+    overflow: hidden;
+    background: var(--blog-hover);
+    border-bottom: 1px solid var(--blog-border-light);
+  }
+  .like-masonry-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.35s ease;
+  }
+  .like-masonry-card:hover .like-masonry-cover img {
+    transform: scale(1.03);
+  }
+  .like-masonry-body {
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .like-masonry-link {
+    display: block;
+    color: inherit;
+    text-decoration: none;
+  }
+  .like-masonry-title {
+    margin: 0 0 6px;
+    font-size: 16.5px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .like-masonry-summary {
+    margin: 0;
+    font-size: 13px;
+    color: var(--blog-text2);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .like-masonry-meta {
+    margin-top: 8px;
+    font-size: 12px;
+    color: var(--blog-text3);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .like-masonry-foot {
+    padding-top: 12px;
+    border-top: 1px solid var(--blog-border-light);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--blog-text3);
+  }
+
+  /* 评论与留言：方案 C 杂志时间线 */
+  .footprint-timeline {
+    position: relative;
+    padding-left: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .footprint-timeline::before {
+    content: '';
+    position: absolute;
+    left: 6px;
+    top: 10px;
+    bottom: 10px;
+    width: 1.5px;
+    background: var(--blog-border);
+  }
+  .tl-item {
+    position: relative;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: var(--acc-surface);
+    border: 1px solid var(--blog-border-light);
+    transition: border-color 0.16s, background-color 0.16s;
+  }
+  .tl-item:hover {
+    background: var(--blog-card);
+    border-color: var(--blog-border);
+  }
+  .tl-dot {
+    position: absolute;
+    left: -22px;
+    top: 24px;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--blog-card);
+    border: 2px solid var(--blog-text);
+  }
+  .tl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .tl-badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .tl-time {
+    font-size: 12px;
+    color: var(--blog-text3);
+    font-variant-numeric: tabular-nums;
+  }
+  .tl-quote {
+    font-size: 12.5px;
+    color: var(--blog-text3);
+    padding: 7px 12px;
+    border-left: 2px solid var(--blog-border);
+    background: var(--blog-card);
+    border-radius: 0 8px 8px 0;
+    margin-bottom: 10px;
+  }
+  .tl-content {
+    margin: 0 0 12px;
+    font-size: 14.5px;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .tl-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--blog-text3);
+    flex-wrap: wrap;
+  }
+  .confirm-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  /* Apple Sheet 弹窗 */
+  .sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.38);
+    backdrop-filter: blur(8px);
+    animation: account-fade-in 0.18s ease-out;
+  }
+  .sheet-dialog {
+    width: 100%;
+    max-width: 480px;
+    background: var(--blog-card);
+    border: 1px solid var(--blog-border);
+    border-radius: 20px;
+    padding: 24px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.24);
+    animation: account-sheet-pop 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .sheet-title {
+    margin: 0;
+    font-size: 18px;
+  }
+  .sheet-error {
+    margin: 0 0 12px;
+    font-size: 13px;
+  }
+  .sheet-close {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--blog-border-light);
+    background: var(--acc-surface);
+    color: var(--blog-text2);
+  }
+  .sheet-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 14px;
+    border-top: 1px solid var(--blog-border-light);
+  }
+}
+
+@keyframes account-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes account-sheet-pop {
+  from { opacity: 0; transform: scale(0.95) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 暗色模式语义色适配 */
+html.dark .v2-page .account-page {
+  --acc-pill-ok: #30d158;
+  --acc-pill-ok-bg: rgba(48, 209, 88, 0.14);
+  --acc-pill-wait: #ff9f0a;
+  --acc-pill-wait-bg: rgba(255, 159, 10, 0.14);
+  --acc-pill-no: #ff453a;
+  --acc-pill-no-bg: rgba(255, 69, 58, 0.14);
+}
+
+/* 苹果连续曲率圆角渐进增强，正圆元素显式保持 round。 */
+@supports (corner-shape: squircle) {
+  .v2-page .account-page .bento-card,
+  .v2-page .account-page .stat-box,
+  .v2-page .account-page .bento-compact-row,
+  .v2-page .account-page .like-masonry-card,
+  .v2-page .account-page .tl-item,
+  .v2-page .account-page .sheet-dialog,
+  .v2-page .account-page .segmented,
+  .v2-page .account-page .segmented button,
+  .v2-page .account-page button,
+  .v2-page .account-page .button,
+  .v2-page .account-page input,
+  .v2-page .account-page textarea {
+    corner-shape: squircle;
+  }
+
+  .v2-page .loading-state .spinner,
+  .v2-page .account-page .profile-avatar-wrap,
+  .v2-page .account-page .tl-dot,
+  .v2-page .account-page .info-tip,
+  .v2-page .account-page .sheet-close {
+    corner-shape: round;
+  }
+}
+
+@media (max-width: 860px) {
+  .v2-page .account-page {
+    .account-bento-grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .likes-masonry {
+      column-count: 1;
+    }
+  }
+}
+

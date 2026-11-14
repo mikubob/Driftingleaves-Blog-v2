@@ -10,6 +10,6 @@ public record MessagePrivateVO(Long messageId, Long parentId, ArticlePublicVO.Au
                                LocalDateTime editedAt, boolean isOwn, LocalDateTime createTime,
                                LocalDateTime updateTime, Integer notifyReply, String location, String userAgentOs,
                                String userAgentBrowser, Boolean hasChildren, DiscussionReplyTargetVO replyTarget,
-                               boolean siteAuthor, boolean siteAdmin) {
+                               boolean siteAuthor, boolean siteAdmin, Long rootParentId, Integer page) {
 
 }

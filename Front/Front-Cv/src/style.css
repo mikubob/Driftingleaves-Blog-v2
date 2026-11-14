@@ -221,6 +221,11 @@ h1 {
   transition: transform .16s cubic-bezier(.2, .8, .2, 1), border-color .2s, background-color .2s;
 }
 
+/* 含链接的标签由内部链接撑满内边距，避免点到边缘却未触发跳转。 */
+.contact-list li:has(a) {
+  padding: 0;
+}
+
 @media (hover: hover) {
   .contact-list li:has(a):hover {
     border-color: var(--cv-dot);
@@ -235,6 +240,7 @@ h1 {
 }
 
 .contact-list a {
+  padding: 5px 12px;
   text-decoration: none;
 }
 
@@ -812,9 +818,13 @@ h1 {
 .hero > :nth-child(5) { animation-delay: 240ms; }
 .hero > :nth-child(n + 6) { animation-delay: 300ms; }
 
-/* 联系方式排在头部文字之后出现。 */
+/* 联系方式排在头部文字之后出现；交互后锁定入场状态，避免回弹结束重播动画。 */
 .contact-list li {
   animation-delay: calc(200ms + var(--reveal-index, 0) * 60ms);
+}
+
+.contact-list li.is-revealed:not(.is-rebounding) {
+  animation: none;
 }
 
 /* 社交链接所在的 ul 本身不再动画，避免与 li 的位移叠加。 */

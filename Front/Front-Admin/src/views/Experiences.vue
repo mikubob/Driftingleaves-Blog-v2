@@ -1,15 +1,21 @@
 <script setup>
 import DisplayImageField from '../components/DisplayImageField.vue'
+import ImagePreview from '../components/ImagePreview.vue'
+import MarkdownPreview from '../components/MarkdownPreview.vue'
+import ResourceDetail from '../components/ResourceDetail.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
   ElCard,
+  ElDescriptionsItem,
   ElDialog,
   ElInput,
   ElInputNumber,
   ElMessage,
   ElMessageBox,
   ElOption,
+  ElRadio,
+  ElRadioGroup,
   ElSelect,
   ElSwitch,
   ElTable,
@@ -17,12 +23,15 @@ import {
 } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
+import 'element-plus/es/components/descriptions-item/style/css'
 import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/input-number/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import 'element-plus/es/components/option/style/css'
+import 'element-plus/es/components/radio/style/css'
+import 'element-plus/es/components/radio-group/style/css'
 import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
@@ -46,6 +55,12 @@ const {
   '/admin/cv/experiences',
   { keyword: '', status: '', experienceType: '' },
 )
+const experienceTypeMeta = {
+  0: { label: '教育经历', tone: 'is-purple', titleLabel: '学校名称', subtitleLabel: '专业 / 学历' },
+  1: { label: '工作 / 实习', tone: 'is-success', titleLabel: '公司名称', subtitleLabel: '职位 / 部门' },
+  2: { label: '项目经历', tone: 'is-warning', titleLabel: '项目名称', subtitleLabel: '担任角色 / 技术栈' },
+}
+const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
@@ -63,6 +78,15 @@ const form = reactive({
   sortOrder: 0,
   status: 1,
 })
+const currentTypeMeta = computed(
+  () => experienceTypeMeta[form.experienceType] || experienceTypeMeta[0],
+)
+
+/** 切换顶部经历类型分栏并重新加载第一页。 */
+function switchType(type) {
+  filters.experienceType = type
+  load(true)
+}
 
 async function edit(row) {
   formError.value = ''
@@ -198,28 +222,39 @@ const batchActions = computed(() => {
         新建简历经历
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        :class="{ active: filters.experienceType === '' || filters.experienceType == null }"
+        @click="switchType('')"
+      >
+        全部经历
+      </button>
+      <button
+        v-for="(meta, typeKey) in experienceTypeMeta"
+        :key="typeKey"
+        :class="{
+          active:
+            filters.experienceType !== '' &&
+            filters.experienceType != null &&
+            Number(filters.experienceType) === Number(typeKey),
+        }"
+        @click="switchType(Number(typeKey))"
+      >
+        {{ meta.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
           v-model="filters.keyword"
           aria-label="搜索关键词"
-          placeholder="搜索名称或标题"
+          placeholder="搜索学校、公司、项目或专业"
           maxlength="100"
           clearable
         />
         <el-select v-model="filters.status" aria-label="状态" placeholder="全部状态" clearable>
           <el-option label="展示中" :value="1" />
           <el-option label="已隐藏" :value="0" />
-        </el-select>
-        <el-select
-          v-model="filters.experienceType"
-          aria-label="经历类型"
-          placeholder="全部经历类型"
-          clearable
-        >
-          <el-option label="教育经历" :value="0" />
-          <el-option label="工作 / 实习" :value="1" />
-          <el-option label="项目经历" :value="2" />
         </el-select>
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
@@ -250,28 +285,42 @@ const batchActions = computed(() => {
         empty-text="暂无简历经历"
       >
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
+        <el-table-column label="类型" width="120" align="center">
+          <template #default="{ row }">
+            <span :class="['status-tag', experienceTypeMeta[row.experienceType]?.tone || 'is-muted']">
+              <i aria-hidden="true"></i>
+              {{ experienceTypeMeta[row.experienceType]?.label || '未知类型' }}
+            </span>
+          </template>
+        </el-table-column>
         <el-table-column
           prop="title"
           label="学校 / 公司 / 项目"
-          min-width="200"
+          min-width="190"
           show-overflow-tooltip
         />
-        <el-table-column
-          prop="subtitle"
-          label="专业 / 职位"
-          min-width="180"
-          show-overflow-tooltip
-        />
-        <el-table-column prop="startDate" label="开始日期" min-width="120" show-overflow-tooltip />
-        <el-table-column prop="endDate" label="结束日期" min-width="120" show-overflow-tooltip />
+        <el-table-column label="专业 / 职位 / 角色" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.subtitle || '—' }}</template>
+        </el-table-column>
+        <el-table-column label="起止时间" min-width="200" align="center">
+          <template #default="{ row }">{{ row.startDate || '—' }} ~ {{ row.endDate || '至今' }}</template>
+        </el-table-column>
+        <el-table-column prop="sortOrder" label="排序" width="80" align="center" />
         <el-table-column label="状态" width="110">
           <template #default="{ row }"><StatusTag :value="row.status" kind="display" /></template>
         </el-table-column>
         <el-table-column label="更新时间" width="180">
           <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
         </el-table-column>
-        <el-table-column label="操作" align="center" width="240" fixed="right">
+        <el-table-column label="操作" align="center" width="280" fixed="right">
           <template #default="{ row }">
+            <el-button
+              v-if="can('cv:experience:query', true)"
+              type="primary"
+              link
+              :disabled="batch?.busy"
+              @click="detailId = row.experienceId"
+            >详情</el-button>
             <RowStatusActions :row="row" :actions="batchActions" :batch="batch" :disabled="loading" />
             <el-button type="primary" v-if="can('cv:experience:update', true)" link @click="edit(row)">
               编辑
@@ -292,6 +341,44 @@ const batchActions = computed(() => {
         @size-change="changePageSize"
       />
     </el-card>
+    <ResourceDetail
+      v-if="detailId"
+      :key="detailId"
+      :path="`/admin/cv/experiences/${detailId}`"
+      title="简历经历详情"
+      @close="detailId = ''"
+    >
+      <template #default="{ detail }">
+        <el-descriptions-item label="经历 ID">{{ detail.experienceId }}</el-descriptions-item>
+        <el-descriptions-item label="经历类型">
+          <span :class="['status-tag', experienceTypeMeta[detail.experienceType]?.tone || 'is-muted']">
+            <i aria-hidden="true"></i>
+            {{ experienceTypeMeta[detail.experienceType]?.label || '未知类型' }}
+          </span>
+        </el-descriptions-item>
+        <el-descriptions-item :label="experienceTypeMeta[detail.experienceType]?.titleLabel || '名称'">
+          {{ detail.title }}
+        </el-descriptions-item>
+        <el-descriptions-item :label="experienceTypeMeta[detail.experienceType]?.subtitleLabel || '副标题'">
+          {{ detail.subtitle || '—' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="起止时间">
+          {{ detail.startDate || '—' }} ~ {{ detail.endDate || '至今' }}
+        </el-descriptions-item>
+        <el-descriptions-item label="Logo">
+          <ImagePreview v-if="detail.logoUrl" :src="detail.logoUrl" alt="经历 Logo" />
+          <span v-else class="muted-text">—</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="经历内容">
+          <MarkdownPreview v-if="detail.content" :markdown="detail.content" />
+          <span v-else>—</span>
+        </el-descriptions-item>
+        <el-descriptions-item label="排序">{{ detail.sortOrder }}</el-descriptions-item>
+        <el-descriptions-item label="展示状态"><StatusTag :value="detail.status" kind="display" /></el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
+        <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
+      </template>
+    </ResourceDetail>
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑简历经历' : '新建简历经历'"
@@ -303,18 +390,18 @@ const batchActions = computed(() => {
       <form class="edit-form" @submit.prevent="save">
         <label>
           经历类型
-          <el-select v-model="form.experienceType">
-            <el-option label="教育经历" :value="0" />
-            <el-option label="工作 / 实习" :value="1" />
-            <el-option label="项目经历" :value="2" />
-          </el-select>
+          <el-radio-group v-model="form.experienceType">
+            <el-radio :value="0">教育经历</el-radio>
+            <el-radio :value="1">工作 / 实习</el-radio>
+            <el-radio :value="2">项目经历</el-radio>
+          </el-radio-group>
         </label>
         <label>
-          学校 / 公司 / 项目
+          {{ currentTypeMeta.titleLabel }}
           <el-input v-model="form.title" type="text" maxlength="200" required />
         </label>
         <label>
-          专业 / 职位 / 角色
+          {{ currentTypeMeta.subtitleLabel }}
           <el-input v-model="form.subtitle" type="text" maxlength="200" />
         </label>
         <DisplayImageField

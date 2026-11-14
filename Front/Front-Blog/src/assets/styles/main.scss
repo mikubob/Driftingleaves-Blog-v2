@@ -54,6 +54,7 @@ html {
   overflow-y: scroll;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
   scroll-behavior: smooth;
   transition: background-color 0.3s, color 0.3s;
 }
@@ -76,6 +77,23 @@ body {
 a {
   color: inherit;
   text-decoration: none;
+}
+
+/* 关闭移动端默认蓝色点击高亮，保留键盘焦点环兼顾无障碍。 */
+a,
+button,
+input,
+select,
+textarea,
+label,
+[role='button'],
+[tabindex] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--blog-text);
+  outline-offset: 2px;
 }
 
 img {
@@ -569,8 +587,15 @@ html.dark .site-footer {
   background: #111 !important;
 }
 
-html.dark .article-card:hover {
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+@media (hover: hover) {
+  html.dark .article-card:hover {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3) !important;
+  }
+}
+
+html.dark .article-card:active {
+  background: #2b2b2b !important;
+  border-color: #444 !important;
 }
 
 html.dark .nav-item:hover {

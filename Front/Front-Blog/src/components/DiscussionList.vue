@@ -1,5 +1,6 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import 'element-plus/es/components/message-box/style/css'
 import { getPage, request } from '@/api.js'
@@ -22,21 +23,59 @@ const props = defineProps({
 })
 /** 通知父组件打开回复、更新总数或重新查询已变化的回复组。 */
 const emit = defineEmits(['reply', 'total', 'changed'])
+const route = useRoute()
 const page = ref(1)
 const expanded = ref([])
 const replyData = ref(null)
 const showAll = ref(false)
 const activeContext = ref(null)
+const highlightedId = ref('')
 const error = ref('')
 const deleting = ref(false)
+let highlightTimer = null
 const isComment = computed(() => props.kind === 'comments')
 const itemPrefix = computed(() => isComment.value ? 'c' : 'msg')
+const anchorPrefix = computed(() => isComment.value ? 'comment-' : 'message-')
 const permissionPrefix = computed(() => isComment.value ? 'blog:comment:' : 'blog:message:')
+
+const targetAnchorId = computed(() => {
+  const hash = route.hash || ''
+  return hash.startsWith(`#${anchorPrefix.value}`) ? hash.slice(1) : ''
+})
+const targetItemId = computed(() => {
+  return targetAnchorId.value ? targetAnchorId.value.slice(anchorPrefix.value.length) : ''
+})
+
+// 若路由携带分页与根回复定位参数，顶层列表自动切到目标页并展开所属回复组。
+watch(
+  () => [route.query.discussionPage, route.query.rootParentId, targetItemId.value, props.parentId],
+  ([rawPage, rawRoot]) => {
+    if (props.parentId) {
+      return
+    }
+    const parsedPage = Number(rawPage)
+    if (Number.isInteger(parsedPage) && parsedPage > 0) {
+      page.value = parsedPage
+    }
+    if (typeof rawRoot === 'string' && rawRoot && !expanded.value.includes(rawRoot)) {
+      expanded.value.push(rawRoot)
+    }
+  },
+  { immediate: true }
+)
 
 // 切换读者或讨论时清空已追加的回复，不能残留上一位读者的私密或待审内容。
 watch(() => [props.kind, props.articleId, props.parentId, session.user?.userId], () => {
-  page.value = 1
-  expanded.value = []
+  if (!props.parentId) {
+    const parsedPage = Number(route.query.discussionPage)
+    page.value = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1
+    expanded.value = typeof route.query.rootParentId === 'string' && route.query.rootParentId
+      ? [route.query.rootParentId]
+      : []
+  } else {
+    page.value = 1
+    expanded.value = []
+  }
   replyData.value = null
   showAll.value = false
   activeContext.value = null
@@ -61,6 +100,42 @@ const rows = computed(() => {
 const visibleRows = computed(() => props.parentId && !showAll.value ? rows.value.slice(0, 3) : rows.value)
 const remaining = computed(() => BigInt(replyData.value?.total || '0') - BigInt(visibleRows.value.length))
 watch(() => listing.data?.total, (total) => emit('total', total || '0'))
+
+/** 在目标回复组中继续翻页，找到目标后展开并滚动高亮。 */
+watch(
+  () => [rows.value, targetItemId.value],
+  async ([list, targetId]) => {
+    if (!targetId || !list.length) {
+      return
+    }
+    const matched = list.some((item) => item.id === targetId)
+    if (!matched) {
+      const replies = replyData.value
+      if (props.parentId && props.parentId === route.query.rootParentId
+        && replies && replies.page === page.value && BigInt(replies.page) < BigInt(replies.totalPages)) {
+        page.value = replies.page + 1
+      }
+      return
+    }
+    if (props.parentId && !showAll.value) {
+      showAll.value = true
+    }
+    await nextTick()
+    const el = document.getElementById(`${anchorPrefix.value}${targetId}`)
+    if (!el) {
+      return
+    }
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    highlightedId.value = targetId
+    clearTimeout(highlightTimer)
+    highlightTimer = setTimeout(() => {
+      highlightedId.value = ''
+    }, 2400)
+  },
+  { flush: 'post' }
+)
+
+onBeforeUnmount(() => clearTimeout(highlightTimer))
 const getInitial = (name) => name?.slice(0, 1) || '叶'
 const isOwn = (item) => session.user && item.author?.userId === session.user.userId
 
@@ -114,8 +189,12 @@ async function doDelete(item) {
     <p v-if="error" role="alert">{{ error }}</p>
     <div
       v-for="c in visibleRows"
+      :id="anchorPrefix + c.id"
       :key="c.id"
-      :class="[isComment ? 'comment-item' : 'msg-item-card', { 'discussion-reply': parentId }]"
+      :class="[
+        isComment ? 'comment-item' : 'msg-item-card',
+        { 'discussion-reply': parentId, 'is-targeted': highlightedId === c.id },
+      ]"
     >
       <div :class="itemPrefix + '-avatar'">
         <img v-if="c.avatar" :src="c.avatar" :class="itemPrefix + '-avatar-img'" alt="" loading="lazy" />

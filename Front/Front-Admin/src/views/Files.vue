@@ -94,11 +94,15 @@ async function openDetail(fileId) {
 async function loadPreview() {
   const { signal } = controller
   const { mimeType, previewUrl: contentPath } = detail.value
-  previewLoading.value = true
   previewError.value = ''
+  if (mimeType.startsWith('audio/')) {
+    previewLoading.value = false
+    return
+  }
+  previewLoading.value = true
   try {
     const file = await getFile(contentPath, signal)
-    if (mimeType.startsWith('image/') || mimeType.startsWith('audio/')) {
+    if (mimeType.startsWith('image/')) {
       if (!signal.aborted) {
         previewUrl.value = URL.createObjectURL(file)
       }
@@ -245,6 +249,9 @@ const batchActions = computed(() => {
     <el-card shadow="never">
       <div class="card-heading">
         <h2>文件列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
       </div>
             <BatchActions
         ref="batch" resource="/admin/files" id-key="fileId"
@@ -317,8 +324,11 @@ const batchActions = computed(() => {
           :src="previewUrl" :alt="detail.originalName" class="file-preview"
         />
         <audio
-          v-else-if="previewUrl && detail.mimeType.startsWith('audio/')"
-          :src="previewUrl" :aria-label="detail.originalName" controls
+          v-else-if="detailVisible && detail.mimeType.startsWith('audio/')"
+          :src="`/api/v1/admin/files/${detail.fileId}/content`"
+          :aria-label="detail.originalName"
+          controls preload="metadata"
+          @error="previewError = '播放失败，请检查音频文件或访问权限。'"
         />
         <pre v-else class="lyric-preview">{{ previewText }}</pre>
       </template>

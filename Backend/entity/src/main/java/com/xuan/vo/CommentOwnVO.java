@@ -14,6 +14,10 @@ public class CommentOwnVO {
     private Long articleId;
     private Long userId;
     private Long parentId;
+    private String articleTitle;
+    private String articleSlug;
+    private Long rootParentId;
+    private Integer page;
     private String content;
     private String location;
     private String userAgentOs;

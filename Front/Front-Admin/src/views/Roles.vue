@@ -179,6 +179,12 @@ async function remove(row) {
 }
 onMounted(load)
 
+/** 切换顶部角色状态分栏并立即查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  load(true)
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -212,6 +218,20 @@ const batchActions = computed(() => {
         创建角色
       </el-button>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部角色' },
+          { value: 1, label: '已启用' },
+          { value: 0, label: '已禁用' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" @submit.prevent="load(true)">
         <el-input
@@ -221,17 +241,18 @@ const batchActions = computed(() => {
           maxlength="100"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="角色状态" placeholder="全部状态" clearable>
-          <el-option label="已启用" :value="1" />
-          <el-option label="已禁用" :value="0" />
-        </el-select>
         <el-button native-type="submit" type="primary">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
     </el-card>
     <RequestError :message="error" @retry="load()" />
     <el-card shadow="never">
-      <div class="card-heading"><h2>角色列表</h2></div>
+      <div class="card-heading">
+        <h2>角色列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
+      </div>
             <BatchActions
         ref="batch" resource="/admin/roles" id-key="roleId"
         :rows="rows" :table="batchTable" :actions="batchActions"

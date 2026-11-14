@@ -7,11 +7,12 @@ import { adminArticleUrl } from '../editorPreview.mjs'
 const props = defineProps({
   src: { type: String, default: '' },
   alt: { type: String, default: '图片预览' },
+  compact: { type: Boolean, default: false },
 })
 const imageUrl = ref('')
 const error = ref('')
 const source = computed(() => {
-  const value = props.src.trim()
+  const value = (props.src || '').trim()
   const path = adminArticleUrl(value).replace(
     /^(?:https?:\/\/[^/]+)?\/api\/v1\/blog\/music\/files\/([1-9]\d*)\/content$/,
     '/api/v1/admin/files/$1/content',
@@ -59,14 +60,16 @@ watch(source, async (value, previous, onCleanup) => {
 </script>
 
 <template>
-  <span v-if="source" class="image-preview">
+  <span v-if="source" :class="['image-preview', { 'is-compact': compact }]">
     <img
       v-if="imageUrl && !error"
       :src="imageUrl"
       :alt="alt"
       @error="error = '图片加载失败，请检查地址或访问权限。'"
     />
-    <span v-else role="status">{{ error || '图片加载中…' }}</span>
+    <span v-else role="status" :aria-label="error || '图片加载中…'" :title="error || '图片加载中…'">
+      {{ compact ? (error ? '!' : '…') : error || '图片加载中…' }}
+    </span>
   </span>
 </template>
 
@@ -86,6 +89,15 @@ watch(source, async (value, previous, onCleanup) => {
   font-size: 12px;
   text-align: center;
   overflow-wrap: anywhere;
+}
+
+.image-preview.is-compact {
+  display: inline-flex;
+  vertical-align: middle;
+  width: 36px;
+  height: 36px;
+  padding: 2px;
+  border-radius: 6px;
 }
 
 .image-preview img {

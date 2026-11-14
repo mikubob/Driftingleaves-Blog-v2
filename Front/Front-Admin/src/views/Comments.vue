@@ -7,8 +7,6 @@ import {
   ElInput,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
 } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
@@ -16,8 +14,6 @@ import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
 import { request } from '../api.js'
 import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
@@ -40,6 +36,13 @@ function search() {
 function reset() {
   Object.assign(filters, initialFilters)
   return list.reset()
+}
+
+/** 切换顶部审核状态分栏并同步筛选条件后查询第一页。 */
+function switchStatus(status) {
+  filters.status = status
+  Object.assign(list.filters, filters)
+  return load(true)
 }
 
 const detail = ref(null)
@@ -131,6 +134,21 @@ const batchActions = computed(() => {
         <h1>评论管理</h1>
       </div>
     </div>
+    <div class="page-tabs">
+      <button
+        v-for="tab in [
+          { value: '', label: '全部评论' },
+          { value: 0, label: '待审核' },
+          { value: 1, label: '已通过' },
+          { value: 2, label: '已驳回' },
+        ]"
+        :key="String(tab.value)"
+        :class="{ active: filters.status === tab.value }"
+        @click="switchStatus(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
     <el-card class="filter-card" shadow="never">
       <form class="filter-form" aria-label="筛选评论" @submit.prevent="search">
         <el-input
@@ -147,11 +165,6 @@ const batchActions = computed(() => {
           pattern="[1-9][0-9]{0,18}"
           clearable
         />
-        <el-select v-model="filters.status" aria-label="审核状态" placeholder="全部状态" clearable>
-          <el-option label="待审核" :value="0" />
-          <el-option label="已通过" :value="1" />
-          <el-option label="已驳回" :value="2" />
-        </el-select>
         <el-button native-type="submit" type="primary" :disabled="table?.disabled">查询</el-button>
         <el-button :disabled="table?.disabled" @click="reset">重置</el-button>
       </form>

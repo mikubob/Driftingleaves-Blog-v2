@@ -37,6 +37,7 @@ import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
+import AdminIcon from '../components/AdminIcon.vue'
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -154,13 +155,20 @@ const batchActions = computed(() => {
           clearable
           pattern="[1-9][0-9]{0,18}"
         />
-        <el-input
+        <el-select
           v-model="filters.operationType"
           aria-label="操作类型"
-          placeholder="操作类型"
-          maxlength="32"
+          placeholder="全部操作类型"
+          filterable
           clearable
-        />
+        >
+          <el-option
+            v-for="(item, typeKey) in operationTypes"
+            :key="typeKey"
+            :label="item.label"
+            :value="typeKey"
+          />
+        </el-select>
         <el-input
           v-model="filters.operationTarget"
           aria-label="操作目标"
@@ -200,7 +208,12 @@ const batchActions = computed(() => {
     </el-card>
     <RequestError :message="error" @retry="load()" />
     <el-card shadow="never">
-      <div class="card-heading"><h2>操作日志列表</h2></div>
+      <div class="card-heading">
+        <h2>操作日志列表</h2>
+        <el-button text aria-label="刷新列表" @click="load()">
+          <AdminIcon name="refresh" />
+        </el-button>
+      </div>
             <BatchActions
         ref="batch" resource="/admin/operation-logs" id-key="logId"
         :rows="rows" :table="batchTable" :actions="batchActions"

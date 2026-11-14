@@ -8,6 +8,7 @@ import com.xuan.model.CommentRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -23,10 +24,10 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
     List<CommentRow> publicRows(@Param("article") long article,
             @Param("ids") List<Long> ids, @Param("replies") boolean replies);
 
-    /** 本人只按 user 筛选；后台的 author 是本次 query 独立的文章作者范围。 */
+    /** 查询本人评论，文章标题和 slug 仅在文章公开时返回。 */
     IPage<CommentRow> commentPage(IPage<CommentRow> page, @Param("article") Long article,
             @Param("user") Long user, @Param("status") Integer status,
-            @Param("author") Long author);
+            @Param("now") LocalDateTime now);
 
     /** 分页查询后台评论及直接回复标记；parent为0查根节点，null保留平铺，author始终限定文章范围。 */
     IPage<CommentRow> adminPage(IPage<CommentRow> page, @Param("article") Long article,

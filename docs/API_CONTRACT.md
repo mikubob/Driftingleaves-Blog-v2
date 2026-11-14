@@ -497,6 +497,8 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 公开评论采用整组分页：GET comments 不传parentId时仅根节点，按时间及ID倒序；传parentId时查询其全部可见后代，按时间及ID正序，返回相同Page。parentId必须是该文章的可见节点，其他情况404。响应保留真实直接parentId，replyTarget给出直接目标昵称及最多120字符原文，replyable要求当前记录及所有祖先通过审核。siteAuthor/siteAdmin按启用用户的有效角色展示，管理员同时显示本站作者。
 
+本人评论列表补充 `articleTitle`、`articleSlug`、`rootParentId` 和 `page`。文章未达到 PUBLIC 条件时标题、slug 和页码均为 null。根评论的 `rootParentId` 为 null，回复返回根评论的字符串 ID。页码按当前登录用户可见的根评论倒序列表每页 10 条计算，目标未通过审核或父链不可见时为 null。
+
 创建须同时满足：账号/权限有效、文章 PUBLIC、站点comment.enabled=true、文章allowComment=1；关闭评论返回409/STATE_CONFLICT，非PUBLIC文章返回404。parentId非null时要求同篇文章、节点status=1且祖先可见；跨文章/不存在父节点404，已变成不可回复状态409。已关闭评论禁止新增，不隐藏已有可见评论。待审或驳回评论无公开回复入口。parentId/articleId/userId创建后不可修改，故不能移动评论或构造环。
 
 评论发表后不可修改，待审、通过和驳回均相同。原本人评论PUT接口已移除，详情路径PUT返回405。本人详情保留X-Revision响应头且不要求额外查询权限，非本人404；文章下架后仍可查询和删除。后台审核只改变状态，不修改原文。
@@ -585,6 +587,8 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 | `MessagePrivate` | `messageId`:ID（留言ID）；`parentId`:ID&#124;null（直接回复目标；根留言为null）；`author`:object&#124;null（当前用户公开资料）；`content`:string（原文）；`htmlContent`:string（安全渲染HTML；纯文本转义并保留换行）；`contentFormat`:integer（0纯文本 1Markdown）；`isSecret`:integer（0公开 1悄悄话）；`status`:integer（0待审核 1通过 2驳回）；`editedAt`:Time&#124;null（历史作者编辑时间，新留言为null）；`isOwn`:boolean（按当前会话计算，匿名恒为false）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC）；`notifyReply`:integer（0不通知 1请求回复通知；不是邮箱验证凭据）；`location`:string&#124;null（发布时从可信IP解析的省市或国家；未知为null）；`userAgentOs`:string&#124;null（发布时的操作系统类型；未知、未知为null）；`userAgentBrowser`:string&#124;null（发布时的浏览器类型；未知、未知为null；不公开原始UA/IP） |
 
 MessagePublic另含replyCount:string，表示当前读者可见的全部后代数量，无回复为"0"，与展开该留言后的分页total一致；replyTarget给出直接目标昵称及最多120字符原文，replyable要求自身和全部祖先通过审核，siteAuthor/siteAdmin按有效角色展示。MessagePrivate不新增公开计数；后台列表、详情及对话补充replyTarget和siteAuthor/siteAdmin，本人及写入响应分别为null和false，不扩大本人读取范围。
+
+本人留言列表补充 `rootParentId` 和 `page`。根留言的 `rootParentId` 为 null，回复返回根留言的字符串 ID。页码按当前登录用户可见的根留言正序列表每页 10 条计算，目标未通过审核或父链不可见时为 null。其他使用 MessagePrivate 的接口中两项均为 null。
 
 留言状态0待审核、1通过、2驳回，与评论一致。前台创建根留言和回复时，有效admin角色直接通过，其余按message.reviewRequired决定；免审不绕过发表权限、开关、私密范围和父链检查。公开查询使用parentId整组分页，每页1..50；默认根节点，提供parentId时合并其全部可见后代，根及回复按时间和ID正序，不一次返回整棵树正文。父关系创建后不可改，父链不可有环；rootId、parentNickname和管理员标志不作为可写字段或数据库副本。author仅公开昵称/头像，不返回登录邮箱、IP、UA。isOwn只由有效会话与原user_id计算，不能作为服务端唯一授权依据。
 
