@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.annotation.PublicCacheRead;
 import com.xuan.annotation.RateLimit;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.DiscussionConversationQueryDTO;
@@ -44,6 +45,9 @@ import com.xuan.vo.DiscussionReplyTargetVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -70,6 +74,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> implements IMessageService {
 
+    private static final MessagePublicQueryDTO ANONYMOUS_HOME = new MessagePublicQueryDTO(1, 10, null);
+
     private final MessageMapper messages;
     private final SiteConfigMapper configs;
     private final UserMapper users;
@@ -79,12 +85,29 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final SubscriptionNotifier notifications;
     private final JsonMapper json;
     private final IpLocationResolver locations;
+    private final ObjectProvider<IMessageService> self;
 
     /** 分页查询可见根留言或整组回复。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @PublicCacheRead("messages")
     public PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query) {
         Long viewer = sessions.currentToken() == null ? null : requireMember(null);
+        if (viewer == null && ANONYMOUS_HOME.equals(query)) {
+            return self.getObject().cachedAnonymousHome();
+        }
+        return loadPublicMessages(query, viewer);
+    }
+
+    /** 只用匿名身份查询首页，避免把当前用户可见的留言写入公共缓存。 */
+    @Override
+    @Cacheable(cacheNames = "messages", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)")
+    public PageResult<MessagePublicVO> cachedAnonymousHome() {
+        return loadPublicMessages(ANONYMOUS_HOME, null);
+    }
+
+    /** 按读者身份筛选留言及回复，再分页组装结果。 */
+    private PageResult<MessagePublicVO> loadPublicMessages(MessagePublicQueryDTO query, Long viewer) {
         Long parent = IdUtils.parse(query.parentId());
         List<MessageNode> nodes = messages.nodes();
         Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
@@ -137,6 +160,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     /** 发表留言。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "messages", allEntries = true)
     public MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent) {
         // 1. 锁住用户和留言开关，每次等待结束后重新检查原会话与权限。
         long actor = requireMember("create");
@@ -213,6 +237,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     /** 根据id删除本人留言及全部子回复。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "messages", allEntries = true)
     public void deleteOwn(long id) {
         long actor = requireMember("deleteOwn");
         users.lockById(actor);
@@ -282,6 +307,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
     @RateLimit(value = "message-reply", limit = 10, dimension = RateLimit.Dimension.USER)
+    @CacheEvict(cacheNames = "messages", allEntries = true)
     public MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent) {
         // 1. 后台回复也要检查开关和全部上级留言，管理员身份不能放宽私密范围。
         long actor = requireAdmin("review");
@@ -529,6 +555,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:message", permission = "blog:message:review")
+    @CacheEvict(cacheNames = "messages", allEntries = true)
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
         Set<Long> selected = new HashSet<>();
@@ -571,6 +598,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:message", permission = "blog:message:moderate")
+    @CacheEvict(cacheNames = "messages", allEntries = true)
     public void deleteBatch(List<String> ids) {
         var sorted = BatchUtils.ids(ids);
         for (long id : sorted) {

@@ -135,6 +135,14 @@
         <include refid="publicCondition"/>
     </select>
 
+    <select id="publicCounts" resultType="com.xuan.model.ArticleRow">
+        SELECT a.article_id, a.view_count,
+        (SELECT COUNT(*) FROM blog_article_like l WHERE l.article_id = a.article_id) AS like_count
+        FROM blog_article a
+        WHERE <include refid="publicCondition"/> AND a.article_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
+    </select>
+
     <!-- 正文和文章资料要在同一个只读事务或加锁事务中读取。 -->
     <select id="content" resultType="com.xuan.entity.BlogArticleContent">
         SELECT * FROM blog_article_content WHERE article_id = #{id}
@@ -269,5 +277,11 @@
     <select id="commentNodes" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
         SELECT comment_id, user_id, parent_id, status FROM blog_comment WHERE article_id = #{id}
         ORDER BY create_time, comment_id
+    </select>
+
+    <select id="commentNodesByArticles" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT article_id, comment_id, parent_id, status
+        FROM blog_comment WHERE article_id IN
+        <foreach collection="ids" item="id" open="(" separator="," close=")">#{id}</foreach>
     </select>
 </mapper>

@@ -65,6 +65,7 @@ import java.time.YearMonth;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -108,17 +109,42 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @PublicCacheRead({"articles", "search"})
     public PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
-        List<ArticlePublicVO> records = cached.records().stream()
-                .map(item -> BeanUtil.copyProperties(item, ArticlePublicVO.class)).toList();
-        PageResult<ArticlePublicVO> page = new PageResult<>(cached.page(), cached.pageSize(), cached.total(), cached.totalPages(), records);
-        for (ArticlePublicVO value : page.records()) {
-            ArticleRow current = articles.publicById(value.getArticleId(), now());
-            if (current == null) {
-                return loadPublicArticles(query);
+        if (cached.records().isEmpty()) {
+            return cached;
+        }
+
+        List<Long> ids = cached.records().stream().map(ArticlePublicVO::getArticleId).toList();
+        Map<Long, ArticleRow> counts = new HashMap<>();
+        for (ArticleRow row : articles.publicCounts(ids, now())) {
+            counts.put(row.getArticleId(), row);
+        }
+
+        PageResult<ArticlePublicVO> page;
+        if (counts.size() != ids.size()) {
+            // 有文章已下架，重新分页以同步列表和总数。
+            page = loadPublicArticles(query);
+            ids = page.records().stream().map(ArticlePublicVO::getArticleId).toList();
+        } else {
+            List<ArticlePublicVO> records = new ArrayList<>();
+            for (ArticlePublicVO item : cached.records()) {
+                ArticlePublicVO value = BeanUtil.copyProperties(item, ArticlePublicVO.class);
+                ArticleRow current = counts.get(item.getArticleId());
+                value.setViewCount(current.getViewCount());
+                value.setLikeCount(current.getLikeCount());
+                records.add(value);
             }
-            value.setViewCount(current.getViewCount());
-            value.setLikeCount(current.getLikeCount());
-            value.setCommentCount(commentCount(current.getArticleId()));
+            page = new PageResult<>(cached.page(), cached.pageSize(), cached.total(), cached.totalPages(), List.copyOf(records));
+        }
+        if (ids.isEmpty()) {
+            return page;
+        }
+
+        Map<Long, List<CommentNode>> comments = new HashMap<>();
+        for (CommentNode node : articles.commentNodesByArticles(ids)) {
+            comments.computeIfAbsent(node.getArticleId(), id -> new ArrayList<>()).add(node);
+        }
+        for (ArticlePublicVO value : page.records()) {
+            value.setCommentCount(commentCount(comments.getOrDefault(value.getArticleId(), List.of())));
         }
         return page;
     }
@@ -134,12 +160,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         for (ArticlePublicVO value : page.records()) {
             value.setViewCount(null);
             value.setLikeCount(null);
-            value.setCommentCount(null);
         }
         return page;
     }
 
-    /** 直接从数据库分页查询公开文章，包含当前浏览、点赞和评论数。 */
+    /** 直接从数据库分页查询公开文章，评论数由列表入口按页补充。 */
     private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
         YearMonth month = query.month() == null ? null : YearMonth.parse(query.month());
         ArticleFilter filter = new ArticleFilter(true, null, query.keyword(), IdUtils.parse(query.categoryId()),
@@ -176,7 +201,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
         return PageResult.from(articles.likedPage(new Page<>(query.page(), query.pageSize()), actor, now())
-                .convert(row -> new LikedArticleVO(row.getLikedAt(), publicView(row, new ArticlePublicVO()))));
+                .convert(row -> {
+                    ArticlePublicVO value = publicView(row, new ArticlePublicVO());
+                    value.setCommentCount(commentCount(row.getArticleId()));
+                    return new LikedArticleVO(row.getLikedAt(), value);
+                }));
     }
 
     /**
@@ -754,7 +783,6 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setAllowComment(row.getAllowComment());
         value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
-        value.setCommentCount(commentCount(row.getArticleId()));
         value.setPublishTime(row.getPublishTime());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
@@ -803,7 +831,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @return 不含待审、驳回及隐藏后代的真实明细数量，无额外缓存或SQL计数列
      */
     private long commentCount(long id) {
-        List<CommentNode> nodes = articles.commentNodes(id);
+        return commentCount(articles.commentNodes(id));
+    }
+
+    /** 按单篇文章的评论链统计公开评论数。 */
+    private long commentCount(List<CommentNode> nodes) {
         Set<Long> visible = CommentVisibilityPolicy.visible(nodes);
         return nodes.stream().filter(node -> node.getStatus() == 1 && visible.contains(node.getCommentId())).count();
     }

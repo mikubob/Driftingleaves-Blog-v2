@@ -76,6 +76,9 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     /** 评论和点赞也复用文章 PUBLIC 条件；写入先用 scoped 锁文章，再按最新状态查这里。 */
     ArticleRow publicById(@Param("id") long id, @Param("now") LocalDateTime now);
 
+    /** 批量复核公开状态并读取当前阅读量和点赞数，调用方只传非空文章列表。 */
+    List<ArticleRow> publicCounts(@Param("ids") List<Long> ids, @Param("now") LocalDateTime now);
+
     /**
      * 正文要和文章资料在同一个只读事务或行锁事务中读取，不能只靠 HTML 缓存判断附件引用。
      *
@@ -231,6 +234,9 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      */
     List<CommentNode> commentNodes(@Param("id") long id);
 
+    /** 批量读取本页文章的评论链，调用方按文章分组检查可见性。 */
+    List<CommentNode> commentNodesByArticles(@Param("ids") List<Long> ids);
+
     /**
      * 可见性检查只需作者id、父子关系和状态，不带正文或私人资料。
      */
@@ -238,6 +244,7 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     class CommentNode {
 
         private Long commentId;
+        private Long articleId;
         private Long userId;
         private Long parentId;
         private Integer status;

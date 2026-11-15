@@ -373,7 +373,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @CacheEvict(cacheNames = "comments", allEntries = true)
+    @CacheEvict(cacheNames = {"comments", "messages"}, allEntries = true)
     @OperationLog(type = "batch-status", target = "sys:role", permission = "sys:role:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         if (users.lockAdminGuard() == null) {

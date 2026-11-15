@@ -26,6 +26,9 @@ public interface IMessageService extends IService<BlogMessage> {
     /** 分页查询根留言或整组回复，未登录和已登录用户都只统计自己能看到的留言。 */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
 
+    /** 查询匿名留言首页，通过 Spring 代理读取缓存。 */
+    PageResult<MessagePublicVO> cachedAnonymousHome();
+
     /** 发表留言，作者取当前登录用户，有效管理员免审，其他用户按配置审核；私密性受全部上级限制，只保存发布时的属地和设备类型。 */
     MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent);
 

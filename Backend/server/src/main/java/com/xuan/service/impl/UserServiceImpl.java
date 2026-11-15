@@ -170,7 +170,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             @CacheEvict(cacheNames = "articles", allEntries = true),
             @CacheEvict(cacheNames = "search", allEntries = true),
             @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
+            @CacheEvict(cacheNames = "comments", allEntries = true),
+            @CacheEvict(cacheNames = "messages", allEntries = true)
     })
     public AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision) {
         // 1. 先锁保护点，再按 ID 锁用户，然后重查身份、权限和版本，管理入口的检查才不会并发漏掉。
@@ -202,7 +203,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @CacheEvict(cacheNames = "comments", allEntries = true)
+    @CacheEvict(cacheNames = {"comments", "messages"}, allEntries = true)
     @OperationLog(type = "grant", target = "sys:user", permission = "sys:user:assignRole", targetIdArgument = 0)
     public AdminUserProfileVO adminAssignRoles(long userId, UserRolesDTO request, String revision) {
         // 1. 先拿固定保护锁和升序用户锁，再查当前权限及整体版本。
@@ -245,7 +246,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             @CacheEvict(cacheNames = "articles", allEntries = true),
             @CacheEvict(cacheNames = "search", allEntries = true),
             @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
+            @CacheEvict(cacheNames = "comments", allEntries = true),
+            @CacheEvict(cacheNames = "messages", allEntries = true)
     })
     public BatchVersionsVO adminSetStatusBatch(List<BatchItemDTO> items, int status) {
         Map<Long, SysUser> targets = lockAdminTargets(items, "sys:user:update");
@@ -566,7 +568,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             @CacheEvict(cacheNames = "articles", allEntries = true),
             @CacheEvict(cacheNames = "search", allEntries = true),
             @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
+            @CacheEvict(cacheNames = "comments", allEntries = true),
+            @CacheEvict(cacheNames = "messages", allEntries = true)
     })
     public UserProfileVO patch(ProfilePatchDTO request, String revision) {
         // 1. 先确认本人身份并锁住用户，再读取这次写入要检查的版本。

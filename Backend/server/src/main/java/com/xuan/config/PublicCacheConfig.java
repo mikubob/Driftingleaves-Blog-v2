@@ -43,6 +43,7 @@ public class PublicCacheConfig {
         configs.put("articleDetail", defaults.entryTtl(Duration.ofMinutes(15)));
         configs.put("rankings", defaults.entryTtl(Duration.ofSeconds(60)));
         configs.put("comments", defaults.entryTtl(Duration.ofSeconds(30)));
+        configs.put("messages", defaults.entryTtl(Duration.ofSeconds(30)));
         configs.put("statistics", defaults.entryTtl(Duration.ofMinutes(5)));
         // 每次启动都切换缓存版本，避免继续读取地址、渲染规则变更前或恢复出来的旧数据；保留已有写入保护标记。
         configs.keySet().forEach(store::invalidate);
