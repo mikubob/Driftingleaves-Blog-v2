@@ -16,8 +16,6 @@ import com.xuan.controller.blog.MessageController;
 import com.xuan.controller.blog.MyMessageController;
 import com.xuan.controller.blog.MySubscriptionController;
 import com.xuan.controller.blog.OnlineController;
-import com.xuan.controller.publicsite.PublicHomeProfileController;
-import com.xuan.controller.publicsite.PublicSocialController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -32,8 +30,9 @@ import java.util.Set;
         ExperienceController.class,
         SkillController.class,
         MusicController.class,
-        PublicHomeProfileController.class,
-        PublicSocialController.class,
+        com.xuan.controller.blog.PublicHomeProfileController.class, com.xuan.controller.blog.PublicSocialController.class,
+        com.xuan.controller.home.PublicHomeProfileController.class, com.xuan.controller.home.PublicSocialController.class,
+        com.xuan.controller.cv.PublicHomeProfileController.class, com.xuan.controller.cv.PublicSocialController.class,
         com.xuan.controller.cv.ExperienceController.class,
         com.xuan.controller.cv.SkillController.class,
         com.xuan.controller.blog.MusicController.class, OperationLogController.class,

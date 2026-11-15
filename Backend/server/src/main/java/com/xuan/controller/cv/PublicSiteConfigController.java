@@ -1,4 +1,4 @@
-package com.xuan.controller.publicsite;
+package com.xuan.controller.cv;
 
 import com.xuan.result.Result;
 import com.xuan.service.ISiteConfigService;
@@ -11,10 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 公开站点配置接口，各站点共用，只返回允许公开的 site 配置，不返回审核设置。
+ * 公开站点配置接口，只返回允许公开的 site 配置，不返回审核设置。
  */
-@RestController("publicSiteConfigController")
-@RequestMapping({"/blog/configs", "/home/configs", "/cv/configs"})
+@RestController("cvPublicSiteConfigController")
+@RequestMapping("/cv/configs")
 @RequiredArgsConstructor
 public class PublicSiteConfigController {
 

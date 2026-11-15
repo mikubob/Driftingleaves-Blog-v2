@@ -7,10 +7,13 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { request } from '../api.js'
 import RequestError from './RequestError.vue'
 
-/** 共用分类、标签和友链的详情加载，调用页面提供各自展示字段。 */
+/** 加载资源详情并显示弹窗，调用方提供展示字段。 */
 const props = defineProps({
   path: { type: String, required: true },
   title: { type: String, required: true },
+  width: { type: String, default: '640px' },
+  labelWidth: { type: String, default: '110px' },
+  loadingText: { type: String, default: '正在加载详情…' },
 })
 defineEmits(['close'])
 const detail = ref(null)
@@ -42,9 +45,14 @@ onBeforeUnmount(() => controller.abort())
 </script>
 
 <template>
-  <el-dialog :model-value="true" :title="title" width="640px" @close="$emit('close')">
-    <div v-loading="loading" class="resource-detail" :aria-busy="loading">
-      <p v-if="loading" role="status" class="muted-text">正在加载详情…</p>
+  <el-dialog :model-value="true" :title="title" :width="width" @close="$emit('close')">
+    <div
+      v-loading="loading"
+      class="resource-detail"
+      :style="{ '--detail-label-width': labelWidth }"
+      :aria-busy="loading"
+    >
+      <p v-if="loading" role="status" class="muted-text">{{ loadingText }}</p>
       <RequestError :message="error" @retry="load" />
       <el-descriptions v-if="detail" :column="1" border>
         <slot :detail="detail" />
@@ -65,7 +73,7 @@ onBeforeUnmount(() => controller.abort())
   table-layout: fixed;
 }
 .resource-detail :deep(.el-descriptions__label) {
-  width: 110px;
+  width: var(--detail-label-width);
 }
 .resource-detail :deep(.detail-text) {
   margin: 0;

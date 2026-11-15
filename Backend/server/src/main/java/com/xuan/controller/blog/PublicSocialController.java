@@ -1,4 +1,4 @@
-package com.xuan.controller.publicsite;
+package com.xuan.controller.blog;
 
 import com.xuan.result.Result;
 import com.xuan.service.ISocialService;
@@ -11,10 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 公开社交链接接口，各站点共用，只返回启用的记录。
+ * 公开社交链接接口，只返回启用的记录。
  */
-@RestController("publicSocialController")
-@RequestMapping({"/blog/social-links", "/home/social-links", "/cv/social-links"})
+@RestController("blogPublicSocialController")
+@RequestMapping("/blog/social-links")
 @RequiredArgsConstructor
 public class PublicSocialController {
 

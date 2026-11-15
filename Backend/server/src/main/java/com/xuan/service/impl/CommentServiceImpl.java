@@ -300,44 +300,17 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         Long author = requireAdmin("query");
         var target = requireComment(comments.scoped(id, author, null, false));
         List<CommentNode> nodes = articles.commentNodes(target.getArticleId());
-        Map<Long, CommentNode> byId = new HashMap<>();
-        Map<Long, List<Long>> children = new HashMap<>();
-        for (CommentNode node : nodes) {
-            byId.put(node.getCommentId(), node);
-            children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getCommentId());
+        var page = DiscussionLocationUtils.conversationPage(
+                id, nodes, CommentNode::getCommentId, CommentNode::getParentId, query);
+        if (page == null) {
+            throw missing();
         }
 
-        // 先找到主记录，缺失父节点或循环不能拼成另一组对话。
-        long root = id;
-        Set<Long> ancestors = new HashSet<>();
-        while (true) {
-            CommentNode node = byId.get(root);
-            if (node == null || !ancestors.add(root)) {
-                throw missing();
-            }
-            if (node.getParentId() == null) {
-                break;
-            }
-            root = node.getParentId();
-        }
-        Set<Long> selected = new HashSet<>();
-        List<Long> descendants = new ArrayList<>(children.getOrDefault(root, List.of()));
-        for (int index = 0; index < descendants.size(); index++) {
-            long current = descendants.get(index);
-            if (selected.add(current)) {
-                descendants.addAll(children.getOrDefault(current, List.of()));
-            }
-        }
-        // nodes已按时间和id正序排列，正文分页前先确定选中记录的位置。
-        List<Long> ordered = nodes.stream().map(CommentNode::getCommentId).filter(selected::contains).toList();
-        int page = query.page() == null ? Math.max(0, ordered.indexOf(id)) / query.pageSize() + 1 : query.page();
-        int from = Math.min(ordered.size(), (page - 1) * query.pageSize());
-        List<Long> ids = ordered.subList(from, Math.min(ordered.size(), from + query.pageSize()));
-        List<CommentAdminVO> records = ids.isEmpty() ? List.of()
-                : comments.publicRows(target.getArticleId(), ids, true).stream().map(this::adminView).toList();
-        return new DiscussionConversationVO<>(adminView(requireComment(comments.scoped(root, author, null, false))),
-                page, query.pageSize(), Integer.toString(ordered.size()),
-                Long.toString((ordered.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
+        List<Long> replies = page.replyIds();
+        List<CommentAdminVO> records = replies.isEmpty() ? List.of()
+                : comments.publicRows(target.getArticleId(), replies, true).stream().map(this::adminView).toList();
+        return new DiscussionConversationVO<>(adminView(requireComment(comments.scoped(page.rootId(), author, null, false))),
+                page.page(), query.pageSize(), page.total(), page.totalPages(), records);
     }
 
     /** 根据id查询评论详情及版本，在同一个只读事务中读取，非公开文章的评论也能查询。 */

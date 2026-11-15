@@ -1,4 +1,4 @@
-package com.xuan.controller.publicsite;
+package com.xuan.controller.cv;
 
 import com.xuan.result.Result;
 import com.xuan.service.IHomeProfileService;
@@ -9,10 +9,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 站点主人公开资料接口，各站点共用，不返回账号id和登录邮箱。
+ * 站点主人公开资料接口，不返回账号id和登录邮箱。
  */
-@RestController("publicHomeProfileController")
-@RequestMapping({"/blog/profile", "/home/profile", "/cv/profile"})
+@RestController("cvPublicHomeProfileController")
+@RequestMapping("/cv/profile")
 @RequiredArgsConstructor
 public class PublicHomeProfileController {
 

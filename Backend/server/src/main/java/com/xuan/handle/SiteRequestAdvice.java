@@ -2,7 +2,6 @@ package com.xuan.handle;
 
 import com.xuan.controller.admin.SiteConfigController;
 import com.xuan.controller.blog.FriendLinkController;
-import com.xuan.controller.publicsite.PublicSiteConfigController;
 import com.xuan.exception.BusinessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.ControllerAdvice;
@@ -13,7 +12,10 @@ import java.util.Set;
 
 /** 检查站点接口参数，拒绝未声明、重复和空参数，包括多余的状态或身份字段。 */
 @ControllerAdvice(assignableTypes = {FriendLinkController.class,
-        PublicSiteConfigController.class, com.xuan.controller.admin.FriendLinkController.class,
+        com.xuan.controller.blog.PublicSiteConfigController.class,
+        com.xuan.controller.home.PublicSiteConfigController.class,
+        com.xuan.controller.cv.PublicSiteConfigController.class,
+        com.xuan.controller.admin.FriendLinkController.class,
         SiteConfigController.class})
 public class SiteRequestAdvice {
 
