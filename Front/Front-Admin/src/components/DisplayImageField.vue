@@ -10,6 +10,7 @@ import ImagePreview from './ImagePreview.vue'
 /** 编辑展示图片地址，上传成功后自动填写并预览。 */
 const props = defineProps({
   label: { type: String, required: true },
+  usage: { type: String, required: true },
   type: { type: String, default: 'url' },
   disabled: Boolean,
 })
@@ -22,7 +23,7 @@ async function upload(file) {
   }
   uploading.value = true
   try {
-    url.value = await uploadDisplayImage(file)
+    url.value = await uploadDisplayImage(file, props.usage)
   } catch (failure) {
     ElMessage.error(failure.message)
   } finally {

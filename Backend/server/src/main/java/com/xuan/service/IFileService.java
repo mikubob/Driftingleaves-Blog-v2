@@ -23,7 +23,7 @@ public interface IFileService extends IService<BlogFile> {
     FileVO detail(long id);
 
     /** 上传文件，先临时保存并检查图片、音频或歌词，存储成功后保存文件资料；事务失败时删除新上传的文件。 */
-    FileVO upload(MultipartFile file, boolean publicImage);
+    FileVO upload(MultipartFile file, boolean publicImage, String usage);
 
     /** 根据id读取原文件，按文件查询权限限定范围，与文章是否公开无关。 */
     FileContent original(long id);

@@ -250,6 +250,7 @@ onBeforeUnmount(() => {
             <small class="muted-text">仅作联系资料，不代表已经验证的订阅邮箱。</small>
           </label>
           <DisplayImageField
+            usage="AVATAR"
             v-model="form.avatar"
             v-model:uploading="uploading"
             label="头像地址"

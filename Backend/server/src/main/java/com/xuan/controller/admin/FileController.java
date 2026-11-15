@@ -56,8 +56,9 @@ public class FileController {
     @PostMapping(value = "/admin/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("blog:file:upload")
     @RateLimit(value = "file-upload", limit = 10, dimension = RateLimit.Dimension.USER)
-    public ResponseEntity<Result<FileVO>> upload(@RequestParam("file") MultipartFile file) {
-        FileVO value = files.upload(file, false);
+    public ResponseEntity<Result<FileVO>> upload(@RequestParam("file") MultipartFile file,
+            @RequestParam(value = "usage", required = false) String usage) {
+        FileVO value = files.upload(file, false, usage);
         return ResponseEntity.created(URI.create("/api/v1/admin/files/" + value.fileId())).body(Result.ok(value));
     }
 
@@ -65,9 +66,10 @@ public class FileController {
     @PostMapping(value = "/admin/files/display-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("blog:file:upload")
     @RateLimit(value = "file-upload", limit = 10, dimension = RateLimit.Dimension.USER)
-    public ResponseEntity<Result<String>> uploadDisplayImage(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<Result<String>> uploadDisplayImage(@RequestParam("file") MultipartFile file,
+            @RequestParam(value = "usage", required = false) String usage) {
         URI publicApi = sites.base("api");
-        FileVO value = files.upload(file, true);
+        FileVO value = files.upload(file, true, usage);
         URI url = URI.create(publicApi + "/blog/display-images/" + value.fileId());
         return ResponseEntity.created(url).body(Result.ok(url.toString()));
     }

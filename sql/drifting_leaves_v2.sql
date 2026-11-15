@@ -277,11 +277,17 @@ CREATE TABLE blog_file (
   bucket VARCHAR(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '' COMMENT '对象存储桶名称，本地存储时为空字符串',
   object_key VARCHAR(512) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '服务端生成的存储键，不使用用户文件名作为路径',
   mime_type VARCHAR(100) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '文件MIME类型，如image/png',
+  upload_usage VARCHAR(24) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'ATTACHMENT'
+    COMMENT '上传时指定的单一用途',
   size_bytes BIGINT UNSIGNED NOT NULL COMMENT '文件大小，单位字节',
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '文件上传记录创建时间',
   PRIMARY KEY (file_id),
   UNIQUE KEY uk_file_storage (storage_type, bucket, object_key),
   KEY idx_file_uploader (uploader_id, create_time DESC),
+  CONSTRAINT ck_file_upload_usage CHECK (upload_usage IN (
+    'ARTICLE_COVER', 'ARTICLE_IMAGE', 'MUSIC_COVER', 'AVATAR', 'LINK_AVATAR',
+    'EXPERIENCE_LOGO', 'ICON', 'IMAGE', 'SONG', 'LYRIC', 'ATTACHMENT'
+  )),
   CONSTRAINT fk_file_uploader FOREIGN KEY (uploader_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB COMMENT='上传文件元数据；私有对象由服务端鉴权后签发地址';
 

@@ -537,8 +537,8 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 | 模型 | 字段与约束 |
 | --- | --- |
-| File | fileId/uploaderId:ID、originalName:string（1..255）、storedName:string（存储生成的文件名）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口）、publicImage:boolean（是否为公开展示图片） |
-| Upload | multipart只有file，单个、非空；不接uploaderId、文件路径、bucket、objectKey、isPublic |
+| File | fileId/uploaderId:ID、originalName:string（1..255）、storedName:string（存储生成的文件名）、mimeType:string（≤100）、sizeBytes:string、storageType:"oss"（默认新上传）或"local"（显式关闭OSS或历史记录）、createTime:Time、previewUrl:string（后台内容接口）、publicImage:boolean（是否为公开展示图片）、usage:string（[用途代码](API_ADMIN.md#response-file)）、usages:string[]（兼容字段，只包含 usage） |
+| Upload | multipart 含一个非空 file 和可选的单个 usage 文本部件；不接 uploaderId、文件路径、bucket、objectKey、isPublic |
 
 支持PNG/JPEG图片≤10MiB，MP3/WAV/OGG/FLAC音频≤60MiB，UTF-8 LRC/TXT/JSON歌词≤1MiB；单次multipart总大小≤61MiB。扩展名必须与服务端内容识别一致，不信Content-Type。音频检查容器及首个音频头（WAV使用JDK音频解析），不承诺对整首曲目解码或转码；浏览器需支持对应编码。MP3检查ID3后的MPEG Layer III帧头和帧长度，OGG限Vorbis/Opus。歌词拒绝空文本、非法UTF-8和除换行/回车/Tab外的控制字符；LRC必须含有效时间标签，JSON行结构见12.11。MIME依次为image/png、image/jpeg、audio/mpeg、audio/wav、audio/ogg、audio/flac、text/plain（LRC/TXT）、application/json（JSON）。使用JDK ImageIO先读尺寸再解码验证真实图片，拒绝不合法结构/异常尺寸（宽高各≤10000、像素总数≤2500万）。不支持WebP/PDF/SVG/HTML/脚本/压缩包，当前POM未配WebP编解码或PDF解析器，不预装额外依赖。新上传校验并解码一次后按 app.image.compress 压缩，默认启用、目标500KiB、JPEG起始质量0.9、最长边2560px；保留PNG/JPEG格式和PNG透明通道，只采用更小的产物。JPEG每轮从同一像素源编码，最低质量0.3；PNG无损编码，不通过降质量反复尝试。大小和最长边是优化目标，结果未缩小时保留原字节，不能承诺都达到目标。不另存原图，关闭压缩时原样存储；历史对象不重写。本次不扩展其他附件类型。
 
@@ -622,7 +622,7 @@ notifyReply仅表示通知意愿，不能证明sys_user.email已验证。当前�
 
 lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/json/txt；是否有歌词由URL判断。播放列表只返回status=1，sortOrder ASC,musicId ASC。三个媒体字段允许外部HTTP(S)资源，或规范路径 `/api/v1/blog/music/files/{fileId}/content`；配置为本站origin的相同绝对地址保存为该相对路径。其余本站附件路径、磁盘路径和脚本均拒绝，服务器不下载或代理探测外部URL。表中音乐媒体字段是上述规则的URL特例。删除曲目只删除元数据，文件仍由文件管理清理。
 
-上传继续使用 `POST /admin/files` 的唯一 multipart `file` 部件及 `blog:file:upload` 权限，不增设上传接口或存储系统。支持格式、MIME和大小见12.8；上传响应的 `previewUrl` 是需后台会话的后台原文件接口。管理端上传成功后把fileId组成上述音乐路径填入表单，保存曲目时才建立引用；未保存或已替换的上传文件可从文件管理手动清理。
+上传使用 `POST /admin/files` 和 `blog:file:upload` 权限。管理端上传音乐封面、音频、歌词时分别传 `MUSIC_COVER`、`SONG`、`LYRIC`。支持格式、MIME 和大小见 12.8。上传响应的 `previewUrl` 是需后台会话的后台原文件接口。管理端上传成功后把 fileId 组成上述音乐路径填入表单，保存曲目时才建立引用。未保存或已替换的上传文件可从文件管理手动清理。
 
 保存受管引用先锁操作者，再升序锁所引用文件，最后锁音乐（创建时直接插入）。锁后复核原Token、音乐操作的ALL权限、文件query的独立ALL/SELF范围，以及封面为图片、音频为audio、歌词扩展名与lyricType一致、存储对象可用。原有If-Revision、事务、审计和播放列表缓存失效保持。文件删除在持文件锁时检查全部状态的音乐三个字段和原有全部文章引用，仍引用返回409/RESOURCE_IN_USE，包括隐藏音乐。
 
@@ -763,6 +763,10 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 音乐的三个媒体字段按12.11使用规范音乐文件路径或外部HTTP(S)地址。头像、友链头像、经历 Logo、社交和技能图标使用公开 HTTP(S) 地址，可填外部地址或[公开展示图片](API_BLOG.md#display-image-content)地址。普通附件 API 路径及等价绝对 URL 不能当作公开图片地址。
 
 公开展示图片由[专用上传入口](API_ADMIN.md#display-image-upload)校验并写入 `publicimage` 存储目录，沿用原有文件元数据、存储 ACL、限流和失败清理。上传成功即公开，普通附件继续按原权限访问。删除时保留文章、音乐附件引用检查，直接引用公开图片 URL 的页面不阻止删除，文件管理在删除前提示地址会失效。
+
+普通上传和公开展示图片上传在验证文件内容后校验 `usage` 与文件类型，省略时使用类型默认值。列表、详情和普通上传从 `blog_file.upload_usage` 返回 `usage`，并用单元素 `usages` 兼容旧客户端。公开展示图片上传仍返回图片地址。读取沿用 `publicImage` 和原有权限，删除仍检查实际文章和音乐引用。已有库按[迁移步骤](文件上传用途设计.md#已有数据与部署顺序)添加列并回填历史记录。
+
+管理端上传文章正文配图时传 `ARTICLE_IMAGE`，上传文章封面时传 `ARTICLE_COVER`。
 
 先写临时文件并完成校验，再原子移动为随机最终存储键，最后插入元数据并提交；任一步失败不得返回File成功结果，数据库写失败时删除刚写文件，补偿失败记录运维错误以清理孤立对象。没有成功元数据的存储对象永不通过API读取。
 

@@ -17,7 +17,7 @@ import java.util.Set;
         com.xuan.controller.blog.FileController.class})
 public class FileRequestAdvice {
 
-    /** 检查文件请求，上传只收一个 file，删除使用 JSON 参数，读取不收请求体和多余参数。 */
+    /** 检查文件请求，上传收一个 file 和可选的 usage，删除使用 JSON 参数，读取不收请求体和多余参数。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) throws ServletException, IOException {
         String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
@@ -29,13 +29,17 @@ public class FileRequestAdvice {
                 throw new BusinessException(413, "PAYLOAD_TOO_LARGE", "单次上传不能超过61 MiB，请缩小文件后重试。");
             }
             if (request.getQueryString() != null || !(request instanceof MultipartHttpServletRequest multipart)
-                    || !multipart.getParameterMap().isEmpty() || multipart.getMultiFileMap().size() != 1
-                    || multipart.getFiles("file").size() != 1) {
+                    || multipart.getMultiFileMap().size() != 1 || multipart.getFiles("file").size() != 1) {
+                throw invalid();
+            }
+            var parameters = multipart.getParameterMap();
+            if (!parameters.isEmpty() && (parameters.size() != 1 || !parameters.containsKey("usage")
+                    || parameters.get("usage").length != 1)) {
                 throw invalid();
             }
             var parts = request.getParts();
-            if (!parts.isEmpty() && (parts.size() != 1 || parts.stream().anyMatch(part ->
-                    !"file".equals(part.getName()) || part.getSubmittedFileName() == null))) {
+            if (!parts.isEmpty() && (parts.size() != 1 + parameters.size() || parts.stream().anyMatch(part ->
+                    part.getSubmittedFileName() == null ? !"usage".equals(part.getName()) : !"file".equals(part.getName())))) {
                 throw invalid();
             }
             return;

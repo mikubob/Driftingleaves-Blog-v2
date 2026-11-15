@@ -443,6 +443,7 @@ function switchStatus(status) {
           <el-input v-model="form.email" type="email" maxlength="254" />
         </label>
         <DisplayImageField
+          usage="AVATAR"
           v-model="form.avatar"
           v-model:uploading="uploading"
           label="头像地址"

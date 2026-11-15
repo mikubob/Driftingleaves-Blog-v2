@@ -230,6 +230,7 @@ async function uploadImages(files, callback, cover = false) {
     for (const file of files) {
       const body = new FormData()
       body.append('file', file)
+      body.append('usage', cover ? 'ARTICLE_COVER' : 'ARTICLE_IMAGE')
       const { data } = await request('/admin/files', { method: 'POST', body })
       urls.push(`/api/v1/blog/articles/${id.value}/files/${data.fileId}/content`)
     }

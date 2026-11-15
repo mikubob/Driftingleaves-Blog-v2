@@ -56,6 +56,29 @@ const previewLoading = ref(false)
 const previewError = ref('')
 let controller
 
+const usageLabels = {
+  ARTICLE_COVER: '文章封面',
+  ARTICLE_IMAGE: '文章配图',
+  MUSIC_COVER: '音乐封面',
+  AVATAR: '头像',
+  LINK_AVATAR: '友链头像',
+  EXPERIENCE_LOGO: '经历标志',
+  ICON: '图标',
+  IMAGE: '其他图片',
+  SONG: '歌曲',
+  LYRIC: '歌词',
+  ATTACHMENT: '附件',
+}
+
+/** 显示上传时选择的用途。 */
+function fileUsage(file) {
+  const usage = file.usage ?? file.usages?.[0]
+  if (!usage) {
+    return file.publicImage ? '公开图片' : '附件'
+  }
+  return usageLabels[usage] ?? usage
+}
+
 /** 取消详情和预览请求，释放预览使用的临时地址。 */
 function releasePreview() {
   controller?.abort()
@@ -275,7 +298,7 @@ const batchActions = computed(() => {
         <el-table-column prop="fileId" label="文件 ID" min-width="175" />
         <el-table-column prop="mimeType" label="类型" width="120" />
         <el-table-column label="用途" width="100">
-          <template #default="{ row }">{{ row.publicImage ? '公开图片' : '附件' }}</template>
+          <template #default="{ row }">{{ fileUsage(row) }}</template>
         </el-table-column>
         <el-table-column label="大小" width="130">
           <template #default="{ row }">{{ formatCount(row.sizeBytes) }} B</template>
@@ -312,7 +335,7 @@ const batchActions = computed(() => {
           <el-descriptions-item label="上传者 ID">{{ detail.uploaderId }}</el-descriptions-item>
           <el-descriptions-item label="类型">{{ detail.mimeType }}</el-descriptions-item>
           <el-descriptions-item label="大小">{{ formatCount(detail.sizeBytes) }} B</el-descriptions-item>
-          <el-descriptions-item label="用途">{{ detail.publicImage ? '公开图片' : '附件' }}</el-descriptions-item>
+          <el-descriptions-item label="用途">{{ fileUsage(detail) }}</el-descriptions-item>
           <el-descriptions-item label="存储">{{ detail.storageType }}</el-descriptions-item>
           <el-descriptions-item label="上传时间" :span="2">{{ formatTime(detail.createTime) }}</el-descriptions-item>
         </el-descriptions>

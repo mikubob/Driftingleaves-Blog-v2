@@ -3950,7 +3950,8 @@ Cookie: __Host-dl-admin-session=<opaque>
     "records": [
       {
         "fileId": "42", "uploaderId": "12", "originalName": "leaf.png", "storedName": "P7m4fb3Wj3svuNzY.png", "mimeType": "image/png",
-        "sizeBytes": "2048", "storageType": "local"
+        "sizeBytes": "2048", "storageType": "local", "createTime": "2026-11-14T03:14:00.000Z",
+        "previewUrl": "/api/v1/admin/files/42/content", "publicImage": false, "usage": "ARTICLE_COVER", "usages": ["ARTICLE_COVER"]
       }
     ]
   },
@@ -3999,7 +4000,8 @@ Cookie: __Host-dl-admin-session=<opaque>
   "code": "OK", "msg": "成功",
   "data": {
     "fileId": "42", "uploaderId": "12", "originalName": "leaf.png", "storedName": "P7m4fb3Wj3svuNzY.png", "mimeType": "image/png",
-    "sizeBytes": "2048", "storageType": "local"
+    "sizeBytes": "2048", "storageType": "local", "createTime": "2026-11-14T03:14:00.000Z",
+    "previewUrl": "/api/v1/admin/files/42/content", "publicImage": false, "usage": "ARTICLE_COVER", "usages": ["ARTICLE_COVER"]
   },
   "errors": []
 }
@@ -4028,6 +4030,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `file` | binary | 是 | 唯一文件字段，非空；PNG/JPEG≤10MiB、MP3/WAV/OGG/FLAC≤60MiB、UTF-8 LRC/TXT/JSON≤1MiB，不收路径/上传者 |
+| `usage` | string | 否 | 单个 multipart 文本字段，使用 [File 用途代码](#response-file)。省略时按文件类型填写 |
 
 #### 请求示例
 
@@ -4043,6 +4046,10 @@ Content-Disposition: form-data; name="file"; filename="leaf.png"
 Content-Type: image/png
 
 <PNG binary>
+--example
+Content-Disposition: form-data; name="usage"
+
+IMAGE
 --example--
 ```
 
@@ -4060,7 +4067,8 @@ Location: /api/v1/admin/files/42
   "code": "OK", "msg": "成功",
   "data": {
     "fileId": "42", "uploaderId": "12", "originalName": "leaf.png", "storedName": "P7m4fb3Wj3svuNzY.png", "mimeType": "image/png",
-    "sizeBytes": "2048", "storageType": "oss"
+    "sizeBytes": "2048", "storageType": "oss", "createTime": "2026-11-14T03:14:00.000Z",
+    "previewUrl": "/api/v1/admin/files/42/content", "publicImage": false, "usage": "IMAGE", "usages": ["IMAGE"]
   },
   "errors": []
 }
@@ -4132,10 +4140,10 @@ Cache-Control: no-store
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/files/display-images` |
 | 访问要求 | 后台 `blog:file:upload`，与普通上传共用限流 |
-| 请求 | `multipart/form-data`，只允许一个 `file`，非空 PNG/JPEG，最多 10 MiB |
+| 请求 | `multipart/form-data`，一个 `file`（非空 PNG/JPEG，最多 10 MiB），可选一个 `usage` 文本字段（图片用途，省略时为 `IMAGE`） |
 | 响应 | 201 Created，`data` 和 `Location` 为绝对 HTTP(S) 图片地址，使用 `app.sites.api-base-url` 生成 |
 
-上传成功即可匿名读取。后台用返回地址填入头像、Logo 或图标字段，保存表单后应用到对应页面。部署时 `app.sites.api-base-url` 对应的反代须转发 `/api/v1/blog/display-images/`，使公开站点能加载图片。文件管理将此类文件标为公开图片，OSS 对象仍为私有。
+上传成功即可匿名读取。后台用返回地址填入头像、Logo 或图标字段，保存表单后应用到对应页面。文件管理显示上传时保存的用途。部署时 `app.sites.api-base-url` 对应的反代须转发 `/api/v1/blog/display-images/`，使公开站点能加载图片。OSS 对象仍为私有。
 
 ---
 
@@ -6923,6 +6931,26 @@ Content-Type: application/json
 | `createTime` | Time | 创建 UTC 时间 |
 | `previewUrl` | string | 需后台会话的后台文件内容路径 |
 | `publicImage` | boolean | 是否通过公开展示图片入口上传 |
+| `usage` | string | 上传时保存的用途代码，随列表、详情和普通上传返回 |
+| `usages` | string[] | 兼容字段，只包含 `usage` |
+
+| 用途代码 | 含义 |
+| --- | --- |
+| `ARTICLE_COVER` | 文章封面 |
+| `ARTICLE_IMAGE` | 文章正文配图 |
+| `MUSIC_COVER` | 音乐封面 |
+| `AVATAR` | 用户或站点主人头像 |
+| `LINK_AVATAR` | 友链头像 |
+| `EXPERIENCE_LOGO` | 经历标志 |
+| `ICON` | 社交链接或技能图标 |
+| `IMAGE` | 通用图片 |
+| `SONG` | 音频文件 |
+| `LYRIC` | LRC、TXT 或 JSON 歌词文件 |
+| `ATTACHMENT` | 其他附件 |
+
+图片用途适用于 PNG/JPEG，`SONG` 适用于支持的音频，`LYRIC` 适用于支持的歌词。`ATTACHMENT` 保留给其他附件，当前接口只接收图片、音频和歌词。省略用途时按文件类型使用 `IMAGE`、`SONG`、`LYRIC` 或 `ATTACHMENT`。空值、未知代码或类型不匹配返回 `400/VALIDATION_ERROR`。
+
+用途在上传时保存，此后变更引用也保留原用途。`publicImage`、原有读取权限和删除时的实际引用检查按各自规则执行。
 
 <a id="response-homeprofile"></a>
 

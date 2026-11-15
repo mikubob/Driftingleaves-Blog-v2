@@ -75,7 +75,8 @@ async function upload(file, kind) {
   uploading.value = kind
   formError.value = ''
   try {
-    const result = await uploadFile(file, kind)
+    const usage = { image: 'MUSIC_COVER', audio: 'SONG', lyric: 'LYRIC' }[kind]
+    const result = await uploadFile(file, kind, usage)
     const field = { image: 'coverUrl', audio: 'audioUrl', lyric: 'lyricUrl' }[kind]
     form[field] = `/api/v1/blog/music/files/${result.file.fileId}/content`
     if (kind === 'lyric') {

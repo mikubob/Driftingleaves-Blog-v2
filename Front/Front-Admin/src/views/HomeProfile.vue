@@ -139,6 +139,7 @@ onMounted(load)
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="500" />
         </label>
         <DisplayImageField
+          usage="AVATAR"
           v-model="form.avatar"
           v-model:uploading="uploading"
           label="公开头像"

@@ -44,6 +44,10 @@ public class BlogFile {
     @TableField("mime_type")
     private String mimeType;
 
+    /** 上传时指定的用途。 */
+    @TableField("upload_usage")
+    private String uploadUsage;
+
     /** 文件大小，单位字节。 */
     @TableField("size_bytes")
     private BigInteger sizeBytes;

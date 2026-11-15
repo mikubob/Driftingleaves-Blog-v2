@@ -15,6 +15,7 @@ import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.model.FileContent;
 import com.xuan.policy.ArticleAttachmentPolicy;
+import com.xuan.policy.FileUploadUsagePolicy;
 import com.xuan.policy.MusicAttachmentPolicy;
 import com.xuan.properties.ImageProperties;
 import com.xuan.result.PageResult;
@@ -108,7 +109,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "upload", target = "blog:file", permission = "blog:file:upload")
-    public FileVO upload(MultipartFile upload, boolean publicImage) {
+    public FileVO upload(MultipartFile upload, boolean publicImage, String usage) {
         users.lockById(sessions.currentUserId());
         requireAdmin("upload");
         String name = upload.getOriginalFilename();
@@ -163,6 +164,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             row.setUploaderId(sessions.currentUserId());
             row.setOriginalName(name);
             row.setMimeType(mime);
+            row.setUploadUsage(FileUploadUsagePolicy.resolve(usage, mime));
             row.setSizeBytes(BigInteger.valueOf(bytes.length));
             storage.store(temporary, extension, row, publicImage);
             // 内容处理和存储可能耗时，提交前还要确认原 Token 没被撤销。
@@ -434,13 +436,14 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return "ALL".equals(authorization.requireScope(actor, "blog:article:query")) ? null : actor;
     }
 
-    /** 整理文件响应，只返回允许的字段，不直接返回数据库实体。 */
+    /** 整理文件响应，返回上传时保存的用途。 */
     private FileVO view(BlogFile row) {
         String objectKey = row.getObjectKey();
         String storedName = objectKey.substring(objectKey.lastIndexOf('/') + 1);
+        String usage = row.getUploadUsage();
         return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), storedName, row.getMimeType(),
                 row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
-                "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row));
+                "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row), usage, List.of(usage));
     }
 
     /** 检查文件是否存在，先校验权限和范围；文件不存在或无权访问时都返回 404。 */

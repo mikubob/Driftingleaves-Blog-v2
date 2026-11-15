@@ -405,6 +405,7 @@ const batchActions = computed(() => {
           <el-input v-model="form.subtitle" type="text" maxlength="200" />
         </label>
         <DisplayImageField
+          usage="EXPERIENCE_LOGO"
           v-model="form.logoUrl"
           v-model:uploading="uploading"
           label="Logo 地址"

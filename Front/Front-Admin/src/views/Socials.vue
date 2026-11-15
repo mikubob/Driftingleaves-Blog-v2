@@ -278,6 +278,7 @@ const batchActions = computed(() => {
           <el-input v-model="form.url" type="text" maxlength="2048" required />
         </label>
         <DisplayImageField
+          usage="ICON"
           v-model="form.icon"
           v-model:uploading="uploading"
           label="图标键或图片地址"
