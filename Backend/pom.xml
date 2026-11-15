@@ -73,13 +73,13 @@
                 <artifactId>ip2region</artifactId>
                 <version>${ip2region.version}</version>
             </dependency>
-            <!-- common 用到的 OSS 客户端版本在这里统一，不照搬旧项目版本。 -->
+            <!-- 统一管理 common 使用的 OSS 客户端版本。 -->
             <dependency>
                 <groupId>com.aliyun.oss</groupId>
                 <artifactId>aliyun-sdk-oss</artifactId>
                 <version>${aliyun-oss.version}</version>
             </dependency>
-            <!-- 内部模块都用当前项目版本，避免误用老项目的包。 -->
+            <!-- 内部模块依赖与父项目使用同一版本。 -->
             <dependency>
                 <groupId>com.xuan</groupId>
                 <artifactId>common</artifactId>

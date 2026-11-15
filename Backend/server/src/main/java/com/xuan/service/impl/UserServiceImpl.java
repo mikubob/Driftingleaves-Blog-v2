@@ -137,7 +137,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         lockAdminTarget(sessions.currentUserId(), "sys:user:create");
         UrlPolicy.requireValid(request.getAvatar());
 
-        // 2. 只写允许创建的字段，不能沿用公开注册自动分配 member 的做法。
+        // 2. 写入允许创建的字段，角色通过单独的授权操作分配。
         SysUser user = new SysUser();
         user.setUsername(request.getUsername());
         user.setPasswordHash(encoder.encode(request.getPassword()));

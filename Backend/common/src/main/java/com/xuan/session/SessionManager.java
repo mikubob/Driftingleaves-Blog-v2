@@ -80,7 +80,7 @@ public class SessionManager {
         }
     }
 
-    /** 检查会话是否由当前端的网页登录签发，迁移前的 Token 不能用作登录 Cookie。 */
+    /** 检查 Token 是否符合当前端网页登录会话的格式。 */
     public static boolean isWebToken(String token, int timeoutSeconds) {
         String prefix = webTokenPrefix(timeoutSeconds);
         return token != null && token.startsWith(prefix)

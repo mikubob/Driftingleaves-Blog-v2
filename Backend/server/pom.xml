@@ -69,7 +69,7 @@
                 </exclusion>
             </exclusions>
         </dependency>
-        <!-- 沿用老项目的 Druid 连接池，使用 Boot 4 对应的自动配置。 -->
+        <!-- 使用适配 Spring Boot 4 的 Druid 连接池自动配置。 -->
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>druid-spring-boot-4-starter</artifactId>

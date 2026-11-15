@@ -34,7 +34,7 @@ export function sessionRevoked() {
   notifySessionChange()
 }
 
-// 启动时清理旧版持久凭据，包括直接打开 OAuth 完成页的情况。
+// 启动时清理浏览器存储中的会话数据，直接打开 OAuth 完成页时也会清理。
 removeStoredSession('dl-blog-session')
 
 /** 检查当前登录用户是否拥有指定的博客操作权限。 */

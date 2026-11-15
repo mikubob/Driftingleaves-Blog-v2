@@ -79,7 +79,7 @@ const operationTypes = {
   'batch-unblock': { label: '批量解封', type: 'success' },
 }
 
-/** 根据已记录的选择数量显示旧版单条操作。 */
+/** 根据日志记录的选择数量显示单条或批量操作。 */
 function operationLabel(row) {
   const selectedCount = row.selectedCount ?? row.operationData?.selectedCount
   const type = row.operationType

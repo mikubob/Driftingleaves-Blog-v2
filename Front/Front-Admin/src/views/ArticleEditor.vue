@@ -550,7 +550,7 @@ onBeforeUnmount(() => {
   background: #f0f2f5;
 }
 
-/* 顶部操作与标题沿用旧后台布局。 */
+/* 文章编辑器顶部的标题和操作区。 */
 .edit-topbar {
   display: flex;
   align-items: center;

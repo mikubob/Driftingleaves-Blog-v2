@@ -523,7 +523,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
     private record Snapshot(String onlineCount, String userCount, String guestCount, LocalDateTime serverTime) {
     }
 
-    /** 在线消息包络，沿用既有错误字段。 */
+    /** 封装在线统计消息，包含消息类型、状态、数据和错误信息。 */
     private record Envelope(String type, String code, String msg, Object data, List<Object> errors) {
     }
 

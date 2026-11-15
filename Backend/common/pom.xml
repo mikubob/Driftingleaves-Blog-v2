@@ -71,7 +71,7 @@
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-core</artifactId>
         </dependency>
-        <!-- 平台客户端需要这套 Fastjson 1.x 兼容 API，MVC 的 JSON 仍用原来的配置。 -->
+        <!-- 为平台客户端提供 Fastjson 1.x 兼容 API，MVC 的 JSON 由 Jackson 处理。 -->
         <dependency>
             <groupId>me.zhyd.oauth</groupId>
             <artifactId>JustAuth</artifactId>

@@ -29,7 +29,7 @@ export const useBlogStore = defineStore('blog', () => {
     }
   }
 
-  /** 沿用老站共享加载入口，失败模块可重试，成功数据不重复请求。 */
+  /** 加载博客各模块数据，重试失败模块并复用已加载的数据。 */
   function init() {
     if (pending) {
       return pending
