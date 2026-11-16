@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
 import com.xuan.dto.BatchItemDTO;
+import com.xuan.dto.LinkApplicationDTO;
 import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
@@ -21,6 +22,7 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.vo.AdminLinkVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.LinkProfileVO;
 import com.xuan.vo.LinkPublicVO;
@@ -32,6 +34,10 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -45,37 +51,91 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFriendLink> implements IFriendLinkService {
 
+    private static final ZoneId APPLICATION_ZONE = ZoneId.of("Asia/Shanghai");
+    private static final int DAILY_APPLICATION_LIMIT = 3;
+
     private final FriendLinkMapper links;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
+    private final Clock clock;
 
     /** 获取展示中的友链，排序相同时按 ID 排，不返回后台状态和时间。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "links", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<LinkPublicVO> publicLinks(PageQueryDTO query) {
-        return PageResult.from(links.linkPage(new Page<>(query.page(), query.pageSize()), null, true)
+        return PageResult.from(links.publicLinkPage(new Page<>(query.page(), query.pageSize()))
                 .convert(row -> new LinkPublicVO(row.getLinkId(), row.getLinkName(), row.getUrl(),
                         row.getAvatar(), row.getDescription(), row.getSortOrder())));
+    }
+
+    /** 从当前账号查询申请，各审核状态均可查看。 */
+    @Override
+    public BlogFriendLink ownApplication() {
+        return links.findApplication(identities.requireCurrent());
+    }
+
+    /** 锁住账号后检查申请和当日次数，申请与次数一起提交。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public BlogFriendLink submitApplication(LinkApplicationDTO request) {
+        validateUrls(request);
+        long userId = lockApplicant();
+        if (links.findApplication(userId) != null) {
+            throw new BusinessException(409, "STATE_CONFLICT", "请先删除已有的友链申请");
+        }
+
+        ZonedDateTime now = ZonedDateTime.now(clock.withZone(APPLICATION_ZONE));
+        LocalDate date = now.toLocalDate();
+        Integer savedCount = links.applicationCount(userId, date);
+        int used = savedCount == null ? 0 : savedCount;
+        if (used >= DAILY_APPLICATION_LIMIT) {
+            long nextMidnight = date.plusDays(1).atStartOfDay(APPLICATION_ZONE).toEpochSecond();
+            int retryAfter = Math.toIntExact(nextMidnight - now.toEpochSecond());
+            throw new BusinessException(429, "RATE_LIMITED", "今天的友链申请次数已用完", retryAfter);
+        }
+
+        BlogFriendLink row = new BlogFriendLink();
+        setSiteFields(row, request);
+        row.setSortOrder(0);
+        row.setStatus(0);
+        links.insertLink(row, userId, "APPLICATION");
+        links.saveApplicationCount(userId, date, used + 1);
+        return links.selectById(row.getLinkId());
+    }
+
+    /** 按账号串行删除本人申请，成功后清除公开列表缓存。 */
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    @CacheEvict(cacheNames = "links", allEntries = true)
+    public void deleteOwnApplication(long id) {
+        long userId = lockApplicant();
+        int deleted = links.deleteApplication(id, userId);
+        sessions.requireActive(sessions.currentToken(), userId);
+        if (deleted == 0) {
+            throw new BusinessException(404, "NOT_FOUND", "友链不存在");
+        }
     }
 
     /** 先检查后台和友链查询权限，再用同样条件查列表和总数。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public PageResult<BlogFriendLink> listLinks(LinkQueryDTO query) {
+    public PageResult<AdminLinkVO> listLinks(LinkQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(links.linkPage(new Page<>(query.page(), query.pageSize()), query, false));
+        Long applicantId = IdUtils.parse(query.applicantId());
+        return PageResult.from(links.adminLinkPage(new Page<>(query.page(), query.pageSize()), query, applicantId));
     }
 
     /** 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。 */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public LinkProfileVO detail(long id) {
+    public LinkProfileVO<AdminLinkVO> detail(long id) {
         requireAdmin("query");
-        return profile(requireLink(links.selectById(id)));
+        AdminLinkVO row = requireLink(links.adminLinkDetail(id));
+        return new LinkProfileVO<>(row, revision(row));
     }
 
     /** 锁住操作者并重新检查权限后创建友链，名称和 URL 允许重复，写日志失败就回滚。 */
@@ -88,13 +148,10 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
         BlogFriendLink row = new BlogFriendLink();
-        row.setLinkName(request.getLinkName());
-        row.setUrl(request.getUrl());
-        row.setAvatar(request.getAvatar());
-        row.setDescription(request.getDescription());
+        setSiteFields(row, request);
         row.setSortOrder(request.getSortOrder());
         row.setStatus(request.getStatus());
-        links.insert(row);
+        links.insertLink(row, null, "ADMIN");
         return links.selectById(row.getLinkId());
     }
 
@@ -103,21 +160,36 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:link", permission = "blog:link:update", targetIdArgument = 0)
     @CacheEvict(cacheNames = "links", allEntries = true)
-    public LinkProfileVO update(long id, LinkWriteDTO request, String revision) {
+    public LinkProfileVO<BlogFriendLink> update(long id, LinkWriteDTO request, String revision) {
         validateUrls(request);
         BlogFriendLink row = lockLink(id, "update");
         checkRevision(row, revision);
+        setSiteFields(row, request);
+        row.setSortOrder(request.getSortOrder());
+        links.updateLink(row);
+        BlogFriendLink updated = links.selectById(id);
+        return new LinkProfileVO<>(updated, revision(updated));
+    }
+
+    /** 锁住当前账号，等锁后重新检查原会话和账号状态。 */
+    private long lockApplicant() {
+        long userId = sessions.currentUserId();
+        users.lockById(userId);
+        identities.requireCurrent();
+        sessions.requireActive(sessions.currentToken(), userId);
+        return userId;
+    }
+
+    /** 填写友链的四个站点资料字段。 */
+    private void setSiteFields(BlogFriendLink row, LinkApplicationDTO request) {
         row.setLinkName(request.getLinkName());
         row.setUrl(request.getUrl());
         row.setAvatar(request.getAvatar());
         row.setDescription(request.getDescription());
-        row.setSortOrder(request.getSortOrder());
-        links.updateLink(row);
-        return profile(links.selectById(id));
     }
 
     /** 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。 */
-    private void validateUrls(LinkWriteDTO request) {
+    private void validateUrls(LinkApplicationDTO request) {
         if (!UrlPolicy.valid(request.getUrl())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "友链地址无效，请填写以 http:// 或 https:// 开头的外部地址。");
         }
@@ -144,7 +216,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     }
 
     /** 已经检查权限后再报友链不存在，不把缺权限误报为找不到。 */
-    private BlogFriendLink requireLink(BlogFriendLink row) {
+    private <T extends BlogFriendLink> T requireLink(T row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "友链不存在");
         }
@@ -159,16 +231,16 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
             throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
-        if (!revision.equals(profile(row).revision())) {
+        if (!revision.equals(revision(row))) {
             throw new BusinessException(412, "REVISION_CONFLICT", "友链已修改，请重新获取");
         }
     }
 
-    /** 版本只算这些业务字段，更新时间变化不会让没改过的资料变成新版本。 */
-    private LinkProfileVO profile(BlogFriendLink row) {
+    /** 版本只计算友链资料和状态，来源、申请人和更新时间不影响版本。 */
+    private String revision(BlogFriendLink row) {
         String value = json.writeValueAsString(Arrays.asList(row.getLinkId(), row.getLinkName(), row.getUrl(),
                 row.getAvatar(), row.getDescription(), row.getSortOrder(), row.getStatus()));
-        return new LinkProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
+        return "\"" + TokenUtils.digest(value) + "\"";
     }
 
     /** 批量删除友情链接，先加锁并检查全部目标，任一失败则整批回滚。 */
@@ -208,7 +280,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
                 links.updateStatus(row.getLinkId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getLinkId(), profile(row).revision());
+            versions.put(row.getLinkId(), revision(row));
         }
         return BatchUtils.versions(items, versions);
     }

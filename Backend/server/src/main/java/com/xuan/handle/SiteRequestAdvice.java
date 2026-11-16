@@ -19,17 +19,20 @@ import java.util.Set;
         SiteConfigController.class})
 public class SiteRequestAdvice {
 
-    /** 检查查询参数和 GET 请求体，参数类型及长度由 DTO 校验。 */
+    /** 检查查询参数和不接收请求体的操作，参数类型及长度由 DTO 校验。 */
     @ModelAttribute
     public void parameters(HttpServletRequest request) {
-        if ("GET".equals(request.getMethod()) && (request.getContentLengthLong() > 0
+        String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        boolean noBody = "GET".equals(request.getMethod())
+                || "HEAD /blog/me/link-application".equals(route)
+                || "DELETE /blog/me/link-application/{linkId}".equals(route);
+        if (noBody && (request.getContentLengthLong() > 0
                 || request.getHeader("Transfer-Encoding") != null)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "当前操作不需要提交内容，请刷新页面后重试。");
         }
-        String route = request.getMethod() + " " + request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
         Set<String> allowed = switch (route) {
             case "GET /blog/links" -> Set.of("page", "pageSize");
-            case "GET /admin/links" -> Set.of("page", "pageSize", "keyword", "status");
+            case "GET /admin/links" -> Set.of("page", "pageSize", "keyword", "status", "source", "applicantId");
             default -> Set.of();
         };
         request.getParameterMap().forEach((name, values) -> {

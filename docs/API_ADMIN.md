@@ -3459,6 +3459,10 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 ## 1.11 友链
 
+后台列表、详情、编辑、状态切换和删除统一使用同一个 `linkId`。博客申请和后台直接创建的友链都进入此列表。管理接口使用有效后台会话，要求账号启用、`admin:access` 和各操作的业务权限。友链是全局资源，`SELF` 授权同样可操作所有友链，包括其他账号提交的申请。写请求按[通用协议](API.md#common)校验请求来源和 `X-Expected-User-Id`。
+
+会话失效返回 `401/UNAUTHENTICATED`，账号禁用返回 `403/ACCOUNT_DISABLED`，权限不足返回 `403/FORBIDDEN`。写请求缺少预期账号或与实际账号不符时返回 `409/SESSION_ACCOUNT_CHANGED`。其他通用错误见[错误码](API.md#errors)。
+
 <a id="api-71"></a>
 
 ### 1.11.1 分页查询后台友链
@@ -3478,8 +3482,10 @@ Cookie: __Host-dl-admin-session=<opaque>
 | --- | --- | --- | --- |
 | `page` | integer | 否 | 默认 1，范围 1..100000 |
 | `pageSize` | integer | 否 | 默认 10，范围 1..100 |
-| `keyword` | string | 否 | 可选 S(100)，按本接口指定字段字面包含，不按 SQL 通配符解释 |
-| `status` | integer | 否 | 可选，0/1/2；含义见该业务状态约定 |
+| `keyword` | string | 否 | 首尾去空白后 1..100 字符，按友站名称或网址字面包含匹配 |
+| `status` | integer | 否 | 0 待审核、1 展示、2 驳回/下架 |
+| `source` | string | 否 | 精确匹配 `APPLICATION`、`ADMIN` 或 `UNKNOWN`，取值区分大小写 |
+| `applicantId` | ID | 否 | 精确匹配申请人的账号 ID，使用 Long 范围内的十进制正整数字符串 |
 
 #### 请求示例
 
@@ -3490,7 +3496,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 #### 响应参数
 
-`data`：分页对象，`records[]` 为 [Link](#response-link)；分页字段见 [0.2](API.md#pagination)。
+`data`：分页对象，`records[]` 为 [AdminLink](#response-admin-link)；分页字段见 [0.2](API.md#pagination)。
 
 #### 响应示例
 
@@ -3502,7 +3508,9 @@ Cookie: __Host-dl-admin-session=<opaque>
     "records": [
       {
         "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
-        "sortOrder": 0, "status": 1
+        "sortOrder": 0, "status": 1,
+        "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z",
+        "source": "ADMIN", "applicant": null
       }
     ]
   },
@@ -3510,7 +3518,17 @@ Cookie: __Host-dl-admin-session=<opaque>
 }
 ```
 
-sortOrder ASC,linkId ASC。
+按 `sortOrder`、`linkId` 依次升序。
+
+<a id="admin-link-source"></a>
+
+#### 友链来源和申请人
+
+列表和[详情](#api-72)均返回来源、申请人摘要、站点资料、排序、状态、创建时间和更新时间。博客申请的创建时间即提交时间。后台页面展示来源、申请人及增加筛选控件仍待接入。
+
+例如 `GET /api/v1/admin/links?source=APPLICATION&applicantId=12&status=0&page=1&pageSize=10` 查询账号 `12` 待审核的申请。省略任一筛选参数时取消该条件。来源、申请人、状态和关键词同时匹配，列表与总数使用相同条件。未声明、重复、空白或非法参数返回 `400/VALIDATION_ERROR`，合法的申请人 ID 无匹配时返回 `200` 空页。
+
+申请人摘要随友链查询返回，沿用 `blog:link:query` 权限。需要查看完整账号资料时，可用 `applicant.userId` 请求[用户详情](#api-17)，该接口单独检查 `sys:user:query`。
 
 ---
 
@@ -3542,7 +3560,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 #### 响应参数
 
-`data` 返回 linkId、linkName、url、avatar、description、sortOrder、status、createTime、updateTime，字段定义见 [Link](#response-link)。
+`data` 为 [AdminLink](#response-admin-link)。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -3551,7 +3569,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 #### 响应示例
 
 ```http
-X-Revision: "<current-revision>"
+X-Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 ```
 ```json
 {
@@ -3559,13 +3577,14 @@ X-Revision: "<current-revision>"
   "data": {
     "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
     "sortOrder": 0, "status": 1,
-    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z"
+    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z",
+    "source": "ADMIN", "applicant": null
   },
   "errors": []
 }
 ```
 
-待审核、展示中和驳回/下架的友链均可查看，status 分别为 0、1、2。详情与 X-Revision 在同一只读事务中读取；ID 保留十进制字符串，时间使用 UTC 毫秒格式。详情查询不修改资源或文章关联，编辑、批量操作继续使用原有版本规则。
+任一状态、任一来源的友链均可查看。详情与 `X-Revision` 在同一只读事务中读取，ID 为十进制字符串，时间为 UTC 毫秒格式。版本由 `linkId`、`linkName`、`url`、`avatar`、`description`、`sortOrder` 和 `status` 计算。
 
 管理列表提供“详情”按钮，只需查询权限，不要求编辑或删除权限。点击后请求本接口，在只读弹窗展示最新资料；支持加载提示、错误重试、关闭时取消请求，不使用列表行或上一次结果替代当前详情。描述按文本展示，可空字段显示未填写；友链头像复用图片预览组件，地址只展示，不由服务端抓取。
 
@@ -3573,7 +3592,7 @@ X-Revision: "<current-revision>"
 
 | HTTP 状态 | code | 说明 |
 | --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | ID 格式无效或超出 Long 范围，不接受前导零、符号或空白 |
+| 400 | `VALIDATION_ERROR` | ID 非合法十进制正整数或超出 Long 范围，或请求包含查询参数、请求体 |
 | 401 | `UNAUTHENTICATED` | 未登录或会话失效 |
 | 403 | `ACCOUNT_DISABLED` | 当前操作者账号已禁用 |
 | 403 | `FORBIDDEN` | 缺少后台入口或本接口查询权限，或使用非后台登录会话 |
@@ -3601,9 +3620,9 @@ X-Revision: "<current-revision>"
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `linkName` | string | 是 | 1..100，不要求唯一 |
-| `url` | string | 是 | http(s) URL ≤2048，不要求唯一 |
-| `avatar` | string&#124;null | 否 | 仅外部 http(s)，默认 null |
-| `description` | string&#124;null | 否 | ≤255，默认 null |
+| `url` | string | 是 | 绝对 HTTP(S) URL，最长 2048 字符，不要求唯一 |
+| `avatar` | string&#124;null | 否 | 公开 HTTP(S) 图片地址，最长 2048 字符，默认 null |
+| `description` | string&#124;null | 否 | 纯文本，最长 255 字符，默认 null |
 | `sortOrder` | integer | 否 | int32，默认 0 |
 | `status` | integer | 否 | 0 待审、1 展示、2 驳回/下架，默认 0 |
 
@@ -3633,26 +3652,27 @@ Location: /api/v1/admin/links/1
   "code": "OK", "msg": "成功",
   "data": {
     "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
-    "sortOrder": 0, "status": 0
+    "sortOrder": 0, "status": 0,
+    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z"
   },
   "errors": []
 }
 ```
 
-默认待审 status=0；URL 和名称均无唯一键，不承诺重复 URL 返回 409。
+后台直接创建的友链无申请人归属，不占用博客账号的申请名额或每日额度。名称和 URL 可以重复。请求体仅接受表中字段，传入 `source`、`applicant` 或 `applicantId` 等未声明字段返回 `400/VALIDATION_ERROR`。地址按[友链模型](API_CONTRACT.md#model-12-7)校验。创建后可通过 `Location` 查询详情并取得版本。
 
 ---
 
 <a id="api-74"></a>
 
-### 1.11.4 修改或审核友链
+### 1.11.4 修改友链资料
 
 #### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/links/{linkId}` |
-| 接口描述 | 修改或审核友链 |
+| 接口描述 | 修改友链资料 |
 | Content-Type | application/json |
 | 访问要求 | 后台：`blog:link:update` |
 | 并发校验 | 必填 If-Revision |
@@ -3664,10 +3684,10 @@ Location: /api/v1/admin/links/1
 | `linkId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `linkName` | string | 是 | 1..100，不要求唯一 |
-| `url` | string | 是 | http(s) URL ≤2048，不要求唯一 |
-| `avatar` | string&#124;null | 是，可 null | 仅外部 http(s)，默认 null |
-| `description` | string&#124;null | 是，可 null | ≤255，默认 null |
-| `sortOrder` | integer | 是 | int32，默认 0 |
+| `url` | string | 是 | 绝对 HTTP(S) URL，最长 2048 字符，不要求唯一 |
+| `avatar` | string&#124;null | 是，可 null | 公开 HTTP(S) 图片地址，最长 2048 字符 |
+| `description` | string&#124;null | 是，可 null | 纯文本，最长 255 字符 |
+| `sortOrder` | integer | 是 | int32 |
 
 #### 请求示例
 
@@ -3676,10 +3696,10 @@ PUT /api/v1/admin/links/1
 Origin: https://admin.example.com
 Cookie: __Host-dl-admin-session=<opaque>
 X-Expected-User-Id: 12
-If-Revision: "<revision-from-detail>"
+If-Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 Content-Type: application/json
 
-{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0}
+{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":"友站简介","sortOrder":0}
 ```
 
 #### 响应参数
@@ -3693,23 +3713,23 @@ Content-Type: application/json
 #### 响应示例
 
 ```http
-X-Revision: "<current-revision>"
+X-Revision: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 ```
 ```json
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
-    "sortOrder": 0, "status": 1
+    "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": "友站简介",
+    "sortOrder": 0, "status": 1,
+    "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:05:00.000Z"
   },
   "errors": []
 }
 ```
 
-status 同模型更新；仅保存 URL，不由服务器抓取。
+五个资料字段须全部提交，可空字段传 `null` 清空。传入 `status`、`source`、`applicant` 或 `applicantId` 等未声明字段返回 `400/VALIDATION_ERROR`。编辑保留状态和申请归属，申请人通过[本人申请查询](API_BLOG.md#link-application-get)读到同一条记录的最新资料。审核使用[批量切换友链状态](#batch-links-status)。
 
-
-本接口只修改资料，保留当前 status。状态统一使用[批量切换友链状态](#batch-links-status)，单个目标也提交一项 items。创建时仍可指定初始状态。
+缺少 `If-Revision` 返回 `428/PRECONDITION_REQUIRED`，格式错误返回 `400/VALIDATION_ERROR`，版本已变化返回 `412/REVISION_CONFLICT`，目标已被申请人或其他管理员删除时返回 `404/NOT_FOUND`。成功响应携带当前 `X-Revision`。
 
 ---
 
@@ -6187,10 +6207,12 @@ Content-Type: application/json
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `POST /api/v1/admin/links/batch-delete` |
-| 业务权限 | `blog:link:delete`（ALL） |
+| 业务权限 | `blog:link:delete`；全局资源，SELF 授权也可操作全部目标 |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
 
-继承[既有业务规则](API_CONTRACT.md#model-12-7)，允许清理待审、展示和下架的记录，不抓取或删除外部图标、站点资源。
+可物理删除任一状态的友链。若删除的是博客申请，[本人申请查询](API_BLOG.md#link-application-get)随即不再返回该申请。申请名额释放，当日已用次数保留，申请人可在剩余额度内重新提交。展示中的记录从公开列表移除，外部站点和图标资源不受影响。
+
+按[批量公共约定](#admin-batch)提交每条详情的版本，任一目标已删除或版本不符时整批失败。当前后台单条删除按钮检查 `blog:link:delete`，多选删除按钮额外要求 `ALL`。待实现的后台接入需统一两处按钮的权限判断，按接口的全局权限开放。
 
 <a id="api-84"></a>
 
@@ -6525,10 +6547,12 @@ Content-Type: application/json
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/links/batch-status` |
 | 业务权限 | `blog:link:update`；全局资源，SELF 也可操作全部目标 |
-| `status` | 必填整数；0待审、1通过、2下架 |
+| `status` | 必填整数；0 待审核、1 通过并展示、2 驳回/下架 |
 | 请求 → 响应 | `BatchStatusRequest` → `BatchVersions`；HTTP 200 |
 
-保留原三态及初始待审核默认值。仅 status=1 对前台可见；状态变化不抓取友链网址或修改名称、地址等资料。
+任一来源的友链都可切换到任一状态。设置为 2 后，待审核申请被驳回，展示中的友链下架，两种结果共用同一个状态值。只有 `status=1` 的记录进入公开列表。状态切换只改状态，[本人申请查询](API_BLOG.md#link-application-get)返回同一 `linkId` 的新状态，申请仍占用该账号的申请名额。同状态提交仍校验版本，成功时沿用原版本。
+
+状态切换和删除均使用[批量公共约定](#admin-batch)，各项提交对应详情的 `X-Revision`。申请人先删除时，对该目标返回 `404/NOT_FOUND`。任一目标缺版本返回 `428/PRECONDITION_REQUIRED`，格式错误返回 `400/VALIDATION_ERROR`，版本过期返回 `412/REVISION_CONFLICT`。失败时整批回滚，客户端可重新查询列表或详情确认最新状态。
 
 <a id="batch-music-status"></a>
 
@@ -6907,13 +6931,46 @@ Content-Type: application/json
 | --- | --- | --- |
 | `linkId` | ID | 友链 ID |
 | `linkName` | string | 友链名称 |
-| `url` | string | 外部 http(s) 地址 |
+| `url` | string | 绝对 HTTP(S) 地址 |
 | `avatar` | string&#124;null | 公开头像 URL，可 null |
-| `description` | string&#124;null | 说明，可 null；site 内 description 可为空串 |
+| `description` | string&#124;null | 友站简介，纯文本 |
 | `sortOrder` | integer | int32 升序排序值 |
-| `status` | integer | 当前状态，枚举见对应模型与业务规则 |
+| `status` | integer | 0 待审核、1 展示、2 驳回/下架 |
 | `createTime` | Time | 创建 UTC 时间 |
 | `updateTime` | Time | 修改 UTC 时间 |
+
+<a id="response-admin-link"></a>
+
+#### AdminLink
+
+包含 [Link](#response-link) 的全部字段，并始终返回以下两个字段。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `source` | string | `APPLICATION` 博客账号提交、`ADMIN` 后台直接创建、`UNKNOWN` 历史来源无法确认 |
+| `applicant` | object&#124;null | 当前可关联的申请人。账号禁用时仍返回摘要。后台创建、历史来源无法确认或申请账号已删除时返回 null |
+| `applicant.userId` | ID | 申请人的账号 ID，十进制正整数字符串 |
+| `applicant.nickname` | string | 申请人当前的昵称 |
+
+来源已确认为 `APPLICATION` 的记录在申请账号删除后仍保留该来源，详情继续可查，按原申请人 ID 筛选时不命中。申请人摘要仅包含上表两项账号字段。后台创建和编辑响应、博客本人申请响应继续使用 Link，博客公开列表继续使用 [LinkPublic](API_BLOG.md#response-linkpublic)。
+
+博客申请的后台详情 `data` 示例
+
+```json
+{
+  "linkId": "35",
+  "linkName": "示例友站",
+  "url": "https://example.com",
+  "avatar": null,
+  "description": "友站简介",
+  "sortOrder": 0,
+  "status": 0,
+  "createTime": "2026-10-29T02:00:00.000Z",
+  "updateTime": "2026-10-29T02:00:00.000Z",
+  "source": "APPLICATION",
+  "applicant": { "userId": "12", "nickname": "落叶" }
+}
+```
 
 <a id="response-file"></a>
 

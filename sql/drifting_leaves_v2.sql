@@ -1,5 +1,5 @@
 -- DriftingLeavesV2 全新数据库设计，MySQL >= 8.0.16（CHECK 约束必须生效）。
--- 上线前统一在此维护表结构和基础种子，不单独执行升级脚本；导入方法见同目录 README.md。
+-- 在此维护完整表结构和基础种子；已有库使用对应的增量迁移，见同目录 README.md。
 -- 在空库中执行；不迁移旧数据，不包含 DROP DATABASE/TABLE，包含指定的初始管理员账号。
 CREATE DATABASE IF NOT EXISTS driftingleaves
   CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
@@ -256,6 +256,8 @@ CREATE TABLE blog_article_like (
 
 CREATE TABLE blog_friend_link (
   link_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '友链ID',
+  applicant_id BIGINT DEFAULT NULL COMMENT '本人申请的账号ID，后台直接创建时为空',
+  source VARCHAR(11) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'UNKNOWN' COMMENT '来源：APPLICATION博客申请、ADMIN后台创建、UNKNOWN历史来源不明',
   link_name VARCHAR(100) NOT NULL COMMENT '友情链接显示名称',
   url VARCHAR(2048) NOT NULL COMMENT '友情链接目标URL',
   avatar VARCHAR(2048) DEFAULT NULL COMMENT '友链站点头像或图标URL',
@@ -265,9 +267,21 @@ CREATE TABLE blog_friend_link (
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间，记录修改时自动更新',
   PRIMARY KEY (link_id),
+  UNIQUE KEY uk_friend_link_applicant (applicant_id),
   KEY idx_friend_link_status_sort (status, sort_order, link_id),
+  CONSTRAINT fk_friend_link_applicant FOREIGN KEY (applicant_id) REFERENCES sys_user (user_id) ON DELETE SET NULL,
+  CONSTRAINT ck_friend_link_source CHECK (source IN ('APPLICATION', 'ADMIN', 'UNKNOWN')),
   CONSTRAINT ck_friend_link_status CHECK (status IN (0, 1, 2))
 ) ENGINE=InnoDB COMMENT='友情链接；URL协议及长度由应用校验';
+
+CREATE TABLE blog_friend_link_quota (
+  user_id BIGINT NOT NULL COMMENT '提交友链申请的账号ID',
+  submission_date DATE NOT NULL COMMENT '最近一次成功提交的上海自然日',
+  submission_count TINYINT NOT NULL COMMENT '该日成功提交次数',
+  PRIMARY KEY (user_id),
+  CONSTRAINT fk_friend_link_quota_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE CASCADE,
+  CONSTRAINT ck_friend_link_quota_count CHECK (submission_count BETWEEN 1 AND 3)
+) ENGINE=InnoDB COMMENT='友链申请次数，删除友链不返还次数';
 
 CREATE TABLE blog_file (
   file_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '文件ID',

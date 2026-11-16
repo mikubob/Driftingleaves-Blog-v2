@@ -212,18 +212,93 @@ fieldset {
     margin: 0 auto 30px;
   }
   .auth-tabs {
+    position: relative;
     display: flex;
-    margin: 24px 0;
+    margin: 22px 0 4px;
     border-bottom: 1px solid var(--blog-border);
+
+    /* 底部滑动指示线，随 --active-tab 在左右标签间平滑移动。 */
+    &::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      bottom: -1px;
+      width: 50%;
+      height: 2px;
+      background: var(--blog-text);
+      border-radius: 2px;
+      transform: translateX(calc(var(--active-tab, 0) * 100%));
+      transition: transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      pointer-events: none;
+    }
   }
   .auth-tabs button {
     flex: 1;
+    padding: 10px 12px;
     border: 0;
-    border-radius: 0;
-    border-bottom: 2px solid transparent;
+    border-radius: 6px 6px 0 0;
+    background: transparent;
+    color: var(--blog-text3);
+    font-weight: 500;
+    transition:
+      color 0.22s ease,
+      background-color 0.22s ease,
+      transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+
+    &:hover:not(:disabled):not(.selected) {
+      color: var(--blog-text2);
+      background: var(--blog-hover);
+    }
+
+    &:active:not(:disabled) {
+      transform: scale(0.97);
+    }
   }
   .auth-tabs .selected {
-    border-bottom-color: var(--blog-text);
+    color: var(--blog-text);
+    font-weight: 600;
+  }
+  .auth-subtabs {
+    margin: 18px 0 8px;
+  }
+  /* 登录与注册切换时的二级选项、验证码按钮和第三方登录折叠动画。 */
+  .auth-collapsible {
+    display: grid;
+    grid-template-rows: 1fr;
+    opacity: 1;
+    transition:
+      grid-template-rows 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+      opacity 0.22s ease;
+
+    &.is-collapsed {
+      grid-template-rows: 0fr;
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+  .auth-collapsible-inner {
+    overflow: hidden;
+    min-height: 0;
+  }
+  .auth-fields {
+    padding-top: 6px;
+  }
+  .auth-send-code {
+    margin-top: 12px;
+  }
+  .auth-switch-enter-active,
+  .auth-switch-leave-active {
+    transition:
+      opacity 0.18s ease,
+      transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .auth-switch-enter-from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  .auth-switch-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
   }
   .full-width {
     width: 100%;

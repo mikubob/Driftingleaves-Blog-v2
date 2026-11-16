@@ -11,6 +11,7 @@ import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IFriendLinkService;
 import com.xuan.utils.IdUtils;
+import com.xuan.vo.AdminLinkVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.LinkProfileVO;
 import jakarta.validation.Valid;
@@ -42,14 +43,14 @@ public class FriendLinkController {
     /** 分页查询友情链接，列表不带每条记录的版本，编辑前先查询详情。 */
     @GetMapping
     @SaCheckPermission("blog:link:query")
-    public Result<PageResult<BlogFriendLink>> list(@Valid @ModelAttribute LinkQueryDTO query) {
+    public Result<PageResult<AdminLinkVO>> list(@Valid @ModelAttribute LinkQueryDTO query) {
         return Result.ok(links.listLinks(query));
     }
 
     /** 根据id查询友情链接详情，版本放在 X-Revision 响应头。 */
     @GetMapping("/{linkId}")
     @SaCheckPermission("blog:link:query")
-    public ResponseEntity<Result<BlogFriendLink>> detail(@PathVariable String linkId) {
+    public ResponseEntity<Result<AdminLinkVO>> detail(@PathVariable String linkId) {
         return profile(links.detail(IdUtils.parse(linkId)));
     }
 
@@ -87,7 +88,7 @@ public class FriendLinkController {
     }
 
     /** 返回友情链接资料，版本只放在响应头。 */
-    private ResponseEntity<Result<BlogFriendLink>> profile(LinkProfileVO result) {
+    private <T extends BlogFriendLink> ResponseEntity<Result<T>> profile(LinkProfileVO<T> result) {
         return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.link()));
     }
 }

@@ -149,9 +149,11 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | [分页查询后台友链](API_ADMIN.md#api-71) | `GET /api/v1/admin/links` |
 | [查询友链详情](API_ADMIN.md#api-72) | `GET /api/v1/admin/links/{linkId}` |
 | [创建友链](API_ADMIN.md#api-73) | `POST /api/v1/admin/links` |
-| [修改或审核友链](API_ADMIN.md#api-74) | `PUT /api/v1/admin/links/{linkId}` |
-| [批量切换友链状态](API_ADMIN.md#batch-links-status) | `PUT /api/v1/admin/links/batch-status` |
+| [修改友链资料](API_ADMIN.md#api-74) | `PUT /api/v1/admin/links/{linkId}` |
+| [审核或批量切换友链状态](API_ADMIN.md#batch-links-status) | `PUT /api/v1/admin/links/batch-status` |
 | [批量删除友链](API_ADMIN.md#batch-link-delete) | `POST /api/v1/admin/links/batch-delete` |
+
+博客申请由上述接口管理。后端返回[来源和申请人摘要](API_ADMIN.md#admin-link-source)，支持按申请人和来源筛选以及按网址搜索。
 
 ### 1.12 站点配置
 
@@ -375,6 +377,9 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | 接口 | 方法与完整路径 |
 | --- | --- |
 | [分页查询公开友链](API_BLOG.md#api-70) | `GET /api/v1/blog/links` |
+| [查询本人友链申请](API_BLOG.md#link-application-get) | `GET /api/v1/blog/me/link-application` |
+| [提交友链申请](API_BLOG.md#link-application-create) | `POST /api/v1/blog/me/link-application` |
+| [删除本人友链申请](API_BLOG.md#link-application-delete) | `DELETE /api/v1/blog/me/link-application/{linkId}` |
 
 ### 2.12 站点配置
 

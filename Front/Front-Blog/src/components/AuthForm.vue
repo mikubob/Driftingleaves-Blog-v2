@@ -10,11 +10,37 @@ import CaptchaField from '../shared/CaptchaField.vue'
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
 const emailLogin = ref(false)
+const formMode = computed(() => {
+  if (register.value) {
+    return 'register'
+  }
+  return emailLogin.value ? 'login-email' : 'login-password'
+})
 const form = reactive({ username: '', password: '', nickname: '', email: '', emailCode: '' })
 const captcha = ref(null)
 const busy = ref(false)
 const error = ref('')
 const feedback = ref('')
+
+/** 切换登录或注册模式，并清理上一次的提示信息。 */
+function switchRegister(next) {
+  if (register.value === next) {
+    return
+  }
+  register.value = next
+  error.value = ''
+  feedback.value = ''
+}
+
+/** 切换登录方式（账号密码或邮箱验证码）。 */
+function switchEmailLogin(next) {
+  if (emailLogin.value === next) {
+    return
+  }
+  emailLogin.value = next
+  error.value = ''
+  feedback.value = ''
+}
 const submitLabel = computed(() => {
   if (busy.value) {
     return '请稍候…'
@@ -166,77 +192,143 @@ async function authorize(provider) {
 
 <template>
   <div class="auth-form">
-    <div class="auth-tabs">
-      <button :class="{ selected: !register }" :disabled="busy" @click="register = false">登录</button>
-      <button :class="{ selected: register }" :disabled="busy" @click="register = true">注册账号</button>
+    <div class="auth-tabs" role="tablist" aria-label="账号操作" :style="{ '--active-tab': register ? 1 : 0 }">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="!register"
+        :class="{ selected: !register }"
+        :disabled="busy"
+        @click="switchRegister(false)"
+      >
+        登录
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="register"
+        :class="{ selected: register }"
+        :disabled="busy"
+        @click="switchRegister(true)"
+      >
+        注册账号
+      </button>
     </div>
-    <div v-if="!register" class="auth-tabs">
-      <button :class="{ selected: !emailLogin }" :disabled="busy" @click="emailLogin = false">账号密码</button>
-      <button :class="{ selected: emailLogin }" :disabled="busy" @click="emailLogin = true">邮箱验证码</button>
+    <div class="auth-collapsible auth-subtabs-wrap" :class="{ 'is-collapsed': register }" :aria-hidden="register">
+      <div class="auth-collapsible-inner">
+        <div class="auth-tabs auth-subtabs" role="tablist" aria-label="登录方式" :style="{ '--active-tab': emailLogin ? 1 : 0 }">
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="!emailLogin"
+            :tabindex="register ? -1 : 0"
+            :class="{ selected: !emailLogin }"
+            :disabled="busy"
+            @click="switchEmailLogin(false)"
+          >
+            账号密码
+          </button>
+          <button
+            type="button"
+            role="tab"
+            :aria-selected="emailLogin"
+            :tabindex="register ? -1 : 0"
+            :class="{ selected: emailLogin }"
+            :disabled="busy"
+            @click="switchEmailLogin(true)"
+          >
+            邮箱验证码
+          </button>
+        </div>
+      </div>
     </div>
     <form @submit.prevent="submit">
       <fieldset :disabled="busy">
-        <template v-if="register || !emailLogin">
-          <label for="auth-username">用户名</label>
-          <input
-            id="auth-username"
-            v-model="form.username"
-            autocomplete="username"
-            pattern="[A-Za-z0-9_]{3,64}"
-            maxlength="64"
-            required
-            placeholder="字母、数字或下划线"
-          />
-        </template>
-        <template v-if="register">
-          <label for="auth-nickname">昵称</label>
-          <input
-            id="auth-nickname"
-            v-model="form.nickname"
-            maxlength="64"
-            autocomplete="nickname"
-            required
-            placeholder="希望大家怎样称呼你"
-          />
-        </template>
-        <template v-if="register || !emailLogin">
-          <label for="auth-password">密码</label>
-          <input
-            id="auth-password"
-            v-model="form.password"
-            type="password"
-            :autocomplete="register ? 'new-password' : 'current-password'"
-            required
-            placeholder="8–64 个字符"
-          />
-        </template>
-        <template v-if="register || emailLogin">
-          <label for="auth-email">邮箱</label>
-          <input id="auth-email" v-model="form.email" type="email" autocomplete="email" maxlength="254" required />
-          <label for="auth-email-code">邮箱验证码</label>
-          <input id="auth-email-code" v-model="form.emailCode" inputmode="numeric" autocomplete="one-time-code"
-            pattern="[0-9]{6}" maxlength="6" required placeholder="邮件中的六位数字" />
-        </template>
+        <Transition name="auth-switch" mode="out-in">
+          <div :key="formMode" class="auth-fields">
+            <template v-if="register || !emailLogin">
+              <label for="auth-username">用户名</label>
+              <input
+                id="auth-username"
+                v-model="form.username"
+                autocomplete="username"
+                pattern="[A-Za-z0-9_]{3,64}"
+                maxlength="64"
+                required
+                placeholder="字母、数字或下划线"
+              />
+            </template>
+            <template v-if="register">
+              <label for="auth-nickname">昵称</label>
+              <input
+                id="auth-nickname"
+                v-model="form.nickname"
+                maxlength="64"
+                autocomplete="nickname"
+                required
+                placeholder="希望大家怎样称呼你"
+              />
+            </template>
+            <template v-if="register || !emailLogin">
+              <label for="auth-password">密码</label>
+              <input
+                id="auth-password"
+                v-model="form.password"
+                type="password"
+                :autocomplete="register ? 'new-password' : 'current-password'"
+                required
+                placeholder="8–64 个字符"
+              />
+            </template>
+            <template v-if="register || emailLogin">
+              <label for="auth-email">邮箱</label>
+              <input id="auth-email" v-model="form.email" type="email" autocomplete="email" maxlength="254" required />
+              <label for="auth-email-code">邮箱验证码</label>
+              <input id="auth-email-code" v-model="form.emailCode" inputmode="numeric" autocomplete="one-time-code"
+                pattern="[0-9]{6}" maxlength="6" required placeholder="邮件中的六位数字" />
+            </template>
+          </div>
+        </Transition>
         <CaptchaField ref="captcha" :request="request" endpoint="/blog/auth/captcha" :disabled="busy" />
-        <button v-if="register || emailLogin" type="button" :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</button>
+        <div class="auth-collapsible" :class="{ 'is-collapsed': !(register || emailLogin) }">
+          <div class="auth-collapsible-inner">
+            <button
+              type="button"
+              class="auth-send-code"
+              :tabindex="register || emailLogin ? 0 : -1"
+              :disabled="busy || !captcha?.ready"
+              @click="sendEmailCode"
+            >
+              发送邮箱验证码
+            </button>
+          </div>
+        </div>
         <p v-if="error" role="alert" class="error-text">{{ error }}</p>
         <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
         <button class="primary full-width" :disabled="busy || !captcha?.ready">{{ submitLabel }}</button>
       </fieldset>
     </form>
-    <div v-if="!register && (providers.loading || providers.error || providers.data?.length)">
-      <div class="auth-divider">或使用已绑定的第三方账号</div>
-      <ResourceState :resource="providers" />
-      <div class="provider-buttons">
-        <button
-          v-for="provider in providers.data"
-          :key="provider.source"
-          :disabled="busy"
-          @click="authorize(provider)"
-        >
-          {{ provider.displayName }}
-          ↗
-        </button>
+    <div
+      class="auth-collapsible"
+      :class="{ 'is-collapsed': register || !(providers.loading || providers.error || providers.data?.length) }"
+      :aria-hidden="register"
+    >
+      <div class="auth-collapsible-inner">
+        <div class="auth-divider">或使用已绑定的第三方账号</div>
+        <ResourceState :resource="providers" />
+        <div class="provider-buttons">
+          <button
+            v-for="provider in providers.data"
+            :key="provider.source"
+            type="button"
+            :tabindex="register ? -1 : 0"
+            :disabled="busy"
+            @click="authorize(provider)"
+          >
+            {{ provider.displayName }}
+            ↗
+          </button>
+        </div>
       </div>
     </div>
   </div>

@@ -308,7 +308,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `POST /blog/articles/{articleId}/comments` | 该articleId下所有parentId、分页的公开评论缓存；待审新增也统一清理；文章列表/详情的评论数仍实时查库，不清空所有正文 |
 | `DELETE /blog/me/comments/{commentId}`；`PUT /admin/comments/batch-review`；`POST /admin/comments/batch-delete` | 根据数据库中的articleId清理该文章全部公开评论页和回复页；祖先审核或删除影响后代，不能只删commentId对应的一条结果 |
 | `PUT/DELETE /blog/articles/{articleId}/like`；成功文章详情GET | 不删正文缓存，不建立Redis计数副本；本次互动数按数据库读取，排行榜最多延迟60秒；这是0.7明确允许的计数例外 |
-| `POST /admin/links`；`PUT /admin/links/batch-status`；`PUT /admin/links/{linkId}`；`POST /admin/links/batch-delete` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
+| `POST /admin/links`；`PUT /admin/links/batch-status`；`PUT /admin/links/{linkId}`；`POST /admin/links/batch-delete`；`DELETE /blog/me/link-application/{linkId}` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
 | `PUT /admin/configs/site` | 公开site配置、RSS及地图；从公开改为不公开也必须删旧缓存，RSS继续按原规则检查必需公开配置 |
 | `PUT /admin/configs/comment`、`PUT /admin/configs/message` | 不建立或清理不存在的策略缓存；继续原配置行锁与锁内实时读取，新开关/审核策略立即用于后续写请求 |
 | `PUT /admin/home/profile` | 整个主页公开资料域；不与sys_user作者资料混为同一业务 |
@@ -815,15 +815,3 @@ Cache-Control: no-store
 <a id="delivery"></a>
 
 接口实施状态以本文标记为准；配置与当前检查入口见 [后端运行说明](后端运行说明.md)。
-
----
-
-<a id="legacy-sources"></a>
-
-## 21. 旧项目来源与迁移对照
-
-V2 沿用旧站的主页、简历、文章、留言、音乐、订阅与访问统计业务，并采用当前 Sa-Token、RBAC 和 28 表设计。旧站 JWT、游客 Token、私密评论与前端完成页均不自动成为 V2 能力。单条与批量操作已按 V2 规则合并为[统一操作入口](API_ADMIN.md#admin-batch)，没有复制旧接口、鉴权或默认封禁时间。
-
-具体来源和迁移取舍见 [迁移对照](API_CONTRACT.md#legacy-sources)；运行配置与历史验证见 [后端运行说明](后端运行说明.md)。
-
----

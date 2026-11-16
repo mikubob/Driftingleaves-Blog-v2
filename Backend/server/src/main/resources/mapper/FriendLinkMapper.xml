@@ -2,24 +2,76 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <!-- 友链没有 URL 或名称唯一键，维护结果立即反映在公开查询里。 -->
 <mapper namespace="com.xuan.mapper.FriendLinkMapper">
-    <select id="linkPage" resultType="com.xuan.entity.BlogFriendLink">
-        SELECT * FROM blog_friend_link
+    <resultMap id="adminLink" type="com.xuan.vo.AdminLinkVO" autoMapping="true">
+        <id property="linkId" column="link_id"/>
+        <association property="applicant" javaType="com.xuan.vo.AdminLinkVO$Applicant"
+                     notNullColumn="joined_user_id">
+            <id property="userId" column="joined_user_id"/>
+            <result property="nickname" column="joined_nickname"/>
+        </association>
+    </resultMap>
+
+    <select id="publicLinkPage" resultType="com.xuan.entity.BlogFriendLink">
+        SELECT * FROM blog_friend_link WHERE status = 1 ORDER BY sort_order ASC, link_id ASC
+    </select>
+
+    <!-- 保留后台创建及申请人已删除的记录，账号禁用时仍读取昵称。 -->
+    <sql id="adminLinks">
+        SELECT f.link_id, f.link_name, f.url, f.avatar, f.description, f.sort_order, f.status,
+               f.create_time, f.update_time, f.source, u.user_id AS joined_user_id, u.nickname AS joined_nickname
+        FROM blog_friend_link f
+        LEFT JOIN sys_user u ON u.user_id = f.applicant_id
+    </sql>
+
+    <select id="adminLinkPage" resultMap="adminLink">
+        <include refid="adminLinks"/>
         <where>
-            <choose>
-                <when test="publicOnly">status = 1</when>
-                <otherwise>
-                    <if test="query.status != null">AND status = #{query.status}</if>
-                    <if test="query.keyword != null">AND INSTR(link_name, #{query.keyword}) &gt; 0</if>
-                </otherwise>
-            </choose>
+            <if test="query.status != null">AND f.status = #{query.status}</if>
+            <if test="query.source != null">AND f.source = #{query.source}</if>
+            <if test="applicantId != null">AND f.applicant_id = #{applicantId}</if>
+            <if test="query.keyword != null">
+                AND (INSTR(f.link_name, #{query.keyword}) &gt; 0 OR INSTR(f.url, #{query.keyword}) &gt; 0)
+            </if>
         </where>
-        ORDER BY sort_order ASC, link_id ASC
+        ORDER BY f.sort_order ASC, f.link_id ASC
+    </select>
+
+    <select id="adminLinkDetail" resultMap="adminLink">
+        <include refid="adminLinks"/>
+        WHERE f.link_id = #{id}
     </select>
 
     <!-- 写事务持有此锁到版本校验、保存和成功审计完成。 -->
     <select id="lockById" resultType="com.xuan.entity.BlogFriendLink">
         SELECT * FROM blog_friend_link WHERE link_id = #{id} FOR UPDATE
     </select>
+
+    <!-- 申请人只用于本人操作，不进入 Link 响应。 -->
+    <select id="findApplication" resultType="com.xuan.entity.BlogFriendLink">
+        SELECT * FROM blog_friend_link WHERE applicant_id = #{userId}
+    </select>
+
+    <insert id="insertLink" useGeneratedKeys="true" keyProperty="link.linkId" keyColumn="link_id">
+        INSERT INTO blog_friend_link (applicant_id, source, link_name, url, avatar, description, sort_order, status)
+        VALUES (#{applicantId,jdbcType=BIGINT}, #{source}, #{link.linkName}, #{link.url}, #{link.avatar},
+                #{link.description}, #{link.sortOrder}, #{link.status})
+    </insert>
+
+    <delete id="deleteApplication">
+        DELETE FROM blog_friend_link WHERE link_id = #{id} AND applicant_id = #{userId}
+    </delete>
+
+    <select id="applicationCount" resultType="int">
+        SELECT submission_count FROM blog_friend_link_quota
+        WHERE user_id = #{userId} AND submission_date = #{date}
+    </select>
+
+    <!-- 每个账号只保存最近一次提交所在日期的次数，删除申请不删除次数。 -->
+    <insert id="saveApplicationCount">
+        INSERT INTO blog_friend_link_quota (user_id, submission_date, submission_count)
+        VALUES (#{userId}, #{date}, #{count})
+        ON DUPLICATE KEY UPDATE submission_date = #{date}, submission_count = #{count}
+    </insert>
 
     <update id="updateLink">
         UPDATE blog_friend_link SET link_name=#{link.linkName}, url=#{link.url}, avatar=#{link.avatar},

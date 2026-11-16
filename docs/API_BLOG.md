@@ -2603,6 +2603,53 @@ GET /api/v1/blog/links?page=1&pageSize=10
 
 仅 status=1，sortOrder ASC,linkId ASC。
 
+以下三个接口均要求有效的博客登录会话和启用的账号，申请归属只取自会话。写请求按[通用协议](API.md#common)校验请求来源和 `X-Expected-User-Id`，查询传入该请求头时也校验。本人申请响应不进入公开缓存。
+
+<a id="link-application-get"></a>
+
+### 2.11.2 查询本人友链申请
+
+`GET /api/v1/blog/me/link-application`。无查询参数和请求体。成功返回 `200`，`data` 为本人的 [Link](API_ADMIN.md#response-link)，没有申请时为 `null`。后台编辑或审核后，本接口返回同一条记录的最新资料和状态。后台删除后，如尚未重新申请，返回 `null`。提交超时后，先用此接口确认结果。
+
+<a id="link-application-create"></a>
+
+### 2.11.3 提交友链申请
+
+`POST /api/v1/blog/me/link-application`。请求使用 `application/json`，无查询参数，仅接受下表字段。
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `linkName` | string | 是 | 友站名称，1..100 字符 |
+| `url` | string | 是 | 友站地址，绝对 HTTP(S) URL，最长 2048 字符 |
+| `avatar` | string&#124;null | 否 | 公开 HTTP(S) 图片地址，最长 2048 字符，默认 null，见[地址规则](API_CONTRACT.md#model-12-7) |
+| `description` | string&#124;null | 否 | 友站简介，纯文本，最长 255 字符，默认 null |
+
+请求示例
+
+```http
+POST /api/v1/blog/me/link-application
+Content-Type: application/json
+Origin: https://blog.example.com
+Cookie: __Host-dl-blog-session=<opaque>
+X-Expected-User-Id: 12
+
+{"linkName":"示例友站","url":"https://example.com"}
+```
+
+成功返回 `201 Created`，`Location` 为 `/api/v1/blog/me/link-application`，`data` 为新建的 [Link](API_ADMIN.md#response-link)。服务端设置 `status=0`（待审核）和 `sortOrder=0`。后台通过[友链状态接口](API_ADMIN.md#batch-links-status)审核，状态变为 `1` 后才进入公开列表。
+
+- 每个账号最多保留一条本人申请。只要上一条仍存在，无论是待审核、展示、驳回还是下架，均返回 `409/STATE_CONFLICT`。申请人删除或后台[删除该友链](API_ADMIN.md#batch-link-delete)后，才可在剩余额度内重新申请。后台直接创建的友链不计入账号申请。
+- 每个账号按 `Asia/Shanghai` 自然日最多成功提交 3 次，每天 00:00 重置。删除申请不返还次数。没有现存申请且当天额度用完时，返回 `429/RATE_LIMITED`，`Retry-After` 为距离下次重置的秒数。
+- 同一账号的并发提交和删除按顺序生效。检查现存申请、检查额度、新建申请和记录次数须保证一致性，失败不创建申请或扣减额度。
+
+<a id="link-application-delete"></a>
+
+### 2.11.4 删除本人友链申请
+
+`DELETE /api/v1/blog/me/link-application/{linkId}`。`linkId` 为查询或提交响应中的十进制 ID，无查询参数、请求体和 `If-Revision`。只删除本人提交的对应记录，各审核状态均可删除。成功返回 `200`，`data` 为 `null`。若该友链正在展示，删除成功后应从公开列表移除。记录不存在或不属于当前账号时统一返回 `404/NOT_FOUND`，重复删除旧 ID 不影响后来创建的申请。
+
+申请接口的通用错误见[错误码](API.md#errors)。未登录或会话失效返回 `401/UNAUTHENTICATED`，账号禁用返回 `403/ACCOUNT_DISABLED`，写请求缺少预期账号或预期账号与会话不符时返回 `409/SESSION_ACCOUNT_CHANGED`，非法参数返回 `400/VALIDATION_ERROR`。
+
 ---
 
 <a id="blog-group-12"></a>

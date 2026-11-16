@@ -1,5 +1,6 @@
 <script setup>
 import ResourceDetail from '../components/ResourceDetail.vue'
+import UserDetail from '../components/UserDetail.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref, computed } from 'vue'
@@ -12,10 +13,13 @@ import {
   ElInputNumber,
   ElMessage,
   ElMessageBox,
+  ElOption,
   ElRadio,
   ElRadioGroup,
+  ElSelect,
   ElTable,
   ElTableColumn,
+  ElTag,
 } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
@@ -25,10 +29,13 @@ import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/input-number/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
+import 'element-plus/es/components/option/style/css'
 import 'element-plus/es/components/radio/style/css'
 import 'element-plus/es/components/radio-group/style/css'
+import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
+import 'element-plus/es/components/tag/style/css'
 import { request } from '../api.js'
 import { prepareBatch } from '../batch.js'
 import { can } from '../session.js'
@@ -46,9 +53,10 @@ const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
 } = useList(
   '/admin/links',
-  { keyword: '', status: '' },
+  { keyword: '', status: '', source: '', applicantId: '' },
 )
 const detailId = ref('')
+const detailUserId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
@@ -156,6 +164,23 @@ function switchStatus(status) {
   load(true)
 }
 
+const sourceLabels = {
+  APPLICATION: '博客申请',
+  ADMIN: '后台创建',
+  UNKNOWN: '未知来源',
+}
+
+const sourceTagTypes = {
+  APPLICATION: 'primary',
+  ADMIN: 'success',
+  UNKNOWN: 'info',
+}
+
+/** 格式化友链来源名称。 */
+function sourceLabel(source) {
+  return sourceLabels[source] || '未知来源'
+}
+
 const batch = ref(null)
 const batchTable = ref(null)
 const batchActions = computed(() => {
@@ -167,7 +192,7 @@ const batchActions = computed(() => {
       { label: '批量设为待审', path: 'batch-status', method: 'PUT', body: { status: 0 } },
     )
   }
-  if (can('blog:link:delete', true)) {
+  if (can('blog:link:delete')) {
     actions.push({
       label: '批量删除',
       path: 'batch-delete',
@@ -213,6 +238,18 @@ const batchActions = computed(() => {
           maxlength="100"
           clearable
         />
+        <el-select v-model="filters.source" aria-label="友链来源" placeholder="全部来源" clearable>
+          <el-option label="博客申请" value="APPLICATION" />
+          <el-option label="后台创建" value="ADMIN" />
+          <el-option label="未知来源" value="UNKNOWN" />
+        </el-select>
+        <el-input
+          v-model.trim="filters.applicantId"
+          aria-label="申请人 ID"
+          placeholder="申请人 ID"
+          pattern="[1-9][0-9]{0,18}"
+          clearable
+        />
         <el-button type="primary" native-type="submit">查询</el-button>
         <el-button @click="reset">重置</el-button>
       </form>
@@ -244,6 +281,25 @@ const batchActions = computed(() => {
         <el-table-column v-if="batchActions.length" type="selection" width="48" fixed="left" :selectable="batch?.selectable" />
         <el-table-column prop="linkName" label="站点名称" min-width="160" show-overflow-tooltip />
         <el-table-column prop="url" label="站点地址" min-width="220" show-overflow-tooltip />
+        <el-table-column label="来源" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag :type="sourceTagTypes[row.source] || 'info'" effect="plain">
+              {{ sourceLabel(row.source) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="申请人" min-width="180" show-overflow-tooltip>
+          <template #default="{ row }">
+            <el-button
+              v-if="row.applicant && can('sys:user:query')"
+              type="primary"
+              link
+              @click="detailUserId = row.applicant.userId"
+            >{{ row.applicant.nickname }}（{{ row.applicant.userId }}）</el-button>
+            <span v-else-if="row.applicant">{{ row.applicant.nickname }}（{{ row.applicant.userId }}）</span>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="介绍" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.description || '—' }}</template>
         </el-table-column>
@@ -299,10 +355,33 @@ const batchActions = computed(() => {
         </el-descriptions-item>
         <el-descriptions-item label="排序">{{ detail.sortOrder }}</el-descriptions-item>
         <el-descriptions-item label="审核状态"><StatusTag :value="detail.status" kind="link" /></el-descriptions-item>
+        <el-descriptions-item label="友链来源">
+          <el-tag :type="sourceTagTypes[detail.source] || 'info'" effect="plain">
+            {{ sourceLabel(detail.source) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="申请人">
+          <template v-if="detail.applicant">
+            <span>{{ detail.applicant.nickname }}（ID：{{ detail.applicant.userId }}）</span>
+            <el-button
+              v-if="can('sys:user:query')"
+              type="primary"
+              link
+              @click="detailUserId = detail.applicant.userId"
+            >查看账号</el-button>
+          </template>
+          <span v-else>无</span>
+        </el-descriptions-item>
         <el-descriptions-item label="创建时间">{{ formatTime(detail.createTime) }}</el-descriptions-item>
         <el-descriptions-item label="更新时间">{{ formatTime(detail.updateTime) }}</el-descriptions-item>
       </template>
     </ResourceDetail>
+    <UserDetail
+      v-if="detailUserId"
+      :key="detailUserId"
+      :user-id="detailUserId"
+      @close="detailUserId = ''"
+    />
     <el-dialog
       v-model="dialog"
       :title="id ? '编辑友链' : '新建友链'"

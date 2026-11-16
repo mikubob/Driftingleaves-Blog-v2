@@ -1,6 +1,5 @@
 package com.xuan.dto;
 
-import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
@@ -14,7 +13,7 @@ import java.util.Set;
  * 友链创建可用默认值，PUT 要完整填写；URL 的公开资源规则由入口业务统一检查。
  */
 @Getter
-public class LinkWriteDTO {
+public class LinkWriteDTO extends LinkApplicationDTO {
 
     /**
      * 完整替换也执行公共字段校验。
@@ -24,41 +23,23 @@ public class LinkWriteDTO {
     }
 
     @NotNull
-    @TextLength(min = 1, max = 100)
-    private String linkName;
-
-    @NotNull
-    @TextLength(min = 1, max = 2048)
-    private String url;
-
-    @TextLength(max = 2048)
-    private String avatar;
-
-    @TextLength(max = 255)
-    private String description;
-
-    @NotNull
     private Integer sortOrder = 0;
 
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
-    public void setLinkName(String value) {
-        linkName = value == null ? null : value.strip();
-    }
-
-    public void setUrl(String value) {
-        url = value == null ? null : value.strip();
-    }
-
+    /** 保存头像地址，记录字段是否提交。 */
+    @Override
     public void setAvatar(String value) {
         present.add("avatar");
-        avatar = clean(value);
+        super.setAvatar(value);
     }
 
+    /** 保存友站简介，记录字段是否提交。 */
+    @Override
     public void setDescription(String value) {
         present.add("description");
-        description = clean(value);
+        super.setDescription(value);
     }
 
     public void setSortOrder(Integer value) {
@@ -72,8 +53,4 @@ public class LinkWriteDTO {
         return present.size() == 3;
     }
 
-    /** 可空文本去掉首尾空白，空串按清空处理。 */
-    private String clean(String value) {
-        return value == null || value.strip().isEmpty() ? null : value.strip();
-    }
 }

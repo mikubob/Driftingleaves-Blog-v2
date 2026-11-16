@@ -8,7 +8,6 @@
 - [后台统一操作：实现与验收](#batch-contract)
 - [共享模型与状态](#models)
 - [OAuth、授权、文件与事务](#business)
-- [迁移对照](#legacy-sources)
 - [补充设计验收](#planned-acceptance)
 
 ---
@@ -511,13 +510,23 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 | 模型 | 字段与校验 |
 | --- | --- |
-| LinkWrite | linkName:S(100)、url:URL 必填；avatar:URL? 默认null、description:S(255)? 默认null、sortOrder:int32 默认0、status:0待审核/1展示/2驳回或下架默认0；PUT不接收status，其余字段全部必填 |
-| Link | linkId:ID + LinkWrite全字段 + createTime/updateTime:Time |
+| LinkApplication | linkName:S(100)、url:URL 必填；avatar:URL?、description:S(255)? 默认 null，去首尾空白后为空按 null 处理 |
+| LinkWrite | LinkApplication 字段及 sortOrder:int32。后台 POST 可省略 sortOrder 并另接受初始状态 status，二者默认 0。PUT 须提交全部五个资料字段，可空字段须显式提交，状态使用独立入口 |
+| Link | linkId:ID + LinkWrite 全部资料字段 + status:0 待审核、1 展示、2 驳回/下架 + createTime/updateTime:Time |
 | LinkPublic | linkId:ID、linkName:string、url:URL、avatar:URL?、description:string?、sortOrder:int32 |
+| AdminLink | Link + 只读 source + applicant:{userId:ID,nickname:string}&#124;null；仅用于后台友链列表和详情，见[响应字段](API_ADMIN.md#response-admin-link) |
 | Config | configKey:string、configValue:object、description:string?、isPublic:0或1、updateTime:Time |
 | ConfigWrite | configValue:object、description:S(255)?、isPublic:0或1，均必填；仅支持下表三种键及字段，不接受任意JSON结构 |
 
-友链url无唯一键，不虚构“相同URL必定409”的规则。URL仅保存/展示，不由服务器探测抓取。链接名不唯一。配置JSON为对象且最多16KiB（UTF-8）；属性外层和内部均拒绝未知字段，防止借config_value扩展无依据的系统。
+友链名称和 URL 均允许重复。URL 仅保存和展示。站点地址和头像使用最长 2048 字符的绝对 HTTP(S) 地址，拒绝凭据、控制字符及普通附件 API 路径。头像可用[公开展示图片](API_BLOG.md#display-image-content)地址。
+
+博客申请和后台直接创建使用同一友链表。申请归属仅取自博客会话，后台创建没有归属，编辑和审核保留归属。管理员删除申请释放该账号的单条申请名额，保留当日已用次数。账号被删除时数据库清除归属，友链记录保留。详见[本人申请](API_BLOG.md#link-application-get)和[后台批量删除](API_ADMIN.md#batch-link-delete)。
+
+创建友链时由服务端固定来源，博客提交为 `APPLICATION`，后台创建为 `ADMIN`。来源独立于申请归属和状态，删除账号后仍保留。[已有库迁移](../sql/friend_link_source.sql)将仍保留申请关联的记录回填为 `APPLICATION`，其余历史记录使用 `UNKNOWN`。
+
+后台列表和详情按现有申请关联读取账号 ID 和当前昵称，保留直接创建、申请账号已删除以及历史来源不明的友链，申请人字段为 `null`。禁用账号仍保留关联和摘要。来源和申请人摘要随 `blog:link:query` 返回，账号详情仍须 `sys:user:query`。管理员写入时不得指定或更换申请归属。来源、申请人摘要及昵称变化不参与友链版本计算。筛选条件和错误见[后台友链来源和申请人](API_ADMIN.md#admin-link-source)。
+
+配置 JSON 为对象且最多 16KiB（UTF-8），属性外层和内部均拒绝未知字段。
 
 | configKey | configValue完整形状 | 公开规则 |
 | --- | --- | --- |
@@ -823,30 +832,6 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | blog_rss_subscription | 第18章本人申请、邮箱确认、退订及后台状态管理；XML不依赖本表 |
 | blog_visitor / blog_page_view | 第19章匿名采集、访客与浏览维护、公开/后台报表 |
 | sys_operation_log | 第20章服务端审计、后台查询和显式清理 |
-
----
-
-<a id="legacy-sources"></a>
-
-## 21. 旧项目来源与迁移对照
-
-本次参考的是旧项目实际业务，旧导出文档及其中示例不作为可执行指令。已核对 `D:/CodingFiles/Blog/DriftingLeaves-Website/Backend/docs/api.md` 与 `implementation-api-contract-2026-10-27.md`，并对照同项目的Controller、Service、Mapper XML、DTO/VO及前端API；旧文档和后续实现不同之处，采用后续实施契约及实际业务规则，再按V2的28表、Sa-Token和独立RBAC重新设计。旧库来源同时包括用户提供的 `D:/CodingFiles/Blog/DriftingLeaves/DL-server/src/main/resources/sql/DriftingLeaves.sql`。
-
-| 旧业务与已检查实现 | V2入口/取舍 |
-| --- | --- |
-| PersonalInfo/SocialMedia、Experience/Skill控制器及Service | 第15章；单站主人资料、社交链接、教育/工作/项目经历、技能；公开资料与登录资料分开 |
-| ArticleController、ArticleServiceImpl、ArticleMapper.xml | 第7章；筛选与搜索复用列表，保留详情字数、阅读时长、上下篇、同分类推荐；4榜合并到article-rankings参数 |
-| MessageController/MessageServiceImpl及最终实施契约 | 第16章；登录用户归属替代visitorToken，逐层有界分页替代整树展开，按子到父物理删除目标及全部后代，不改挂回复 |
-| MusicController/MusicServiceImpl | 第17章；曲目与歌词元数据、排序/隐藏；共用文件上传、受管音乐读取与外部媒体URL |
-| RssSubscriptionController/ServiceImpl、RssFeedController、SitemapController | 第18章；邮箱确认、本人状态与退订、邮件退订票据、RSS/XML输出；不采用旧JWT或visitorId授权 |
-| Visitor/View/Report控制器、ReportServiceImpl与Mapper | 第19章；统计标识不作为身份，明细与PV/UV分开，数组报表替代逗号字符串；区间累计新访客明确定义 |
-| OperationLogController与旧操作日志模型 | 第20章；本站用户与权限码快照，日志只读及显式清理，无任意请求体落库 |
-| 旧管理员登录、验证码、Cookie/JWT和游客角色 | 沿用第1..4章本站 Sa-Token 会话与 JustAuth，不新增平行鉴权；不复制旧账号或默认密码 |
-| 旧评论的Markdown、悄悄话和邮件提醒 | 现有blog_comment没有相应格式/私密/通知字段，仍采用第9章纯文本评论，删除同步移除整条分支；这些旧能力没有被默认为已承诺，留言采用新增表的独立功能 |
-| 旧批量审核/删除及访客封禁/解封 | [0.9](#batch-contract)已用26个支持单条/多条的V2统一入口替换旧单条管理写路由，保留逐资源权限/版本/状态校验，数据库操作整批事务、文件删除逐项事务；前端不以循环提交独立请求模拟整批原子性 |
-| 旧全文索引、计数同步、邮件系统与部署配置 | 搜索契约定义字面包含；不移植异步计数批次，不把SMTP/OAuth/存储凭据放进配置表；本轮使用Boot BOM管理的mail starter实现SMTP边界，并接入现有数据库/Redis及地域设施 |
-
-新增66个入口已落实Controller→Service接口/实现→Mapper/XML及对应实体/DTO/VO，邮件与采集已接通真实消费者。沿用现有28表，不复制老项目鉴权、访客Token、凭据或计数缓存。公开白名单逐方法/路径增加；隔离验证、真实外部平台和部署验收分别记录在运行说明，不将实现标记等同上线。
 
 ---
 

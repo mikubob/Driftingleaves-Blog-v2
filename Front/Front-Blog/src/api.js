@@ -108,6 +108,12 @@ const me = (value) => model(value, {
 const subscription = (value) => model(value, {
   subscriptionId: isId, email: text, status: (item) => [0, 1, 2].includes(item),
 })
+const linkApplication = (value) => model(value, {
+  linkId: isId, linkName: text, url: isWebUrl, avatar: nullableText,
+  description: nullableText, sortOrder: Number.isInteger,
+  status: (item) => [0, 1, 2].includes(item),
+  createTime: time, updateTime: time,
+})
 const message = (value) => model(value, {
   messageId: isId, content: text, htmlContent: text, contentFormat: flag,
   location: nullableText, userAgentOs: nullableText, userAgentBrowser: nullableText,
@@ -141,7 +147,7 @@ function validateData(path, data, method) {
     '/blog/tags': tagWithCount,
     '/blog/authors': (item) => author(item) && count(item.articleCount),
     '/blog/archives': (item) => model(item, { month: (month) => /^[1-9]\d{3}-(0[1-9]|1[0-2])$/.test(month), articleCount: count }),
-    '/blog/links': (item) => model(item, { linkId: isId, linkName: text, url: text, avatar: nullableText, description: nullableText }),
+    '/blog/links': (item) => model(item, { linkId: isId, linkName: text, url: isWebUrl, avatar: nullableText, description: nullableText }),
     '/blog/music': (item) => model(item, {
       musicId: isId, title: text, artist: nullableText, audioUrl: text, lyricUrl: nullableText,
       lyricType: (type) => type === null || ['lrc', 'txt', 'json'].includes(type),
@@ -191,6 +197,10 @@ function validateData(path, data, method) {
     check = (value) => model(value, { permissionCodes: (items) => Array.isArray(items) && items.every(text) })
   } else if (route === '/blog/me/rss-subscription' || route === '/blog/me/rss-subscription/confirm') {
     check = (value) => value === null || subscription(value)
+  } else if (route === '/blog/me/link-application' && (read || method === 'POST')) {
+    check = read ? (value) => value === null || linkApplication(value) : linkApplication
+  } else if (method === 'DELETE' && /^\/blog\/me\/link-application\/[1-9]\d*$/.test(route)) {
+    check = (value) => value === null
   } else if (read && /^\/blog\/me\/messages\/[1-9]\d*$/.test(route)) {
     check = message
   } else if (read && /^\/blog\/me\/comments\/[1-9]\d*$/.test(route)) {
@@ -265,10 +275,14 @@ export async function request(path, { body, revision, captcha, expectedUserId = 
     throw reportRequestFailure(new Error('暂时无法连接服务器，请检查网络后重试。'), path)
   }
   if (response.status === 429) {
+    const result = await response.json().catch(() => null)
     const seconds = response.headers.get('Retry-After')
+    const prefix = typeof result?.msg === 'string' && result.msg.includes('友链申请次数')
+      ? result.msg
+      : '请求过于频繁'
     const error = new ApiError(/^\d+$/.test(seconds || '')
-      ? `请求过于频繁，请等待 ${seconds} 秒后重试。`
-      : '请求过于频繁，请稍后重试。', 429, 'RATE_LIMITED')
+      ? `${prefix}，请等待 ${seconds} 秒后重试。`
+      : `${prefix}，请稍后重试。`, 429, 'RATE_LIMITED')
     error.retryAfter = Number(seconds) || 60
     throw reportRequestFailure(error, path)
   }

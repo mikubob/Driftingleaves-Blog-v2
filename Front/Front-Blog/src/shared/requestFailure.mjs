@@ -11,6 +11,10 @@ export function reportRequestFailure(error, path) {
   if (error.status === 429 && route.startsWith('/blog/auth/')) {
     return error
   }
+  // 友链申请的查询、提交和删除在友链页内局部反馈，站点封禁仍显示全局错误页。
+  if (error.code !== 'ACCESS_BLOCKED' && /^\/blog\/me\/link-application(?:\/[1-9]\d*)?$/.test(route)) {
+    return error
+  }
   if (error.code === 'ACCESS_BLOCKED' || !/^\/blog\/analytics\/(page-views|online\/tickets)$/.test(route)) {
     onFailure(error)
   }

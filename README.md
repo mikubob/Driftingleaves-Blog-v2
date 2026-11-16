@@ -2,7 +2,7 @@
 
 项目包含 Spring Boot 后端和 Home、Blog、Cv、Admin 四个独立的 Vue 前端。
 
-数据库结构、权限和种子数据统一维护在 [初始化 SQL](sql/drifting_leaves_v2.sql)，面向新建空库，不维护旧版本升级脚本。开发库和演示数据仍需保留；本项目不会在启动时自动建库或导入 SQL。
+新建空库使用 [初始化 SQL](sql/drifting_leaves_v2.sql) 导入表结构、权限和种子数据。已有 V2 数据库按 [数据库说明](sql/README.md) 执行适用的迁移。应用启动时不会自动建库或导入 SQL。
 
 ## 开发入口
 
@@ -26,8 +26,6 @@ Home、Blog、Cv、Admin 四端各自维护源码、资源、配置和依赖，�
 - [接口文档](docs/API.md)：四端文档入口、通用协议与错误码。
 - [接口开发约定](docs/API_CONTRACT.md)：鉴权、事务、并发与资源访问规则。
 - [数据库说明](sql/README.md)与[演示数据](sql/DEMO_DATA.md)。
-- [Docker 部署](DockerForDriftingLeaves/README.md)。
-- [Docker 部署](DockerForDriftingLeaves/README.md)。
 - [Docker 部署](DockerForDriftingLeaves/README.md)。
 - [后端依赖与模块](docs/后端依赖与模块说明.md)。
 - [实时在线人数](docs/实时在线人数接口说明.md)与[Markdown 阅读展示](docs/Markdown阅读说明.md)。

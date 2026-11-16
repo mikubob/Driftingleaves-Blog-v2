@@ -1,6 +1,6 @@
 # DriftingLeavesV2 数据库设计
 
-适用 MySQL **8.0.16+**、InnoDB、utf8mb4；当前 28 张表已有实体和业务消费者，四个前端工程均已建立。表结构、权限、菜单和种子数据统一维护在[空库初始化基线](drifting_leaves_v2.sql)，不维护旧版本增量升级脚本。运行配置见[后端运行说明](../docs/后端运行说明.md)。
+适用 MySQL **8.0.16+**、InnoDB、utf8mb4，四个前端工程均已建立。表结构、权限、菜单和种子数据统一维护在[空库初始化基线](drifting_leaves_v2.sql)。运行配置见[后端运行说明](../docs/后端运行说明.md)。
 
 ## 地域与设备字段
 
@@ -25,7 +25,9 @@ ALTER TABLE blog_visitor
 ## 文件与执行
 
 - [demo_data.sql](demo_data.sql)：V2 通用演示数据，含文章、评论/留言回复链、属地与设备、访客与浏览统计、友链、隐藏音乐、订阅和虚构日志；只补充缺失的演示记录，不覆盖已有数据。数量、初始化要求、导入方法和验证见 [DEMO_DATA.md](DEMO_DATA.md)。
-- [drifting_leaves_v2.sql](drifting_leaves_v2.sql)：28 张表、基础角色、指定的初始管理员、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
+- [drifting_leaves_v2.sql](drifting_leaves_v2.sql)：29 张表、基础角色、指定的初始管理员、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
+- [friend_link_application.sql](friend_link_application.sql)：已有 V2 数据库在部署新版后端前执行一次，增加申请人和每日额度。已有友链及其展示状态照常保留。
+- [friend_link_source.sql](friend_link_source.sql)：已有 V2 数据库具备申请人字段后、部署新版后端前执行一次。保有申请人关联的历史记录回填为 `APPLICATION`，其余记为 `UNKNOWN`，保留原展示状态和更新时间。新库直接使用初始化基线。
 - [cv_demo_data.sql](cv_demo_data.sql)：已有 V2 表结构上的虚构简历演示数据，目标库为 `driftingleaves`，补充个人资料、社交链接、教育、工作、项目经历和技能；可重复执行，跳过已有个人资料、相同 URL 的社交链接、同类型同标题的经历及同名技能，不覆盖这些记录。
 
 在 MySQL 客户端执行（路径可按实际位置修改）：
@@ -34,7 +36,7 @@ ALTER TABLE blog_visitor
 SOURCE D:/CodingFiles/Blog/DriftingLeavesV2/sql/drifting_leaves_v2.sql;
 ```
 
-初始化脚本选择 `driftingleaves` 库，已包含全部权限与菜单种子，项目上线前统一维护此脚本，不单独保留增量脚本。初始化要求该库不存在或没有表；已有表但没有记录，也不属于空库，不能直接重复执行初始化脚本。脚本不会删除旧库、旧表，也不是可重复执行的迁移脚本。DDL 不具备整份事务回滚能力，导入失败应在干净的开发库重新执行，不要用 `--force` 忽略错误。
+初始化脚本选择 `driftingleaves` 库，已包含全部权限与菜单种子。初始化要求该库不存在或没有表；已有表但没有记录，也不属于空库，不能直接重复执行初始化脚本。脚本不会删除旧库、旧表，也不是可重复执行的迁移脚本。DDL 不具备整份事务回滚能力，导入失败应在干净的开发库重新执行，不要用 `--force` 忽略错误。
 
 需要查看简历页面效果时，在已有完整 V2 表结构的开发库执行：
 
@@ -50,33 +52,6 @@ SOURCE D:/CodingFiles/Blog/DriftingLeavesV2/sql/cv_demo_data.sql;
 
 `password_hash` 预留 255 字节，允许为 NULL（未设置本站密码）；非 NULL 时保留长度检查，具体编码格式仍由密码编码器验证。密码注册必须写入有效哈希，密码登录必须拒绝哈希为 NULL 的账号，不能写空字符串或占位哈希。公开注册须验证邮箱并固定分配 `member`，不能接受请求体中的角色、权限、账号状态。第三方仅允许已绑定身份登录，不自动注册。
 
-## 参考来源与取舍
-
-已读取所提供 `D:/DefaultFolder/File/soft_manage.sql` 中五张权限相关表的 DDL，仅将其当作设计资料，不导入其中人员、账号或业务记录。
-
-| 来源 | 实际检查的结构 | 本设计采用/调整 |
-| --- | --- | --- |
-| `soft_manage.sql` | `sys_user`、`sys_role`、`sys_menu`、`sys_user_role`、`sys_role_menu`；菜单含父节点、编码、图标、路由、组件、类型、排序、状态、是否导航 | 保留角色码、菜单树和多对多授权；关联表改为复合主键；增加外键；统一状态；不采用权重隐式继承 |
-| [Jzjzzzz/vblog 的 SQL](https://github.com/Jzjzzzz/vblog/blob/8f701f113b17fdec3f871719255bc65d009968f7/db/vblog.sql) | `sys_menu` 的目录/菜单/按钮类型、`perms` 字段、角色及关联表；文章信息/正文拆分 | 采用三类菜单节点和正文拆分；权限码从菜单字符串提取为独立字典；不复制部门、岗位、题库和 Quartz 等外围表 |
-| [asdfexec/blog 的 SQL](https://github.com/asdfexec/blog/blob/d3494d79b94b932fccbfe5dd8e4fb49f14e1d525/blog-mysql8.sql)（infocodingonline/blog 的分支） | `tb_menu`、`tb_resource`、`tb_role_menu`、`tb_role_resource`、`tb_article_tag` | 采用菜单授权与接口权限分离、标签关联表；本项目以权限码关联后端接口，不复制动态 URL 资源树或第三方登录/聊天/相册表 |
-
-GitHub 版本按上述提交固定。这里没有复制参考项目的业务数据、凭据或完整建表文件。
-
-本次对照用户提供的 `D:/CodingFiles/Blog/DriftingLeaves/DL-server/src/main/resources/sql/DriftingLeaves.sql`，并检查 `D:/CodingFiles/Blog/DriftingLeaves-Website` 的建表、完整性迁移、前端 API 和后端控制器。旧文件仅作为功能资料，不执行其中的账号或配置初始化指令，不复制账号、密码或业务数据。新增对应关系如下：
-
-| 旧表/功能 | 当前基线 | 适配现有鉴权 |
-| --- | --- | --- |
-| `personal_info`、`social_media` | `home_profile`、`home_social_link` | 单站主人展示资料、社交链接；公开联系邮箱独立于登录邮箱 |
-| `experiences`、`skills` | `cv_experience`、`cv_skill` | 教育/工作/项目经历与技能，后台显式授权 |
-| `messages` | `blog_message` | 本站用户留言/回复、审核、悄悄话与分支删除 |
-| `music` | `blog_music` | 音频、封面、可选歌词、排序和展示状态 |
-| `rss_subscriptions` | `blog_rss_subscription` | 绑定本站用户，邮箱唯一且确认后才激活 |
-| `visitors`、`views` | `blog_visitor`、`blog_page_view` | 匿名访问统计与可选本站用户关联；统计标识不授予身份权限 |
-| `operation_logs` | `sys_operation_log` | 关联本站操作人，脱敏记录操作及权限码快照 |
-| 统计报表 | 新增查询权限和菜单，复用浏览明细 | 仅显式授权的后台用户访问 |
-
-旧 `admin` 和访客 Token 不移植；现有 `sys_user`、RBAC、Sa-Token 和 JustAuth 保持原结构。系统配置继续使用 `blog_site_config`；备案与建站日期补入公开 `site` 配置。RSS XML、Sitemap、归档、字数和阅读时长可从文章数据生成，不另建重复表；旧计数同步批次属于未采用的实现机制，不复制。
-
 ## 表与关系
 
 | 分组 | 表 | 用途 |
@@ -89,7 +64,7 @@ GitHub 版本按上述提交固定。这里没有复制参考项目的业务数�
 | 文章 | `blog_article`、`blog_article_content` | 元数据、正文一对一；草稿/发布/下架、公开/私密、回收站 |
 | 分类标签 | `blog_category`、`blog_tag`、`blog_article_tag` | 一篇文章一个可选分类、多个标签 |
 | 互动 | `blog_comment`、`blog_article_like` | 登录评论、同文章回复、审核、每用户每文章一次点赞 |
-| 站点 | `blog_friend_link`、`blog_file`、`blog_site_config` | 友链、文件元数据、显式可公开的配置 |
+| 站点 | `blog_friend_link`、`blog_friend_link_quota`、`blog_file`、`blog_site_config` | 友链和申请额度、文件元数据、显式可公开的配置 |
 | 主页 | `home_profile`、`home_social_link` | 单站主人展示资料、社交链接 |
 | 简历 | `cv_experience`、`cv_skill` | 教育/工作/项目经历、技能 |
 | 留言与音乐 | `blog_message`、`blog_music` | 独立留言回复树、背景音乐 |
@@ -188,7 +163,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 新增模块继续采用独立权限和菜单授权。`home:profile:*`、`home:social:*`、`cv:experience:*`、`cv:skill:*`、`blog:music:*`，以及留言审核、订阅管理、访客/浏览/报表和日志均为全站资源，后台接口需 `admin:access`、对应权限及 ALL 范围；SELF 不生成虚构的归属条件。新增权限仅管理员默认获得这些管理能力；作者和会员只新增 `blog:message:create/deleteOwn`、`blog:rss:subscribe/unsubscribe`，共 4 项前台权限。本人接口始终按会话 `user_id` 限定，不能被 ALL 扩大。
 
-新增模块的请求和响应见[四端接口索引](../docs/API_INDEX.md)，旧业务取舍见[迁移对照](../docs/API.md#legacy-sources)。后台通过前端组件注册表解析菜单组件键。第15..20章已有对应Controller、Service和Mapper/XML，后台独立权限及ALL、本人归属SQL均在实际消费者中检查。
+请求和响应见[四端接口索引](../docs/API_INDEX.md)。后台通过前端组件注册表解析菜单组件键，并按实际操作检查权限和数据范围。
 
 ### 菜单计算
 
@@ -226,7 +201,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 ## 实体映射与事务
 
-28 张表在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射。主外键使用 Long，`view_count`、`size_bytes` 使用 BigInteger，配置 JSON 在模型中保留原始字符串。复合主键关联表不虚构单 ID，关联写入使用明确 SQL。
+实体在 `Backend/entity/src/main/java/com/xuan/entity/` 显式映射，友链申请额度由 FriendLinkMapper 直接读写。主外键使用 Long，`view_count`、`size_bytes` 使用 BigInteger，配置 JSON 在模型中保留原始字符串。复合主键关联表不虚构单 ID，关联写入使用明确 SQL。
 
 后端依赖保持 `server → common/entity`。事务、锁后权限复核、资源归属和审计保留在业务服务中；成功审计与业务共同提交，失败审计在回滚后独立写入。MyBatis 一级缓存限定 STATEMENT，避免锁后复用锁前结果。
 
@@ -234,7 +209,7 @@ WHERE u.user_id = ? AND u.status = 1;
 
 初始化脚本包含文章永久删除、用户删除以及当前评论/留言权限，显式授予内置角色和菜单。后续开发直接维护基线，不向已有开发库自动补权或执行删除。
 
-用户删除遵循外键：文章、评论、文件、主页资料、留言引用时拒绝；角色、OAuth、点赞和订阅关联级联清理，浏览记录及日志保留并将 user_id 置 null。保留最后一个有效管理员。
+用户删除遵循外键：文章、评论、文件、主页资料、留言引用时拒绝；角色、OAuth、点赞、订阅和友链申请额度级联清理，浏览记录及日志保留并清空用户 ID，友链保留并清空申请人。保留最后一个有效管理员。
 
 ### 邮箱登录与后台认证
 
