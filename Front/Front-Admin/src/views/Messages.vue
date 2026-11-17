@@ -61,7 +61,6 @@ const detail = ref(null)
 const detailVisible = ref(false)
 const replyVisible = ref(false)
 const busy = ref(false)
-const replyError = ref('')
 const reply = reactive({ content: '', contentFormat: 0, notifyReply: 0 })
 
 async function view(row, replying = false) {
@@ -69,7 +68,6 @@ async function view(row, replying = false) {
     detail.value = (await request(`/admin/messages/${row.messageId}`)).data
     if (replying) {
       Object.assign(reply, { content: '', contentFormat: 0, notifyReply: 0 })
-      replyError.value = ''
       replyVisible.value = true
     } else {
       detailVisible.value = true
@@ -98,7 +96,6 @@ async function review(row, status) {
 
 async function sendReply() {
   busy.value = true
-  replyError.value = ''
   try {
     await request(`/admin/messages/${detail.value.messageId}/replies`, {
       method: 'POST',
@@ -112,7 +109,7 @@ async function sendReply() {
     ElMessage.success('回复已提交')
     await load()
   } catch (failure) {
-    replyError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -280,7 +277,6 @@ const batchActions = computed(() => {
             邮件通知
             <el-switch v-model="reply.notifyReply" :active-value="1" :inactive-value="0" />
           </label>
-          <p v-if="replyError" role="alert" class="error-text">{{ replyError }}</p>
           <div class="dialog-actions">
             <el-button :disabled="busy" @click="replyVisible = false">取消</el-button>
             <el-button type="primary" native-type="submit" :loading="busy">发送回复</el-button>

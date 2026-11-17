@@ -1,6 +1,8 @@
 <script setup>
 import { computed, inject, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { getPage, isWebUrl, pageNumber, request } from '@/api.js'
 import { formatDateTime } from '@/format.js'
 import { session } from '@/session.js'
@@ -26,9 +28,6 @@ const submitting = ref(false)
 const deleting = ref(false)
 const confirmingDelete = ref(false)
 const uncertainSubmit = ref(false)
-const sheetError = ref('')
-const bannerError = ref('')
-const feedback = ref('')
 const sheetDialogRef = ref(null)
 const firstInputRef = ref(null)
 const previewAvatarBroken = ref(false)
@@ -117,8 +116,6 @@ watch(() => ownLink.value?.avatar, () => {
 
 watch(() => session.user?.userId, () => {
   confirmingDelete.value = false
-  bannerError.value = ''
-  feedback.value = ''
   resetForm()
   closeApplySheet(true)
 })
@@ -217,9 +214,6 @@ async function openApplySheet() {
     return
   }
   previousFocus = document.activeElement
-  sheetError.value = ''
-  bannerError.value = ''
-  feedback.value = ''
   clearFieldErrors()
   sheetOpen.value = true
   await nextTick()
@@ -235,7 +229,6 @@ function closeApplySheet(force = false) {
     return
   }
   sheetOpen.value = false
-  sheetError.value = ''
   if (force) {
     uncertainSubmit.value = false
   }
@@ -259,9 +252,9 @@ async function copySiteInfo() {
   }
   try {
     await navigator.clipboard.writeText(lines.join('\n'))
-    feedback.value = '已复制本站友链信息。'
+    ElMessage.success('已复制本站友链信息。')
   } catch {
-    bannerError.value = '浏览器未授权剪贴板访问，请手动复制本站地址。'
+    ElMessage.error('浏览器未授权剪贴板访问，请手动复制本站地址。')
   }
 }
 
@@ -271,8 +264,6 @@ async function submitApplication() {
   if (submitting.value || uncertainSubmit.value || !session.user) {
     return
   }
-  sheetError.value = ''
-  feedback.value = ''
   if (!validateForm()) {
     return
   }
@@ -293,19 +284,18 @@ async function submitApplication() {
     application.data = result.data
     resetForm()
     closeApplySheet(true)
-    feedback.value = '友链申请已提交，正在等待审核。'
+    ElMessage.success('友链申请已提交，正在等待审核。')
   } catch (failure) {
     // 3. 处理会话失效、状态冲突、限流与网络结果未决场景
     if (!sheetOpen.value) {
-      bannerError.value = failure.message
+      ElMessage.error(failure.message)
       return
     }
-    sheetError.value = failure.message
+    ElMessage.error(failure.message)
     if (failure.status === 409 && failure.code === 'STATE_CONFLICT') {
       await application.reload()
       if (application.data) {
         closeApplySheet(true)
-        bannerError.value = failure.message
       }
     } else if (!failure.status) {
       uncertainSubmit.value = true
@@ -320,17 +310,16 @@ async function confirmSubmitResult() {
   if (submitting.value || application.loading) {
     return
   }
-  sheetError.value = ''
   await application.reload()
   if (application.data) {
     resetForm()
     closeApplySheet(true)
-    feedback.value = '已确认友链申请提交成功。'
+    ElMessage.success('已确认友链申请提交成功。')
   } else if (!application.error) {
-    sheetError.value = '暂未查到已生效的申请，请核对表单后重新提交。'
+    ElMessage.warning('暂未查到已生效的申请，请核对表单后重新提交。')
     uncertainSubmit.value = false
   } else {
-    sheetError.value = application.error
+    ElMessage.error(application.error)
   }
 }
 
@@ -342,15 +331,13 @@ async function removeApplication() {
   }
   const wasPublic = current.status === 1
   deleting.value = true
-  bannerError.value = ''
-  feedback.value = ''
   try {
     await request(`/blog/me/link-application/${current.linkId}`, {
       method: 'DELETE',
     })
     application.data = null
     confirmingDelete.value = false
-    feedback.value = '友链申请已删除。'
+    ElMessage.success('友链申请已删除。')
     if (wasPublic) {
       await listing.reload()
     }
@@ -359,7 +346,7 @@ async function removeApplication() {
       confirmingDelete.value = false
       await Promise.all([application.reload(), listing.reload()])
     }
-    bannerError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     deleting.value = false
   }
@@ -453,12 +440,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
           </div>
 
           <!-- 操作反馈与错误提示 -->
-          <p v-if="feedback" role="status" class="status-banner success-banner">
-            {{ feedback }}
-          </p>
-          <p v-if="bannerError" role="alert" class="status-banner error-banner">
-            {{ bannerError }}
-          </p>
           <div v-if="session.user && application.error" role="alert" class="status-banner error-banner">
             <span>{{ application.error }}</span>
             <button type="button" class="btn-secondary btn-sm" @click="application.reload">重试</button>
@@ -660,10 +641,6 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
             </div>
           </div>
         </div>
-
-        <p v-if="sheetError" role="alert" class="sheet-error">
-          {{ sheetError }}
-        </p>
 
         <form novalidate @submit.prevent="submitApplication">
           <fieldset :disabled="submitting">

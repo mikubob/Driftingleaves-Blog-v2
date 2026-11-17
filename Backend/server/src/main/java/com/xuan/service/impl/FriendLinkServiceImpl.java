@@ -10,9 +10,11 @@ import com.xuan.dto.LinkQueryDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.PageQueryDTO;
 import com.xuan.entity.BlogFriendLink;
+import com.xuan.entity.SysUser;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.FriendLinkMapper;
 import com.xuan.mapper.UserMapper;
+import com.xuan.model.LinkApplicationRow;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
@@ -43,6 +45,9 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 友链维护结果直接用于公开展示，写入和成功审计一起提交。
@@ -135,7 +140,8 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     public LinkProfileVO<AdminLinkVO> detail(long id) {
         requireAdmin("query");
         AdminLinkVO row = requireLink(links.adminLinkDetail(id));
-        return new LinkProfileVO<>(row, revision(row));
+        Long applicantId = row.getApplicant() == null ? null : row.getApplicant().getUserId();
+        return new LinkProfileVO<>(row, revision(row, applicantId));
     }
 
     /** 锁住操作者并重新检查权限后创建友链，名称和 URL 允许重复，写日志失败就回滚。 */
@@ -145,30 +151,38 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @CacheEvict(cacheNames = "links", allEntries = true)
     public BlogFriendLink create(LinkCreateDTO request) {
         validateUrls(request);
-        users.lockById(sessions.currentUserId());
-        requireAdmin("create");
+        Long applicantId = request.getApplicantId();
+        SysUser applicant = lockWriteAccounts("create", applicantId);
+        if (applicantId != null) {
+            requireAvailableApplicant(applicantId, applicant);
+        }
         BlogFriendLink row = new BlogFriendLink();
         setSiteFields(row, request);
         row.setSortOrder(request.getSortOrder());
         row.setStatus(request.getStatus());
-        links.insertLink(row, null, "ADMIN");
+        links.insertLink(row, applicantId, "ADMIN");
         return links.selectById(row.getLinkId());
     }
 
-    /** 先锁操作者，再锁友链；等待结束后重新检查权限和版本，不能覆盖别人的修改。 */
+    /** 先锁账号再锁友链，检查版本后修改资料和绑定账号。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:link", permission = "blog:link:update", targetIdArgument = 0)
     @CacheEvict(cacheNames = "links", allEntries = true)
     public LinkProfileVO<BlogFriendLink> update(long id, LinkWriteDTO request, String revision) {
         validateUrls(request);
-        BlogFriendLink row = lockLink(id, "update");
+        SysUser applicant = lockWriteAccounts("update", request.getApplicantId());
+        LinkApplicationRow row = lockLink(id, "update");
         checkRevision(row, revision);
+        Long applicantId = request.hasApplicantId() ? request.getApplicantId() : row.getApplicantId();
+        if (applicantId != null && !Objects.equals(applicantId, row.getApplicantId())) {
+            requireAvailableApplicant(applicantId, applicant);
+        }
         setSiteFields(row, request);
         row.setSortOrder(request.getSortOrder());
-        links.updateLink(row);
+        links.updateLink(row, applicantId);
         BlogFriendLink updated = links.selectById(id);
-        return new LinkProfileVO<>(updated, revision(updated));
+        return new LinkProfileVO<>(updated, revision(updated, applicantId));
     }
 
     /** 锁住当前账号，等锁后重新检查原会话和账号状态。 */
@@ -198,11 +212,37 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         }
     }
 
-    /** 权限先于友链存在性检查，等待友链锁后再查一次，不能沿用旧授权。 */
-    private BlogFriendLink lockLink(long id, String operation) {
-        users.lockById(sessions.currentUserId());
+    /** 按 ID 升序锁操作者和所选账号，避免与用户管理的加锁顺序相反。 */
+    private SysUser lockWriteAccounts(String operation, Long applicantId) {
+        Set<Long> ids = new TreeSet<>();
+        ids.add(sessions.currentUserId());
+        if (applicantId != null) {
+            ids.add(applicantId);
+        }
+        SysUser applicant = null;
+        for (Long id : ids) {
+            SysUser user = users.lockById(id);
+            if (id.equals(applicantId)) {
+                applicant = user;
+            }
+        }
         requireAdmin(operation);
-        BlogFriendLink row = links.lockById(id);
+        return applicant;
+    }
+
+    /** 持有账号锁时检查能否绑定，与博客提交共用一条申请的限制。 */
+    private void requireAvailableApplicant(long applicantId, SysUser applicant) {
+        if (applicant == null || applicant.getStatus() != 1) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "所选用户不存在或已禁用。");
+        }
+        if (links.findApplication(applicantId) != null) {
+            throw new BusinessException(409, "STATE_CONFLICT", "所选用户已有友链申请。");
+        }
+    }
+
+    /** 等到友链锁后再查权限，不能沿用旧授权。 */
+    private LinkApplicationRow lockLink(long id, String operation) {
+        LinkApplicationRow row = links.lockById(id);
         requireAdmin(operation);
         return requireLink(row);
     }
@@ -224,22 +264,22 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     }
 
     /** 持有友链锁时先核对版本；缺失、格式不对、过期分别返回 428、400、412。 */
-    private void checkRevision(BlogFriendLink row, String revision) {
+    private void checkRevision(LinkApplicationRow row, String revision) {
         if (revision == null) {
             throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
         }
         if (!revision.matches("\"[0-9a-f]{64}\"")) {
             throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
         }
-        if (!revision.equals(revision(row))) {
+        if (!revision.equals(revision(row, row.getApplicantId()))) {
             throw new BusinessException(412, "REVISION_CONFLICT", "友链已修改，请重新获取");
         }
     }
 
-    /** 版本只计算友链资料和状态，来源、申请人和更新时间不影响版本。 */
-    private String revision(BlogFriendLink row) {
+    /** 绑定变更也要检查版本，账号昵称等展示资料不影响版本。 */
+    private String revision(BlogFriendLink row, Long applicantId) {
         String value = json.writeValueAsString(Arrays.asList(row.getLinkId(), row.getLinkName(), row.getUrl(),
-                row.getAvatar(), row.getDescription(), row.getSortOrder(), row.getStatus()));
+                row.getAvatar(), row.getDescription(), row.getSortOrder(), row.getStatus(), applicantId));
         return "\"" + TokenUtils.digest(value) + "\"";
     }
 
@@ -249,11 +289,12 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @OperationLog(type = "batch-delete", target = "blog:link", permission = "blog:link:delete")
     @CacheEvict(cacheNames = "links", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
+        lockWriteAccounts("delete", null);
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
             String revision = item.revision();
-            BlogFriendLink row = lockLink(id, "delete");
+            LinkApplicationRow row = lockLink(id, "delete");
             checkRevision(row, revision);
         }
         for (var item : sorted) {
@@ -268,19 +309,20 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @OperationLog(type = "batch-status", target = "blog:link", permission = "blog:link:update")
     @CacheEvict(cacheNames = "links", allEntries = true)
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
-        List<BlogFriendLink> rows = new ArrayList<>();
+        lockWriteAccounts("update", null);
+        List<LinkApplicationRow> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            BlogFriendLink row = lockLink(IdUtils.parse(item.id()), "update");
+            LinkApplicationRow row = lockLink(IdUtils.parse(item.id()), "update");
             checkRevision(row, item.revision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
-        for (BlogFriendLink row : rows) {
+        for (LinkApplicationRow row : rows) {
             if (row.getStatus() != status) {
                 links.updateStatus(row.getLinkId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getLinkId(), revision(row));
+            versions.put(row.getLinkId(), revision(row, row.getApplicantId()));
         }
         return BatchUtils.versions(items, versions);
     }

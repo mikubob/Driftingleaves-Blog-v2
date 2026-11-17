@@ -23,15 +23,7 @@ let mediaQueryListener = null
 let contentObserver = null
 let headingObserver = null
 
-const isDark = computed(() => {
-  if (themeStore.mode === 'dark') {
-    return true
-  }
-  if (themeStore.mode === 'light') {
-    return false
-  }
-  return window.matchMedia('(prefers-color-scheme: dark)').matches
-})
+const isDark = computed(() => themeStore.isDark)
 
 const readingPercent = computed(() => {
   return Math.round(Math.min(100, Math.max(0, props.progress || 0)))

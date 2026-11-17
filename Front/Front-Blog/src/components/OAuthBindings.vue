@@ -1,13 +1,13 @@
 <script setup>
 import { onBeforeUnmount, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { request } from '../api.js'
 import { session, sessionRevoked } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 
 const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
 const confirmingUnbind = ref('')
 let popup
 let popupTimer
@@ -33,11 +33,9 @@ function closePopup() {
 
 /** 原页面保留 Token，弹窗只能交回票据，不能自行证明绑定用户。 */
 async function bind(source) {
-  error.value = ''
-  feedback.value = ''
   popup = window.open('about:blank', 'dl-blog-bind', 'popup,width=640,height=760')
   if (!popup) {
-    error.value = '请允许本站弹窗后重试。'
+    ElMessage.error('请允许本站弹窗后重试。')
     return
   }
   busy.value = true
@@ -56,7 +54,7 @@ async function bind(source) {
       }
     }, 1000)
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
     closePopup()
   }
 }
@@ -77,24 +75,23 @@ async function receive(event) {
     if (data.operation !== 'BIND') {
       throw new Error('授权结果与绑定操作不匹配。')
     }
-    feedback.value = '第三方账号已绑定，下次可直接使用此平台登录。'
+    ElMessage.success('第三方账号已绑定，下次可直接使用此平台登录。')
     await platforms.reload()
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
 }
 
 async function unbind(source) {
-  error.value = ''
   busy.value = true
   try {
     await request(`/blog/me/oauth-bindings/${encodeURIComponent(source)}`, { method: 'DELETE' })
     confirmingUnbind.value = ''
     sessionRevoked()
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -123,8 +120,6 @@ onBeforeUnmount(() => {
       <slot name="header-action" />
     </div>
     <ResourceState :resource="platforms" />
-    <p v-if="error" role="alert" class="error-text">{{ error }}</p>
-    <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
     <div v-if="platforms.data?.length" class="bento-compact-list">
       <div v-for="provider in platforms.data" :key="provider.source" class="bento-compact-item">
         <div class="bento-compact-row">

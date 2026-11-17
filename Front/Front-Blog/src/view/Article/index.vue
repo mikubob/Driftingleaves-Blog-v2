@@ -54,6 +54,9 @@ async function toggleLike() {
   }
   if (!likeReady.value) {
     await like.reload()
+    if (like.error) {
+      ElMessage.error(like.error)
+    }
     return
   }
   liking.value = true
@@ -307,7 +310,6 @@ onUnmounted(() => {
               </div>
             </fieldset>
             <!-- 评论树 -->
-            <p v-if="like.error" role="alert">{{ like.error }}</p>
             <DiscussionList
               :key="refresh"
               kind="comments"

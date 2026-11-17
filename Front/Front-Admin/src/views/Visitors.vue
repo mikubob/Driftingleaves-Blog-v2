@@ -45,7 +45,6 @@ const detailVisible = ref(false)
 const blockVisible = ref(false)
 const blockedUntil = ref(null)
 const revision = ref('')
-const formError = ref('')
 
 function isBlocked(row) {
   return (
@@ -70,7 +69,6 @@ async function view(row, block = false) {
     revision.value = result.revision
     if (block) {
       blockedUntil.value = null
-      formError.value = ''
       blockVisible.value = true
     } else {
       detailVisible.value = true
@@ -81,9 +79,8 @@ async function view(row, block = false) {
 }
 
 async function block() {
-  formError.value = ''
   if (blockedUntil.value && new Date(blockedUntil.value).getTime() <= Date.now()) {
-    formError.value = '封禁结束时间必须晚于当前时间。'
+    ElMessage.warning('封禁结束时间必须晚于当前时间。')
     return
   }
   busy.value = true
@@ -99,7 +96,7 @@ async function block() {
     ElMessage.success('已封禁该 IP')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -369,7 +366,6 @@ const batchActions = computed(() => {
           结束时间（留空为永久）
           <el-date-picker v-model="blockedUntil" type="datetime" placeholder="选择结束时间" />
         </label>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="busy" @click="blockVisible = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="busy" :disabled="!detail || !blockTarget(detail)">确认封禁</el-button>

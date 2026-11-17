@@ -29,7 +29,6 @@ const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const error = ref('')
-const formError = ref('')
 const revision = ref('')
 
 async function load() {
@@ -67,7 +66,6 @@ async function save() {
     return
   }
   saving.value = true
-  formError.value = ''
   try {
     const result = await request('/admin/home/profile', {
       method: 'PUT',
@@ -87,7 +85,7 @@ async function save() {
     revision.value = result.revision
     ElMessage.success('主页资料已保存')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -165,7 +163,6 @@ onMounted(load)
             <el-input v-model="form.location" maxlength="100" />
           </label>
         </div>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div>
           <el-button
             v-if="can('home:profile:update', true)"

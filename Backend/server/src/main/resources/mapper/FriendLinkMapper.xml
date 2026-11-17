@@ -42,11 +42,11 @@
     </select>
 
     <!-- 写事务持有此锁到版本校验、保存和成功审计完成。 -->
-    <select id="lockById" resultType="com.xuan.entity.BlogFriendLink">
+    <select id="lockById" resultType="com.xuan.model.LinkApplicationRow">
         SELECT * FROM blog_friend_link WHERE link_id = #{id} FOR UPDATE
     </select>
 
-    <!-- 申请人只用于本人操作，不进入 Link 响应。 -->
+    <!-- 查询当前绑定账号的申请，各来源都可作为本人申请。 -->
     <select id="findApplication" resultType="com.xuan.entity.BlogFriendLink">
         SELECT * FROM blog_friend_link WHERE applicant_id = #{userId}
     </select>
@@ -75,7 +75,7 @@
 
     <update id="updateLink">
         UPDATE blog_friend_link SET link_name=#{link.linkName}, url=#{link.url}, avatar=#{link.avatar},
-        description=#{link.description}, sort_order=#{link.sortOrder}
+        description=#{link.description}, sort_order=#{link.sortOrder}, applicant_id=#{applicantId,jdbcType=BIGINT}
         WHERE link_id=#{link.linkId}
     </update>
     <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->

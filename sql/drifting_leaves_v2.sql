@@ -256,7 +256,7 @@ CREATE TABLE blog_article_like (
 
 CREATE TABLE blog_friend_link (
   link_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '友链ID',
-  applicant_id BIGINT DEFAULT NULL COMMENT '本人申请的账号ID，后台直接创建时为空',
+  applicant_id BIGINT DEFAULT NULL COMMENT '当前绑定的申请账号ID，未绑定时为空',
   source VARCHAR(11) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT 'UNKNOWN' COMMENT '来源：APPLICATION博客申请、ADMIN后台创建、UNKNOWN历史来源不明',
   link_name VARCHAR(100) NOT NULL COMMENT '友情链接显示名称',
   url VARCHAR(2048) NOT NULL COMMENT '友情链接目标URL',

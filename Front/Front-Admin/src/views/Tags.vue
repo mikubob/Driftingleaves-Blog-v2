@@ -40,13 +40,11 @@ const {
 const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
 const form = reactive({ tagName: '', slug: '' })
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.tagId || ''
     if (row) {
@@ -64,7 +62,6 @@ async function edit(row) {
 
 async function save() {
   saving.value = true
-  formError.value = ''
   try {
     await request(id.value ? `/admin/tags/${id.value}` : '/admin/tags', {
       method: id.value ? 'PUT' : 'POST',
@@ -75,7 +72,7 @@ async function save() {
     ElMessage.success('标签已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -237,7 +234,6 @@ const batchActions = computed(() => {
             pattern="[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*"
           />
         </label>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存标签</el-button>

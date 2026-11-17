@@ -40,7 +40,6 @@ const blockVisible = ref(false)
 const blockAction = ref(null)
 const blockedUntil = ref(null)
 const permanent = ref(false)
-const blockError = ref('')
 const blocked = computed(() => props.disabled || busy.value)
 let generation = 0
 
@@ -76,7 +75,6 @@ function choose(action) {
     blockAction.value = action
     blockedUntil.value = null
     permanent.value = false
-    blockError.value = ''
     blockVisible.value = true
     return
   }
@@ -85,7 +83,7 @@ function choose(action) {
 
 async function block() {
   if (!permanent.value && (!(blockedUntil.value instanceof Date) || blockedUntil.value.getTime() <= Date.now())) {
-    blockError.value = '请选择晚于当前时间的结束时间，或明确勾选永久限制。'
+    ElMessage.warning('请选择晚于当前时间的结束时间，或明确勾选永久限制。')
     return
   }
   await execute(blockAction.value, selected.value, {
@@ -117,8 +115,9 @@ async function execute(action, rows = selected.value, extra = {}) {
     if (action.block) {
       warning += extra.blockedUntil ? ` 封禁至 ${new Date(extra.blockedUntil).toLocaleString()}。` : ' 此次为永久封禁。'
     }
+    const target = action.targetLabel || `选中的 ${targets.length} 条记录`
     try {
-      await ElMessageBox.confirm(`确认${action.label}选中的 ${targets.length} 条记录？${warning}`, action.label, {
+      await ElMessageBox.confirm(`确认${action.label}${target}？${warning}`, action.label, {
         confirmButtonText: '确认', cancelButtonText: '取消', type: 'warning',
       })
     } catch {
@@ -141,6 +140,8 @@ async function execute(action, rows = selected.value, extra = {}) {
       } else {
         ElMessage.success(`已删除 ${succeeded} 个文件`)
       }
+    } else if (action.targetLabel) {
+      ElMessage.success(`${action.label}成功`)
     } else {
       ElMessage.success(`${action.label}成功，共 ${targets.length} 条`)
     }
@@ -184,7 +185,6 @@ defineExpose({ select, selectable, busy, execute })
         v-model="blockedUntil" type="datetime" placeholder="选择限制结束时间"
         aria-label="批量限制结束时间" :disabled="permanent || busy"
       />
-      <p v-if="blockError" role="alert" class="danger-text">{{ blockError }}</p>
       <template #footer>
         <el-button :disabled="busy" @click="blockVisible = false">取消</el-button>
         <el-button type="primary" :disabled="!selected.length || disabled" :loading="busy" @click="block">继续</el-button>

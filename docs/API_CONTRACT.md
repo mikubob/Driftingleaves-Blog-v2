@@ -511,20 +511,20 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 | 模型 | 字段与校验 |
 | --- | --- |
 | LinkApplication | linkName:S(100)、url:URL 必填；avatar:URL?、description:S(255)? 默认 null，去首尾空白后为空按 null 处理 |
-| LinkWrite | LinkApplication 字段及 sortOrder:int32。后台 POST 可省略 sortOrder 并另接受初始状态 status，二者默认 0。PUT 须提交全部五个资料字段，可空字段须显式提交，状态使用独立入口 |
-| Link | linkId:ID + LinkWrite 全部资料字段 + status:0 待审核、1 展示、2 驳回/下架 + createTime/updateTime:Time |
+| LinkWrite | LinkApplication 字段及 sortOrder:int32，后台另接受可选的 applicantId:ID 或 null。POST 可省略 sortOrder 并另接受初始状态 status，二者默认 0。PUT 须提交全部五个站点资料及排序字段，状态使用独立入口 |
+| Link | linkId:ID + LinkApplication 字段 + sortOrder:int32 + status:0 待审核、1 展示、2 驳回/下架 + createTime/updateTime:Time |
 | LinkPublic | linkId:ID、linkName:string、url:URL、avatar:URL?、description:string?、sortOrder:int32 |
-| AdminLink | Link + 只读 source + applicant:{userId:ID,nickname:string}&#124;null；仅用于后台友链列表和详情，见[响应字段](API_ADMIN.md#response-admin-link) |
+| AdminLink | Link + 只读 source + 可空的 applicant:{userId:ID,nickname:string}；见[响应字段](API_ADMIN.md#response-admin-link) |
 | Config | configKey:string、configValue:object、description:string?、isPublic:0或1、updateTime:Time |
 | ConfigWrite | configValue:object、description:S(255)?、isPublic:0或1，均必填；仅支持下表三种键及字段，不接受任意JSON结构 |
 
 友链名称和 URL 均允许重复。URL 仅保存和展示。站点地址和头像使用最长 2048 字符的绝对 HTTP(S) 地址，拒绝凭据、控制字符及普通附件 API 路径。头像可用[公开展示图片](API_BLOG.md#display-image-content)地址。
 
-博客申请和后台直接创建使用同一友链表。申请归属仅取自博客会话，后台创建没有归属，编辑和审核保留归属。管理员删除申请释放该账号的单条申请名额，保留当日已用次数。账号被删除时数据库清除归属，友链记录保留。详见[本人申请](API_BLOG.md#link-application-get)和[后台批量删除](API_ADMIN.md#batch-link-delete)。
+博客提交和后台绑定共用 `applicant_id` 及其唯一约束。博客提交的账号取自会话，后台创建和编辑可设置绑定账号。本人查询和撤回以当前绑定为准，每个账号最多一条。解绑、改绑或删除友链释放原账号的申请名额，保留当日已用次数。账号删除后清空绑定，友链记录保留。详见[本人申请](API_BLOG.md#link-application-get)和[后台批量删除](API_ADMIN.md#batch-link-delete)。
 
 创建友链时由服务端固定来源，博客提交为 `APPLICATION`，后台创建为 `ADMIN`。来源独立于申请归属和状态，删除账号后仍保留。[已有库迁移](../sql/friend_link_source.sql)将仍保留申请关联的记录回填为 `APPLICATION`，其余历史记录使用 `UNKNOWN`。
 
-后台列表和详情按现有申请关联读取账号 ID 和当前昵称，保留直接创建、申请账号已删除以及历史来源不明的友链，申请人字段为 `null`。禁用账号仍保留关联和摘要。来源和申请人摘要随 `blog:link:query` 返回，账号详情仍须 `sys:user:query`。管理员写入时不得指定或更换申请归属。来源、申请人摘要及昵称变化不参与友链版本计算。筛选条件和错误见[后台友链来源和申请人](API_ADMIN.md#admin-link-source)。
+后台绑定与博客提交在同一个目标账号锁下检查名额。绑定不会扣减每日提交次数。版本包含当前绑定的账号 ID，来源和昵称不参与计算。查询和写入规则见[后台友链接口](API_ADMIN.md#admin-link-source)。
 
 配置 JSON 为对象且最多 16KiB（UTF-8），属性外层和内部均拒绝未知字段。
 

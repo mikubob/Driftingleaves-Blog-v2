@@ -26,7 +26,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -47,26 +47,28 @@ const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const changingStatus = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const form = reactive({ categoryName: '', slug: '', description: '', sortOrder: 0, status: 1 })
 
 async function edit(row) {
-  formError.value = ''
   try {
     if (row) {
       const result = await request(`/admin/categories/${row.categoryId}`)
       id.value = row.categoryId
       revision.value = result.revision
+      initialStatus.value = result.data.status
       Object.assign(form, {
         categoryName: result.data.categoryName,
         slug: result.data.slug,
         description: result.data.description || '',
         sortOrder: result.data.sortOrder,
+        status: result.data.status,
       })
     } else {
       id.value = ''
+      initialStatus.value = 1
       Object.assign(form, { categoryName: '', slug: '', description: '', sortOrder: 0, status: 1 })
     }
     dialog.value = true
@@ -77,7 +79,6 @@ async function edit(row) {
 
 async function save() {
   saving.value = true
-  formError.value = ''
   try {
     const body = {
       categoryName: form.categoryName,
@@ -88,16 +89,25 @@ async function save() {
     if (!id.value) {
       body.status = form.status
     }
-    await request(id.value ? `/admin/categories/${id.value}` : '/admin/categories', {
+    const saved = await request(id.value ? `/admin/categories/${id.value}` : '/admin/categories', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/categories', 'categoryId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('分类已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -343,12 +353,16 @@ const batchActions = computed(() => {
               :max="2147483647"
             />
           </label>
-          <label v-if="!id">
-            初始展示状态
-            <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+          <label>
+            展示分类
+            <el-switch
+              v-model="form.status"
+              :active-value="1"
+              :inactive-value="0"
+              :disabled="Boolean(id) && !can('blog:category:update')"
+            />
           </label>
         </div>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存分类</el-button>

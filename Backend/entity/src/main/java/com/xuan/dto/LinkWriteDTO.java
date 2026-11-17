@@ -25,6 +25,11 @@ public class LinkWriteDTO extends LinkApplicationDTO {
     @NotNull
     private Integer sortOrder = 0;
 
+    private Long applicantId;
+
+    @Getter(AccessLevel.NONE)
+    private boolean applicantIdPresent;
+
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
@@ -45,6 +50,16 @@ public class LinkWriteDTO extends LinkApplicationDTO {
     public void setSortOrder(Integer value) {
         present.add("sortOrder");
         sortOrder = value;
+    }
+
+    /** 区分保留原绑定和显式解除绑定。 */
+    public void setApplicantId(Long value) {
+        applicantIdPresent = true;
+        applicantId = value;
+    }
+
+    public boolean hasApplicantId() {
+        return applicantIdPresent;
     }
 
     /** 可空字段也得显式传入，防止漏传时把现有资料覆盖掉。 */

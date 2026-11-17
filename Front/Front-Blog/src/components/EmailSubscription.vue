@@ -1,13 +1,13 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { apiRoot, request } from '../api.js'
 import { can, session } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 const email = computed(() => session.user?.email?.trim().toLowerCase() || '')
 const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
 const subscription = useResource(() => session.user?.userId, async (signal) => {
   if (!session.user) {
     return null
@@ -24,8 +24,6 @@ const submitLabel = computed(() => {
 
 async function update(cancel = false) {
   busy.value = true
-  error.value = ''
-  feedback.value = ''
   try {
     const { data } = await request('/blog/me/rss-subscription', {
       method: cancel ? 'DELETE' : 'PUT',
@@ -33,17 +31,17 @@ async function update(cancel = false) {
     })
     subscription.data = data
     if (cancel) {
-      feedback.value = '已取消邮件订阅。'
+      ElMessage.success('已取消邮件订阅。')
     } else if (data.status === 1) {
-      feedback.value = '当前邮箱已订阅。'
+      ElMessage.success('当前邮箱已订阅。')
     } else {
-      feedback.value = '确认邮件已发送，请打开邮件中的链接完成邮箱验证。'
+      ElMessage.success('确认邮件已发送，请打开邮件中的链接完成邮箱验证。')
     }
     if (cancel) {
       await subscription.reload()
     }
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -101,7 +99,5 @@ async function update(cancel = false) {
         </p>
       </div>
     </template>
-    <p v-if="error" class="error-text" role="alert">{{ error }}</p>
-    <p v-if="feedback" class="success-text" role="status">{{ feedback }}</p>
   </section>
 </template>

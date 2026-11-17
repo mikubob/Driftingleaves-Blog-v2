@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.LinkQueryDTO;
 import com.xuan.entity.BlogFriendLink;
+import com.xuan.model.LinkApplicationRow;
 import com.xuan.vo.AdminLinkVO;
 import org.apache.ibatis.annotations.Param;
 
@@ -25,7 +26,7 @@ public interface FriendLinkMapper extends BaseMapper<BlogFriendLink> {
     AdminLinkVO adminLinkDetail(@Param("id") long id);
 
     /** 调用方先锁操作者，再锁友链并重查权限和版本。 */
-    BlogFriendLink lockById(@Param("id") long id);
+    LinkApplicationRow lockById(@Param("id") long id);
 
     /** 查询账号尚未删除的申请，包含所有审核状态。 */
     BlogFriendLink findApplication(@Param("userId") long userId);
@@ -45,7 +46,7 @@ public interface FriendLinkMapper extends BaseMapper<BlogFriendLink> {
             @Param("count") int count);
 
     /** 显式写可空字段，清空头像或说明不能被默认更新策略跳过。 */
-    int updateLink(@Param("link") BlogFriendLink link);
+    int updateLink(@Param("link") BlogFriendLink link, @Param("applicantId") Long applicantId);
     /** 全部目标加锁并通过版本检查后，只更新状态。 */
     int updateStatus(@Param("id") long id, @Param("status") int status);
 

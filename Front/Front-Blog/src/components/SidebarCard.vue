@@ -22,7 +22,6 @@ const showTagModal = ref(false)
 const showRssModal = ref(false)
 const rssEmail = computed(() => session.user?.email?.trim().toLowerCase() || '')
 const rssSubmitting = ref(false)
-const rssError = ref('')
 const subscription = ref(null)
 const isSubscribed = computed(() => subscription.value?.status === 1)
 const runDays = computed(() => {
@@ -38,13 +37,12 @@ async function openRssModal() {
     router.push({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
-  rssError.value = ''
   showRssModal.value = true
   rssSubmitting.value = true
   try {
     subscription.value = (await request('/blog/me/rss-subscription')).data
   } catch (error) {
-    rssError.value = error.message
+    ElMessage.error(error.message)
   } finally {
     rssSubmitting.value = false
   }
@@ -54,32 +52,30 @@ async function handleRssSubscribe() {
     return
   }
   if (!rssEmail.value) {
-    rssError.value = '请先在个人资料中设置账号邮箱'
+    ElMessage.warning('请先在个人资料中设置账号邮箱')
     return
   }
   rssSubmitting.value = true
-  rssError.value = ''
   try {
     subscription.value = (await request('/blog/me/rss-subscription', {
       method: 'PUT', body: { email: rssEmail.value },
     })).data
     ElMessage.success(subscription.value.status === 1 ? '当前邮箱已订阅' : '确认邮件已发送，请查收邮件完成邮箱验证')
   } catch (error) {
-    rssError.value = error.message
+    ElMessage.error(error.message)
   } finally {
     rssSubmitting.value = false
   }
 }
 async function handleRssUnsubscribe() {
   rssSubmitting.value = true
-  rssError.value = ''
   try {
     await request('/blog/me/rss-subscription', { method: 'DELETE' })
     subscription.value = null
     showRssModal.value = false
     ElMessage.success('已取消订阅')
   } catch (error) {
-    rssError.value = error.message
+    ElMessage.error(error.message)
   } finally {
     rssSubmitting.value = false
   }
@@ -246,7 +242,6 @@ function goTag(slug) {
       width="380px"
       :append-to-body="true"
     >
-      <p v-if="rssError" role="alert">{{ rssError }}</p>
       <p v-if="subscription?.status === 0" role="status">等待邮箱验证，请查收邮件；可重新提交以重发确认邮件。</p>
       <p v-if="!can('blog:rss:subscribe')">当前账号没有邮件订阅权限。</p>
       <!-- 已订阅，查看状态 -->

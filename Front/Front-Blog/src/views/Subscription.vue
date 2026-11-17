@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { request } from '../api.js'
 import { can, session } from '../session.js'
 import AuthForm from '../components/AuthForm.vue'
@@ -12,11 +14,9 @@ history.replaceState(history.state, '', location.pathname)
 const valid = ref(!!ticket && ticket.length <= 512)
 const busy = ref(false)
 const done = ref(false)
-const error = ref('')
 
 async function submit() {
   busy.value = true
-  error.value = ''
   try {
     await request(confirm ? '/blog/me/rss-subscription/confirm' : '/blog/rss-subscriptions/unsubscribe', {
       method: 'POST', body: { ticket },
@@ -24,7 +24,7 @@ async function submit() {
     done.value = true
     ticket = null
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -48,7 +48,6 @@ async function submit() {
       </template>
       <p v-else class="error-text">当前账号没有邮件订阅权限。</p>
     </template>
-    <p v-if="error" class="error-text" role="alert">{{ error }}</p>
     <p>
       <router-link to="/account" class="text-button">返回个人中心 →</router-link>
     </p>

@@ -24,3 +24,17 @@ export async function prepareBatch(resource, idKey, rows, needsRevision = true, 
   }
   return { items }
 }
+
+/**
+ * 编辑保存后同步单条记录状态：优先复用更新响应中的最新版本，缺失时重新读取详情版本。
+ */
+export async function syncRowStatus(resource, idKey, id, savedRevision, path = 'batch-status', body = {}) {
+  const hasRevision = typeof savedRevision === 'string' && /^"[0-9a-f]{64}"$/.test(savedRevision)
+  const payload = hasRevision
+    ? { items: [{ id, revision: savedRevision }] }
+    : await prepareBatch(resource, idKey, [{ [idKey]: id }])
+  return request(`${resource}/${path}`, {
+    method: 'PUT',
+    body: { ...payload, ...body },
+  })
+}

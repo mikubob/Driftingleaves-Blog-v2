@@ -16,7 +16,6 @@ const key = ref('site')
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
-const formError = ref('')
 const revision = ref('')
 const form = reactive({
   title: '',
@@ -38,7 +37,6 @@ function selectTab(value) {
 async function load() {
   loading.value = true
   error.value = ''
-  formError.value = ''
   try {
     const result = await request(`/admin/configs/${key.value}`)
     revision.value = result.revision
@@ -55,7 +53,6 @@ async function load() {
 
 async function save() {
   saving.value = true
-  formError.value = ''
   try {
     const configValue =
       key.value === 'site'
@@ -79,7 +76,7 @@ async function save() {
     revision.value = result.revision
     ElMessage.success('配置已保存')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -136,7 +133,7 @@ onMounted(load)
             <el-date-picker v-model="form.startDate" type="date" value-format="YYYY-MM-DD" />
           </label>
           <div class="switch-row">
-            <span>允许公开读取站点信息</span>
+            <span>公开站点信息</span>
             <el-switch v-model="form.isPublic" :active-value="1" :inactive-value="0" />
           </div>
         </template>
@@ -150,7 +147,7 @@ onMounted(load)
           </div>
           <div class="switch-row">
             <div>
-              <strong>新内容需要审核</strong>
+              <strong>新内容需审核</strong>
             </div>
             <el-switch v-model="form.reviewRequired" />
           </div>
@@ -159,7 +156,6 @@ onMounted(load)
           后台说明
           <el-input v-model="form.remark" type="textarea" maxlength="255" />
         </label>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div>
           <el-button
             v-if="can('blog:config:update')"

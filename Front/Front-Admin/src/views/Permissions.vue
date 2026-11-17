@@ -21,7 +21,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -41,9 +41,9 @@ const {
 )
 const dialog = ref(false)
 const saving = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const form = reactive({
   permissionCode: '',
   permissionName: '',
@@ -53,13 +53,13 @@ const form = reactive({
 })
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.permissionId || ''
     if (row) {
       const result = await request(`/admin/permissions/${row.permissionId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         permissionCode: data.permissionCode,
         permissionName: data.permissionName,
@@ -68,6 +68,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         permissionCode: '',
         permissionName: '',
@@ -83,8 +84,6 @@ async function edit(row) {
 }
 
 async function save() {
-  formError.value = ''
-
   saving.value = true
   try {
     const body = {
@@ -96,16 +95,25 @@ async function save() {
       body.status = form.status
       body.permissionCode = form.permissionCode
     }
-    await request(id.value ? `/admin/permissions/${id.value}` : '/admin/permissions', {
+    const saved = await request(id.value ? `/admin/permissions/${id.value}` : '/admin/permissions', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/permissions', 'permissionId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('权限已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -304,11 +312,15 @@ const batchActions = computed(() => {
           说明
           <el-input v-model="form.description" type="textarea" :rows="4" maxlength="255" />
         </label>
-        <label v-if="!id">
-          启用状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          启用权限
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('sys:permission:update')"
+          />
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存权限</el-button>

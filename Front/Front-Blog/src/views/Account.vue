@@ -1,6 +1,8 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { getPage, isWebUrl, request } from '../api.js'
 import { validatePassword } from '../shared/form.js'
 import { can, logout, session, sessionRevoked } from '../session.js'
@@ -19,9 +21,6 @@ const password = reactive({ current: '', next: '' })
 const tab = ref('liked-articles')
 const statusFilter = ref(null)
 const page = ref(1)
-const error = ref('')
-const sheetError = ref('')
-const feedback = ref('')
 const busy = ref(false)
 const deleting = ref(null)
 const editOpen = ref(false)
@@ -131,7 +130,6 @@ watch(statusFilter, () => {
 function closeSheets() {
   editOpen.value = false
   passwordOpen.value = false
-  sheetError.value = ''
   if (previousFocus && typeof previousFocus.focus === 'function') {
     previousFocus.focus()
     previousFocus = null
@@ -140,8 +138,6 @@ function closeSheets() {
 
 async function openEditSheet() {
   previousFocus = document.activeElement
-  error.value = ''
-  sheetError.value = ''
   if (me.data?.data) {
     Object.assign(form, {
       nickname: me.data.data.nickname,
@@ -157,8 +153,6 @@ async function openEditSheet() {
 
 async function openPasswordSheet() {
   previousFocus = document.activeElement
-  error.value = ''
-  sheetError.value = ''
   password.current = ''
   password.next = ''
   passwordOpen.value = true
@@ -178,15 +172,13 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 /** 提交个人资料修改并保留并发版本校验。 */
 async function saveProfile() {
-  sheetError.value = ''
-  feedback.value = ''
   if (!me.data?.revision) {
-    sheetError.value = '资料尚未加载完成，请稍后重试。'
+    ElMessage.warning('资料尚未加载完成，请稍后重试。')
     return
   }
   if (!form.nickname.trim() || [...form.nickname.trim()].length > 64
     || (form.avatar && !isWebUrl(form.avatar))) {
-    sheetError.value = '请填写有效昵称，头像仅支持 HTTP(S) 地址。'
+    ElMessage.error('请填写有效昵称，头像仅支持 HTTP(S) 地址。')
     return
   }
   busy.value = true
@@ -201,9 +193,9 @@ async function saveProfile() {
     session.user = result.data
     me.data = result
     closeSheets()
-    feedback.value = '个人资料已更新。'
+    ElMessage.success('个人资料已更新。')
   } catch (failure) {
-    sheetError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -211,9 +203,8 @@ async function saveProfile() {
 
 /** 修改或设置本站登录密码，成功后跳转登录页重新认证。 */
 async function changePassword() {
-  sheetError.value = ''
   if (!validatePassword(password.next)) {
-    sheetError.value = '新密码为 8–64 个字符，UTF-8 不超过 72 字节。'
+    ElMessage.error('新密码为 8–64 个字符，UTF-8 不超过 72 字节。')
     return
   }
   busy.value = true
@@ -229,7 +220,7 @@ async function changePassword() {
     sessionRevoked()
     await router.push('/login')
   } catch (failure) {
-    sheetError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -242,13 +233,12 @@ async function remove() {
     ? `/blog/articles/${item.article.articleId}/like`
     : `/blog/me/${tab.value}/${item.commentId || item.messageId}`
   busy.value = true
-  error.value = ''
   try {
     await request(path, { method: 'DELETE' })
     deleting.value = null
     await Promise.all([activity.reload(), summaryCounts.reload()])
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -312,9 +302,6 @@ function messageTarget(item) {
   </section>
 
   <div v-else class="account-page">
-    <p v-if="error" role="alert" class="account-banner error-state">{{ error }}</p>
-    <p v-if="feedback" role="status" class="account-banner success-banner">{{ feedback }}</p>
-
     <!-- 顶部 Bento 双栏工作台 -->
     <section class="account-bento-grid">
       <div class="bento-card profile-card">
@@ -624,7 +611,6 @@ function messageTarget(item) {
           <h2 id="edit-sheet-title" class="sheet-title">编辑个人资料</h2>
           <button type="button" class="sheet-close" aria-label="关闭" @click="closeSheets">✕</button>
         </div>
-        <p v-if="sheetError" role="alert" class="error-text sheet-error">{{ sheetError }}</p>
         <form @submit.prevent="saveProfile">
           <fieldset :disabled="busy">
             <div class="form-grid">
@@ -675,7 +661,6 @@ function messageTarget(item) {
           </div>
           <button type="button" class="sheet-close" aria-label="关闭" @click="closeSheets">✕</button>
         </div>
-        <p v-if="sheetError" role="alert" class="error-text sheet-error">{{ sheetError }}</p>
         <form @submit.prevent="changePassword">
           <fieldset :disabled="busy">
             <template v-if="session.user.hasPassword">

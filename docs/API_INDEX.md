@@ -153,7 +153,7 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | [审核或批量切换友链状态](API_ADMIN.md#batch-links-status) | `PUT /api/v1/admin/links/batch-status` |
 | [批量删除友链](API_ADMIN.md#batch-link-delete) | `POST /api/v1/admin/links/batch-delete` |
 
-博客申请由上述接口管理。后端返回[来源和申请人摘要](API_ADMIN.md#admin-link-source)，支持按申请人和来源筛选以及按网址搜索。
+后台可[将友链绑定为指定账号的本人申请](API_ADMIN.md#admin-link-source)，列表和详情返回友链来源和当前绑定账号。
 
 ### 1.12 站点配置
 

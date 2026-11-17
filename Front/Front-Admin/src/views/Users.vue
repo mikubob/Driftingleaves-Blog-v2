@@ -28,12 +28,13 @@ import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { getOptions, request } from '../api.js'
 import { can } from '../session.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { formatTime } from '../format.js'
 import { nullable, validatePassword } from '../form.js'
 import { useList } from '../composables/useList.js'
 import ListPager from '../components/ListPager.vue'
 import BatchActions from '../components/BatchActions.vue'
+import RowStatusActions from '../components/RowStatusActions.vue'
 import RequestError from '../components/RequestError.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
@@ -51,10 +52,10 @@ const batchActions = computed(() => {
   const actions = []
   if (can('sys:user:update')) {
     actions.push(
-      { label: '批量启用', type: 'success', path: 'batch-enable', method: 'PUT' },
+      { label: '批量启用', type: 'success', path: 'batch-enable', method: 'PUT', targetStatus: 1 },
       {
-        label: '批量禁用', type: 'warning', path: 'batch-disable', method: 'PUT',
-        warning: '将撤销所选账号的全部会话，必须保留至少一个有效管理员。',
+        label: '批量禁用', type: 'warning', path: 'batch-disable', method: 'PUT', targetStatus: 0,
+        warning: '将撤销目标账号的全部会话，必须保留至少一个有效管理员。',
       },
     )
   }
@@ -71,9 +72,9 @@ const dialog = ref(false)
 const roleDialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const roles = ref([])
 const roleIds = ref([])
 const form = reactive({
@@ -87,7 +88,6 @@ const form = reactive({
 })
 
 async function edit(row) {
-  formError.value = ''
   form.password = ''
   try {
     id.value = row?.userId || ''
@@ -95,6 +95,7 @@ async function edit(row) {
       const result = await request(`/admin/users/${row.userId}`)
       revision.value = result.revision
       const user = result.data
+      initialStatus.value = user.status
       Object.assign(form, {
         username: user.username,
         nickname: user.nickname,
@@ -104,6 +105,7 @@ async function edit(row) {
         status: user.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         username: '',
         password: '',
@@ -124,9 +126,8 @@ async function save() {
   if (saving.value || uploading.value) {
     return
   }
-  formError.value = ''
   if (!id.value && !validatePassword(form.password)) {
-    formError.value = '密码须为 8–64 个字符且 UTF-8 不超过 72 字节。'
+    ElMessage.error('密码须为 8–64 个字符且 UTF-8 不超过 72 字节。')
     return
   }
   saving.value = true
@@ -142,24 +143,36 @@ async function save() {
       body.username = form.username
       body.password = form.password
     }
-    await request(id.value ? `/admin/users/${id.value}` : '/admin/users', {
+    const saved = await request(id.value ? `/admin/users/${id.value}` : '/admin/users', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus(
+        '/admin/users',
+        'userId',
+        id.value,
+        saved?.revision,
+        form.status === 1 ? 'batch-enable' : 'batch-disable',
+      )
+      initialStatus.value = form.status
+    }
     form.password = ''
     dialog.value = false
     ElMessage.success('用户资料已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
 }
 
 async function assignRoles(row) {
-  formError.value = ''
   try {
     const [current, options] = await Promise.all([
       request(`/admin/users/${row.userId}`),
@@ -177,7 +190,6 @@ async function assignRoles(row) {
 
 async function saveRoles() {
   saving.value = true
-  formError.value = ''
   try {
     await request(`/admin/users/${id.value}/roles`, {
       method: 'PUT',
@@ -188,7 +200,7 @@ async function saveRoles() {
     ElMessage.success('用户角色已更新，受影响会话需重新登录')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -351,7 +363,7 @@ function switchStatus(status) {
         <el-table-column label="最近登录地域" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">{{ row.lastLoginLocation || '未知' }}</template>
         </el-table-column>
-        <el-table-column label="操作" align="center" width="280">
+        <el-table-column label="操作" align="center" width="320">
           <template #default="{ row }">
             <el-button
               v-if="can('sys:user:query')"
@@ -367,6 +379,13 @@ function switchStatus(status) {
               :disabled="deleting || batch?.busy"
               @click="edit(row)"
             >编辑</el-button>
+            <RowStatusActions
+              :row="row"
+              :actions="batchActions"
+              :batch="batch"
+              :target-label="`用户「${row.username}」`"
+              :disabled="loading || deleting"
+            />
             <el-button
               type="primary"
               v-if="can('sys:user:assignRole') && can('sys:role:query')"
@@ -453,11 +472,15 @@ function switchStatus(status) {
           个人简介
           <el-input v-model="form.intro" type="textarea" :rows="3" maxlength="500" />
         </label>
-        <label v-if="!id">
-          账号状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          启用账号
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('sys:user:update')"
+          />
         </label>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存用户</el-button>
@@ -484,7 +507,6 @@ function switchStatus(status) {
             :disabled="role.status !== 1 && !roleIds.includes(role.roleId)"
           />
         </el-select>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="roleDialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存角色</el-button>

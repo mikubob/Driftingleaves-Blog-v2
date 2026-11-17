@@ -291,7 +291,7 @@ onUnmounted(() => {
       <router-link ref="siteTitleRef" to="/" class="site-title">
         {{ blogStore.site.title || 'DriftingLeaves Blog' }}
       </router-link>
-      <nav ref="navDesktopRef" class="nav-desktop" aria-label="博客导航">
+      <nav ref="navDesktopRef" class="nav-desktop" aria-label="博客导航" :inert="compactNav">
         <router-link v-for="item in readingLinks" :key="item.to" :to="item.to" class="nav-link">
           <svg v-if="item.icon === 'fire'" class="nav-item-icon" aria-hidden="true">
             <use href="#blog-nav-fire" />
@@ -342,6 +342,7 @@ onUnmounted(() => {
           v-if="currentTrack"
           ref="miniPlayerWrapRef"
           class="mini-player-wrap"
+          :inert="compactNav"
         >
           <button
             type="button"
@@ -435,6 +436,7 @@ onUnmounted(() => {
           ref="themeSwitchRef"
           class="theme-switch"
           :title="isDark ? '切换到浅色模式' : '切换到暗色模式'"
+          :inert="compactNav"
         >
           <input
             class="theme-switch__checkbox"
@@ -1124,7 +1126,7 @@ button.account-trigger .iconfont {
   box-shadow:
     0 -0.062em 0.062em rgba(0, 0, 0, 0.25),
     0 0.062em 0.125em rgba(255, 255, 255, 0.94);
-  transition: var(--transition);
+  transition: background-color var(--transition);
   position: relative;
 }
 .theme-switch__container::before {
@@ -1162,7 +1164,7 @@ button.account-trigger .iconfont {
     0 0 0 0.625em rgba(255, 255, 255, 0.1),
     0 0 0 1.25em rgba(255, 255, 255, 0.1);
   display: flex;
-  transition: var(--circle-transition);
+  transition: left var(--circle-transition);
   pointer-events: none;
 }
 .theme-switch__sun-moon-container {
@@ -1180,7 +1182,7 @@ button.account-trigger .iconfont {
   filter: drop-shadow(0.062em 0.125em 0.125em rgba(0, 0, 0, 0.25))
     drop-shadow(0 0.062em 0.125em rgba(0, 0, 0, 0.25));
   overflow: hidden;
-  transition: var(--transition);
+  transition: background-color var(--transition);
 }
 .theme-switch__moon {
   transform: translateX(100%);
@@ -1191,7 +1193,7 @@ button.account-trigger .iconfont {
   box-shadow:
     0.062em 0.062em 0.062em 0 rgba(254, 255, 239, 0.61) inset,
     0 -0.062em 0.062em 0 #969696 inset;
-  transition: var(--transition);
+  transition: transform var(--transition);
   position: relative;
 }
 .theme-switch__spot {
@@ -1240,7 +1242,7 @@ button.account-trigger .iconfont {
     4.625em -1.75em 0 0.437em var(--clouds-color),
     4em -0.625em var(--back-clouds-color),
     4.125em -2.125em 0 0.437em var(--back-clouds-color);
-  transition: 0.5s cubic-bezier(0, -0.02, 0.4, 1.25);
+  transition: bottom 0.5s cubic-bezier(0, -0.02, 0.4, 1.25);
 }
 .theme-switch__stars-container {
   position: absolute;
@@ -1249,7 +1251,9 @@ button.account-trigger .iconfont {
   left: 0.312em;
   width: 2.75em;
   height: auto;
-  transition: var(--transition);
+  transition:
+    top var(--transition),
+    transform var(--transition);
 }
 .theme-switch__checkbox:checked + .theme-switch__container {
   background-color: var(--container-night-bg);
@@ -1343,7 +1347,11 @@ button.account-trigger .iconfont {
 .site-header.compact .theme-switch {
   position: absolute;
   visibility: hidden;
+  opacity: 0;
   pointer-events: none;
+}
+.site-header.compact .music-panel {
+  transition: none;
 }
 .site-header.compact .mobile-menu-btn {
   display: block;

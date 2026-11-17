@@ -90,7 +90,7 @@
 
 需要版本的写入成功返回新 X-Revision，删除无需返回；无实际变化可以保持原版本。先检查权限和范围，再校验版本与状态；状态不变也不能跳过版本。版本涵盖业务字段及关联集合，不以阅读数或审计时间变化判定编辑冲突。
 
-统一的[批量接口](API_ADMIN.md#admin-batch)是多资源例外：逐条使用 Body 中的 `items[].revision`，不使用整个请求的 If-Revision；状态写入在响应 `data.items[].revision` 返回各资源的新版本，不返回单一 X-Revision。版本来源和校验语义仍与单条接口一致。
+统一的[批量接口](API_ADMIN.md#admin-batch)是多资源例外：逐条使用 Body 中的 `items[].revision`，不使用整个请求的 If-Revision；状态写入在响应 `data.items[].revision` 返回各资源的新版本，不返回单一 X-Revision。版本来源和校验语义仍与单条接口一致。后台编辑表单若同时修改资料与状态，在 `PUT` 资料保存成功并取得最新 `X-Revision`（或重新读取详情版本）后，再按状态变化调用对应的统一状态接口，不合并进资料 `PUT` 请求体。
 
 没有通用幂等键。创建超时先查询确认；点赞/取消点赞、注销可幂等，OAuth state/ticket 一次性。429 读取 Retry-After；服务不可用返回 503，不当作成功重试。Home 和 Cv 的公开接口在合法跨域响应中暴露 Retry-After。
 

@@ -10,8 +10,8 @@ import {
   ElInputNumber,
   ElMessage,
   ElMessageBox,
-  ElOption,
-  ElSelect,
+  ElRadio,
+  ElRadioGroup,
   ElSwitch,
   ElTable,
   ElTableColumn,
@@ -23,13 +23,13 @@ import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/input-number/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
+import 'element-plus/es/components/radio/style/css'
+import 'element-plus/es/components/radio-group/style/css'
 import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { uploadFile } from '../fileUpload.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
@@ -52,9 +52,9 @@ const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref('')
 const canUpload = computed(() => can('blog:file:upload') && can('blog:file:query'))
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const form = reactive({
   title: '',
   artist: '',
@@ -73,7 +73,6 @@ async function upload(file, kind) {
     return
   }
   uploading.value = kind
-  formError.value = ''
   try {
     const usage = { image: 'MUSIC_COVER', audio: 'SONG', lyric: 'LYRIC' }[kind]
     const result = await uploadFile(file, kind, usage)
@@ -84,20 +83,20 @@ async function upload(file, kind) {
     }
     ElMessage.success('文件已上传，请保存音乐；未使用文件可在文件管理中清理。')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     uploading.value = ''
   }
 }
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.musicId || ''
     if (row) {
       const result = await request(`/admin/music/${row.musicId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         title: data.title,
         artist: data.artist || '',
@@ -110,6 +109,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         title: '',
         artist: '',
@@ -132,9 +132,8 @@ async function save() {
   if (uploading.value || saving.value) {
     return
   }
-  formError.value = ''
   if (Boolean(form.lyricUrl.trim()) !== Boolean(form.lyricType)) {
-    formError.value = '歌词地址和歌词格式必须同时填写或同时清空。'
+    ElMessage.error('歌词地址和歌词格式必须同时填写或同时清空。')
     return
   }
   saving.value = true
@@ -152,16 +151,25 @@ async function save() {
     if (!id.value) {
       body.status = form.status
     }
-    await request(id.value ? `/admin/music/${id.value}` : '/admin/music', {
+    const saved = await request(id.value ? `/admin/music/${id.value}` : '/admin/music', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/music', 'musicId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('音乐已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -462,11 +470,12 @@ const batchActions = computed(() => {
         </div>
         <label>
           歌词格式
-          <el-select v-model="form.lyricType" :disabled="uploading === 'lyric'" clearable>
-            <el-option label="LRC" value="lrc" />
-            <el-option label="JSON" value="json" />
-            <el-option label="TXT" value="txt" />
-          </el-select>
+          <el-radio-group v-model="form.lyricType" :disabled="uploading === 'lyric'">
+            <el-radio value="">无</el-radio>
+            <el-radio value="lrc">LRC</el-radio>
+            <el-radio value="json">JSON</el-radio>
+            <el-radio value="txt">TXT</el-radio>
+          </el-radio-group>
         </label>
         <label>
           排序
@@ -477,11 +486,15 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label v-if="!id">
-          展示状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          展示音乐
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('blog:music:update', true)"
+          />
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving || !!uploading" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving" :disabled="!!uploading">{{ uploading ? '正在上传文件' : '保存音乐' }}</el-button>

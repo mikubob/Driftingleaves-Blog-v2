@@ -36,8 +36,8 @@ import 'element-plus/es/components/select/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import 'element-plus/es/components/tag/style/css'
-import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { getOptions, request } from '../api.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -60,9 +60,12 @@ const detailUserId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(0)
+const users = ref(null)
+const loadingUsers = ref(false)
+const currentApplicant = ref(null)
 const form = reactive({
   linkName: '',
   url: '',
@@ -70,16 +73,33 @@ const form = reactive({
   description: '',
   sortOrder: 0,
   status: 0,
+  applicantId: '',
 })
 
+async function loadUsers() {
+  if (!can('sys:user:query') || loadingUsers.value) {
+    return
+  }
+  loadingUsers.value = true
+  try {
+    users.value = await getOptions('/admin/users', { status: 1 })
+  } catch {
+    users.value = null
+    ElMessage.warning('账号列表加载失败，可直接填写用户 ID。')
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.linkId || ''
     if (row) {
       const result = await request(`/admin/links/${row.linkId}`)
       revision.value = result.revision
       const data = result.data
+      currentApplicant.value = data.applicant
+      initialStatus.value = data.status
       Object.assign(form, {
         linkName: data.linkName,
         url: data.url,
@@ -87,8 +107,11 @@ async function edit(row) {
         description: data.description || '',
         sortOrder: data.sortOrder,
         status: data.status,
+        applicantId: data.applicant?.userId || '',
       })
     } else {
+      currentApplicant.value = null
+      initialStatus.value = 0
       Object.assign(form, {
         linkName: '',
         url: '',
@@ -96,9 +119,11 @@ async function edit(row) {
         description: '',
         sortOrder: 0,
         status: 0,
+        applicantId: '',
       })
     }
     dialog.value = true
+    loadUsers()
   } catch (failure) {
     ElMessage.error(failure.message)
   }
@@ -108,7 +133,6 @@ async function save() {
   if (saving.value || uploading.value) {
     return
   }
-  formError.value = ''
 
   saving.value = true
   try {
@@ -118,20 +142,30 @@ async function save() {
       avatar: nullable(form.avatar),
       description: nullable(form.description),
       sortOrder: form.sortOrder,
+      applicantId: form.applicantId || null,
     }
     if (!id.value) {
       body.status = form.status
     }
-    await request(id.value ? `/admin/links/${id.value}` : '/admin/links', {
+    const saved = await request(id.value ? `/admin/links/${id.value}` : '/admin/links', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/links', 'linkId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('友链已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -399,6 +433,39 @@ const batchActions = computed(() => {
           站点地址
           <el-input v-model="form.url" type="url" maxlength="2048" required />
         </label>
+        <label>
+          绑定为本人申请（选填）
+          <el-select
+            v-if="can('sys:user:query') && (users || loadingUsers)"
+            v-model="form.applicantId"
+            :loading="loadingUsers"
+            :disabled="saving"
+            filterable
+            clearable
+            placeholder="请选择本站账号"
+          >
+            <el-option
+              v-if="currentApplicant && !users?.some(user => user.userId === currentApplicant.userId)"
+              :label="`${currentApplicant.nickname}（${currentApplicant.userId}）`"
+              :value="currentApplicant.userId"
+            />
+            <el-option
+              v-for="user in users"
+              :key="user.userId"
+              :label="`${user.nickname} · ${user.username}（${user.userId}）`"
+              :value="user.userId"
+            />
+          </el-select>
+          <el-input
+            v-else
+            v-model.trim="form.applicantId"
+            :disabled="saving"
+            pattern="[1-9][0-9]{0,18}"
+            placeholder="填写用户 ID"
+            clearable
+          />
+          <span class="muted-text">绑定后，该用户可在博客查看和撤回这条友链。</span>
+        </label>
         <DisplayImageField
           usage="LINK_AVATAR"
           v-model="form.avatar"
@@ -419,15 +486,14 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label v-if="!id">
+        <label>
           审核状态
-          <el-radio-group v-model="form.status">
+          <el-radio-group v-model="form.status" :disabled="Boolean(id) && !can('blog:link:update')">
             <el-radio :value="0">待审核</el-radio>
             <el-radio :value="1">展示中</el-radio>
             <el-radio :value="2">驳回 / 下架</el-radio>
           </el-radio-group>
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存友链</el-button>

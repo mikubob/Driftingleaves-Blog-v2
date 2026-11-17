@@ -37,7 +37,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -64,9 +64,9 @@ const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const form = reactive({
   experienceType: 0,
   title: '',
@@ -89,13 +89,13 @@ function switchType(type) {
 }
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.experienceId || ''
     if (row) {
       const result = await request(`/admin/cv/experiences/${row.experienceId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         experienceType: data.experienceType,
         title: data.title,
@@ -108,6 +108,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         experienceType: 0,
         title: '',
@@ -130,13 +131,12 @@ async function save() {
   if (saving.value || uploading.value) {
     return
   }
-  formError.value = ''
   if (new TextEncoder().encode(form.content).length > 65535 || !form.content.trim()) {
-    formError.value = '经历内容不能为空，UTF-8 不能超过 65,535 字节。'
+    ElMessage.error('经历内容不能为空，UTF-8 不能超过 65,535 字节。')
     return
   }
   if (form.endDate && form.endDate < form.startDate) {
-    formError.value = '结束日期不能早于开始日期。'
+    ElMessage.error('结束日期不能早于开始日期。')
     return
   }
   saving.value = true
@@ -154,16 +154,25 @@ async function save() {
     if (!id.value) {
       body.status = form.status
     }
-    await request(id.value ? `/admin/cv/experiences/${id.value}` : '/admin/cv/experiences', {
+    const saved = await request(id.value ? `/admin/cv/experiences/${id.value}` : '/admin/cv/experiences', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/cv/experiences', 'experienceId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('简历经历已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -434,11 +443,15 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label v-if="!id">
-          展示状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          展示经历
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('cv:experience:update', true)"
+          />
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存简历经历</el-button>

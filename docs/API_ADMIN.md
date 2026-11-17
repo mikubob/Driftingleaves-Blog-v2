@@ -1389,7 +1389,7 @@ Location: /api/v1/admin/users/12
 
 <a id="api-19"></a>
 
-### 1.4.4 修改用户资料及状态
+### 1.4.4 修改用户资料
 
 #### 基本信息
 
@@ -1449,10 +1449,7 @@ X-Revision: "<current-revision>"
 }
 ```
 
-不能修改 username 或密码；禁用撤销全部会话，重启用不恢复旧 Token。
-
-
-本接口只修改资料，保留当前 status。状态统一使用[批量启用/禁用用户](#batch-user-enable)，单个目标也提交一项 items。创建时仍可指定初始状态。
+本接口修改昵称、邮箱、头像和简介。创建时可指定初始状态，已有用户可在用户列表的操作列点击「启用」或「禁用」。单条操作复用[启用/禁用用户接口](#batch-user-enable)，在 items 中提交一项。
 
 ---
 
@@ -3485,7 +3482,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 | `keyword` | string | 否 | 首尾去空白后 1..100 字符，按友站名称或网址字面包含匹配 |
 | `status` | integer | 否 | 0 待审核、1 展示、2 驳回/下架 |
 | `source` | string | 否 | 精确匹配 `APPLICATION`、`ADMIN` 或 `UNKNOWN`，取值区分大小写 |
-| `applicantId` | ID | 否 | 精确匹配申请人的账号 ID，使用 Long 范围内的十进制正整数字符串 |
+| `applicantId` | ID | 否 | 精确匹配当前绑定的账号 ID，使用 Long 范围内的十进制正整数字符串 |
 
 #### 请求示例
 
@@ -3510,7 +3507,7 @@ Cookie: __Host-dl-admin-session=<opaque>
         "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
         "sortOrder": 0, "status": 1,
         "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z",
-        "source": "ADMIN", "applicant": null
+        "source": "ADMIN", "applicant": {"userId": "12", "nickname": "落叶"}
       }
     ]
   },
@@ -3522,13 +3519,13 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 <a id="admin-link-source"></a>
 
-#### 友链来源和申请人
+#### 友链来源和绑定账号
 
-列表和[详情](#api-72)均返回来源、申请人摘要、站点资料、排序、状态、创建时间和更新时间。博客申请的创建时间即提交时间。后台页面展示来源、申请人及增加筛选控件仍待接入。
+列表和[详情](#api-72)均返回来源、当前绑定账号的摘要、站点资料、排序、状态、创建时间和更新时间。来源记录友链最初由博客提交还是后台创建。
 
-例如 `GET /api/v1/admin/links?source=APPLICATION&applicantId=12&status=0&page=1&pageSize=10` 查询账号 `12` 待审核的申请。省略任一筛选参数时取消该条件。来源、申请人、状态和关键词同时匹配，列表与总数使用相同条件。未声明、重复、空白或非法参数返回 `400/VALIDATION_ERROR`，合法的申请人 ID 无匹配时返回 `200` 空页。
+例如 `GET /api/v1/admin/links?applicantId=12&status=1` 查询账号 `12` 当前展示中的本人申请。多个筛选条件同时匹配，列表与总数使用相同条件。未声明、重复、空白或非法参数返回 `400/VALIDATION_ERROR`，合法的账号 ID 无匹配时返回 `200` 空页。
 
-申请人摘要随友链查询返回，沿用 `blog:link:query` 权限。需要查看完整账号资料时，可用 `applicant.userId` 请求[用户详情](#api-17)，该接口单独检查 `sys:user:query`。
+账号摘要随友链查询返回，沿用 `blog:link:query` 权限。通过[用户列表](#api-16)选择账号或通过[用户详情](#api-17)查看完整账号资料需要 `sys:user:query`。具有友链创建或编辑权限时，可直接用已知账号 ID 绑定。
 
 ---
 
@@ -3578,13 +3575,13 @@ X-Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     "linkId": "1", "linkName": "示例友站", "url": "https://example.com", "avatar": null, "description": null,
     "sortOrder": 0, "status": 1,
     "createTime": "2026-10-29T02:00:00.000Z", "updateTime": "2026-10-29T02:00:00.000Z",
-    "source": "ADMIN", "applicant": null
+    "source": "ADMIN", "applicant": {"userId": "12", "nickname": "落叶"}
   },
   "errors": []
 }
 ```
 
-任一状态、任一来源的友链均可查看。详情与 `X-Revision` 在同一只读事务中读取，ID 为十进制字符串，时间为 UTC 毫秒格式。版本由 `linkId`、`linkName`、`url`、`avatar`、`description`、`sortOrder` 和 `status` 计算。
+任一状态、任一来源的友链均可查看。详情与 `X-Revision` 在同一只读事务中读取，ID 为十进制字符串，时间为 UTC 毫秒格式。版本由 `linkId`、`linkName`、`url`、`avatar`、`description`、`sortOrder`、`status` 和 `applicantId` 计算。
 
 管理列表提供“详情”按钮，只需查询权限，不要求编辑或删除权限。点击后请求本接口，在只读弹窗展示最新资料；支持加载提示、错误重试、关闭时取消请求，不使用列表行或上一次结果替代当前详情。描述按文本展示，可空字段显示未填写；友链头像复用图片预览组件，地址只展示，不由服务端抓取。
 
@@ -3625,6 +3622,7 @@ X-Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 | `description` | string&#124;null | 否 | 纯文本，最长 255 字符，默认 null |
 | `sortOrder` | integer | 否 | int32，默认 0 |
 | `status` | integer | 否 | 0 待审、1 展示、2 驳回/下架，默认 0 |
+| `applicantId` | ID&#124;null | 否 | 绑定为该用户的本人申请，须为启用账号。省略或传 null 表示未绑定 |
 
 #### 请求示例
 
@@ -3635,7 +3633,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 X-Expected-User-Id: 12
 Content-Type: application/json
 
-{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0,"status":0}
+{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":null,"sortOrder":0,"status":0,"applicantId":"12"}
 ```
 
 #### 响应参数
@@ -3659,7 +3657,7 @@ Location: /api/v1/admin/links/1
 }
 ```
 
-后台直接创建的友链无申请人归属，不占用博客账号的申请名额或每日额度。名称和 URL 可以重复。请求体仅接受表中字段，传入 `source`、`applicant` 或 `applicantId` 等未声明字段返回 `400/VALIDATION_ERROR`。地址按[友链模型](API_CONTRACT.md#model-12-7)校验。创建后可通过 `Location` 查询详情并取得版本。
+后台创建的友链来源为 `ADMIN`。绑定后，目标用户可在博客查询和撤回这条本人申请，并占用一条申请名额。后台绑定不扣减每日提交次数。目标用户已有申请时返回 `409/STATE_CONFLICT`。账号 ID 格式无效、账号不存在或已禁用，或传入 `source`、`applicant` 等未声明字段时返回 `400/VALIDATION_ERROR`。名称和 URL 可以重复。创建后可通过 `Location` 查询完整详情并取得版本。
 
 ---
 
@@ -3688,6 +3686,7 @@ Location: /api/v1/admin/links/1
 | `avatar` | string&#124;null | 是，可 null | 公开 HTTP(S) 图片地址，最长 2048 字符 |
 | `description` | string&#124;null | 是，可 null | 纯文本，最长 255 字符 |
 | `sortOrder` | integer | 是 | int32 |
+| `applicantId` | ID&#124;null | 否 | 省略保留绑定，传 null 解除绑定，传账号 ID 绑定为该用户的本人申请 |
 
 #### 请求示例
 
@@ -3699,7 +3698,7 @@ X-Expected-User-Id: 12
 If-Revision: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 Content-Type: application/json
 
-{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":"友站简介","sortOrder":0}
+{"linkName":"示例友站","url":"https://example.com","avatar":null,"description":"友站简介","sortOrder":0,"applicantId":"12"}
 ```
 
 #### 响应参数
@@ -3727,7 +3726,9 @@ X-Revision: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 }
 ```
 
-五个资料字段须全部提交，可空字段传 `null` 清空。传入 `status`、`source`、`applicant` 或 `applicantId` 等未声明字段返回 `400/VALIDATION_ERROR`。编辑保留状态和申请归属，申请人通过[本人申请查询](API_BLOG.md#link-application-get)读到同一条记录的最新资料。审核使用[批量切换友链状态](#batch-links-status)。
+五个资料字段须全部提交，可空字段传 `null` 清空。改绑后，新账号接收本人申请，旧账号失去查询和撤回这条记录的权限。解绑后释放原账号的一条申请名额。编辑保留友链状态和来源，审核使用[批量切换友链状态](#batch-links-status)。
+
+目标账号已有另一条申请时返回 `409/STATE_CONFLICT`，资料和绑定均保持原样。新选账号不存在或已禁用、账号 ID 格式非法，或传入 `status`、`source`、`applicant` 等未声明字段时返回 `400/VALIDATION_ERROR`。保留已绑定的禁用账号时仍可编辑站点资料。
 
 缺少 `If-Revision` 返回 `428/PRECONDITION_REQUIRED`，格式错误返回 `400/VALIDATION_ERROR`，版本已变化返回 `412/REVISION_CONFLICT`，目标已被申请人或其他管理员删除时返回 `404/NOT_FOUND`。成功响应携带当前 `X-Revision`。
 
@@ -6210,7 +6211,7 @@ Content-Type: application/json
 | 业务权限 | `blog:link:delete`；全局资源，SELF 授权也可操作全部目标 |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
 
-可物理删除任一状态的友链。若删除的是博客申请，[本人申请查询](API_BLOG.md#link-application-get)随即不再返回该申请。申请名额释放，当日已用次数保留，申请人可在剩余额度内重新提交。展示中的记录从公开列表移除，外部站点和图标资源不受影响。
+可物理删除任一状态的友链。若友链已绑定账号，[本人申请查询](API_BLOG.md#link-application-get)随即不再返回该申请。申请名额释放，当日已用次数保留，申请人可在剩余额度内重新提交。展示中的记录从公开列表移除，外部站点和图标资源不受影响。
 
 按[批量公共约定](#admin-batch)提交每条详情的版本，任一目标已删除或版本不符时整批失败。当前后台单条删除按钮检查 `blog:link:delete`，多选删除按钮额外要求 `ALL`。待实现的后台接入需统一两处按钮的权限判断，按接口的全局权限开放。
 
@@ -6943,16 +6944,16 @@ Content-Type: application/json
 
 #### AdminLink
 
-包含 [Link](#response-link) 的全部字段，并始终返回以下两个字段。
+包含 [Link](#response-link) 的全部字段，并始终返回以下字段。
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `source` | string | `APPLICATION` 博客账号提交、`ADMIN` 后台直接创建、`UNKNOWN` 历史来源无法确认 |
-| `applicant` | object&#124;null | 当前可关联的申请人。账号禁用时仍返回摘要。后台创建、历史来源无法确认或申请账号已删除时返回 null |
-| `applicant.userId` | ID | 申请人的账号 ID，十进制正整数字符串 |
-| `applicant.nickname` | string | 申请人当前的昵称 |
+| `applicant` | object&#124;null | 当前绑定的申请账号。未绑定或账号已删除时为 null，账号禁用时仍返回摘要 |
+| `applicant.userId` | ID | 当前绑定的账号 ID，十进制正整数字符串 |
+| `applicant.nickname` | string | 当前绑定账号的昵称 |
 
-来源已确认为 `APPLICATION` 的记录在申请账号删除后仍保留该来源，详情继续可查，按原申请人 ID 筛选时不命中。申请人摘要仅包含上表两项账号字段。后台创建和编辑响应、博客本人申请响应继续使用 Link，博客公开列表继续使用 [LinkPublic](API_BLOG.md#response-linkpublic)。
+绑定、改绑、解绑及账号删除均保留友链来源。后台创建和编辑响应、博客本人申请响应使用 Link，博客公开列表使用 [LinkPublic](API_BLOG.md#response-linkpublic)。
 
 博客申请的后台详情 `data` 示例
 

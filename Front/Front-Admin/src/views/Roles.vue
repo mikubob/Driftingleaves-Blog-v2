@@ -31,7 +31,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { getOptions, request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { flattenMenus } from '../navigation.js'
 import { nullable } from '../form.js'
@@ -52,9 +52,9 @@ const {
 const dialog = ref(false)
 const grantsDialog = ref(false)
 const saving = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const permissions = ref([])
 const menus = ref([])
 const permissionIds = ref([])
@@ -62,13 +62,13 @@ const menuIds = ref([])
 const form = reactive({ roleCode: '', roleName: '', description: '', dataScope: 'SELF', status: 1 })
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.roleId || ''
     if (row) {
       const result = await request(`/admin/roles/${row.roleId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         roleCode: data.roleCode,
         roleName: data.roleName,
@@ -77,6 +77,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         roleCode: '',
         roleName: '',
@@ -93,7 +94,6 @@ async function edit(row) {
 
 async function save() {
   saving.value = true
-  formError.value = ''
   try {
     const body = {
       roleName: form.roleName,
@@ -104,23 +104,31 @@ async function save() {
       body.status = form.status
       body.roleCode = form.roleCode
     }
-    await request(id.value ? `/admin/roles/${id.value}` : '/admin/roles', {
+    const saved = await request(id.value ? `/admin/roles/${id.value}` : '/admin/roles', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/roles', 'roleId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('角色已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
 }
 
 async function grant(row) {
-  formError.value = ''
   try {
     const [current, dictionary, menuResult] = await Promise.all([
       request(`/admin/roles/${row.roleId}`),
@@ -141,7 +149,6 @@ async function grant(row) {
 
 async function saveGrants() {
   saving.value = true
-  formError.value = ''
   try {
     await request(`/admin/roles/${id.value}/grants`, {
       method: 'PUT',
@@ -152,7 +159,7 @@ async function saveGrants() {
     ElMessage.success('角色授权已更新，受影响会话需重新登录')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -341,11 +348,15 @@ const batchActions = computed(() => {
             <el-radio value="ALL">全部 ALL</el-radio>
           </el-radio-group>
         </label>
-        <label v-if="!id">
-          启用状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          启用角色
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('sys:role:update')"
+          />
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存角色</el-button>
@@ -405,7 +416,6 @@ const batchActions = computed(() => {
             />
           </el-select>
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="grantsDialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存授权</el-button>

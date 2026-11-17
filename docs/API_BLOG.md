@@ -2603,7 +2603,7 @@ GET /api/v1/blog/links?page=1&pageSize=10
 
 仅 status=1，sortOrder ASC,linkId ASC。
 
-以下三个接口均要求有效的博客登录会话和启用的账号，申请归属只取自会话。写请求按[通用协议](API.md#common)校验请求来源和 `X-Expected-User-Id`，查询传入该请求头时也校验。本人申请响应不进入公开缓存。
+以下三个接口均要求有效的博客登录会话和启用的账号。本人提交时绑定会话账号，后台也可[按账号 ID 绑定友链](API_ADMIN.md#admin-link-source)。本人查询和删除始终匹配当前绑定账号。写请求按[通用协议](API.md#common)校验请求来源和 `X-Expected-User-Id`，查询传入该请求头时也校验。本人申请响应不进入公开缓存。
 
 <a id="link-application-get"></a>
 
@@ -2638,7 +2638,7 @@ X-Expected-User-Id: 12
 
 成功返回 `201 Created`，`Location` 为 `/api/v1/blog/me/link-application`，`data` 为新建的 [Link](API_ADMIN.md#response-link)。服务端设置 `status=0`（待审核）和 `sortOrder=0`。后台通过[友链状态接口](API_ADMIN.md#batch-links-status)审核，状态变为 `1` 后才进入公开列表。
 
-- 每个账号最多保留一条本人申请。只要上一条仍存在，无论是待审核、展示、驳回还是下架，均返回 `409/STATE_CONFLICT`。申请人删除或后台[删除该友链](API_ADMIN.md#batch-link-delete)后，才可在剩余额度内重新申请。后台直接创建的友链不计入账号申请。
+- 每个账号最多绑定一条本人申请，后台绑定的友链也占该名额。只要仍有已绑定的记录，提交返回 `409/STATE_CONFLICT`。本人或后台删除、后台解绑或改绑给其他账号后，可在剩余额度内重新申请。后台绑定不扣减每日提交次数。
 - 每个账号按 `Asia/Shanghai` 自然日最多成功提交 3 次，每天 00:00 重置。删除申请不返还次数。没有现存申请且当天额度用完时，返回 `429/RATE_LIMITED`，`Retry-After` 为距离下次重置的秒数。
 - 同一账号的并发提交和删除按顺序生效。检查现存申请、检查额度、新建申请和记录次数须保证一致性，失败不创建申请或扣减额度。
 
@@ -2646,7 +2646,7 @@ X-Expected-User-Id: 12
 
 ### 2.11.4 删除本人友链申请
 
-`DELETE /api/v1/blog/me/link-application/{linkId}`。`linkId` 为查询或提交响应中的十进制 ID，无查询参数、请求体和 `If-Revision`。只删除本人提交的对应记录，各审核状态均可删除。成功返回 `200`，`data` 为 `null`。若该友链正在展示，删除成功后应从公开列表移除。记录不存在或不属于当前账号时统一返回 `404/NOT_FOUND`，重复删除旧 ID 不影响后来创建的申请。
+`DELETE /api/v1/blog/me/link-application/{linkId}`。`linkId` 为查询或提交响应中的十进制 ID，无查询参数、请求体和 `If-Revision`。各审核状态均可删除，目标必须绑定当前账号。成功返回 `200`，`data` 为 `null`。展示中的友链删除后从公开列表移除。记录不存在或未绑定当前账号时返回 `404/NOT_FOUND`，重复删除旧 ID 不影响后来创建的申请。
 
 申请接口的通用错误见[错误码](API.md#errors)。未登录或会话失效返回 `401/UNAUTHENTICATED`，账号禁用返回 `403/ACCOUNT_DISABLED`，写请求缺少预期账号或预期账号与会话不符时返回 `409/SESSION_ACCOUNT_CHANGED`，非法参数返回 `400/VALIDATION_ERROR`。
 

@@ -17,7 +17,6 @@ const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
 const error = ref('')
-const formError = ref('')
 const revision = ref('')
 const bindings = ref([])
 const providers = ref([])
@@ -58,7 +57,6 @@ async function saveProfile() {
     return
   }
   saving.value = true
-  formError.value = ''
   try {
     const result = await request('/admin/me/profile', {
       method: 'PATCH',
@@ -74,19 +72,18 @@ async function saveProfile() {
     revision.value = result.revision
     ElMessage.success('个人资料已保存')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
 }
 
 async function changePassword(clear = false) {
-  formError.value = ''
   if (
     !clear &&
     (!validatePassword(password.newPassword) || password.newPassword !== password.confirmPassword)
   ) {
-    formError.value = '新密码须为 8–64 个字符且 UTF-8 不超过 72 字节，两次输入须一致。'
+    ElMessage.error('新密码须为 8–64 个字符且 UTF-8 不超过 72 字节，两次输入须一致。')
     return
   }
   try {
@@ -111,7 +108,7 @@ async function changePassword(clear = false) {
     sessionRevoked()
     ElMessage.success('安全设置已更新，请重新登录')
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -333,6 +330,5 @@ onBeforeUnmount(() => {
         </el-card>
       </div>
     </div>
-    <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
   </section>
 </template>

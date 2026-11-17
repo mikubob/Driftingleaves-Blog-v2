@@ -25,7 +25,7 @@ import 'element-plus/es/components/switch/style/css'
 import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import { request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { formatTime } from '../format.js'
 import { nullable } from '../form.js'
@@ -46,19 +46,19 @@ const {
 const dialog = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
-const formError = ref('')
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const form = reactive({ name: '', icon: '', url: '', sortOrder: 0, status: 1 })
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.socialId || ''
     if (row) {
       const result = await request(`/admin/home/social-links/${row.socialId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         name: data.name,
         icon: data.icon || '',
@@ -67,6 +67,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, { name: '', icon: '', url: '', sortOrder: 0, status: 1 })
     }
     dialog.value = true
@@ -79,7 +80,6 @@ async function save() {
   if (saving.value || uploading.value) {
     return
   }
-  formError.value = ''
 
   saving.value = true
   try {
@@ -92,16 +92,25 @@ async function save() {
     if (!id.value) {
       body.status = form.status
     }
-    await request(id.value ? `/admin/home/social-links/${id.value}` : '/admin/home/social-links', {
+    const saved = await request(id.value ? `/admin/home/social-links/${id.value}` : '/admin/home/social-links', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/home/social-links', 'socialId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('社交链接已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -294,11 +303,15 @@ const batchActions = computed(() => {
             :max="2147483647"
           />
         </label>
-        <label v-if="!id">
-          展示状态
-          <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+        <label>
+          展示链接
+          <el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            :disabled="Boolean(id) && !can('home:social:update', true)"
+          />
         </label>
-        <p v-if="formError" class="error-text" role="alert">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving || uploading" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving" :disabled="uploading">保存社交链接</el-button>

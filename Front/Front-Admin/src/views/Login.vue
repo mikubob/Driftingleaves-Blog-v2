@@ -1,8 +1,9 @@
 <script setup>
-import { ElButton, ElIcon, ElInput, ElRadioButton, ElRadioGroup } from 'element-plus'
+import { ElButton, ElIcon, ElInput, ElMessage, ElRadioButton, ElRadioGroup } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/icon/style/css'
 import 'element-plus/es/components/input/style/css'
+import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/radio-button/style/css'
 import 'element-plus/es/components/radio-group/style/css'
 import { onMounted, reactive, ref } from 'vue'
@@ -19,8 +20,6 @@ const form = reactive({ username: '', password: '', email: '', emailCode: '' })
 const emailLogin = ref(false)
 const captcha = ref(null)
 const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
 const providers = ref([])
 
 onMounted(async () => {
@@ -37,8 +36,6 @@ async function loginWithProvider(provider) {
   if (busy.value) {
     return
   }
-  error.value = ''
-  feedback.value = ''
   busy.value = true
   try {
     const { data } = await request(`/admin/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
@@ -51,7 +48,7 @@ async function loginWithProvider(provider) {
     }
     location.assign(url.href)
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
   }
@@ -61,18 +58,15 @@ async function login() {
   if (busy.value) {
     return
   }
-  error.value = ''
-  feedback.value = ''
   if (!emailLogin.value
     && (!/^[A-Za-z0-9_]{3,64}$/.test(form.username.trim()) || !validatePassword(form.password))) {
-    error.value =
-      '用户名须为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。'
+    ElMessage.error('用户名须为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。')
     return
   }
   if (emailLogin.value
     && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254
       || !/^[0-9]{6}$/.test(form.emailCode))) {
-    error.value = '请输入账号绑定的邮箱和邮件中的六位验证码。'
+    ElMessage.error('请输入账号绑定的邮箱和邮件中的六位验证码。')
     return
   }
   busy.value = true
@@ -92,7 +86,7 @@ async function login() {
     registerMenuRoutes()
     await router.replace(firstPage())
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
     busy.value = false
@@ -104,10 +98,8 @@ async function sendEmailCode() {
   if (busy.value) {
     return
   }
-  error.value = ''
-  feedback.value = ''
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
-    error.value = '请输入账号绑定的有效邮箱。'
+    ElMessage.error('请输入账号绑定的有效邮箱。')
     return
   }
   busy.value = true
@@ -118,9 +110,9 @@ async function sendEmailCode() {
       body: { email: form.email.trim() },
       captcha: captcha.value.getValue(),
     })
-    feedback.value = '验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。'
+    ElMessage.success('验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。')
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
     busy.value = false
@@ -182,8 +174,6 @@ async function sendEmailCode() {
           </template>
           <CaptchaField ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
           <el-button v-if="emailLogin" :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</el-button>
-          <p v-if="error" class="error-text" role="alert">{{ error }}</p>
-          <p v-if="feedback" class="success-text" role="status">{{ feedback }}</p>
           <el-button
             class="login-submit"
             type="primary"

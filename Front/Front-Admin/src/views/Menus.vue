@@ -33,7 +33,7 @@ import 'element-plus/es/components/table/style/css'
 import 'element-plus/es/components/table-column/style/css'
 import 'element-plus/es/components/tag/style/css'
 import { getOptions, request } from '../api.js'
-import { prepareBatch } from '../batch.js'
+import { prepareBatch, syncRowStatus } from '../batch.js'
 import { can } from '../session.js'
 import { flattenMenus, pageRegistry } from '../navigation.js'
 import { nullable } from '../form.js'
@@ -48,10 +48,10 @@ const permissions = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
-const formError = ref('')
 const dialog = ref(false)
 const id = ref('')
 const revision = ref('')
+const initialStatus = ref(1)
 const icons = [
   'document',
   'folder',
@@ -112,13 +112,13 @@ async function load() {
 }
 
 async function edit(row) {
-  formError.value = ''
   try {
     id.value = row?.menuId || ''
     if (row) {
       const result = await request(`/admin/menus/${row.menuId}`)
       revision.value = result.revision
       const data = result.data
+      initialStatus.value = data.status
       Object.assign(form, {
         parentId: data.parentId,
         menuCode: data.menuCode,
@@ -135,6 +135,7 @@ async function edit(row) {
         status: data.status,
       })
     } else {
+      initialStatus.value = 1
       Object.assign(form, {
         parentId: null,
         menuCode: '',
@@ -175,13 +176,12 @@ function changeType() {
 }
 
 async function save() {
-  formError.value = ''
   if (form.menuType !== 'D' && !form.permissionId) {
-    formError.value = '页面或按钮必须选择对应权限。'
+    ElMessage.error('页面或按钮必须选择对应权限。')
     return
   }
   if (form.menuType === 'B' && !form.parentId) {
-    formError.value = '按钮必须归属于一个页面。'
+    ElMessage.error('按钮必须归属于一个页面。')
     return
   }
   saving.value = true
@@ -203,16 +203,25 @@ async function save() {
       body.status = form.status
       body.menuCode = form.menuCode
     }
-    await request(id.value ? `/admin/menus/${id.value}` : '/admin/menus', {
+    const saved = await request(id.value ? `/admin/menus/${id.value}` : '/admin/menus', {
       method: id.value ? 'PUT' : 'POST',
       revision: id.value ? revision.value : undefined,
       body,
     })
+    if (saved?.revision) {
+      revision.value = saved.revision
+    }
+    if (id.value && form.status !== initialStatus.value) {
+      await syncRowStatus('/admin/menus', 'menuId', id.value, saved?.revision, 'batch-status', {
+        status: form.status,
+      })
+      initialStatus.value = form.status
+    }
     dialog.value = false
     ElMessage.success('菜单已保存')
     load()
   } catch (failure) {
-    formError.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     saving.value = false
   }
@@ -455,19 +464,23 @@ const batchActions = computed(() => {
         </div>
         <div class="form-row">
           <label v-if="form.menuType !== 'B'">
-            菜单显示
+            显示菜单
             <el-switch v-model="form.isVisible" :active-value="1" :inactive-value="0" />
           </label>
           <label v-if="form.menuType === 'M'">
             缓存页面
             <el-switch v-model="form.keepAlive" :active-value="1" :inactive-value="0" />
           </label>
-          <label v-if="!id">
-            启用状态
-            <el-switch v-model="form.status" :active-value="1" :inactive-value="0" />
+          <label>
+            启用菜单
+            <el-switch
+              v-model="form.status"
+              :active-value="1"
+              :inactive-value="0"
+              :disabled="Boolean(id) && !can('sys:menu:update')"
+            />
           </label>
         </div>
-        <p v-if="formError" role="alert" class="error-text">{{ formError }}</p>
         <div class="dialog-actions">
           <el-button :disabled="saving" @click="dialog = false">取消</el-button>
           <el-button type="primary" native-type="submit" :loading="saving">保存菜单</el-button>

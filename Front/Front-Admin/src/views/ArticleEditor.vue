@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -74,6 +74,11 @@ const { renderer: mdEditor, error: imageError, sanitize, headingId, onRendered }
   adminArticleUrl,
   (url, signal) => getImage(editorImageUrl(url, id.value), signal),
 )
+watch(imageError, (message) => {
+  if (message) {
+    ElMessage.error(message)
+  }
+})
 const saved = ref(JSON.stringify(form))
 const dirty = computed(() => JSON.stringify(form) !== saved.value)
 const markdownBytes = computed(() => new TextEncoder().encode(form.markdownContent).length)
@@ -379,7 +384,6 @@ onBeforeUnmount(() => {
             <el-option v-for="item in previewThemes" :key="item" :label="item" :value="item" />
           </el-select>
         </div>
-        <p v-if="imageError" role="alert" class="error-text">{{ imageError }}</p>
         <MdEditor
           ref="mdEditor"
           v-model="form.markdownContent"
@@ -507,13 +511,15 @@ onBeforeUnmount(() => {
               :disabled="!editable"
             />
           </label>
-          <label>
-            可见性
-            <el-radio-group v-model="form.visibility" :disabled="!editable">
-              <el-radio :value="1">公开</el-radio>
-              <el-radio :value="2">私密</el-radio>
-            </el-radio-group>
-          </label>
+          <div class="switch-row">
+            <span>公开文章</span>
+            <el-switch
+              v-model="form.visibility"
+              :active-value="1"
+              :inactive-value="2"
+              :disabled="!editable"
+            />
+          </div>
           <div class="switch-row">
             <span>置顶文章</span>
             <el-switch

@@ -1,5 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
+import { ElMessage } from 'element-plus'
+import 'element-plus/es/components/message/style/css'
 import { request } from '../api.js'
 import { validatePassword } from '../shared/form.js'
 import { acceptSession } from '../session.js'
@@ -19,17 +21,13 @@ const formMode = computed(() => {
 const form = reactive({ username: '', password: '', nickname: '', email: '', emailCode: '' })
 const captcha = ref(null)
 const busy = ref(false)
-const error = ref('')
-const feedback = ref('')
 
-/** 切换登录或注册模式，并清理上一次的提示信息。 */
+/** 切换登录或注册模式。 */
 function switchRegister(next) {
   if (register.value === next) {
     return
   }
   register.value = next
-  error.value = ''
-  feedback.value = ''
 }
 
 /** 切换登录方式（账号密码或邮箱验证码）。 */
@@ -38,8 +36,6 @@ function switchEmailLogin(next) {
     return
   }
   emailLogin.value = next
-  error.value = ''
-  feedback.value = ''
 }
 const submitLabel = computed(() => {
   if (busy.value) {
@@ -58,7 +54,6 @@ async function popupResult(event) {
   }
   awaitingPopup = false
   busy.value = true
-  error.value = ''
   try {
     const { data } = await request('/blog/auth/oauth/exchange', {
       method: 'POST', body: { ticket: event.data.ticket },
@@ -68,7 +63,7 @@ async function popupResult(event) {
     }
     await acceptSession(data.session)
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     busy.value = false
     popupWindow?.close()
@@ -88,20 +83,18 @@ const providers = useResource(() => true, async (signal) => {
 })
 
 async function submit() {
-  error.value = ''
-  feedback.value = ''
   if ((!emailLogin.value || register.value)
     && (!/^[A-Za-z0-9_]{3,64}$/.test(form.username.trim()) || !validatePassword(form.password))) {
-    error.value = '账号为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。'
+    ElMessage.error('账号为 3–64 位字母、数字或下划线；密码为 8–64 个字符且 UTF-8 不超过 72 字节。')
     return
   }
   if ((register.value || emailLogin.value)
     && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || !/^[0-9]{6}$/.test(form.emailCode))) {
-    error.value = '请输入有效邮箱和邮件中的六位验证码。'
+    ElMessage.error('请输入有效邮箱和邮件中的六位验证码。')
     return
   }
   if (register.value && (!form.nickname.trim() || [...form.nickname.trim()].length > 64)) {
-    error.value = '昵称需为 1–64 个字符。'
+    ElMessage.error('昵称需为 1–64 个字符。')
     return
   }
   busy.value = true
@@ -116,7 +109,7 @@ async function submit() {
       emailLogin.value = false
       form.emailCode = ''
       form.password = ''
-      feedback.value = '注册成功，请使用刚才的账号密码登录。'
+      ElMessage.success('注册成功，请使用刚才的账号密码登录。')
       return
     }
     const path = emailLogin.value ? '/blog/auth/email-login' : '/blog/auth/login'
@@ -126,7 +119,7 @@ async function submit() {
     form.password = ''
     form.emailCode = ''
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
     busy.value = false
@@ -135,10 +128,8 @@ async function submit() {
 
 /** 发送会消费图形验证码；收到邮件后使用新图片提交注册或登录。 */
 async function sendEmailCode() {
-  error.value = ''
-  feedback.value = ''
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
-    error.value = '请输入有效邮箱。'
+    ElMessage.error('请输入有效邮箱。')
     return
   }
   busy.value = true
@@ -148,9 +139,9 @@ async function sendEmailCode() {
       method: 'POST', body: { email: form.email.trim(), purpose: register.value ? 'REGISTER' : 'LOGIN' },
       captcha: captcha.value.getValue(),
     })
-    feedback.value = '验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。'
+    ElMessage.success('验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。')
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
     busy.value = false
@@ -164,12 +155,11 @@ async function authorize(provider) {
     popupWindow?.close()
     popupWindow = window.open('about:blank', 'dl-blog-login', 'width=560,height=720')
     if (!popupWindow) {
-      error.value = '浏览器阻止了登录弹窗，请允许本站弹窗后重试。'
+      ElMessage.error('浏览器阻止了登录弹窗，请允许本站弹窗后重试。')
       return
     }
   }
   busy.value = true
-  error.value = ''
   try {
     // 2. 取得授权地址，再用弹窗或当前页打开。
     const { data } = await request(`/blog/auth/oauth/${encodeURIComponent(provider.source)}/authorize`, {
@@ -182,7 +172,7 @@ async function authorize(provider) {
       location.assign(data.authorizationUrl)
     }
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
     popupWindow?.close()
   } finally {
     busy.value = false
@@ -303,8 +293,6 @@ async function authorize(provider) {
             </button>
           </div>
         </div>
-        <p v-if="error" role="alert" class="error-text">{{ error }}</p>
-        <p v-if="feedback" role="status" class="success-text">{{ feedback }}</p>
         <button class="primary full-width" :disabled="busy || !captcha?.ready">{{ submitLabel }}</button>
       </fieldset>
     </form>
