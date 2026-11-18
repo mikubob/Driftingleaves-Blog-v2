@@ -1,11 +1,11 @@
-/* 本地 highlighter 不会自动加载 CSS，显式提供两端共用的 Atom 配色。 */
-.md-editor div.md-editor-preview {
+/* 本地 highlighter 不会自动加载 CSS，仅作未定义代码块配色主题时的低优先级兜底。 */
+:where(.md-editor div.md-editor-preview) {
   --md-theme-code-block-bg-color: #f7f8fa;
   --md-theme-code-block-color: #383a42;
   --md-theme-code-before-bg-color: #f7f8fa;
 }
 
-.md-editor-dark div.md-editor-preview {
+:where(.md-editor-dark div.md-editor-preview) {
   --md-theme-code-block-bg-color: #282c34;
   --md-theme-code-block-color: #abb2bf;
   --md-theme-code-before-bg-color: #282c34;

@@ -6,9 +6,9 @@
  */
 
 const PRESS_SELECTOR =
-  '.el-button:not(.is-disabled), button:not(:disabled):not(.mobile-menu-btn):not(.theme-switch), .form-submit:not(:disabled), .btn-primary:not(:disabled), .btn-secondary:not(:disabled), .btn-danger-ghost:not(:disabled), .hot-filter-btn, .hot-item, .article-card, .article-link-pill, .link-card'
+  '.el-button:not(.is-disabled), button:not(:disabled):not(.mobile-menu-btn):not(.theme-switch), .form-submit:not(:disabled), .btn-primary:not(:disabled), .btn-secondary:not(:disabled), .btn-danger-ghost:not(:disabled), .hot-filter-btn, .hot-item, a.article-card, .article-link-pill, .link-card'
 
-const RIPPLE_EXCLUDE_SELECTOR = '.action-icon, .el-switch, .like-wrapper, .hot-item, .article-card, .link-card, .segmented button'
+const RIPPLE_EXCLUDE_SELECTOR = '.action-icon, .el-switch, .like-wrapper, .hot-item, a.article-card, .link-card, .segmented button'
 
 /**
  * 在指针按下位置生成跟手扩散波纹（使用独立裁切层，不破坏焦点环与徽标）。

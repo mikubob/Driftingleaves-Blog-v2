@@ -30,6 +30,7 @@ public final class FileUtils {
         return switch (extension) {
             case "png" -> "image/png";
             case "jpg", "jpeg" -> "image/jpeg";
+            case "webp" -> "image/webp";
             case "mp3" -> "audio/mpeg";
             case "wav" -> "audio/wav";
             case "ogg" -> "audio/ogg";
@@ -59,7 +60,8 @@ public final class FileUtils {
         }
         String extension = key.substring(key.lastIndexOf('.') + 1);
         if (key.startsWith(PUBLIC_IMAGE_CATEGORY + "/")) {
-            return "png".equals(extension) || "jpg".equals(extension) || "jpeg".equals(extension);
+            return "png".equals(extension) || "jpg".equals(extension)
+                    || "jpeg".equals(extension) || "webp".equals(extension);
         }
         return mimeType(extension) != null && key.startsWith(getFileCategory(extension) + "/");
     }

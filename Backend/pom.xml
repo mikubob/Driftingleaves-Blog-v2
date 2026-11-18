@@ -40,6 +40,9 @@
         <aliyun-oss.version>3.18.5</aliyun-oss.version>
         <ip2region.version>3.3.7</ip2region.version>
         <hutool.version>5.8.48</hutool.version>
+        <thumbnailator.version>0.4.20</thumbnailator.version>
+        <imageio-webp.version>3.9.4</imageio-webp.version>
+        <webp-imageio.version>0.1.6</webp-imageio.version>
     </properties>
 
     <!-- 这里只管理版本，不会自动给子模块加运行依赖。 -->
@@ -165,6 +168,22 @@
                 <groupId>org.jsoup</groupId>
                 <artifactId>jsoup</artifactId>
                 <version>${jsoup.version}</version>
+            </dependency>
+            <!-- 图片缩放与 WebP 转码依赖，与老项目保持一致。 -->
+            <dependency>
+                <groupId>net.coobird</groupId>
+                <artifactId>thumbnailator</artifactId>
+                <version>${thumbnailator.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.twelvemonkeys.imageio</groupId>
+                <artifactId>imageio-webp</artifactId>
+                <version>${imageio-webp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.sejda.imageio</groupId>
+                <artifactId>webp-imageio</artifactId>
+                <version>${webp-imageio.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

@@ -112,14 +112,17 @@ async function contentRendered() {
   --md-bk-color: transparent;
 }
 
-.reader-markdown :deep(div.md-editor-preview) {
+.reader-markdown :deep(:where(div.md-editor-preview)) {
   --md-theme-color: var(--blog-text);
   --md-theme-bg-color: var(--blog-card);
   --md-theme-bg-color-inset: var(--blog-hover);
   --md-theme-border-color: var(--blog-border);
+  color: var(--blog-text);
+}
+
+.reader-markdown :deep(div.md-editor-preview) {
   font-size: 15.5px;
   line-height: 1.85;
-  color: var(--blog-text);
 }
 
 .reader-markdown :deep(.md-editor-dark div.mk-cute-theme) {

@@ -108,7 +108,7 @@ export async function request(path, { body, revision, captcha, expectedUserId = 
   }
   if (blob && response.ok) {
     const file = await response.blob()
-    if (!['image/png', 'image/jpeg', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac',
+    if (!['image/png', 'image/jpeg', 'image/webp', 'audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/flac',
       'text/plain', 'application/json'].includes(file.type.split(';')[0])) {
       throw new Error('暂时无法读取此文件，请重新选择文件后重试。')
     }
@@ -224,8 +224,8 @@ export async function getFile(path, signal) {
 /** 正文图片仍只允许图片 Blob，调用方负责释放临时地址。 */
 export async function getImage(path, signal) {
   const data = await getFile(path, signal)
-  if (!['image/png', 'image/jpeg'].includes(data.type)) {
-    throw new Error('文件响应不是可预览的 PNG/JPEG 图片。')
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(data.type)) {
+    throw new Error('文件响应不是可预览的 PNG/JPEG/WebP 图片。')
   }
   return URL.createObjectURL(data)
 }

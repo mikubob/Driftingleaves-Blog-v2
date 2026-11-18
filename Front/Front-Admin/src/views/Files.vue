@@ -257,6 +257,7 @@ const batchActions = computed(() => {
         >
           <el-option label="PNG" value="image/png" />
           <el-option label="JPEG" value="image/jpeg" />
+          <el-option label="WebP" value="image/webp" />
           <el-option label="MP3" value="audio/mpeg" />
           <el-option label="WAV" value="audio/wav" />
           <el-option label="OGG" value="audio/ogg" />

@@ -1,78 +1,67 @@
 package com.xuan.utils;
 
 import com.xuan.properties.ImageProperties;
+import net.coobird.thumbnailator.Thumbnails;
 
-import java.awt.Graphics2D;
-import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import javax.imageio.IIOImage;
-import javax.imageio.ImageIO;
-import javax.imageio.ImageWriteParam;
-import javax.imageio.ImageWriter;
-import javax.imageio.stream.MemoryCacheImageOutputStream;
+import java.util.Locale;
 
-/** 图片压缩工具，使用已解码的原图，避免重复解码和多次有损压缩。 */
+/** 图片压缩与转码工具，使用已解码的原图，避免重复解码和多次有损压缩。 */
 public final class ImageCompressUtils {
 
     private ImageCompressUtils() {
     }
 
-    /** 压缩图片，保留格式和 PNG 透明通道，压缩后更大时返回原内容。 */
+    /** 压缩并转码图片；开启后全部转为配置的输出格式（默认 webp），超限时逐步降低质量重试。 */
     public static byte[] compress(byte[] original, BufferedImage image, String extension,
             ImageProperties properties) throws IOException {
-        long targetBytes = properties.getMaxSizeKb() * 1024L;
-        int longest = Math.max(image.getWidth(), image.getHeight());
-        if (!properties.isEnabled()
-                || (original.length <= targetBytes && longest <= properties.getMaxDimension())) {
+        if (!properties.isEnabled()) {
             return original;
         }
 
-        double scale = Math.min(1.0, (double) properties.getMaxDimension() / longest);
-        int width = Math.max(1, (int) Math.round(image.getWidth() * scale));
-        int height = Math.max(1, (int) Math.round(image.getHeight() * scale));
-        boolean png = "png".equals(extension);
-        int imageType = png && image.getColorModel().hasAlpha()
-                ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
-        BufferedImage source = new BufferedImage(width, height, imageType);
-        Graphics2D graphics = source.createGraphics();
-        try {
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            graphics.drawImage(image, 0, 0, width, height, null);
-        } finally {
-            graphics.dispose();
-        }
+        String outputFormat = properties.getOutputFormat().toLowerCase(Locale.ROOT);
+        long targetBytes = properties.getMaxSizeKb() * 1024L;
+        int longest = Math.max(image.getWidth(), image.getHeight());
+        double scale = longest > properties.getMaxDimension()
+                ? (double) properties.getMaxDimension() / longest : 1.0;
 
         float quality = (float) properties.getQuality();
-        byte[] result = encode(source, png ? "png" : "jpeg", quality);
-        // PNG 降质量不会有损减小体积；JPEG 每轮都编码同一像素源，到最低质量就停止。
-        while (!png && result.length > targetBytes && quality > 0.3f) {
-            quality = Math.max(0.3f, quality - 0.1f);
-            byte[] candidate = encode(source, "jpeg", quality);
+        byte[] result = encode(image, scale, outputFormat, quality);
+        boolean supportsLossy = "webp".equals(outputFormat) || "jpeg".equals(outputFormat);
+        int attempts = 0;
+        while (supportsLossy && result.length > targetBytes && quality > 0.3f && attempts < 10) {
+            quality = Math.max(0.3f, quality - 0.05f);
+            byte[] candidate = encode(image, scale, outputFormat, quality);
             if (candidate.length < result.length) {
                 result = candidate;
             }
+            attempts++;
         }
-        return result.length < original.length ? result : original;
+
+        // 只有输入本来就是目标格式且未超边长、转码后反而更大时，才保留原字节。
+        boolean sameFormat = outputFormat.equals(extension)
+                || ("jpeg".equals(outputFormat) && "jpg".equals(extension));
+        if (sameFormat && scale == 1.0 && result.length >= original.length) {
+            return original;
+        }
+        return result;
     }
 
-    /** 将图片编码到内存，完成后释放编码器，不使用 ImageIO 磁盘缓存。 */
-    private static byte[] encode(BufferedImage image, String format, float quality) throws IOException {
-        ImageWriter writer = ImageIO.getImageWritersByFormatName(format).next();
-        try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
-                MemoryCacheImageOutputStream output = new MemoryCacheImageOutputStream(bytes)) {
-            writer.setOutput(output);
-            ImageWriteParam parameters = writer.getDefaultWriteParam();
-            if ("jpeg".equals(format)) {
-                parameters.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
-                parameters.setCompressionQuality(quality);
-            }
-            writer.write(null, new IIOImage(image, null, null), parameters);
-            output.flush();
-            return bytes.toByteArray();
-        } finally {
-            writer.dispose();
+    /** 使用 Thumbnailator 按目标格式和质量编码到内存，强制标准色彩类型防止 WebP 偏色。 */
+    private static byte[] encode(BufferedImage image, double scale, String outputFormat,
+            float quality) throws IOException {
+        int imageType = ("png".equals(outputFormat) || "webp".equals(outputFormat))
+                ? BufferedImage.TYPE_INT_ARGB : BufferedImage.TYPE_INT_RGB;
+        try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            Thumbnails.of(image)
+                    .scale(scale)
+                    .imageType(imageType)
+                    .outputFormat(outputFormat)
+                    .outputQuality(quality)
+                    .toOutputStream(output);
+            return output.toByteArray();
         }
     }
 }

@@ -152,6 +152,10 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             if (mime.startsWith("image/")) {
                 BufferedImage image = validateImage(temporary, extension);
                 byte[] compressed = ImageCompressUtils.compress(bytes, image, extension, imageProperties);
+                if (imageProperties.isEnabled()) {
+                    extension = imageProperties.getOutputFormat().toLowerCase(Locale.ROOT);
+                    mime = FileUtils.mimeType(extension);
+                }
                 if (compressed != bytes) {
                     Files.write(temporary, compressed);
                     bytes = compressed;
@@ -193,7 +197,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         if (!storage.isPublicImage(file)) {
             throw missing();
         }
-        String name = "image/png".equals(file.getMimeType()) ? "image.png" : "image.jpg";
+        String name = switch (file.getMimeType()) {
+            case "image/webp" -> "image.webp";
+            case "image/png" -> "image.png";
+            default -> "image.jpg";
+        };
         return new FileContent(name, file.getMimeType(), storage.read(file));
     }
 
@@ -396,7 +404,13 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             try {
                 reader.setInput(input, true, true);
                 String format = reader.getFormatName().toLowerCase(Locale.ROOT);
-                if (!("png".equals(extension) ? "png".equals(format) : "jpeg".equals(format))) {
+                boolean matched = switch (extension) {
+                    case "png" -> "png".equals(format);
+                    case "jpg", "jpeg" -> "jpeg".equals(format);
+                    case "webp" -> "webp".equals(format);
+                    default -> false;
+                };
+                if (!matched) {
                     throw invalid();
                 }
                 int width = reader.getWidth(0);

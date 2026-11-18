@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
@@ -22,7 +22,7 @@ const tab = ref('liked-articles')
 const statusFilter = ref(null)
 const page = ref(1)
 const busy = ref(false)
-const deleting = ref(null)
+const deleting = shallowRef(null)
 const editOpen = ref(false)
 const passwordOpen = ref(false)
 const editFirstInput = ref(null)

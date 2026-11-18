@@ -1,7 +1,7 @@
 import { request } from './api.js'
 
 export const fileAccept = {
-  image: '.png,.jpg,.jpeg',
+  image: '.png,.jpg,.jpeg,.webp',
   audio: '.mp3,.wav,.ogg,.flac',
   lyric: '.lrc,.txt,.json',
 }
@@ -12,7 +12,7 @@ function prepareUpload(file, kind, usage) {
   const actualKind = Object.keys(fileAccept).find((key) =>
     fileAccept[key].split(',').includes(`.${extension}`))
   if (!actualKind || (kind && actualKind !== kind)) {
-    throw new Error('请选择 PNG/JPEG 图片、MP3/WAV/OGG/FLAC 音频或 LRC/TXT/JSON 歌词。')
+    throw new Error('请选择 PNG/JPEG/WebP 图片、MP3/WAV/OGG/FLAC 音频或 LRC/TXT/JSON 歌词。')
   }
   const limit = { image: 10, audio: 60, lyric: 1 }[actualKind] * 1024 * 1024
   if (!file.size || file.size > limit) {

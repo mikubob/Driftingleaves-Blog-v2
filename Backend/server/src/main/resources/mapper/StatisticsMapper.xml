@@ -18,12 +18,8 @@
         SELECT
         CAST((SELECT COUNT(*) FROM blog_article a WHERE<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)
         AS CHAR) AS article_count,
-        CAST((SELECT COUNT(*) FROM blog_category c WHERE c.status=1 AND EXISTS(SELECT 1 FROM blog_article a WHERE
-        a.category_id=c.category_id AND<include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS
-        category_count,
-        CAST((SELECT COUNT(*) FROM blog_tag t WHERE EXISTS(SELECT 1 FROM blog_article_tag x JOIN blog_article a ON
-        a.article_id=x.article_id WHERE x.tag_id=t.tag_id AND<include
-            refid="com.xuan.mapper.ArticleMapper.publicCondition"/>)) AS CHAR) AS tag_count,
+        CAST((SELECT COUNT(*) FROM blog_category WHERE status=1) AS CHAR) AS category_count,
+        CAST((SELECT COUNT(*) FROM blog_tag) AS CHAR) AS tag_count,
         CAST((SELECT COUNT(*) FROM blog_page_view WHERE site_code='blog') AS CHAR) AS page_view_count,
         CAST((SELECT COUNT(*) FROM blog_page_view WHERE site_code='blog' AND view_time &gt;= #{today} AND view_time &lt;
         #{tomorrow}) AS CHAR) AS today_page_view_count,

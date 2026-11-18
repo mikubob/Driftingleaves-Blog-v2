@@ -224,8 +224,8 @@ async function uploadImages(files, callback, cover = false) {
     return
   }
   for (const file of files) {
-    if (!['image/png', 'image/jpeg'].includes(file.type) || file.size === 0 || file.size > 10485760) {
-      ElMessage.error('请选择不超过 10 MiB 的 PNG/JPEG 图片。')
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size === 0 || file.size > 10485760) {
+      ElMessage.error('请选择不超过 10 MiB 的 PNG/JPEG/WebP 图片。')
       return
     }
   }
@@ -475,7 +475,7 @@ onBeforeUnmount(() => {
               :show-file-list="false"
               :http-request="({ file }) => uploadImages([file], null, true)"
               :disabled="!editable || saving || uploading"
-              accept="image/png,image/jpeg"
+              accept="image/png,image/jpeg,image/webp"
               class="cover-uploader"
             >
               <ImagePreview
