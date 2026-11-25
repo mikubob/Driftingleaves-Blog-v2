@@ -97,6 +97,7 @@ public class OAuthServiceImpl implements IOAuthService {
      */
     @Override
     public String callback(WebSession side, String source, String state, String code, String error, String browser) {
+        // 1. 读取并校验本站授权流程；跨端登记回调时仅转发回发起端。
         String registeredPath = providers.callbackPath(source);
         String raw = store.read("state", state);
         OAuthFlow flow = json.readValue(raw, OAuthFlow.class);
@@ -139,7 +140,7 @@ public class OAuthServiceImpl implements IOAuthService {
                 throw new BusinessException(400, "OAUTH_DENIED", "平台授权已取消");
             }
 
-            // 4. 由平台验证授权码并返回身份，异常只转成去掉敏感信息的业务错误。
+            // 5. 由平台验证授权码并校验返回的第三方身份，异常只转成去掉敏感信息的业务错误。
             OAuthProviderClient.Identity identity;
             try {
                 identity = providers.verify(source, state, code);
@@ -152,13 +153,13 @@ public class OAuthServiceImpl implements IOAuthService {
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方授权失败，请重新发起");
             }
 
-            // 4. 这里只查身份是否合法，合法 uuid 原样保留，不能去空白或改大小写。
+            // 合法 uuid 原样保留，不能去空白或改大小写。
             if (identity == null || StrUtil.nullToEmpty(identity.uuid()).isBlank()
                     || identity.uuid().codePointCount(0, identity.uuid().length()) > 255) {
                 throw new BusinessException(502, "OAUTH_UPSTREAM_ERROR", "第三方身份无效");
             }
 
-            // 5. 取得平台身份时记下认证时间，再执行本站身份识别或绑定事务。
+            // 6. 取得平台身份时记下认证时间，再执行本站身份识别或绑定事务。
             long at = clock.millis();
             long userId;
             OAuthBindingVO binding = null;
@@ -169,7 +170,7 @@ public class OAuthServiceImpl implements IOAuthService {
                 binding = users.bindOAuth(userId, flow.tokenHash(), source, identity.uuid());
             }
 
-            // 6. 只发 60 秒有效的结果票据，再跳固定完成页，URL 里不能带本站 Token。
+            // 7. 只发 60 秒有效的结果票据，再跳固定完成页，URL 里不能带本站 Token。
             String ticket = TokenUtils.random();
             OAuthTicket result = new OAuthTicket(flow.site(), flow.browserHash(), flow.source(), flow.operation(), userId,
                     flow.tokenHash(), flow.operation() == Operation.LOGIN ? at : flow.authenticatedAt(), binding,
@@ -186,7 +187,7 @@ public class OAuthServiceImpl implements IOAuthService {
                     source, flow.operation(), exception.getClass().getSimpleName());
             return complete + "#error=SERVICE_UNAVAILABLE";
         } finally {
-            // 7. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。
+            // 8. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。
             store.deleteState(state);
         }
     }

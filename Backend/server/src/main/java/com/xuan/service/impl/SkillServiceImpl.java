@@ -51,7 +51,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** 查询公开技能列表。 */
+    /**
+     * 查询公开技能列表。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "skills", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -60,7 +62,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
                 .convert(row -> new SkillPublicVO(row.getSkillId(), row.getName(), row.getDescription(), row.getIcon(), row.getSortOrder())));
     }
 
-    /** 分页查询后台技能。 */
+    /**
+     * 分页查询后台技能。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CvSkill> listItems(DisplayQueryDTO query) {
@@ -68,7 +72,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
     }
 
-    /** 根据id查询技能详情及版本。 */
+    /**
+     * 根据id查询技能详情及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<CvSkill> detail(long id) {
@@ -76,7 +82,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return profile(requireItem(items.selectById(id)));
     }
 
-    /** 新增技能。 */
+    /**
+     * 新增技能。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "cv:skill", permission = "cv:skill:create")
@@ -92,7 +100,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return profile(items.selectById(row.getSkillId()));
     }
 
-    /** 根据id更新技能。 */
+    /**
+     * 根据id更新技能。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "cv:skill", permission = "cv:skill:update", targetIdArgument = 0)
@@ -106,7 +116,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return profile(items.selectById(id));
     }
 
-    /** 地址只检查和保存，不下载媒体或删除外部对象。 */
+    /**
+     * 地址只检查和保存，不下载媒体或删除外部对象。
+     */
     private void validate(SkillWriteDTO request) {
 
         if (!UrlPolicy.validIcon(request.getIcon())) {
@@ -114,7 +126,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         }
     }
 
-    /** 填入允许修改的字段，NULL 也要写入数据库。 */
+    /**
+     * 填入允许修改的字段，NULL 也要写入数据库。
+     */
     private void assign(CvSkill row, SkillWriteDTO request) {
         row.setName(request.getName());
         row.setDescription(request.getDescription());
@@ -122,7 +136,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         row.setSortOrder(request.getSortOrder());
     }
 
-    /** 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。 */
+    /**
+     * 锁住操作者和目标记录，每次等待结束后重新检查原 Token、账号启用状态和本次操作权限。
+     */
     private CvSkill lock(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -131,7 +147,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return requireItem(row);
     }
 
-    /** 检查本次操作的 ALL 权限，此类资料全站共用，不支持只操作本人的范围。 */
+    /**
+     * 检查本次操作的 ALL 权限，此类资料全站共用，不支持只操作本人的范围。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -141,7 +159,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         }
     }
 
-    /** 检查记录是否存在，调用前必须先通过权限校验。 */
+    /**
+     * 检查记录是否存在，调用前必须先通过权限校验。
+     */
     private CvSkill requireItem(CvSkill row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "资料不存在");
@@ -149,12 +169,16 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         return row;
     }
 
-    /** 计算资料版本，不包含审计时间和前台生成的展示内容。 */
+    /**
+     * 计算资料版本，不包含审计时间和前台生成的展示内容。
+     */
     private ResourceVersion<CvSkill> profile(CvSkill row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(Arrays.asList(row.getSkillId(), row.getName(), row.getDescription(), row.getIcon(), row.getSortOrder(), row.getStatus()))) + "\"");
     }
 
-    /** 批量删除技能，先加锁并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量删除技能，先加锁并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "cv:skill", permission = "cv:skill:delete")
@@ -173,7 +197,9 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
         }
     }
 
-    /** 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。 */
+    /**
+     * 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "cv:skill", permission = "cv:skill:update")

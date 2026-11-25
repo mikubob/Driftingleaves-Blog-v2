@@ -2,13 +2,17 @@ package com.xuan.policy;
 
 import com.xuan.exception.BusinessException;
 
-/** 校验上传用途与文件类型是否匹配，未指定用途时按文件类型选择默认值。 */
+/**
+ * 校验上传用途与文件类型是否匹配，未指定用途时按文件类型选择默认值。
+ */
 public final class FileUploadUsagePolicy {
 
     private FileUploadUsagePolicy() {
     }
 
-    /** 返回可保存的用途，拒绝未知用途和类型不匹配的用途。 */
+    /**
+     * 返回可保存的用途，拒绝未知用途和类型不匹配的用途。
+     */
     public static String resolve(String usage, String mimeType) {
         String defaultUsage;
         if (mimeType.startsWith("image/")) {

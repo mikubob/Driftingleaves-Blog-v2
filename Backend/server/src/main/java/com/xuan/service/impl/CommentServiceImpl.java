@@ -22,15 +22,19 @@ import com.xuan.model.ArticleRow;
 import com.xuan.model.CommentRow;
 import com.xuan.model.ResourceVersion;
 import com.xuan.policy.CommentVisibilityPolicy;
+import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ICommentService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.DiscussionLocationUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.IpUtils;
 import com.xuan.utils.TokenUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.UserAgentUtils;
 import com.xuan.vo.ArticlePublicVO.Author;
 import com.xuan.vo.BatchVersionsVO;
@@ -40,6 +44,7 @@ import com.xuan.vo.CommentProfileVO;
 import com.xuan.vo.CommentPublicVO;
 import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.DiscussionReplyTargetVO;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
@@ -79,8 +84,12 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
     private final IpLocationResolver locations;
+    private final CaptchaStore captchaStore;
+    private final AuthProperties authProperties;
 
-    /** 分页查询根评论或整组回复，在同一只读事务中检查文章和全部上级评论。 */
+    /**
+     * 分页查询根评论或整组回复，在同一只读事务中检查文章和全部上级评论。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @PublicCacheRead("comments")
@@ -98,15 +107,20 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return self.getObject().cachedPublicComments(article, query);
     }
 
-    /** 缓存公开评论，外层已检查文章公开状态和全部上级评论，缓存只保存所有人都能看到的结果。 */
+    /**
+     * 缓存公开评论，外层已检查文章公开状态和全部上级评论，缓存只保存所有人都能看到的结果。
+     */
     @Override
     @Cacheable(cacheNames = "comments", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CommentPublicVO> cachedPublicComments(long article, CommentPublicQueryDTO query) {
         return readPublicComments(article, query, null);
     }
 
-    /** 整理可见回复与整组计数，只分页读取正文，保留真实的直接回复关系。 */
+    /**
+     * 整理可见回复与整组计数，只分页读取正文，保留真实的直接回复关系。
+     */
     private PageResult<CommentPublicVO> readPublicComments(long article, CommentPublicQueryDTO query, Long viewer) {
+        // 1. 加载文章评论节点，计算当前读者可见集合与可回复集合。
         Long parent = IdUtils.parse(query.parentId());
         List<CommentNode> nodes = articles.commentNodes(article);
         Set<Long> visible = CommentVisibilityPolicy.visible(nodes, viewer);
@@ -115,6 +129,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             throw missing();
         }
 
+        // 2. 构建可见评论树，从最深层向上统计每条评论的全部可见后代回复数。
         Map<Long, List<CommentNode>> children = new HashMap<>();
         for (CommentNode node : nodes) {
             if (visible.contains(node.getCommentId())) {
@@ -126,13 +141,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             ordered.addAll(children.getOrDefault(ordered.get(index).getCommentId(), List.of()));
         }
         Map<Long, Long> replyCounts = new HashMap<>();
-        // 从最深层向上累计，回复数量包含全部可见后代。
         for (int index = ordered.size() - 1; index >= 0; index--) {
             CommentNode node = ordered.get(index);
             if (node.getParentId() != null) {
                 replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getCommentId(), 0L) + 1, Long::sum);
             }
         }
+
+        // 3. 筛选目标层级（顶层评论或指定父评论下的全部可见回复）并按时间切出当前页 ID。
         List<CommentNode> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
         if (parent != null) {
             for (int index = 0; index < selected.size(); index++) {
@@ -143,13 +159,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         for (CommentNode node : selected) {
             selectedIds.add(node.getCommentId());
         }
-        // 先按时间选出当前页，再查正文，避免把整组回复 ID 传进 SQL。
         List<Long> visibleIds = nodes.stream().map(CommentNode::getCommentId).filter(selectedIds::contains).toList();
         if (parent == null) {
             visibleIds = visibleIds.reversed();
         }
         int from = Math.min(visibleIds.size(), (query.page() - 1) * query.pageSize());
         List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.pageSize()));
+
+        // 4. 仅针对当前页 ID 查询正文和用户信息，拼装分页结果返回。
         List<CommentPublicVO> records = new ArrayList<>();
         if (!pageIds.isEmpty()) {
             for (CommentRow row : comments.publicRows(article, pageIds, parent != null)) {
@@ -163,17 +180,38 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 Long.toString((visibleIds.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
     }
 
-    /** 配置和文章锁内重新检查开关、审核策略和父节点，不把锁前的公开检查当成写入依据。 */
+    /**
+     * 校验算术验证码并发表评论，先在事务外核验验证码与客户端信息，再调用事务方法落库。
+     *
+     * @param article 文章 ID
+     * @param request 评论创建参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 新建评论视图
+     */
+    @Override
+    public CommentOwnVO createWithCaptcha(long article, CommentCreateDTO request, HttpServletRequest httpRequest) {
+        captchaStore.verifyArithmetic(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
+        String clientIp = IpUtils.clientIp(httpRequest, authProperties.getTrustedProxies());
+        String userAgent = httpRequest.getHeader("User-Agent");
+        return self.getObject().create(article, request, clientIp, userAgent);
+    }
+
+    /**
+     * 配置和文章锁内重新检查开关、审核策略和父节点，不把锁前的公开检查当成写入依据。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public CommentOwnVO create(long article, CommentCreateDTO request, String ip, String userAgent) {
+        // 1. 按固定顺序锁定操作者、评论配置和文章，避免与审核、下架或配置变更并发冲突。
         long actor = requireMember("blog:comment:create");
         users.lockById(actor);
         BlogSiteConfig config = lockConfig();
         articles.scoped(article, null, true);
         requireMember("blog:comment:create");
         requirePublic(article);
+
+        // 2. 回复评论时先确认父评论归属当前文章再加锁。
         Long parentId = request.parentId();
         if (parentId != null) {
             CommentRow parent = requireComment(comments.scoped(parentId, null, null, false));
@@ -182,7 +220,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             }
             comments.scoped(parentId, null, null, true);
         }
-        // 等完所有锁再查原 Token 和当前状态；文章锁同时挡住审核、删除和下架。
+
+        // 3. 拿齐全部锁后复核当前身份、评论开关及父评论可见性。
         requireMember("blog:comment:create");
         ArticleRow current = requirePublic(article);
         JsonNode policy = policy(config);
@@ -199,6 +238,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 throw conflict("父评论已不可回复");
             }
         }
+
+        // 4. 组装纯文本评论与环境信息，根据审核策略和角色决定初始状态后保存。
         BlogComment comment = new BlogComment();
         comment.setArticleId(article);
         comment.setUserId(actor);
@@ -217,7 +258,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return ownView(comments.scoped(comment.getCommentId(), null, actor, false), new CommentOwnVO());
     }
 
-    /** 查询本人评论及其前台跳转位置，下架文章的历史评论仍可读取。 */
+    /**
+     * 查询本人评论及其前台跳转位置，下架文章的历史评论仍可读取。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query) {
@@ -257,7 +300,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return PageResult.from(result.convert(row -> records.get(row.getCommentId())));
     }
 
-    /** 根据id查询本人评论及版本，不受文章公开状态影响。 */
+    /**
+     * 根据id查询本人评论及版本，不受文章公开状态影响。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<CommentOwnVO> ownDetail(long id) {
@@ -265,7 +310,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return new ResourceVersion<>(ownView(row, new CommentOwnVO()), revision(row));
     }
 
-    /** 本人删除整条分支不要求版本，ALL 也不能把别人评论变成本人。 */
+    /**
+     * 本人删除整条分支不要求版本，ALL 也不能把别人评论变成本人。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "comments", allEntries = true)
@@ -274,7 +321,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         deleteTree(row, true);
     }
 
-    /** 分页查询后台评论或一层回复，先按本次查询权限检查父评论的文章范围。 */
+    /**
+     * 分页查询后台评论或一层回复，先按本次查询权限检查父评论的文章范围。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query) {
@@ -293,7 +342,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 .convert(this::adminView));
     }
 
-    /** 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。 */
+    /**
+     * 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public DiscussionConversationVO<CommentAdminVO> conversation(long id, DiscussionConversationQueryDTO query) {
@@ -313,14 +364,18 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 page.page(), query.pageSize(), page.total(), page.totalPages(), records);
     }
 
-    /** 根据id查询评论详情及版本，在同一个只读事务中读取，非公开文章的评论也能查询。 */
+    /**
+     * 根据id查询评论详情及版本，在同一个只读事务中读取，非公开文章的评论也能查询。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CommentProfileVO detail(long id) {
         return profile(requireComment(comments.scoped(id, requireAdmin("query"), null, false)));
     }
 
-    /** 审核评论，即使状态不变也先检查版本；驳回父评论后不用逐条修改下级回复，查询时会重新判断是否可见。 */
+    /**
+     * 审核评论，即使状态不变也先检查版本；驳回父评论后不用逐条修改下级回复，查询时会重新判断是否可见。
+     */
     private CommentProfileVO review(long id, int status, String expected) {
         CommentRow row = lockComment(id, "review", false);
         checkRevision(row, expected);
@@ -331,7 +386,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return profile(comments.scoped(id, requireAdmin("review"), null, false));
     }
 
-    /** 锁前仅定位文章，锁后重新执行本次操作的身份和 SQL 范围检查。 */
+    /**
+     * 锁前仅定位文章，锁后重新执行本次操作的身份和 SQL 范围检查。
+     */
     private CommentRow lockComment(long id, String operation, boolean own) {
         long actor = sessions.currentUserId();
         users.lockById(actor);
@@ -348,7 +405,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return requireComment(comments.scoped(id, author, user, false));
     }
 
-    /** 配置行缺失是部署错误，不能悄悄用默认值放开评论。 */
+    /**
+     * 配置行缺失是部署错误，不能悄悄用默认值放开评论。
+     */
     private BlogSiteConfig lockConfig() {
         BlogSiteConfig config = comments.lockConfig();
         if (config == null) {
@@ -357,7 +416,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return config;
     }
 
-    /** 只接受现有两项布尔策略，错误配置拒绝新增，不把内部 JSON 回显给用户。 */
+    /**
+     * 只接受现有两项布尔策略，错误配置拒绝新增，不把内部 JSON 回显给用户。
+     */
     private JsonNode policy(BlogSiteConfig config) {
         String value = config.getConfigValue();
         if (value != null && value.getBytes(StandardCharsets.UTF_8).length <= 16 * 1024 && config.getIsPublic() == 0) {
@@ -375,7 +436,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         throw new BusinessException(503, "SERVICE_UNAVAILABLE", "评论配置不可用");
     }
 
-    /** 每次重查原会话，不能只信 Sa-Token 在同一请求里的身份缓存。 */
+    /**
+     * 每次重查原会话，不能只信 Sa-Token 在同一请求里的身份缓存。
+     */
     private long requireMember(String permission) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -385,7 +448,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return actor;
     }
 
-    /** 后台两项权限都要满足，返回本次操作自己的文章作者范围。 */
+    /**
+     * 后台两项权限都要满足，返回本次操作自己的文章作者范围。
+     */
     private Long requireAdmin(String operation) {
         long actor = requireMember("admin:access");
         return "ALL".equals(authorization.requireScope(actor, "blog:comment:" + operation)) ? null : actor;
@@ -412,7 +477,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return row;
     }
 
-    /** 删除评论及全部子回复，配置和文章锁阻止新增回复；锁住评论并重新检查权限后，从子回复向父评论依次删除。 */
+    /**
+     * 删除评论及全部子回复，配置和文章锁阻止新增回复；锁住评论并重新检查权限后，从子回复向父评论依次删除。
+     */
     private void deleteTree(CommentRow row, boolean own) {
         var nodes = articles.lockComments(row.getArticleId());
         Long author = own ? null : requireAdmin("moderate");
@@ -441,17 +508,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 row.getUserId(), row.getParentId(), row.getContent(), row.getStatus()))) + "\"";
     }
 
-    /** 范围确认后才报版本错误，旧版本不能借同目标审核绕过检查。 */
+    /**
+     * 范围确认后才报版本错误，旧版本不能借同目标审核绕过检查。
+     */
     private void checkRevision(BlogComment row, String expected) {
-        if (expected == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!expected.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision(row).equals(expected)) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "评论已修改，请重新获取");
-        }
+        RevisionUtils.check(revision(row), expected, "评论已修改，请重新获取");
     }
 
     /**
@@ -541,7 +602,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return new BusinessException(409, "STATE_CONFLICT", message);
     }
 
-    /** 批量审核评论，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
+    /**
+     * 批量审核评论，先加锁并检查全部目标，结果按原来的选择顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:comment", permission = "blog:comment:review")
@@ -563,8 +626,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         return BatchUtils.versions(items, versions);
     }
 
-
-    /** 父子混选先全部核验，再一起删除选中的评论和全部子回复；子回复数量不受选择上限截断。 */
+    /**
+     * 父子混选先全部核验，再一起删除选中的评论和全部子回复；子回复数量不受选择上限截断。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:comment", permission = "blog:comment:moderate")
@@ -583,7 +647,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
     }
 
-    /** 评论先锁配置和全部文章，再按同层ID锁定评论，不能按评论ID打乱文章锁顺序。 */
+    /**
+     * 评论先锁配置和全部文章，再按同层ID锁定评论，不能按评论ID打乱文章锁顺序。
+     */
     private void lockBatchArticles(List<Long> ids, String operation) {
         users.lockById(sessions.currentUserId());
         Long author = requireAdmin(operation);

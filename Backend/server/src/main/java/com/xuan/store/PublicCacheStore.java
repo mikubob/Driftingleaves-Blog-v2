@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** 保存各类公开缓存的版本和事务写入标记，不操作登录、票据等安全相关的 Redis 键。 */
+/**
+ * 保存各类公开缓存的版本和事务写入标记，不操作登录、票据等安全相关的 Redis 键。
+ */
 @Component
 @Slf4j
 @RequiredArgsConstructor
@@ -55,15 +57,21 @@ public class PublicCacheStore {
     private final AuthProperties auth;
     private final PublicCacheSerializer serializer;
 
-    /** 当前事务只移除自己的写标记，不能解除其他事务的保护。 */
+    /**
+     * 当前事务只移除自己的写标记，不能解除其他事务的保护。
+     */
     private record Write(String token, Set<String> domains) { }
 
-    /** 公开缓存使用独立前缀，不与会话、票据和限流键混用。 */
+    /**
+     * 公开缓存使用独立前缀，不与会话、票据和限流键混用。
+     */
     public String prefix(String domain) {
         return auth.getRedisPrefix() + "cache:public:v1:" + domain + ":";
     }
 
-    /** 在事务第一次执行 SELECT 前，记下本次查询可以使用的缓存版本。 */
+    /**
+     * 在事务第一次执行 SELECT 前，记下本次查询可以使用的缓存版本。
+     */
     public void beginRead(String domain) {
         var frame = PublicCacheContext.current();
         String slot = "start:" + domain;
@@ -79,7 +87,9 @@ public class PublicCacheStore {
         }
     }
 
-    /** 读取缓存时同时检查版本和全部写入标记；缓存未命中时，记下查数据库前的缓存版本。 */
+    /**
+     * 读取缓存时同时检查版本和全部写入标记；缓存未命中时，记下查数据库前的缓存版本。
+     */
     public Object read(String domain, Object key) {
         var frame = PublicCacheContext.current();
         if (frame == null || frame.bypass()) {
@@ -105,7 +115,9 @@ public class PublicCacheStore {
         }
     }
 
-    /** 保存查询结果时，只能写入查数据库前记下的缓存版本；事务提交前的数据由 CacheManager 等到提交后再处理。 */
+    /**
+     * 保存查询结果时，只能写入查数据库前记下的缓存版本；事务提交前的数据由 CacheManager 等到提交后再处理。
+     */
     public void put(String domain, Object key, Object value, Duration ttl) {
         var frame = PublicCacheContext.current();
         if (frame == null || frame.bypass() || value == null) {
@@ -124,7 +136,9 @@ public class PublicCacheStore {
         }
     }
 
-    /** 首次真正执行 INSERT/UPDATE/DELETE 前登记，SELECT FOR UPDATE 不会提前登记。 */
+    /**
+     * 首次真正执行 INSERT/UPDATE/DELETE 前登记，SELECT FOR UPDATE 不会提前登记。
+     */
     public void beforeMutation() {
         Set<String> domains = PublicCacheContext.evictions();
         if (domains.isEmpty()) {
@@ -139,7 +153,9 @@ public class PublicCacheStore {
             TransactionSynchronizationManager.bindResource(TRANSACTION, write);
             Write owned = write;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                /** 事务结束后解绑写入记录，回滚时尝试解除受影响缓存的保护。 */
+                /**
+                 * 事务结束后解绑写入记录，回滚时尝试解除受影响缓存的保护。
+                 */
                 @Override
                 public void afterCompletion(int status) {
                     TransactionSynchronizationManager.unbindResourceIfPossible(TRANSACTION);
@@ -171,7 +187,9 @@ public class PublicCacheStore {
         }
     }
 
-    /** CacheEvict 在提交后调用；轮换和移除自己的保护在同一次 Lua 中完成。 */
+    /**
+     * CacheEvict 在提交后调用；轮换和移除自己的保护在同一次 Lua 中完成。
+     */
     public void invalidate(String domain) {
         Write write = (Write) TransactionSynchronizationManager.getResource(TRANSACTION);
         String prefix = prefix(domain);
@@ -186,7 +204,9 @@ public class PublicCacheStore {
         }
     }
 
-    /** 写保护登记或失效失败时阻止业务继续，对外不暴露 Redis 细节。 */
+    /**
+     * 写保护登记或失效失败时阻止业务继续，对外不暴露 Redis 细节。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "公开缓存失效保护暂不可用");
     }

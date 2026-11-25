@@ -47,7 +47,9 @@ public class IpLocationConfig {
         }
     }
 
-    /** 检查属地库文件头，避免 3.3.7 遇到错误格式时因空文件引用而报错。 */
+    /**
+     * 检查属地库文件头，避免 3.3.7 遇到错误格式时因空文件引用而报错。
+     */
     private void verifyVersion(BufferedInputStream input, Version expected) throws IOException, XdbException {
         input.mark(Searcher.HeaderInfoLength);
         byte[] bytes = input.readNBytes(Searcher.HeaderInfoLength);

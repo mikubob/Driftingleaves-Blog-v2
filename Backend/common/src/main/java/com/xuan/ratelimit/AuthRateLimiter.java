@@ -43,22 +43,30 @@ public class AuthRateLimiter {
         hit("register", request, browser, properties.getRate().getRegister());
     }
 
-    /** 限制第三方登录发起次数，两端和各平台共用 IP、浏览器各自的每分钟三次额度。 */
+    /**
+     * 限制第三方登录发起次数，两端和各平台共用 IP、浏览器各自的每分钟三次额度。
+     */
     public void oauthLogin(HttpServletRequest request, String browser) {
         limiter.hit(keys("oauth-login", request, browser), 60, 3);
     }
 
-    /** 检查第三方绑定发起和票据兑换频率，按 IP 和浏览器标识计数。 */
+    /**
+     * 检查第三方绑定发起和票据兑换频率，按 IP 和浏览器标识计数。
+     */
     public void oauth(HttpServletRequest request, String browser) {
         hit("oauth", request, browser, properties.getRate().getOauth());
     }
 
-    /** 检查邮件发送频率，所有用途共用限制：同一 IP 每分钟五次，同一邮箱每分钟一次。 */
+    /**
+     * 检查邮件发送频率，所有用途共用限制：同一 IP 每分钟五次，同一邮箱每分钟一次。
+     */
     public void email(HttpServletRequest request, String email) {
         limiter.hit(keys("email", request, email.strip().toLowerCase(Locale.ROOT)), 60, List.of(5, 1));
     }
 
-    /** 检查访问采集频率，在加锁、查询属地和写入前，用一次脚本完成各项计数。 */
+    /**
+     * 检查访问采集频率，在加锁、查询属地和写入前，用一次脚本完成各项计数。
+     */
     public void analytics(String ip, String fingerprint, Long actor) {
         String prefix = properties.getRedisPrefix() + "rate:analytics:";
         List<String> keys = new ArrayList<>();
@@ -74,7 +82,9 @@ public class AuthRateLimiter {
         limiter.hit(keys, 60, limits);
     }
 
-    /** 检查后台报表请求频率，五类报表共用 IP 和用户次数限制。 */
+    /**
+     * 检查后台报表请求频率，五类报表共用 IP 和用户次数限制。
+     */
     public void report(HttpServletRequest request, long actor) {
         limiter.hit(keys("report", request, Long.toString(actor)), 60, 30);
     }

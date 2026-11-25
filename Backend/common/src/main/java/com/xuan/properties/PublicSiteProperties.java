@@ -23,7 +23,9 @@ public class PublicSiteProperties {
     private String cvBaseUrl;
     private String apiBaseUrl;
 
-    /** 获取站点地址，缺少配置时拒绝相关请求，不推测部署域名。 */
+    /**
+     * 获取站点地址，缺少配置时拒绝相关请求，不推测部署域名。
+     */
     public URI base(String code) {
         String value = switch (code) {
             case "home" -> homeBaseUrl;
@@ -48,7 +50,9 @@ public class PublicSiteProperties {
         }
     }
 
-    /** 从站点基址获取来源，不使用代理转发头。 */
+    /**
+     * 从站点基址获取来源，不使用代理转发头。
+     */
     public String origin(String code) {
         return originOf(base(code));
     }
@@ -61,7 +65,9 @@ public class PublicSiteProperties {
         return scheme + "://" + host + (port < 0 || port == defaultPort ? "" : ":" + port);
     }
 
-    /** 根据来源和路径确定站点，使用已配置的 Origin 和最长匹配前缀，避免同域子站混淆。 */
+    /**
+     * 根据来源和路径确定站点，使用已配置的 Origin 和最长匹配前缀，避免同域子站混淆。
+     */
     public void requireSite(String code, String origin, String path) {
         URI source;
         try {
@@ -105,7 +111,9 @@ public class PublicSiteProperties {
         }
     }
 
-    /** 生成文章前台地址，访问采集和订阅链接使用相同规则。 */
+    /**
+     * 生成文章前台地址，访问采集和订阅链接使用相同规则。
+     */
     public String articleUrl(String slug) {
         return base("blog").toString() + "/articles/" + slug;
     }

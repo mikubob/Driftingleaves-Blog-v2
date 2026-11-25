@@ -135,19 +135,25 @@ public class ArticleWriteDTO {
         tagIds = value;
     }
 
-    /** PUT 的默认字段和可空字段也要传，避免漏传后悄悄覆盖原资料。 */
+    /**
+     * PUT 的默认字段和可空字段也要传，避免漏传后悄悄覆盖原资料。
+     */
     @AssertTrue(groups = Replace.class, message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return present.size() == 9;
     }
 
-    /** 标签不能重复；没传和传 null 由字段上的校验处理。 */
+    /**
+     * 标签不能重复；没传和传 null 由字段上的校验处理。
+     */
     @AssertTrue(message = "同一标签不能重复选择。")
     public boolean isUniqueTags() {
         return tagIds == null || new HashSet<>(tagIds).size() == tagIds.size();
     }
 
-    /** 去掉可空文本的首尾空白，空白内容按清空处理。 */
+    /**
+     * 去掉可空文本的首尾空白，空白内容按清空处理。
+     */
     private String clean(String value) {
         return value == null || value.strip().isEmpty() ? null : value.strip();
     }

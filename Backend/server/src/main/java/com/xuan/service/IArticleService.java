@@ -26,50 +26,84 @@ import java.util.List;
  */
 public interface IArticleService extends IService<BlogArticle> {
 
-    /** 分页查询公开文章，所有筛选条件都要满足，列表和总数在同一个只读事务中查询。 */
+    /**
+     * 分页查询公开文章，所有筛选条件都要满足，列表和总数在同一个只读事务中查询。
+     */
     PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query);
 
-    /** 缓存公开文章列表中不随互动变化的资料，由 publicArticles 在同一事务中补上当前计数。 */
+    /**
+     * 缓存公开文章列表中不随互动变化的资料，由 publicArticles 在同一事务中补上当前计数。
+     */
     PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query);
 
-    /** 缓存公开文章详情，只能由 publicDetail 先锁住文章、检查正文和附件后，通过 Spring 代理调用。 */
+    /**
+     * 缓存公开文章详情，只能由 publicDetail 先锁住文章、检查正文和附件后，通过 Spring 代理调用。
+     */
     ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown);
 
-    /** 分页查询有公开文章的作者，先按公开文章数降序，再按作者id升序排列。 */
+    /**
+     * 分页查询有公开文章的作者，先按公开文章数降序，再按作者id升序排列。
+     */
     PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query);
 
-    /** 根据id查询作者公开资料，作者没有公开文章或用户不存在时都返回 404。 */
+    /**
+     * 根据id查询作者公开资料，作者没有公开文章或用户不存在时都返回 404。
+     */
     AuthorPublicVO publicAuthor(long userId);
 
-    /** 分页查询本人点赞的文章，当前用户必须启用，按点赞时间降序排列，不返回隐藏文章。 */
+    /**
+     * 分页查询本人点赞的文章，当前用户必须启用，按点赞时间降序排列，不返回隐藏文章。
+     */
     PageResult<LikedArticleVO> likedArticles(PageQueryDTO query);
 
-    /** 根据slug查询公开文章详情，返回Markdown及阅读信息；成功增加一次阅读量，失败时阅读量也回滚。 */
+    /**
+     * 根据slug查询公开文章详情，返回Markdown及阅读信息；成功增加一次阅读量，失败时阅读量也回滚。
+     */
     ArticlePublicDetailVO publicDetail(String slug);
 
-    /** 按 UTC 月份查询公开文章归档，月份降序排列，total 表示月份数量。 */
+    /**
+     * 按 UTC 月份查询公开文章归档，月份降序排列，total 表示月份数量。
+     */
     PageResult<ArchiveVO> archives(int page, int pageSize);
 
-    /** 分页查询后台文章，按查询权限限制作者范围，客户端传入 authorId 也不能扩大 SELF 范围。 */
+    /**
+     * 分页查询后台文章，按查询权限限制作者范围，客户端传入 authorId 也不能扩大 SELF 范围。
+     */
     PageResult<ArticleAdminVO> adminArticles(AdminArticleQueryDTO query);
 
-    /** 根据id查询文章详情及版本，回收站文章也能查；无权查看或文章不存在都返回 404。 */
+    /**
+     * 根据id查询文章详情及版本，回收站文章也能查；无权查看或文章不存在都返回 404。
+     */
     ArticleProfileVO detail(long id);
 
-    /** 创建文章草稿，作者取当前登录用户；正文或关联保存失败时，整个创建一起回滚。 */
+    /**
+     * 创建文章草稿，作者取当前登录用户；正文或关联保存失败时，整个创建一起回滚。
+     */
     ArticleProfileVO create(ArticleWriteDTO request);
 
-    /** 根据id更新文章，加锁后完整替换内容；已发布文章还要检查发布权限及范围。 */
+    /**
+     * 根据id更新文章，加锁后完整替换内容；已发布文章还要检查发布权限及范围。
+     */
     ArticleProfileVO update(long id, ArticleWriteDTO request, String revision);
 
-    /** 按累计阅读或点赞排全站、本月榜，本月用 UTC 首次发布时间筛选，不增加阅读量。 */
+    /**
+     * 按累计阅读或点赞排全站、本月榜，本月用 UTC 首次发布时间筛选，不增加阅读量。
+     */
     List<HotArticleVO> rankings(String period, String metric, int limit);
-    /** 批量发布或下架文章，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量发布或下架文章，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
-    /** 批量将文章移入回收站，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量将文章移入回收站，单条也走此入口，任一失败则整批回滚。
+     */
     void recycleBatch(List<BatchItemDTO> items);
-    /** 批量恢复回收站文章，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量恢复回收站文章，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO restoreBatch(List<BatchItemDTO> items);
-    /** 批量永久删除回收站文章，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量永久删除回收站文章，单条也走此入口，任一失败则整批回滚。
+     */
     void purgeBatch(List<BatchItemDTO> items);
 }

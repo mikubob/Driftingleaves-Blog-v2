@@ -26,7 +26,9 @@ public class SessionManager {
 
     private final Clock clock;
 
-    /** 创建登录 Token，调用前必须在事务中锁住用户，事务未提交成功时撤销新 Token。 */
+    /**
+     * 创建登录 Token，调用前必须在事务中锁住用户，事务未提交成功时撤销新 Token。
+     */
     public String create(long userId, long authenticatedAt, String method, int timeoutSeconds) {
         // 1. 先生成本次 Token，后面签发或提交出错时才能找到它并清理。
         String token = webTokenPrefix(timeoutSeconds) + TokenUtils.random();
@@ -70,7 +72,9 @@ public class SessionManager {
         return StpUtil.getTokenValue();
     }
 
-    /** 检查是否通过后台登录入口认证。 */
+    /**
+     * 检查是否通过后台登录入口认证。
+     */
     public void requireAdminAuthentication() {
         String token = currentToken();
         SaSession session = token == null ? null : StpUtil.getStpLogic().getTokenSessionByToken(token, false);
@@ -80,7 +84,9 @@ public class SessionManager {
         }
     }
 
-    /** 检查 Token 是否符合当前端网页登录会话的格式。 */
+    /**
+     * 检查 Token 是否符合当前端网页登录会话的格式。
+     */
     public static boolean isWebToken(String token, int timeoutSeconds) {
         String prefix = webTokenPrefix(timeoutSeconds);
         return token != null && token.startsWith(prefix)
@@ -91,7 +97,9 @@ public class SessionManager {
         return timeoutSeconds == ADMIN_TIMEOUT_SECONDS ? "admin." : "blog.";
     }
 
-    /** 检查原 Token 是否有效，写事务必须在拿到用户锁后调用。 */
+    /**
+     * 检查原 Token 是否有效，写事务必须在拿到用户锁后调用。
+     */
     public void requireActive(String token, long userId) {
         Object actual = StpUtil.getStpLogic().getLoginIdByToken(token);
         if (actual == null || !actual.toString().equals(Long.toString(userId))
@@ -100,7 +108,9 @@ public class SessionManager {
         }
     }
 
-    /** 检查最近认证，重新核对原 Token 和认证信息，不能只依赖浏览器 Cookie。 */
+    /**
+     * 检查最近认证，重新核对原 Token 和认证信息，不能只依赖浏览器 Cookie。
+     */
     public long requireRecent(String token, long userId, boolean requireOAuth) {
         // 1. 先重查 Token 归属和会话，已退出或属于别人的 Token 都不能用。
         Object loginId = StpUtil.getStpLogic().getLoginIdByToken(token);
@@ -121,7 +131,9 @@ public class SessionManager {
         return at;
     }
 
-    /** 根据 Token 摘要查找原会话，只接受该用户仍有效的 Token。 */
+    /**
+     * 根据 Token 摘要查找原会话，只接受该用户仍有效的 Token。
+     */
     public String originalToken(long userId, String tokenHash) {
         // 1. 只查这个用户现有的会话，不能从 Cookie 或客户端 userId 恢复身份。
         for (String token : StpUtil.getTokenValueListByLoginId(userId)) {
@@ -134,7 +146,9 @@ public class SessionManager {
         throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
     }
 
-    /** 检查长连接的原登录会话，不延长有效期，不要求五分钟内重新认证。 */
+    /**
+     * 检查长连接的原登录会话，不延长有效期，不要求五分钟内重新认证。
+     */
     public void requireOriginalActive(long userId, String tokenHash, long expiresAt) {
         if (clock.millis() >= expiresAt) {
             throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
@@ -148,7 +162,9 @@ public class SessionManager {
         throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
     }
 
-    /** 获取会话剩余秒数，在线心跳不延长登录时间。 */
+    /**
+     * 获取会话剩余秒数，在线心跳不延长登录时间。
+     */
     public long remainingSeconds(String token) {
         return StpUtil.getStpLogic().getTokenTimeout(token);
     }

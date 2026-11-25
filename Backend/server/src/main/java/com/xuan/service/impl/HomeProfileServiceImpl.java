@@ -43,7 +43,9 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** 查询站点主人公开资料。 */
+    /**
+     * 查询站点主人公开资料。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "home", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -53,7 +55,9 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
                 row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(), row.getLocation());
     }
 
-    /** 查询站点主人资料及版本。 */
+    /**
+     * 查询站点主人资料及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<HomeProfile> detail() {
@@ -61,21 +65,25 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         return profile(profiles.selectById(1L));
     }
 
-    /** 设置或更新站点主人资料。 */
+    /**
+     * 设置或更新站点主人资料。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "home:profile", permission = "home:profile:update")
     @CacheEvict(cacheNames = "home", allEntries = true)
     public ResourceVersion<HomeProfile> replace(HomeProfileWriteDTO request, String revision) {
+        // 1. 校验展示链接格式，并锁定管理保护检查点以串行首次初始化。
         if (!UrlPolicy.valid(request.getAvatar()) || !UrlPolicy.valid(request.getWebsite()) || !UrlPolicy.valid(
                 request.getGithubUrl())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "展示地址须为外部HTTP(S)资源");
         }
-        // 结构检查点也串行首次设置，随后按ID锁操作者和所选账号。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理保护角色未初始化");
         }
         requireAdmin("update");
+
+        // 2. 按 ID 升序锁定操作者和所选站点主人，再锁定主页资料并复核权限与版本。
         Set<Long> ids = new TreeSet<>();
         ids.add(sessions.currentUserId());
         ids.add(request.getUserId());
@@ -93,6 +101,8 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         if (owner == null || owner.getStatus() != 1) {
             throw new BusinessException(400, "VALIDATION_ERROR", "站点主人须为启用账号");
         }
+
+        // 3. 首次保存执行插入，已有记录执行完整替换，返回最新资料与版本。
         boolean create = row == null;
         if (create) {
             row = new HomeProfile();
@@ -115,7 +125,9 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         return profile(profiles.selectById(1L));
     }
 
-    /** 锁等待后重新检查原会话、启用身份和本次操作的ALL。 */
+    /**
+     * 锁等待后重新检查原会话、启用身份和本次操作的ALL。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -125,7 +137,9 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         }
     }
 
-    /** 计算站点主人资料版本，未设置时也有版本，不包含数据库时间或账号资料。 */
+    /**
+     * 计算站点主人资料版本，未设置时也有版本，不包含数据库时间或账号资料。
+     */
     private ResourceVersion<HomeProfile> profile(HomeProfile row) {
         Object value = row == null ? null : Arrays.asList(row.getUserId(), row.getNickname(), row.getTagline(),
                 row.getDescription(), row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(),

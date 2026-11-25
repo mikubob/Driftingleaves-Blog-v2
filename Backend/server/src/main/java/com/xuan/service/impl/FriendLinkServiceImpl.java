@@ -23,6 +23,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.AdminLinkVO;
 import com.xuan.vo.BatchVersionsVO;
@@ -67,7 +68,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     private final JsonMapper json;
     private final Clock clock;
 
-    /** 获取展示中的友链，排序相同时按 ID 排，不返回后台状态和时间。 */
+    /**
+     * 获取展示中的友链，排序相同时按 ID 排，不返回后台状态和时间。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "links", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -77,22 +80,28 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
                         row.getAvatar(), row.getDescription(), row.getSortOrder())));
     }
 
-    /** 从当前账号查询申请，各审核状态均可查看。 */
+    /**
+     * 从当前账号查询申请，各审核状态均可查看。
+     */
     @Override
     public BlogFriendLink ownApplication() {
         return links.findApplication(identities.requireCurrent());
     }
 
-    /** 锁住账号后检查申请和当日次数，申请与次数一起提交。 */
+    /**
+     * 锁住账号后检查申请和当日次数，申请与次数一起提交。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public BlogFriendLink submitApplication(LinkApplicationDTO request) {
+        // 1. 校验申请站点地址，锁定当前账号并确认无未清理的已有申请。
         validateUrls(request);
         long userId = lockApplicant();
         if (links.findApplication(userId) != null) {
             throw new BusinessException(409, "STATE_CONFLICT", "请先删除已有的友链申请");
         }
 
+        // 2. 检查当日申请次数上限，超限时计算距次日零点的重试秒数。
         ZonedDateTime now = ZonedDateTime.now(clock.withZone(APPLICATION_ZONE));
         LocalDate date = now.toLocalDate();
         Integer savedCount = links.applicationCount(userId, date);
@@ -103,6 +112,7 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
             throw new BusinessException(429, "RATE_LIMITED", "今天的友链申请次数已用完", retryAfter);
         }
 
+        // 3. 保存待审核友链并递增当日申请计数。
         BlogFriendLink row = new BlogFriendLink();
         setSiteFields(row, request);
         row.setSortOrder(0);
@@ -112,7 +122,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return links.selectById(row.getLinkId());
     }
 
-    /** 按账号串行删除本人申请，成功后清除公开列表缓存。 */
+    /**
+     * 按账号串行删除本人申请，成功后清除公开列表缓存。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "links", allEntries = true)
@@ -125,7 +137,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         }
     }
 
-    /** 先检查后台和友链查询权限，再用同样条件查列表和总数。 */
+    /**
+     * 先检查后台和友链查询权限，再用同样条件查列表和总数。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<AdminLinkVO> listLinks(LinkQueryDTO query) {
@@ -134,7 +148,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return PageResult.from(links.adminLinkPage(new Page<>(query.page(), query.pageSize()), query, applicantId));
     }
 
-    /** 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。 */
+    /**
+     * 查询详情及版本，在同一个只读事务中读取，避免资料和版本不一致。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LinkProfileVO<AdminLinkVO> detail(long id) {
@@ -144,7 +160,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return new LinkProfileVO<>(row, revision(row, applicantId));
     }
 
-    /** 锁住操作者并重新检查权限后创建友链，名称和 URL 允许重复，写日志失败就回滚。 */
+    /**
+     * 锁住操作者并重新检查权限后创建友链，名称和 URL 允许重复，写日志失败就回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:link", permission = "blog:link:create")
@@ -164,7 +182,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return links.selectById(row.getLinkId());
     }
 
-    /** 先锁账号再锁友链，检查版本后修改资料和绑定账号。 */
+    /**
+     * 先锁账号再锁友链，检查版本后修改资料和绑定账号。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:link", permission = "blog:link:update", targetIdArgument = 0)
@@ -185,7 +205,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return new LinkProfileVO<>(updated, revision(updated, applicantId));
     }
 
-    /** 锁住当前账号，等锁后重新检查原会话和账号状态。 */
+    /**
+     * 锁住当前账号，等锁后重新检查原会话和账号状态。
+     */
     private long lockApplicant() {
         long userId = sessions.currentUserId();
         users.lockById(userId);
@@ -194,7 +216,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return userId;
     }
 
-    /** 填写友链的四个站点资料字段。 */
+    /**
+     * 填写友链的四个站点资料字段。
+     */
     private void setSiteFields(BlogFriendLink row, LinkApplicationDTO request) {
         row.setLinkName(request.getLinkName());
         row.setUrl(request.getUrl());
@@ -202,7 +226,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         row.setDescription(request.getDescription());
     }
 
-    /** 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。 */
+    /**
+     * 两个地址共用现有公开 URL 规则，只校验和保存，不能触发服务器抓取。
+     */
     private void validateUrls(LinkApplicationDTO request) {
         if (!UrlPolicy.valid(request.getUrl())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "友链地址无效，请填写以 http:// 或 https:// 开头的外部地址。");
@@ -212,7 +238,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         }
     }
 
-    /** 按 ID 升序锁操作者和所选账号，避免与用户管理的加锁顺序相反。 */
+    /**
+     * 按 ID 升序锁操作者和所选账号，避免与用户管理的加锁顺序相反。
+     */
     private SysUser lockWriteAccounts(String operation, Long applicantId) {
         Set<Long> ids = new TreeSet<>();
         ids.add(sessions.currentUserId());
@@ -230,7 +258,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return applicant;
     }
 
-    /** 持有账号锁时检查能否绑定，与博客提交共用一条申请的限制。 */
+    /**
+     * 持有账号锁时检查能否绑定，与博客提交共用一条申请的限制。
+     */
     private void requireAvailableApplicant(long applicantId, SysUser applicant) {
         if (applicant == null || applicant.getStatus() != 1) {
             throw new BusinessException(400, "VALIDATION_ERROR", "所选用户不存在或已禁用。");
@@ -240,14 +270,18 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         }
     }
 
-    /** 等到友链锁后再查权限，不能沿用旧授权。 */
+    /**
+     * 等到友链锁后再查权限，不能沿用旧授权。
+     */
     private LinkApplicationRow lockLink(long id, String operation) {
         LinkApplicationRow row = links.lockById(id);
         requireAdmin(operation);
         return requireLink(row);
     }
 
-    /** SELF 对全站字典也有效，但仍要确认原 Token、账号和两项权限。 */
+    /**
+     * SELF 对全站字典也有效，但仍要确认原 Token、账号和两项权限。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -255,7 +289,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         authorization.requireScope(actor, "blog:link:" + operation);
     }
 
-    /** 已经检查权限后再报友链不存在，不把缺权限误报为找不到。 */
+    /**
+     * 已经检查权限后再报友链不存在，不把缺权限误报为找不到。
+     */
     private <T extends BlogFriendLink> T requireLink(T row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "友链不存在");
@@ -263,27 +299,25 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         return row;
     }
 
-    /** 持有友链锁时先核对版本；缺失、格式不对、过期分别返回 428、400、412。 */
+    /**
+     * 持有友链锁时先核对版本；缺失、格式不对、过期分别返回 428、400、412。
+     */
     private void checkRevision(LinkApplicationRow row, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(revision(row, row.getApplicantId()))) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "友链已修改，请重新获取");
-        }
+        RevisionUtils.check(revision(row, row.getApplicantId()), revision, "友链已修改，请重新获取");
     }
 
-    /** 绑定变更也要检查版本，账号昵称等展示资料不影响版本。 */
+    /**
+     * 绑定变更也要检查版本，账号昵称等展示资料不影响版本。
+     */
     private String revision(BlogFriendLink row, Long applicantId) {
         String value = json.writeValueAsString(Arrays.asList(row.getLinkId(), row.getLinkName(), row.getUrl(),
                 row.getAvatar(), row.getDescription(), row.getSortOrder(), row.getStatus(), applicantId));
         return "\"" + TokenUtils.digest(value) + "\"";
     }
 
-    /** 批量删除友情链接，先加锁并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量删除友情链接，先加锁并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:link", permission = "blog:link:delete")
@@ -303,7 +337,9 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         }
     }
 
-    /** 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。 */
+    /**
+     * 批量修改状态，先检查全部目标和版本，再仅写状态，新版本按请求顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:link", permission = "blog:link:update")

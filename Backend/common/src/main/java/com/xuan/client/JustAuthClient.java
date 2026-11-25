@@ -113,7 +113,9 @@ public class JustAuthClient implements OAuthProviderClient {
         }
     }
 
-    /** 识别 GitHub 的固定错误，只记录已知类别，避免把平台响应内容写入日志。 */
+    /**
+     * 识别 GitHub 的固定错误，只记录已知类别，避免把平台响应内容写入日志。
+     */
     private static String githubError(String message) {
         return switch (message) {
             case "The client_id and/or client_secret passed are incorrect." -> "incorrect_client_credentials";

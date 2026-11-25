@@ -70,14 +70,18 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     private final Clock clock;
     private final PlatformTransactionManager transactions;
 
-    /** 查询本人订阅。 */
+    /**
+     * 查询本人订阅。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public SubscriptionVO own() {
         return view(subscriptions.byUser(requireMember(null)));
     }
 
-    /** 申请订阅并发送确认邮件。 */
+    /**
+     * 申请订阅并发送确认邮件。
+     */
     @Override
     public SubscriptionVO request(SubscriptionWriteDTO request) {
         // 1. 在事务里依次锁住用户与订阅，等待结束后重新检查原会话和订阅权限。
@@ -134,7 +138,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return view(application.row());
     }
 
-    /** 确认邮箱并激活订阅。 */
+    /**
+     * 确认邮箱并激活订阅。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public SubscriptionVO confirm(String ticket) {
@@ -165,7 +171,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return view(subscriptions.selectById(row.getSubscriptionId()));
     }
 
-    /** 取消本人订阅。 */
+    /**
+     * 取消本人订阅。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void cancelOwn() {
@@ -179,7 +187,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 根据邮件票据取消订阅。 */
+    /**
+     * 根据邮件票据取消订阅。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void cancelTicket(String ticket) {
@@ -200,7 +210,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         cancel(row);
     }
 
-    /** 分页查询订阅。 */
+    /**
+     * 分页查询订阅。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogRssSubscription> listSubscriptions(SubscriptionQueryDTO query) {
@@ -209,7 +221,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
                 IdUtils.parse(query.userId())));
     }
 
-    /** 根据id查询订阅详情及版本。 */
+    /**
+     * 根据id查询订阅详情及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<BlogRssSubscription> detail(long id) {
@@ -217,7 +231,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return profile(required(subscriptions.selectById(id)));
     }
 
-    /** 根据id修改订阅状态。 */
+    /**
+     * 根据id修改订阅状态。
+     */
     private ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
         BlogRssSubscription row = lockAdmin(id, "update");
         RevisionUtils.check(profile(row).revision(), revision);
@@ -238,7 +254,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return profile(subscriptions.selectById(id));
     }
 
-    /** 后台先查权限，再按ID锁操作者和所属用户，每个等待阶段都重查身份和ALL。 */
+    /**
+     * 后台先查权限，再按ID锁操作者和所属用户，每个等待阶段都重查身份和ALL。
+     */
     private BlogRssSubscription lockAdmin(long id, String operation) {
         requireAdmin(operation);
         BlogRssSubscription located = required(subscriptions.selectById(id));
@@ -254,7 +272,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return required(row);
     }
 
-    /** 取消订阅，已退订时不再修改时间，重复使用旧链接仍返回成功。 */
+    /**
+     * 取消订阅，已退订时不再修改时间，重复使用旧链接仍返回成功。
+     */
     private void cancel(BlogRssSubscription row) {
         if (row.getStatus() != 2) {
             row.setStatus(2);
@@ -263,7 +283,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 本人查询不额外要求后台权限，写入仍检查独立前台权限。 */
+    /**
+     * 本人查询不额外要求后台权限，写入仍检查独立前台权限。
+     */
     private long requireMember(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -273,7 +295,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return actor;
     }
 
-    /** 检查本次操作的 ALL 范围，只使用实际授予该权限的角色。 */
+    /**
+     * 检查本次操作的 ALL 范围，只使用实际授予该权限的角色。
+     */
     private void requireAdmin(String operation) {
         long actor = requireMember(null);
         authorization.requireScope(actor, "admin:access");
@@ -282,7 +306,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 解析订阅确认票据，数据格式错误时按票据无效处理，不返回原始 JSON。 */
+    /**
+     * 解析订阅确认票据，数据格式错误时按票据无效处理，不返回原始 JSON。
+     */
     private SubscriptionConfirmation confirmation(String raw) {
         try {
             return json.readValue(raw, SubscriptionConfirmation.class);
@@ -291,7 +317,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 读取退订票据，只从专用的 Redis 键中取数据。 */
+    /**
+     * 读取退订票据，只从专用的 Redis 键中取数据。
+     */
     private SubscriptionUnsubscribe unsubscribe(String raw) {
         try {
             return json.readValue(raw, SubscriptionUnsubscribe.class);
@@ -300,14 +328,18 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 不能向本人暴露其他用户ID或票据。 */
+    /**
+     * 不能向本人暴露其他用户ID或票据。
+     */
     private SubscriptionVO view(BlogRssSubscription row) {
         return row == null ? null : new SubscriptionVO(row.getSubscriptionId(), row.getEmail(), row.getStatus(),
                 row.getVerifiedAt(),
                 row.getSubscribeTime(), row.getUnsubscribeTime(), row.getCreateTime(), row.getUpdateTime());
     }
 
-    /** 权限检查后才报告不存在。 */
+    /**
+     * 权限检查后才报告不存在。
+     */
     private BlogRssSubscription required(BlogRssSubscription row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "订阅不存在");
@@ -315,14 +347,18 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return row;
     }
 
-    /** 计算订阅版本，包含订阅相关时间和状态，不包含审计时间。 */
+    /**
+     * 计算订阅版本，包含订阅相关时间和状态，不包含审计时间。
+     */
     private ResourceVersion<BlogRssSubscription> profile(BlogRssSubscription row) {
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(
                 json.writeValueAsString(Arrays.asList(row.getUserId(), row.getEmail(), row.getStatus(),
                         row.getVerifiedAt(), row.getSubscribeTime(), row.getUnsubscribeTime()))) + "\"");
     }
 
-    /** 获取 UTC 毫秒时间，与数据库和票据保持相同精度。 */
+    /**
+     * 获取 UTC 毫秒时间，与数据库和票据保持相同精度。
+     */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
@@ -334,7 +370,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
 
     }
 
-    /** 批量删除订阅，先锁住全部所属用户并检查权限和版本，再统一删除。 */
+    /**
+     * 批量删除订阅，先锁住全部所属用户并检查权限和版本，再统一删除。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:rss", permission = "blog:rss:delete")
@@ -353,7 +391,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         }
     }
 
-    /** 批量修改订阅状态，先锁住全部所属用户并检查权限和版本，再更新状态及邮件轮次。 */
+    /**
+     * 批量修改订阅状态，先锁住全部所属用户并检查权限和版本，再更新状态及邮件轮次。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:rss", permission = "blog:rss:update")
@@ -377,7 +417,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量操作先查权限，再按用户 id 升序锁住操作者和所有订阅者。 */
+    /**
+     * 批量操作先查权限，再按用户 id 升序锁住操作者和所有订阅者。
+     */
     private void lockBatchUsers(List<BatchItemDTO> items, String operation) {
         requireAdmin(operation);
         Set<Long> userIds = new TreeSet<>();

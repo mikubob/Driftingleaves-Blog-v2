@@ -7,24 +7,33 @@ import com.xuan.service.ISkillService;
 import com.xuan.vo.SkillPublicVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开技能查询接口，只返回启用的资料。
+ * 简历端公开技能接口
  */
+@Slf4j
 @RestController("cvSkillController")
 @RequestMapping("/cv/skills")
 @RequiredArgsConstructor
 public class SkillController {
 
-    private final ISkillService items;
+    private final ISkillService skillService;
 
-    /** 查询公开技能列表，不返回管理字段或原始 Markdown。 */
+    /**
+     * 分页查询公开技能列表
+     *
+     * @param query 查询参数
+     * @return 技能分页结果
+     */
     @GetMapping
     public Result<PageResult<SkillPublicVO>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
-        return Result.ok(items.publicItems(query));
+        log.info("简历端分页查询公开技能列表: {}", query);
+        PageResult<SkillPublicVO> pageResult = skillService.publicItems(query);
+        return Result.ok(pageResult);
     }
 }

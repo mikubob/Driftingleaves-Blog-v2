@@ -20,225 +20,276 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 文章数据接口，SQL 限制公开条件、权限范围和排序，正文及关联由业务事务一起保存。
+ * 文章数据访问接口
  */
 @Mapper
 public interface ArticleMapper extends BaseMapper<BlogArticle> {
 
     /**
-     * 列表和总数用同样的条件，只有搜关键词时才读取正文。
+     * 分页查询文章列表，列表和总数使用相同筛选条件，仅搜索关键词时关联正文。
      *
-     * @param page 分页容器，保留超末页页码
-     * @param filter 已校验的PUBLIC/作者范围及AND过滤
-     * @return 使用相同筛选条件的文章资料分页
+     * @param page 分页参数
+     * @param filter 文章筛选条件
+     * @return 文章分页结果
      */
     IPage<ArticleRow> articlePage(IPage<ArticleRow> page, @Param("filter") ArticleFilter filter);
 
-    /** 作者数、文章数和资料共用 PUBLIC 条件，不按角色或账号私密资料枚举用户。 */
+    /**
+     * 分页查询有公开文章的作者列表
+     *
+     * @param page 分页参数
+     * @param now 当前 UTC 时间
+     * @return 作者公开资料分页结果
+     */
     IPage<AuthorPublicVO> authorPage(IPage<AuthorPublicVO> page, @Param("now") LocalDateTime now);
 
-    /** 根据id查询作者公开资料，没有公开文章时返回 null，不返回邮箱、登录名或权限。 */
+    /**
+     * 根据用户 ID 查询作者公开资料，无公开文章时返回 null。
+     *
+     * @param id 作者用户 ID
+     * @param now 当前 UTC 时间
+     * @return 作者公开资料
+     */
     AuthorPublicVO publicAuthor(@Param("id") long id, @Param("now") LocalDateTime now);
 
-    /** 本人 ID 由会话提供，total 与记录都排除当前非 PUBLIC 文章。 */
+    /**
+     * 分页查询当前用户点赞的公开文章列表
+     *
+     * @param page 分页参数
+     * @param user 用户 ID
+     * @param now 当前 UTC 时间
+     * @return 点赞文章分页结果
+     */
     IPage<ArticleRow> likedPage(IPage<ArticleRow> page, @Param("user") long user,
             @Param("now") LocalDateTime now);
 
-    /** 持文章锁后锁定完整评论树，评论写入口也先持同一文章锁。 */
+    /**
+     * 加锁查询文章下的完整评论节点，调用方须先持有文章行锁。
+     *
+     * @param id 文章 ID
+     * @return 评论节点列表
+     */
     List<CommentNode> lockComments(@Param("id") long id);
 
-    /** 持文章与评论锁后从叶到根删除，保留 RESTRICT 外键检查。 */
+    /**
+     * 按文章 ID 与评论 ID 删除单条评论，调用方按从叶到根顺序调用。
+     *
+     * @param id 文章 ID
+     * @param comment 评论 ID
+     */
     void deleteComment(@Param("id") long id, @Param("comment") long comment);
 
-    /** 最后删除已回收文章，SQL 再限制独立权限合并后的作者范围。 */
+    /**
+     * 永久删除回收站中的文章，并在 SQL 中限制操作者作者范围。
+     *
+     * @param id 文章 ID
+     * @param author SELF 范围作者 ID，ALL 范围为 null
+     */
     void deleteScoped(@Param("id") long id, @Param("author") Long author);
 
     /**
-     * 后台详情按当前操作的作者范围查，lock=true 时调用方要有 READ COMMITTED 写事务。
+     * 按权限范围查询文章，lock 为 true 时加行锁（调用方须在事务内并先锁文件）。
      *
-     * @param id 文章ID
-     * @param author SELF作者ID，ALL为null
-     * @param lock 是否取得文章行锁；调用方先锁文件
-     * @return 范围内文章，缺失或越界为null
+     * @param id 文章 ID
+     * @param author SELF 范围作者 ID，ALL 范围为 null
+     * @param lock 是否加行锁
+     * @return 范围内的文章记录，不存在或越界时返回 null
      */
     ArticleRow scoped(@Param("id") long id, @Param("author") Long author, @Param("lock") boolean lock);
 
     /**
-     * slug 区分大小写且只查公开文章，加锁后才能确定阅读计数和下架谁先提交。
+     * 根据区分大小写的 slug 查询公开文章，lock 为 true 时加行锁。
      *
-     * @param slug 大小写敏感标识
-     * @param now 服务端当前UTC
-     * @param lock 是否仅锁文章行以确定公开阅读顺序
-     * @return PUBLIC文章，其他情况为null
+     * @param slug 文章 slug
+     * @param now 当前 UTC 时间
+     * @param lock 是否加行锁
+     * @return 公开文章记录，非公开或不存在时返回 null
      */
     ArticleRow publicBySlug(@Param("slug") String slug, @Param("now") LocalDateTime now, @Param("lock") boolean lock);
 
-    /** 评论和点赞也复用文章 PUBLIC 条件；写入先用 scoped 锁文章，再按最新状态查这里。 */
+    /**
+     * 根据文章 ID 查询公开文章
+     *
+     * @param id 文章 ID
+     * @param now 当前 UTC 时间
+     * @return 公开文章记录，非公开或不存在时返回 null
+     */
     ArticleRow publicById(@Param("id") long id, @Param("now") LocalDateTime now);
 
-    /** 批量复核公开状态并读取当前阅读量和点赞数，调用方只传非空文章列表。 */
+    /**
+     * 批量查询公开文章的最新阅读量与点赞数
+     *
+     * @param ids 文章 ID 列表
+     * @param now 当前 UTC 时间
+     * @return 公开文章计数列表
+     */
     List<ArticleRow> publicCounts(@Param("ids") List<Long> ids, @Param("now") LocalDateTime now);
 
     /**
-     * 正文要和文章资料在同一个只读事务或行锁事务中读取，不能只靠 HTML 缓存判断附件引用。
+     * 根据文章 ID 查询正文内容
      *
-     * @param id 文章ID
-     * @return 文章正文，没查到为 null
+     * @param id 文章 ID
+     * @return 文章正文记录，不存在时返回 null
      */
     BlogArticleContent content(@Param("id") long id);
 
     /**
-     * 关联返回当前字典资料，标签按 ID 从小到大排。
+     * 根据文章 ID 查询关联的标签列表，按标签 ID 升序排列。
      *
-     * @param id 文章ID
-     * @return 当前完整标签资料，空为[]
+     * @param id 文章 ID
+     * @return 标签列表
      */
     List<BlogTag> tags(@Param("id") long id);
 
     /**
-     * 拿到文章锁后，锁住当前标签关联及字典，避免检查版本后标签又被级联删除。
+     * 加共享锁查询文章当前关联的标签 ID 列表，防止检查版本后标签被级联删除。
      *
-     * @param id 已持有行锁的文章ID
-     * @return 升序完整标签ID，锁保持至事务结束
+     * @param id 文章 ID
+     * @return 按升序排列的标签 ID 列表
      */
     List<Long> lockCurrentTags(@Param("id") long id);
 
     /**
-     * 取当前分类，是否隐藏由应用返回前台资料时处理。
+     * 根据分类 ID 查询分类记录
      *
-     * @param id 分类ID
-     * @return 当前分类或null
+     * @param id 分类 ID
+     * @return 分类记录，不存在时返回 null
      */
     BlogCategory category(@Param("id") long id);
 
     /**
-     * 持有文章锁后再锁分类，避免检查通过后分类被删而只写了一半关联。
+     * 加共享锁检查分类是否存在
      *
-     * @param id 候选分类ID
-     * @return 存在的分类ID或null，共享锁保持至提交
+     * @param id 分类 ID
+     * @return 存在的分类 ID，不存在时返回 null
      */
     Long lockCategory(@Param("id") long id);
 
     /**
-     * 标签按 ID 升序逐个加锁，不存在由业务报 400，不能吞掉外键异常。
+     * 加共享锁检查标签是否存在，调用方按标签 ID 升序调用。
      *
-     * @param id 候选标签ID，调用方按升序调用
-     * @return 存在的标签ID或null
+     * @param id 标签 ID
+     * @return 存在的标签 ID，不存在时返回 null
      */
     Long lockTag(@Param("id") long id);
 
     /**
-     * 文件按 ID 升序锁定，而且要早于文章锁；删除文件和写引用都遵守这个顺序。
+     * 加行锁查询文件记录，调用方按文件 ID 升序锁定且早于文章锁。
      *
-     * @param id 文件ID，调用方按升序调用
-     * @return 已加锁的文章资料或 null，锁保持到事务提交
+     * @param id 文件 ID
+     * @return 文件记录，不存在时返回 null
      */
     BlogFile lockFile(@Param("id") long id);
 
     /**
-     * 拿到文件锁后，在 SQL 里检查 file:query 的上传者范围，文章的 ALL 不能扩大文件的 SELF。
+     * 按上传者权限范围查询文件记录
      *
-     * @param id 已提前锁定的文件ID
-     * @param uploader 文件SELF上传者ID，ALL为null
-     * @return 范围内文件或null
+     * @param id 文件 ID
+     * @param uploader SELF 范围上传者 ID，ALL 范围为 null
+     * @return 范围内的文件记录，不存在或越界时返回 null
      */
     BlogFile scopedFile(@Param("id") long id, @Param("uploader") Long uploader);
 
     /**
-     * 替换全部可写资料，SQL 还要限制本次操作范围，不改作者和计数。
+     * 更新文章可写资料，并在 SQL 中限制操作者作者范围。
      *
-     * @param article 加锁后已通过版本和状态检查的待更新文章资料
-     * @param author 本次操作的SELF作者ID，ALL为null
-     * @return 受影响文章数
+     * @param article 待更新的文章实体
+     * @param author SELF 范围作者 ID，ALL 范围为 null
+     * @return 受影响行数
      */
     int updateArticle(@Param("article") BlogArticle article, @Param("author") Long author);
 
     /**
-     * 文章资料、服务端正文和标签要在同一事务一起提交。
+     * 保存或更新文章 Markdown 正文及服务端渲染的安全 HTML
      *
-     * @param id 新建或已锁定文章ID
-     * @param markdown 原始Markdown
-     * @param html 服务端安全HTML缓存
+     * @param id 文章 ID
+     * @param markdown Markdown 原文
+     * @param html 清理后的安全 HTML
      */
     void saveContent(@Param("id") long id, @Param("markdown") String markdown, @Param("html") String html);
 
     /**
-     * 先清旧关联，再逐条插入新关联，任何失败都回滚整篇文章的修改。
+     * 清空文章的全部标签关联
      *
-     * @param id 已锁定文章ID
+     * @param id 文章 ID
      */
     void clearTags(@Param("id") long id);
 
     /**
-     * 文章标签用完整的两列主键插入，不能虚构单 ID 的增删改查。
+     * 新增一条文章与标签的复合主键关联记录
      *
-     * @param id 文章ID
-     * @param tag 已验证并持锁的标签ID
+     * @param id 文章 ID
+     * @param tag 标签 ID
      */
     void addTag(@Param("id") long id, @Param("tag") long tag);
 
     /**
-     * 已锁住公开文章后，原子增加一次阅读，保留原修改时间。
+     * 原子累加一次公开文章阅读量，保持原更新时间不变。
      *
-     * @param id 已锁定PUBLIC文章ID
+     * @param id 文章 ID
      */
     void incrementViews(@Param("id") long id);
 
     /**
-     * 按 UTC 月份倒序分页，只数公开文章，total 表示月份数，不是文章数。
+     * 按 UTC 月份倒序分页查询公开文章归档
      *
-     * @param page 月份分页容器
-     * @param now 服务端当前UTC
-     * @return 月份倒序分页和月份总数
+     * @param page 分页参数
+     * @param now 当前 UTC 时间
+     * @return 归档分页结果
      */
     IPage<ArchiveVO> archives(IPage<ArchiveVO> page, @Param("now") LocalDateTime now);
 
     /**
-     * 按发布时间和 ID 找上下篇，不读取或修改候选正文，也不增加它们的计数。
+     * 查询当前公开文章的上一篇或下一篇导航
      *
-     * @param article 当前PUBLIC文章
-     * @param earlier true取更早最近文章，false取更晚最近文章
-     * @param now 服务端当前UTC
-     * @return 相邻公开导航或null
+     * @param article 当前公开文章
+     * @param earlier true 查询更早一篇，false 查询更晚一篇
+     * @param now 当前 UTC 时间
+     * @return 相邻文章导航，无相邻文章时返回 null
      */
     Navigation adjacent(@Param("article") BlogArticle article, @Param("earlier") boolean earlier,
             @Param("now") LocalDateTime now);
 
     /**
-     * 同一个可展示分类里最多推荐六篇公开文章，排除当前文章。
+     * 查询同分类下的相关公开文章推荐（最多 6 篇，排除当前文章）
      *
-     * @param article 当前PUBLIC文章
-     * @param now 服务端当前UTC
-     * @return 发布时间和ID倒序的公开导航列表
+     * @param article 当前公开文章
+     * @param now 当前 UTC 时间
+     * @return 相关文章导航列表
      */
     List<Navigation> related(@Param("article") BlogArticle article, @Param("now") LocalDateTime now);
 
     /**
-     * 指标由服务端枚举选择，本月只筛首次发布时间，热度仍用累计计数。
+     * 查询热门公开文章排行
      *
-     * @param from UTC候选月份下界，site为null
-     * @param until UTC候选月份上界，site为null
-     * @param now 服务端当前UTC
-     * @param likes true按当前点赞，false按累计阅读
-     * @param limit 已校验的1..20
-     * @return 热度、首次发布时间和ID倒序的PUBLIC文章
+     * @param from 统计开始时间（全站排行时为 null）
+     * @param until 统计结束时间（全站排行时为 null）
+     * @param now 当前 UTC 时间
+     * @param likes true 按点赞数排序，false 按阅读量排序
+     * @param limit 返回条数上限
+     * @return 热门文章列表
      */
     List<ArticleRow> rankings(@Param("from") LocalDateTime from, @Param("until") LocalDateTime until,
             @Param("now") LocalDateTime now, @Param("likes") boolean likes, @Param("limit") int limit);
 
     /**
-     * 查询当前文章评论的作者、父子关系和状态，逐层检查当前读者能否查看祖先。
+     * 查询文章下全部评论的最小树节点信息，用于可见性校验。
      *
-     * @param id 当前文章ID
-     * @return 完整评论链结构，不含正文和私人资料
+     * @param id 文章 ID
+     * @return 评论节点列表
      */
     List<CommentNode> commentNodes(@Param("id") long id);
 
-    /** 批量读取本页文章的评论链，调用方按文章分组检查可见性。 */
+    /**
+     * 批量查询多篇文章的评论节点信息
+     *
+     * @param ids 文章 ID 列表
+     * @return 评论节点列表
+     */
     List<CommentNode> commentNodesByArticles(@Param("ids") List<Long> ids);
 
     /**
-     * 可见性检查只需作者id、父子关系和状态，不带正文或私人资料。
+     * 评论可见性校验节点模型
      */
     @Data
     class CommentNode {

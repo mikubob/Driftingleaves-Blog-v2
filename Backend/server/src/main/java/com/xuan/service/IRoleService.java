@@ -19,23 +19,37 @@ import java.util.List;
  */
 public interface IRoleService extends IService<SysRole> {
 
-    /** 分页查询角色，先检查后台入口和查询权限，再在同一个只读事务中读取，保留关联中的禁用项。 */
+    /**
+     * 分页查询角色，先检查后台入口和查询权限，再在同一个只读事务中读取，保留关联中的禁用项。
+     */
     PageResult<RoleVO> listRoles(RoleQueryDTO query);
 
-    /** 根据id查询角色详情，资料、权限和菜单在同一个只读事务中读取，并一起计算版本。 */
+    /**
+     * 根据id查询角色详情，资料、权限和菜单在同一个只读事务中读取，并一起计算版本。
+     */
     RoleProfileVO detail(long roleId);
 
-    /** 新增角色，初始不分配权限和菜单，唯一键冲突时全部回滚。 */
+    /**
+     * 新增角色，初始不分配权限和菜单，唯一键冲突时全部回滚。
+     */
     RoleVO create(RoleCreateDTO request);
 
-    /** 根据id更新角色，加锁后重新检查版本，再完整替换资料和状态；影响授权时撤销全部关联用户的会话。 */
+    /**
+     * 根据id更新角色，加锁后重新检查版本，再完整替换资料和状态；影响授权时撤销全部关联用户的会话。
+     */
     RoleProfileVO update(long roleId, RoleUpdateDTO request, String revision);
 
-    /** 根据id更新角色权限和菜单，两者一起替换；补齐上级菜单并检查实际授予的权限，保留最后一个有效管理员。 */
+    /**
+     * 根据id更新角色权限和菜单，两者一起替换；补齐上级菜单并检查实际授予的权限，保留最后一个有效管理员。
+     */
     RoleProfileVO grants(long roleId, RoleGrantDTO request, String revision);
-    /** 批量删除角色，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量删除角色，单条也走此入口，任一失败则整批回滚。
+     */
     void deleteBatch(List<BatchItemDTO> items);
-    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    /**
+     * 批量修改状态，单条也走此入口，全部版本通过后写入。
+     */
     BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
 
 }

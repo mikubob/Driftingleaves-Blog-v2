@@ -18,7 +18,9 @@ import org.springframework.context.annotation.Configuration;
 @ConditionalOnProperty(prefix = "app.oss", name = "enabled", havingValue = "true")
 public class OssConfig {
 
-    /** 创建 OSS SDK，先检查配置，使用 V4 签名，应用关闭时释放连接。 */
+    /**
+     * 创建 OSS SDK，先检查配置，使用 V4 签名，应用关闭时释放连接。
+     */
     @Bean(destroyMethod = "shutdown")
     public OSS oss(AliOssProperties properties) {
         properties.validateEnabled();
@@ -39,7 +41,9 @@ public class OssConfig {
                 .clientConfiguration(config).build();
     }
 
-    /** 创建 OSS 文件客户端，只允许读写指定前缀下的文件，不返回云端直链。 */
+    /**
+     * 创建 OSS 文件客户端，只允许读写指定前缀下的文件，不返回云端直链。
+     */
     @Bean
     public AliOssClient aliOssClient(OSS oss, AliOssProperties properties) {
         return new AliOssClient(oss, properties);

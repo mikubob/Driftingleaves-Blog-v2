@@ -9,7 +9,9 @@ import java.util.List;
  */
 public record PageResult<T>(int page, int pageSize, String total, String totalPages, List<T> records) {
 
-    /** 转换数据库分页结果，超出末页时保留原页码并返回空列表。 */
+    /**
+     * 转换数据库分页结果，超出末页时保留原页码并返回空列表。
+     */
     public static <T> PageResult<T> from(IPage<T> page) {
         return new PageResult<>(Math.toIntExact(page.getCurrent()), Math.toIntExact(page.getSize()),
                 Long.toString(page.getTotal()),

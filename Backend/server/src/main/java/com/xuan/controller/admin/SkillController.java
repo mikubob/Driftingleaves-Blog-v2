@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.DisplayQueryDTO;
@@ -15,6 +16,7 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,62 +31,116 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台技能管理接口，业务层在同一事务中检查权限和版本、保存资料。
+ * 管理端简历技能接口
  */
+@Slf4j
 @RestController("adminSkillController")
 @RequestMapping("/admin/cv/skills")
 @RequiredArgsConstructor
 public class SkillController {
-    private final ISkillService items;
 
-    /** 分页查询技能，列表不带每条记录的版本，编辑前先查询详情。 */
+    private final ISkillService skillService;
+
+    /**
+     * 分页查询技能列表
+     *
+     * @param query 查询参数
+     * @return 技能分页结果
+     */
     @GetMapping
     @SaCheckPermission("cv:skill:query")
     public Result<PageResult<CvSkill>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
-        return Result.ok(items.listItems(query));
+        log.info("分页查询技能列表: {}", query);
+        PageResult<CvSkill> pageResult = skillService.listItems(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询技能详情，版本放在 X-Revision 响应头。 */
+    /**
+     * 根据 ID 查询技能详情
+     *
+     * @param id 技能 ID
+     * @return 技能详情及 X-Revision 响应头
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("cv:skill:query")
     public ResponseEntity<Result<CvSkill>> detail(@PathVariable String id) {
-        return profile(items.detail(IdUtils.parse(id)));
+        log.info("根据 ID 查询技能详情: id={}", id);
+        ResourceVersion<CvSkill> result = skillService.detail(IdUtils.parse(id));
+        return versionResponse(result);
     }
 
-    /** 新增技能，成功后返回 201 和新版本。 */
+    /**
+     * 新增技能
+     *
+     * @param request 技能创建参数
+     * @return 201 响应、Location 及 X-Revision 响应头
+     */
     @PostMapping
     @SaCheckPermission("cv:skill:create")
     public ResponseEntity<Result<CvSkill>> create(@Valid @RequestBody SkillCreateDTO request) {
-        ResourceVersion<CvSkill> result = items.create(request);
-        return ResponseEntity.created(URI.create("/api/v1/admin/cv/skills/" + result.value().getSkillId()))
-                .header("X-Revision", result.revision()).body(Result.ok(result.value()));
+        log.info("新增技能: {}", request);
+        ResourceVersion<CvSkill> result = skillService.create(request);
+        URI location = URI.create("/api/v1/admin/cv/skills/" + result.value().getSkillId());
+        return ResponseEntity.created(location)
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 
-    /** 根据id更新技能，PUT 要传完整资料，加锁后检查版本。 */
+    /**
+     * 根据 ID 更新技能
+     *
+     * @param id 技能 ID
+     * @param request 技能更新参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的技能详情及新 X-Revision 响应头
+     */
     @PutMapping("/{id}")
     @SaCheckPermission("cv:skill:update")
-    public ResponseEntity<Result<CvSkill>> update(@PathVariable String id, @Valid @RequestBody SkillWriteDTO request,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(items.update(IdUtils.parse(id), request, revision));
+    public ResponseEntity<Result<CvSkill>> update(@PathVariable String id,
+            @Valid @RequestBody SkillWriteDTO request,
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新技能: id={}", id);
+        ResourceVersion<CvSkill> result = skillService.update(IdUtils.parse(id), request, revision);
+        return versionResponse(result);
     }
 
-    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    /**
+     * 批量修改技能展示状态
+     *
+     * @param body 批量状态变更参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-status")
     @SaCheckPermission("cv:skill:update")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
-        return Result.ok(items.changeStatusBatch(body.getItems(), body.getStatus()));
+        log.info("批量修改技能状态: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = skillService.changeStatusBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量删除技能，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除技能
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("cv:skill:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        items.deleteBatch(body.getItems());
+        log.info("批量删除技能: count={}", body.getItems().size());
+        skillService.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 返回技能资料，版本放在 X-Revision 响应头。 */
-    private ResponseEntity<Result<CvSkill>> profile(ResourceVersion<CvSkill> result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
+    /**
+     * 组装带版本头的技能详情响应。
+     *
+     * @param result 技能详情与版本
+     * @return 200 响应
+     */
+    private ResponseEntity<Result<CvSkill>> versionResponse(ResourceVersion<CvSkill> result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 }

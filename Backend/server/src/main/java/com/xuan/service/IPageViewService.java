@@ -12,9 +12,13 @@ import java.util.List;
  */
 public interface IPageViewService extends IService<BlogPageView> {
 
-    /** 分页查询后台浏览记录，需要 ALL 范围，按指定字段筛选。 */
+    /**
+     * 分页查询后台浏览记录，需要 ALL 范围，按指定字段筛选。
+     */
     PageResult<BlogPageView> listViews(PageViewQueryDTO query);
 
-    /** 批量删除浏览记录，单条也走此入口，所有数据库修改一起提交。 */
+    /**
+     * 批量删除浏览记录，单条也走此入口，所有数据库修改一起提交。
+     */
     void deleteBatch(List<String> ids);
 }

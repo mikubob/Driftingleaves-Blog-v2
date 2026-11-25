@@ -12,16 +12,24 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 public @interface RateLimit {
 
-    /** 同名操作共用一个限流窗口，名称由服务端确定。 */
+    /**
+     * 同名操作共用一个限流窗口，名称由服务端确定。
+     */
     String value();
 
-    /** 每项统计在时间窗口内允许的请求次数。 */
+    /**
+     * 每项统计在时间窗口内允许的请求次数。
+     */
     int limit();
 
-    /** 窗口秒数。 */
+    /**
+     * 窗口秒数。
+     */
     int windowSeconds() default 60;
 
-    /** 除了 IP 还要检查哪种身份；用 USER 或 TOKEN 时必须先登录。 */
+    /**
+     * 除了 IP 还要检查哪种身份；用 USER 或 TOKEN 时必须先登录。
+     */
     Dimension dimension() default Dimension.IP;
 
     /**

@@ -50,7 +50,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
     private final JsonMapper json;
     private final Clock clock;
     private final ExecutorService executor;
-    /** 保护成员状态和每个连接的待发队列，异步查询完成后也要拿锁复核。 */
+    /**
+     * 保护成员状态和每个连接的待发队列，异步查询完成后也要拿锁复核。
+     */
     private final ReentrantLock lock = new ReentrantLock();
     private final Map<String, Member> members = new LinkedHashMap<>();
     private final ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(
@@ -58,7 +60,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
     private Counts published = new Counts(0, 0);
     private boolean stopped;
 
-    /** 初始化在线连接，专用执行器由容器在本组件停止后关闭。 */
+    /**
+     * 初始化在线连接，专用执行器由容器在本组件停止后关闭。
+     */
     public OnlineWebSocketHandler(OnlineTicketStore tickets, OnlineIdentityPolicy identities,
             JsonMapper json, Clock clock, @Qualifier("onlineExecutor") ExecutorService executor) {
         this.tickets = tickets;
@@ -68,13 +72,17 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         this.executor = executor;
     }
 
-    /** 启动定期回收；定时线程只检查内存状态和分派任务，不等待外部查询。 */
+    /**
+     * 启动定期回收；定时线程只检查内存状态和分派任务，不等待外部查询。
+     */
     @PostConstruct
     public void start() {
         timer.scheduleWithFixedDelay(this::sweep, 5, 5, TimeUnit.SECONDS);
     }
 
-    /** 登记新连接并设置消息大小限制，五秒内未完成加入就关闭。 */
+    /**
+     * 登记新连接并设置消息大小限制，五秒内未完成加入就关闭。
+     */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         session.setTextMessageSizeLimit(1024);
@@ -93,7 +101,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         close(member, CloseStatus.GOING_AWAY, null);
     }
 
-    /** 接收消息，检查字段和频率；加入查询异步执行，查询期间不接受第二次加入。 */
+    /**
+     * 接收消息，检查字段和频率；加入查询异步执行，查询期间不接受第二次加入。
+     */
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) {
         lock.lock();
@@ -103,6 +113,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
             try {
+                // 1. 校验单条消息大小、连接存活状态以及每分钟 30 条的频率限制。
                 long now = clock.millis();
                 if (message.getPayload().getBytes(StandardCharsets.UTF_8).length > 1024) {
                     discard(member, CloseStatus.TOO_BIG_TO_PROCESS);
@@ -117,6 +128,8 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
                 if (++member.messages > 30) {
                     throw new BusinessException(429, "RATE_LIMITED", "消息过于频繁");
                 }
+
+                // 2. 解析消息类型并分派：join 交由虚拟线程异步核验票据，ping 刷新心跳并回发 pong。
                 JsonNode body = json.readTree(message.getPayload());
                 if (body == null || !body.isObject() || !body.path("type").isString()) {
                     throw invalidMessage();
@@ -149,7 +162,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 拒绝二进制消息，在线统计只接受文本消息。 */
+    /**
+     * 拒绝二进制消息，在线统计只接受文本消息。
+     */
     @Override
     protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
         lock.lock();
@@ -163,7 +178,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 移除已关闭的连接，并更新在线人数。 */
+    /**
+     * 移除已关闭的连接，并更新在线人数。
+     */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         lock.lock();
@@ -178,7 +195,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 处理连接传输错误，尽量发送错误后关闭连接。 */
+    /**
+     * 处理连接传输错误，尽量发送错误后关闭连接。
+     */
     @Override
     public void handleTransportError(WebSocketSession session, Throwable error) {
         lock.lock();
@@ -192,7 +211,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 定期回收过期连接，登录身份交给虚拟线程重查，同一连接不重复启动查询。 */
+    /**
+     * 定期回收过期连接，登录身份交给虚拟线程重查，同一连接不重复启动查询。
+     */
     public void sweep() {
         lock.lock();
         try {
@@ -220,7 +241,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 停止定时任务并移除全部成员，释放锁后关闭连接，执行器再由容器等待结束。 */
+    /**
+     * 停止定时任务并移除全部成员，释放锁后关闭连接，执行器再由容器等待结束。
+     */
     @PreDestroy
     public void stop() {
         List<Member> closing;
@@ -245,8 +268,11 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 在成员锁外核验票据和原身份，消费完成后重新检查连接及五秒加入期限。 */
+    /**
+     * 在成员锁外核验票据和原身份，消费完成后重新检查连接及五秒加入期限。
+     */
     private void join(Member member, String ticket) {
+        // 1. 在成员锁外读取票据、校验来源站点及账号会话，并一次性消费票据。
         OnlineBinding binding = null;
         BusinessException failure = null;
         try {
@@ -265,6 +291,8 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         } catch (RuntimeException error) {
             failure = unavailable();
         }
+
+        // 2. 重新加锁确认连接仍在线且未超 5 秒加入期限，正式登记成员并广播在线人数。
         lock.lock();
         try {
             // 查询期间可能已经超时或断开，消费过的票据不恢复，旧任务不能重新登记。
@@ -294,7 +322,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 在成员锁外检查原会话与账号，完成时重查当前连接和心跳期限。 */
+    /**
+     * 在成员锁外检查原会话与账号，完成时重查当前连接和心跳期限。
+     */
     private void checkIdentity(Member member) {
         BusinessException failure = null;
         try {
@@ -325,7 +355,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 检查当前期限，迟到心跳不能恢复在线状态；调用方持有成员锁。 */
+    /**
+     * 检查当前期限，迟到心跳不能恢复在线状态；调用方持有成员锁。
+     */
     private void requireAlive(Member member, long now) {
         if (member.binding == null && now - member.openedAt >= 5000) {
             throw invalidMessage();
@@ -337,7 +369,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 加入期限到达时仍未加入就关闭，不登记任何人数。 */
+    /**
+     * 加入期限到达时仍未加入就关闭，不登记任何人数。
+     */
     private void expireJoin(String id) {
         lock.lock();
         try {
@@ -350,7 +384,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 从仍登记的连接推导人数，不维护容易重复扣减的独立连接计数。 */
+    /**
+     * 从仍登记的连接推导人数，不维护容易重复扣减的独立连接计数。
+     */
     private Counts counts() {
         Set<Long> users = new HashSet<>();
         Set<String> guests = new HashSet<>();
@@ -371,7 +407,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         return new Counts(users.size(), guests.size());
     }
 
-    /** 持有成员锁按顺序入队；缓冲超限先移除连接，再广播最新人数。 */
+    /**
+     * 持有成员锁按顺序入队；缓冲超限先移除连接，再广播最新人数。
+     */
     private void publish(Member joining) {
         while (true) {
             Counts current = counts();
@@ -397,7 +435,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 将消息放入当前连接队列，只允许一个发送任务，慢连接不阻塞其他成员。 */
+    /**
+     * 将消息放入当前连接队列，只允许一个发送任务，慢连接不阻塞其他成员。
+     */
     private boolean enqueue(Member member, String message) {
         TextMessage frame = new TextMessage(message);
         if (member.pendingBytes + frame.getPayloadLength() > SEND_BUFFER_BYTES) {
@@ -410,7 +450,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         return true;
     }
 
-    /** 在成员锁内启动发送任务，避免两个线程同时发送同一连接。 */
+    /**
+     * 在成员锁内启动发送任务，避免两个线程同时发送同一连接。
+     */
     private void startSending(Member member) {
         if (!member.sending) {
             member.sending = true;
@@ -418,7 +460,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 按入队顺序在锁外发送，失败后移除成员并重新发布人数。 */
+    /**
+     * 按入队顺序在锁外发送，失败后移除成员并重新发布人数。
+     */
     private void drain(Member member) {
         while (true) {
             TextMessage message;
@@ -462,7 +506,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** 移除成员并安排错误包与关闭操作，已移除的连接不重复处理。 */
+    /**
+     * 移除成员并安排错误包与关闭操作，已移除的连接不重复处理。
+     */
     private void fail(Member member, BusinessException error, CloseStatus status) {
         if (members.get(member.session.getId()) != member) {
             return;
@@ -472,7 +518,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         publish(null);
     }
 
-    /** 在成员锁内先移除并清空旧消息，再由该连接的发送任务关闭。 */
+    /**
+     * 在成员锁内先移除并清空旧消息，再由该连接的发送任务关闭。
+     */
     private void discard(Member member, CloseStatus status) {
         if (!members.remove(member.session.getId(), member)) {
             return;
@@ -484,7 +532,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         startSending(member);
     }
 
-    /** 在成员锁外尽量发送错误包并关闭，传输损坏时仍完成状态清理。 */
+    /**
+     * 在成员锁外尽量发送错误包并关闭，传输损坏时仍完成状态清理。
+     */
     private void close(Member member, CloseStatus status, String error) {
         try {
             if (error != null && member.session.isOpen()) {
@@ -500,34 +550,48 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         }
     }
 
-    /** WebSocket 单独增加消息类型，保持 HTTP Result 不变。 */
+    /**
+     * WebSocket 单独增加消息类型，保持 HTTP Result 不变。
+     */
     private String envelope(String type, String code, String msg, Object data) {
         return json.writeValueAsString(new Envelope(type, code, msg, data, List.of()));
     }
 
-    /** 返回协议错误，不回显客户端发送内容。 */
+    /**
+     * 返回协议错误，不回显客户端发送内容。
+     */
     private BusinessException invalidMessage() {
         return new BusinessException(400, "VALIDATION_ERROR", "在线消息不符合协议");
     }
 
-    /** 返回依赖错误，不暴露连接或身份信息。 */
+    /**
+     * 返回依赖错误，不暴露连接或身份信息。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "在线连接暂不可用");
     }
 
-    /** 当前三项人数，用于判断是否需要广播。 */
+    /**
+     * 当前三项人数，用于判断是否需要广播。
+     */
     private record Counts(int users, int guests) {
     }
 
-    /** 发送给前端的在线人数，不包含成员身份。 */
+    /**
+     * 发送给前端的在线人数，不包含成员身份。
+     */
     private record Snapshot(String onlineCount, String userCount, String guestCount, LocalDateTime serverTime) {
     }
 
-    /** 封装在线统计消息，包含消息类型、状态、数据和错误信息。 */
+    /**
+     * 封装在线统计消息，包含消息类型、状态、数据和错误信息。
+     */
     private record Envelope(String type, String code, String msg, Object data, List<Object> errors) {
     }
 
-    /** 单个连接的状态和待发消息，除锁外网络操作外均由成员锁保护。 */
+    /**
+     * 单个连接的状态和待发消息，除锁外网络操作外均由成员锁保护。
+     */
     private static class Member {
         final WebSocketSession session;
         final long openedAt;
@@ -545,7 +609,9 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         CloseStatus closeStatus;
         String closeMessage;
 
-        /** 建连时间用于五秒加入期限，业务消息另有自己的窗口。 */
+        /**
+         * 建连时间用于五秒加入期限，业务消息另有自己的窗口。
+         */
         Member(WebSocketSession session, long now) {
             this.session = session;
             openedAt = now;

@@ -10,7 +10,9 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
-/** 查找讨论主记录并计算回复的分页位置。 */
+/**
+ * 查找讨论主记录并计算回复的分页位置。
+ */
 public final class DiscussionLocationUtils {
 
     private static final int PAGE_SIZE = 10;
@@ -18,7 +20,9 @@ public final class DiscussionLocationUtils {
     private DiscussionLocationUtils() {
     }
 
-    /** 查找顶层节点，父链断开或有环时无法定位。 */
+    /**
+     * 查找顶层节点，父链断开或有环时无法定位。
+     */
     public static <T> Long rootId(long id, Map<Long, T> nodes, Function<T, Long> parentId) {
         Set<Long> seen = new HashSet<>();
         Long currentId = id;
@@ -36,7 +40,9 @@ public final class DiscussionLocationUtils {
         return null;
     }
 
-    /** 按节点原有顺序分页，未指定页码时定位当前记录，父链断开或有环时返回空。 */
+    /**
+     * 按节点原有顺序分页，未指定页码时定位当前记录，父链断开或有环时返回空。
+     */
     public static <T> ConversationPage conversationPage(long id, List<T> nodes, Function<T, Long> nodeId,
                                                         Function<T, Long> parentId,
                                                         DiscussionConversationQueryDTO query) {
@@ -72,11 +78,15 @@ public final class DiscussionLocationUtils {
         return new ConversationPage(root, page, Integer.toString(total), Long.toString(totalPages), replyIds);
     }
 
-    /** 保存主记录id、分页统计和当前页的回复id。 */
+    /**
+     * 保存主记录id、分页统计和当前页的回复id。
+     */
     public record ConversationPage(long rootId, int page, String total, String totalPages, List<Long> replyIds) {
     }
 
-    /** 按前台根节点的顺序计算固定每页10条的页码。 */
+    /**
+     * 按前台根节点的顺序计算固定每页10条的页码。
+     */
     public static Map<Long, Integer> rootPages(List<Long> orderedRoots) {
         Map<Long, Integer> pages = new HashMap<>();
         int position = 0;

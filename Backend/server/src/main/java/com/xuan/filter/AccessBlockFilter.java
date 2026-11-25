@@ -1,5 +1,7 @@
 package com.xuan.filter;
 
+import com.xuan.constant.ErrorCode;
+import com.xuan.constant.HttpConstants;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.VisitorMapper;
 import com.xuan.properties.AuthProperties;
@@ -23,7 +25,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 
-/** 在读取请求体和执行业务前检查客户端 IP 封禁。 */
+/**
+ * 在读取请求体和执行业务前检查客户端 IP 封禁。
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 15)
 @RequiredArgsConstructor
@@ -35,13 +39,17 @@ public class AccessBlockFilter extends OncePerRequestFilter {
     private final JsonMapper json;
     private final Clock clock;
 
-    /** 跳过 OPTIONS 预检，其他请求都检查封禁，包括公开查询和 WebSocket 握手。 */
+    /**
+     * 跳过 OPTIONS 预检，其他请求都检查封禁，包括公开查询和 WebSocket 握手。
+     */
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         return "OPTIONS".equals(request.getMethod());
     }
 
-    /** 检查 IP 封禁，被封禁或封禁检查失败时返回统一错误，不继续执行业务。 */
+    /**
+     * 检查 IP 封禁，被封禁或封禁检查失败时返回统一错误，不继续执行业务。
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
@@ -51,10 +59,10 @@ public class AccessBlockFilter extends OncePerRequestFilter {
             // 手动封禁保留后台入口，管理员可以从同一网络解封。
             if (!request.getServletPath().startsWith("/admin/")
                     && visitors.hasActiveIpBlock(ip, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
-                throw new BusinessException(403, "ACCESS_BLOCKED", "当前 IP 已被封禁");
+                throw new BusinessException(403, ErrorCode.ACCESS_BLOCKED, "当前 IP 已被封禁");
             }
         } catch (DataAccessException exception) {
-            reject(response, new BusinessException(503, "SERVICE_UNAVAILABLE", "请求保护暂不可用"));
+            reject(response, new BusinessException(503, ErrorCode.SERVICE_UNAVAILABLE, "请求保护暂不可用"));
             return;
         } catch (BusinessException exception) {
             reject(response, exception);
@@ -63,14 +71,16 @@ public class AccessBlockFilter extends OncePerRequestFilter {
         chain.doFilter(request, response);
     }
 
-    /** 返回封禁或检查失败的统一 JSON，只有自动封禁带重试时间。 */
+    /**
+     * 返回封禁或检查失败的统一 JSON，只有自动封禁带重试时间。
+     */
     private void reject(HttpServletResponse response, BusinessException exception) throws IOException {
         response.setStatus(exception.getStatus());
-        response.setContentType("application/json;charset=UTF-8");
-        response.setHeader("Cache-Control", "no-store");
-        response.setHeader("Referrer-Policy", "no-referrer");
+        response.setContentType(HttpConstants.APPLICATION_JSON_UTF8);
+        response.setHeader(HttpConstants.HEADER_CACHE_CONTROL, HttpConstants.CACHE_NO_STORE);
+        response.setHeader(HttpConstants.HEADER_REFERRER_POLICY, HttpConstants.REFERRER_NO_REFERRER);
         if (exception.getRetryAfter() != null) {
-            response.setHeader("Retry-After", exception.getRetryAfter().toString());
+            response.setHeader(HttpConstants.HEADER_RETRY_AFTER, exception.getRetryAfter().toString());
         }
         response.getWriter().write(json.writeValueAsString(
                 Result.error(exception.getCode(), exception.getMessage())));

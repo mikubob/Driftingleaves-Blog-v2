@@ -25,14 +25,17 @@ import com.xuan.model.MessageRow;
 import com.xuan.model.ResourceVersion;
 import com.xuan.notification.SubscriptionNotifier;
 import com.xuan.policy.MessageVisibilityPolicy;
+import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IMessageService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.store.CaptchaStore;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.DiscussionLocationUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.IpUtils;
 import com.xuan.utils.MarkdownUtils;
 import com.xuan.utils.QueryTimeUtils;
 import com.xuan.utils.RevisionUtils;
@@ -44,6 +47,7 @@ import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.DiscussionReplyTargetVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.cache.annotation.CacheEvict;
@@ -85,9 +89,43 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     private final SubscriptionNotifier notifications;
     private final JsonMapper json;
     private final IpLocationResolver locations;
+    private final CaptchaStore captchaStore;
+    private final AuthProperties authProperties;
     private final ObjectProvider<IMessageService> self;
 
-    /** 分页查询可见根留言或整组回复。 */
+    /**
+     * 校验算术验证码并发表留言，先在事务外核验验证码与客户端信息，再调用事务方法落库。
+     *
+     * @param request 留言创建参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 新建留言视图
+     */
+    @Override
+    public MessagePrivateVO createWithCaptcha(MessageCreateDTO request, HttpServletRequest httpRequest) {
+        captchaStore.verifyArithmetic(httpRequest.getHeader("X-Captcha-Id"), httpRequest.getHeader("X-Captcha-Code"));
+        String clientIp = IpUtils.clientIp(httpRequest, authProperties.getTrustedProxies());
+        String userAgent = httpRequest.getHeader("User-Agent");
+        return self.getObject().create(request, clientIp, userAgent);
+    }
+
+    /**
+     * 在后台回复留言，先解析可信客户端 IP 与 User-Agent，再调用事务方法落库。
+     *
+     * @param id 目标留言 ID
+     * @param request 回复内容参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 新建回复视图
+     */
+    @Override
+    public MessagePrivateVO replyAdmin(long id, MessageEditDTO request, HttpServletRequest httpRequest) {
+        String clientIp = IpUtils.clientIp(httpRequest, authProperties.getTrustedProxies());
+        String userAgent = httpRequest.getHeader("User-Agent");
+        return self.getObject().replyAdmin(id, request, clientIp, userAgent);
+    }
+
+    /**
+     * 分页查询可见根留言或整组回复。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @PublicCacheRead("messages")
@@ -99,21 +137,28 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return loadPublicMessages(query, viewer);
     }
 
-    /** 只用匿名身份查询首页，避免把当前用户可见的留言写入公共缓存。 */
+    /**
+     * 只用匿名身份查询首页，避免把当前用户可见的留言写入公共缓存。
+     */
     @Override
     @Cacheable(cacheNames = "messages", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)")
     public PageResult<MessagePublicVO> cachedAnonymousHome() {
         return loadPublicMessages(ANONYMOUS_HOME, null);
     }
 
-    /** 按读者身份筛选留言及回复，再分页组装结果。 */
+    /**
+     * 按读者身份筛选留言及回复，再分页组装结果。
+     */
     private PageResult<MessagePublicVO> loadPublicMessages(MessagePublicQueryDTO query, Long viewer) {
+        // 1. 加载全部留言节点并建立索引，校验目标父留言对当前读者可见。
         Long parent = IdUtils.parse(query.parentId());
         List<MessageNode> nodes = messages.nodes();
         Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
         if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
             throw missing();
         }
+
+        // 2. 构建可见留言树，计算可回复集合并自底向上累计可见回复数。
         Map<Long, List<Long>> children = new HashMap<>();
         for (MessageNode node : nodes) {
             if (MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer)) {
@@ -130,13 +175,14 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             ordered.addAll(children.getOrDefault(node.getMessageId(), List.of()));
         }
         Map<Long, Long> replyCounts = new HashMap<>();
-        // 从最深层向上累计，只统计当前读者能看见的回复。
         for (int position = ordered.size() - 1; position >= 0; position--) {
             MessageNode node = index.get(ordered.get(position));
             if (node.getParentId() != null) {
                 replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getMessageId(), 0L) + 1, Long::sum);
             }
         }
+
+        // 3. 切出当前页留言 ID，批量查询详情后组装分页结果。
         List<Long> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
         if (parent != null) {
             for (int position = 0; position < selected.size(); position++) {
@@ -157,7 +203,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 Long.toString((visible.size() + (long) query.pageSize() - 1) / query.pageSize()), rows);
     }
 
-    /** 发表留言。 */
+    /**
+     * 发表留言。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "messages", allEntries = true)
@@ -197,7 +245,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), actor)), actor);
     }
 
-    /** 分页查询本人留言及其前台跳转位置。 */
+    /**
+     * 分页查询本人留言及其前台跳转位置。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query) {
@@ -226,7 +276,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }));
     }
 
-    /** 根据id查询本人留言及版本。 */
+    /**
+     * 根据id查询本人留言及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> ownDetail(long id) {
@@ -234,7 +286,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(required(messages.scoped(id, actor)), actor);
     }
 
-    /** 根据id删除本人留言及全部子回复。 */
+    /**
+     * 根据id删除本人留言及全部子回复。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = "messages", allEntries = true)
@@ -250,7 +304,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         deleteTree(id, true);
     }
 
-    /** 分页查询后台留言或一层回复，保留ALL及私密查询要求。 */
+    /**
+     * 分页查询后台留言或一层回复，保留ALL及私密查询要求。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query) {
@@ -273,7 +329,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                         .convert(row -> privateView(row, actor)));
     }
 
-    /** 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。 */
+    /**
+     * 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public DiscussionConversationVO<MessagePrivateVO> conversation(long id, DiscussionConversationQueryDTO query) {
@@ -293,7 +351,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 page.page(), query.pageSize(), page.total(), page.totalPages(), records);
     }
 
-    /** 根据id查询后台留言及版本。 */
+    /**
+     * 根据id查询后台留言及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<MessagePrivateVO> adminDetail(long id) {
@@ -302,7 +362,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return profile(messages.visibleRows(List.of(id)).getFirst(), actor);
     }
 
-    /** 在后台回复留言。 */
+    /**
+     * 在后台回复留言。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "reply", target = "blog:message", permission = "blog:message:review", targetIdArgument = 0)
@@ -338,7 +400,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return privateView(required(messages.scoped(row.getMessageId(), null)), actor);
     }
 
-    /** 审核或删除留言前，锁住配置和全部上级留言；关闭留言开关后，仍允许管理历史留言。 */
+    /**
+     * 审核或删除留言前，锁住配置和全部上级留言；关闭留言开关后，仍允许管理历史留言。
+     */
     private List<BlogMessage> lockAdmin(long id, String operation) {
         long actor = requireAdmin(operation);
         users.lockById(actor);
@@ -348,7 +412,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return lockPath(id, operation, true);
     }
 
-    /** 锁住目标留言和全部上级留言，回复关系不可改，从根到目标依次加锁，遇到循环或缺失记录时拒绝操作。 */
+    /**
+     * 锁住目标留言和全部上级留言，回复关系不可改，从根到目标依次加锁，遇到循环或缺失记录时拒绝操作。
+     */
     private List<BlogMessage> lockPath(Long id, String operation, boolean admin) {
         if (id == null) {
             return List.of();
@@ -384,7 +450,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return path;
     }
 
-    /** 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审或驳回的目标。 */
+    /**
+     * 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审或驳回的目标。
+     */
     private void requireReplyable(List<BlogMessage> path, long actor, boolean admin) {
         if (CollUtil.isEmpty(path)) {
             return;
@@ -399,12 +467,16 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 判断留言是否私密，只要有上级留言是私密的，客户端传 0 也不能改为公开。 */
+    /**
+     * 判断留言是否私密，只要有上级留言是私密的，客户端传 0 也不能改为公开。
+     */
     private boolean secret(List<BlogMessage> path) {
         return path.stream().anyMatch(row -> row.getIsSecret() == 1);
     }
 
-    /** 读取留言配置，与后台维护使用同一条记录，不另加缓存。 */
+    /**
+     * 读取留言配置，与后台维护使用同一条记录，不另加缓存。
+     */
     private BlogSiteConfig lockConfig() {
         BlogSiteConfig row = configs.lockByKey("message");
         if (row == null) {
@@ -413,7 +485,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return row;
     }
 
-    /** 两项布尔值之外都算部署错误，不能用默认值悄悄放开留言。 */
+    /**
+     * 两项布尔值之外都算部署错误，不能用默认值悄悄放开留言。
+     */
     private JsonNode policy(BlogSiteConfig row) {
         try {
             if (row.getIsPublic() != 0 || row.getConfigValue().getBytes(StandardCharsets.UTF_8).length > 16384) {
@@ -430,14 +504,18 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 关闭只限制新增和回复。 */
+    /**
+     * 关闭只限制新增和回复。
+     */
     private void requireEnabled(JsonNode policy) {
         if (!policy.get("enabled").asBoolean()) {
             throw new BusinessException(409, "STATE_CONFLICT", "留言已关闭");
         }
     }
 
-    /** 每个锁等待结束都重查原Token和启用身份。 */
+    /**
+     * 每个锁等待结束都重查原Token和启用身份。
+     */
     private long requireMember(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -447,7 +525,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return actor;
     }
 
-    /** 查询、审核、管理删除分别取自己的ALL。 */
+    /**
+     * 查询、审核、管理删除分别取自己的ALL。
+     */
     private long requireAdmin(String operation) {
         long actor = requireMember(null);
         authorization.requireScope(actor, "admin:access");
@@ -457,7 +537,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return actor;
     }
 
-    /** 删除留言及全部子回复，配置锁阻止新增回复；锁住待删留言并重新检查权限后，从子回复向父留言依次删除。 */
+    /**
+     * 删除留言及全部子回复，配置锁阻止新增回复；锁住待删留言并重新检查权限后，从子回复向父留言依次删除。
+     */
     private void deleteTree(long id, boolean own) {
         Map<Long, List<Long>> children = new HashMap<>();
         for (MessageNode node : messages.nodes()) {
@@ -481,19 +563,25 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
     }
 
-    /** 计算留言版本，不包含昵称、头像和审计时间。 */
+    /**
+     * 计算留言版本，不包含昵称、头像和审计时间。
+     */
     private String revision(BlogMessage row) {
         return "\"" + TokenUtils.digest(json.writeValueAsString(
                 Arrays.asList(row.getUserId(), row.getParentId(), row.getContent(), row.getContentFormat(),
                         row.getIsSecret(), row.getNotifyReply(), row.getStatus(), row.getEditedAt()))) + "\"";
     }
 
-    /** 整理本人留言资料，复用公开响应中的已处理字段，额外返回回复通知设置。 */
+    /**
+     * 整理本人留言资料，复用公开响应中的已处理字段，额外返回回复通知设置。
+     */
     private MessagePrivateVO privateView(MessageRow row, Long viewer) {
         return privateView(row, viewer, null, null);
     }
 
-    /** 组装留言响应，跳转位置仅由本人列表计算。 */
+    /**
+     * 组装留言响应，跳转位置仅由本人列表计算。
+     */
     private MessagePrivateVO privateView(MessageRow row, Long viewer, Long rootParentId, Integer page) {
         MessagePublicVO value = publicView(row, viewer);
         return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
@@ -505,7 +593,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 rootParentId, page);
     }
 
-    /** 组装留言展示内容，纯文本转义并保留换行。 */
+    /**
+     * 组装留言展示内容，纯文本转义并保留换行。
+     */
     private MessagePublicVO publicView(MessageRow row, Long viewer) {
         String content = row.getContent();
         int format = row.getContentFormat();
@@ -523,12 +613,16 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 row.isSiteAuthor(), row.isSiteAdmin());
     }
 
-    /** 返回当前留言资料及对应版本。 */
+    /**
+     * 返回当前留言资料及对应版本。
+     */
     private ResourceVersion<MessagePrivateVO> profile(MessageRow row, Long viewer) {
         return new ResourceVersion<>(privateView(row, viewer), revision(row));
     }
 
-    /** 检查留言是否存在，必须先由 SQL 限制归属范围。 */
+    /**
+     * 检查留言是否存在，必须先由 SQL 限制归属范围。
+     */
     private MessageRow required(MessageRow row) {
         if (row == null) {
             throw missing();
@@ -536,27 +630,36 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return row;
     }
 
-    /** 不向前台区分私密、隐藏或不存在。 */
+    /**
+     * 不向前台区分私密、隐藏或不存在。
+     */
     private BusinessException missing() {
         return new BusinessException(404, "NOT_FOUND", "留言不存在");
     }
 
-    /** 状态不允许当前操作。 */
+    /**
+     * 状态不允许当前操作。
+     */
     private BusinessException conflict() {
         return new BusinessException(409, "STATE_CONFLICT", "留言状态不允许此操作");
     }
 
-    /** 不回显配置值。 */
+    /**
+     * 不回显配置值。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "留言配置不可用");
     }
 
-    /** 批量审核留言，同批通过的上级留言可供下级回复通过检查；未选中的上级留言不可见时，整批拒绝通过。 */
+    /**
+     * 批量审核留言，同批通过的上级留言可供下级回复通过检查；未选中的上级留言不可见时，整批拒绝通过。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-review", target = "blog:message", permission = "blog:message:review")
     @CacheEvict(cacheNames = "messages", allEntries = true)
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
+        // 1. 按 ID 升序加锁全部目标留言，校验版本；审核通过时检查所有未选中的祖先是否已可见。
         var sorted = BatchUtils.sorted(items);
         Set<Long> selected = new HashSet<>();
         for (var item : items) {
@@ -577,6 +680,8 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             }
             rows.put(id, row);
         }
+
+        // 2. 全部校验通过后再依次更新状态、登记审核通过通知并收集新版本。
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.id());
@@ -594,7 +699,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量删除留言，先检查所有选中的记录，再删除这些留言及其子回复；保留未选中的上级和同级留言。 */
+    /**
+     * 批量删除留言，先检查所有选中的记录，再删除这些留言及其子回复；保留未选中的上级和同级留言。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:message", permission = "blog:message:moderate")

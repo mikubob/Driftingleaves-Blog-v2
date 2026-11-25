@@ -33,14 +33,18 @@ public class LinkWriteDTO extends LinkApplicationDTO {
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
-    /** 保存头像地址，记录字段是否提交。 */
+    /**
+     * 保存头像地址，记录字段是否提交。
+     */
     @Override
     public void setAvatar(String value) {
         present.add("avatar");
         super.setAvatar(value);
     }
 
-    /** 保存友站简介，记录字段是否提交。 */
+    /**
+     * 保存友站简介，记录字段是否提交。
+     */
     @Override
     public void setDescription(String value) {
         present.add("description");
@@ -52,7 +56,9 @@ public class LinkWriteDTO extends LinkApplicationDTO {
         sortOrder = value;
     }
 
-    /** 区分保留原绑定和显式解除绑定。 */
+    /**
+     * 区分保留原绑定和显式解除绑定。
+     */
     public void setApplicantId(Long value) {
         applicantIdPresent = true;
         applicantId = value;
@@ -62,7 +68,9 @@ public class LinkWriteDTO extends LinkApplicationDTO {
         return applicantIdPresent;
     }
 
-    /** 可空字段也得显式传入，防止漏传时把现有资料覆盖掉。 */
+    /**
+     * 可空字段也得显式传入，防止漏传时把现有资料覆盖掉。
+     */
     @AssertTrue(groups = Replace.class, message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isCompleteReplace() {
         return present.size() == 3;

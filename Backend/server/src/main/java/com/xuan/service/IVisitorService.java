@@ -16,16 +16,26 @@ import java.util.List;
  */
 public interface IVisitorService extends IService<BlogVisitor> {
 
-    /** 分页查询访客资料及当前保留的浏览次数，需要 ALL 范围。 */
+    /**
+     * 分页查询访客资料及当前保留的浏览次数，需要 ALL 范围。
+     */
     PageResult<VisitorVO> listVisitors(VisitorQueryDTO query);
 
-    /** 根据id查询访客详情，版本包含封禁状态及目标地址。 */
+    /**
+     * 根据id查询访客详情，版本包含封禁状态及目标地址。
+     */
     ResourceVersion<VisitorVO> detail(long id);
 
-    /** 批量删除访客，单条也走此入口，所有数据库修改一起提交。 */
+    /**
+     * 批量删除访客，单条也走此入口，所有数据库修改一起提交。
+     */
     void deleteBatch(List<BatchItemDTO> items);
-    /** 批量封禁访客 IP，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量封禁访客 IP，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until);
-    /** 批量解除访客限制，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量解除访客限制，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO unblockBatch(List<BatchItemDTO> items);
 }

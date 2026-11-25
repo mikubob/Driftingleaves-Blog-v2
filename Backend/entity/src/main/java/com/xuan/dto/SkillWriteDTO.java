@@ -51,7 +51,9 @@ public class SkillWriteDTO {
         sortOrder = value;
     }
 
-    /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
+    /**
+     * 创建和替换都必须提供可空字段，防止漏传被当作清空。
+     */
     @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
         return present.size() == 4;

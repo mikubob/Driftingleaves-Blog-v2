@@ -6,6 +6,8 @@ import cn.dev33.satoken.interceptor.SaInterceptor;
 import cn.dev33.satoken.stp.StpLogic;
 import cn.dev33.satoken.stp.StpUtil;
 import com.xuan.client.OAuthProviderClient;
+import com.xuan.constant.ErrorCode;
+import com.xuan.constant.HttpConstants;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.PublicSiteProperties;
 import com.xuan.result.Result;
@@ -83,7 +85,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
     private final Environment environment;
     private final ObjectProvider<HttpServletRequest> requests;
 
-    /** 让 Sa-Token 只使用本应用已经选好的请求会话。 */
+    /**
+     * 让 Sa-Token 只使用本应用已经选好的请求会话。
+     */
     @Bean
     public StpLogic webStpLogic() {
         return new StpLogic(StpUtil.TYPE) {
@@ -118,7 +122,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 if (isAdminBusinessPath(request.getServletPath()) && handler instanceof HandlerMethod method
                         && !AnnotatedElementUtils.hasAnnotation(method.getMethod(), SaCheckPermission.class)
                         && !AnnotatedElementUtils.hasAnnotation(method.getBeanType(), SaCheckPermission.class)) {
-                    throw new BusinessException(403, "FORBIDDEN", "后台入口未声明业务权限");
+                    throw new BusinessException(403, ErrorCode.FORBIDDEN, "后台入口未声明业务权限");
                 }
                 return true;
             }
@@ -134,6 +138,7 @@ public class AuthWebConfig implements WebMvcConfigurer {
             return;
         }
 
+        // 2. 写请求核对同源 Origin/Referer；放行在线统计 WebSocket 握手。
         String path = request.getServletPath();
         String method = request.getMethod();
         WebSession side = WebSession.forPath(path);
@@ -147,13 +152,13 @@ public class AuthWebConfig implements WebMvcConfigurer {
 
         boolean callback = path.matches("/(admin|blog)/auth/oauth/[^/]+/callback");
         if (callback && "HEAD".equals(method)) {
-            throw new BusinessException(405, "METHOD_NOT_ALLOWED", "请求方法不被允许");
+            throw new BusinessException(405, ErrorCode.METHOD_NOT_ALLOWED, "请求方法不被允许");
         }
         if ("GET".equals(method) && ONLINE_SOCKETS.contains(path)) {
             return;
         }
 
-        // 可选登录接口只有在页面明确提供预期账号时才使用登录 Cookie。
+        // 3. 按需加载本端登录 Cookie；可选登录接口仅在页面明确提供预期账号时启用会话。
         boolean publicRoute = isPublic(method, path);
         boolean optional = optionalSession(method, path);
         boolean logout = "POST".equals(method) && path.matches("/(admin|blog)/auth/logout");
@@ -179,14 +184,14 @@ public class AuthWebConfig implements WebMvcConfigurer {
             return;
         }
 
-        // 两端可以发起授权，回调由业务层按登记地址和流程所属端处理。
+        // 4. 第三方授权发起与回调只检查平台是否启用，具体流程由业务层处理。
         boolean authorize = "POST".equals(method) && path.matches("/(admin|blog)/auth/oauth/[^/]+/authorize");
         if (authorize || (callback && "GET".equals(method))) {
             providers.requireEnabled(path.split("/")[4]);
             return;
         }
 
-        // 4. 其余请求都实时检查登录和账号状态，后台再检查 admin:access。
+        // 5. 其余请求实时检查登录和账号状态，后台接口再检查 admin:access。
         long userId = users.requireCurrent();
         if (side != null && (write || expectedUserId != null)) {
             WebSession.requireExpectedUser(expectedUserId, userId);
@@ -199,7 +204,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
         }
     }
 
-    /** 判断公开接口，涉及身份的讨论和统计接口仍单独处理。 */
+    /**
+     * 判断公开接口，涉及身份的讨论和统计接口仍单独处理。
+     */
     private static boolean isPublic(String method, String path) {
         if (("GET".equals(method) || "HEAD".equals(method)) && path.matches("/blog/display-images/[^/]+")) {
             return true;
@@ -220,7 +227,9 @@ public class AuthWebConfig implements WebMvcConfigurer {
         return side != null && !Set.of("GET", "HEAD", "OPTIONS").contains(method) && !ANONYMOUS_WRITES.contains(route);
     }
 
-    /** 优先核对 Origin，只有请求缺少 Origin 时才从 Referer 提取来源。 */
+    /**
+     * 优先核对 Origin，只有请求缺少 Origin 时才从 Referer 提取来源。
+     */
     private static void requireOrigin(HttpServletRequest request, String trustedOrigin) {
         List<String> origins = Collections.list(request.getHeaders(HttpHeaders.ORIGIN));
         if (origins.equals(List.of(trustedOrigin))) {
@@ -241,17 +250,21 @@ public class AuthWebConfig implements WebMvcConfigurer {
                 }
             }
         }
-        throw new BusinessException(403, "FORBIDDEN", "请求来源不被允许");
+        throw new BusinessException(403, ErrorCode.FORBIDDEN, "请求来源不被允许");
     }
 
-    /** 判断是否为后台业务接口，登录和本人设置单独检查。 */
+    /**
+     * 判断是否为后台业务接口，登录和本人设置单独检查。
+     */
     private boolean isAdminBusinessPath(String path) {
         return path.startsWith("/admin/") && !path.startsWith("/admin/auth/")
                 && !path.equals("/admin/security/not-found")
                 && !path.equals("/admin/me") && !path.startsWith("/admin/me/");
     }
 
-    /** 仅为主页和简历的公开客户端开放 HTTP 跨域。 */
+    /**
+     * 仅为主页和简历的公开客户端开放 HTTP 跨域。
+     */
     @Bean
     public FilterRegistrationBean<CorsFilter> corsFilter(JsonMapper json) {
         String adminOrigin = sites.origin("admin");
@@ -293,8 +306,8 @@ public class AuthWebConfig implements WebMvcConfigurer {
             protected void rejectRequest(ServerHttpResponse response) throws IOException {
                 response.setStatusCode(HttpStatus.FORBIDDEN);
                 response.getHeaders().setContentType(MediaType.APPLICATION_JSON);
-                response.getHeaders().setCacheControl("no-store");
-                response.getBody().write(json.writeValueAsString(Result.error("FORBIDDEN", "跨域请求不被允许"))
+                response.getHeaders().setCacheControl(HttpConstants.CACHE_NO_STORE);
+                response.getBody().write(json.writeValueAsString(Result.error(ErrorCode.FORBIDDEN, "跨域请求不被允许"))
                         .getBytes(StandardCharsets.UTF_8));
                 response.flush();
             }

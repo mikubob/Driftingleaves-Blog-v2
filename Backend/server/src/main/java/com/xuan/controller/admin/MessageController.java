@@ -1,24 +1,24 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchIdsDTO;
 import com.xuan.dto.BatchStatusDTO;
 import com.xuan.dto.DiscussionConversationQueryDTO;
 import com.xuan.dto.MessageAdminQueryDTO;
 import com.xuan.dto.MessageEditDTO;
 import com.xuan.model.ResourceVersion;
-import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IMessageService;
 import com.xuan.utils.IdUtils;
-import com.xuan.utils.IpUtils;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.MessagePrivateVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -30,64 +30,115 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台留言管理接口，查看私密留言需要本次操作权限的 ALL 范围。
+ * 管理端留言接口
  */
+@Slf4j
 @RestController("adminMessageController")
 @RequestMapping("/admin/messages")
 @RequiredArgsConstructor
 public class MessageController {
 
-    private final IMessageService messages;
-    private final AuthProperties auth;
+    private final IMessageService messageService;
 
-    /** 分页查询后台留言或一层回复，parentId为0查根节点，未传保留平铺；总数使用相同筛选。 */
+    /**
+     * 分页查询后台留言列表
+     *
+     * @param query 查询参数
+     * @return 留言分页结果
+     */
     @GetMapping
     @SaCheckPermission("blog:message:query")
     public Result<PageResult<MessagePrivateVO>> list(@Valid @ModelAttribute MessageAdminQueryDTO query) {
-        return Result.ok(messages.adminMessages(query));
+        log.info("分页查询后台留言列表: {}", query);
+        PageResult<MessagePrivateVO> pageResult = messageService.adminMessages(query);
+        return Result.ok(pageResult);
     }
 
-    /** 查询整组对话，未传页码时定位当前记录。 */
+    /**
+     * 查询留言整组对话
+     *
+     * @param id 留言 ID
+     * @param query 对话分页参数
+     * @return 对话详情
+     */
     @GetMapping("/{id}/conversation")
     @SaCheckPermission("blog:message:query")
     public Result<DiscussionConversationVO<MessagePrivateVO>> conversation(@PathVariable String id,
             @Valid @ModelAttribute DiscussionConversationQueryDTO query) {
-        return Result.ok(messages.conversation(IdUtils.parse(id), query));
+        log.info("查询后台留言对话: id={}", id);
+        DiscussionConversationVO<MessagePrivateVO> conversation = messageService.conversation(IdUtils.parse(id), query);
+        return Result.ok(conversation);
     }
 
-    /** 根据id查询留言详情，查询权限不能代替审核权限。 */
+    /**
+     * 根据 ID 查询留言详情
+     *
+     * @param id 留言 ID
+     * @return 留言详情及 X-Revision 响应头
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:message:query")
     public ResponseEntity<Result<MessagePrivateVO>> detail(@PathVariable String id) {
-        return response(messages.adminDetail(IdUtils.parse(id)));
+        log.info("根据 ID 查询后台留言详情: id={}", id);
+        ResourceVersion<MessagePrivateVO> result = messageService.adminDetail(IdUtils.parse(id));
+        return versionResponse(result);
     }
 
-    /** 批量审核留言，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量审核留言
+     *
+     * @param body 批量审核参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-review")
     @SaCheckPermission("blog:message:review")
     public Result<BatchVersionsVO> review(@Valid @RequestBody BatchStatusDTO body) {
-        return Result.ok(messages.reviewBatch(body.getItems(), body.getStatus()));
+        log.info("批量审核留言: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = messageService.reviewBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量删除留言及全部子回复，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除留言及子回复
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:message:moderate")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        messages.deleteBatch(body.ids());
+        log.info("批量删除留言: count={}", body.ids().size());
+        messageService.deleteBatch(body.ids());
         return Result.ok(null);
     }
 
-    /** 在后台回复留言，检查登录、审核权限和请求频率，不要求图形验证码。 */
+    /**
+     * 后台回复留言
+     *
+     * @param id 目标留言 ID
+     * @param request 回复内容参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 201 响应及新建回复资料
+     */
     @PostMapping("/{id}/replies")
     @SaCheckPermission("blog:message:review")
     public ResponseEntity<Result<MessagePrivateVO>> reply(@PathVariable String id,
-            @Valid @RequestBody MessageEditDTO request, HttpServletRequest httpRequest) {
-        return ResponseEntity.status(201).body(Result.ok(messages.replyAdmin(IdUtils.parse(id), request,
-                IpUtils.clientIp(httpRequest, auth.getTrustedProxies()), httpRequest.getHeader("User-Agent"))));
+            @Valid @RequestBody MessageEditDTO request,
+            HttpServletRequest httpRequest) {
+        log.info("后台回复留言: id={}", id);
+        MessagePrivateVO reply = messageService.replyAdmin(IdUtils.parse(id), request, httpRequest);
+        return ResponseEntity.status(201).body(Result.ok(reply));
     }
 
-    /** 返回后台留言资料，版本只放在响应头。 */
-    private ResponseEntity<Result<MessagePrivateVO>> response(ResourceVersion<MessagePrivateVO> result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
+    /**
+     * 组装带版本头的留言详情响应。
+     *
+     * @param result 留言详情与版本
+     * @return 200 响应
+     */
+    private ResponseEntity<Result<MessagePrivateVO>> versionResponse(ResourceVersion<MessagePrivateVO> result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 }

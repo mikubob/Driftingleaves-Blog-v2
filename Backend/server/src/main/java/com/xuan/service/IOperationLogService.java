@@ -14,12 +14,18 @@ import java.util.List;
  */
 public interface IOperationLogService extends IService<SysOperationLog> {
 
-    /** 分页查询后台操作日志，需要 ALL 范围，按指定字段筛选。 */
+    /**
+     * 分页查询后台操作日志，需要 ALL 范围，按指定字段筛选。
+     */
     PageResult<OperationLogVO> listLogs(OperationLogQueryDTO query);
 
-    /** 根据id查询操作日志详情，需要 ALL 范围，返回操作基本信息及已记录的完整业务参数。 */
+    /**
+     * 根据id查询操作日志详情，需要 ALL 范围，返回操作基本信息及已记录的完整业务参数。
+     */
     OperationLogDetailVO detail(long id);
 
-    /** 批量删除操作日志，单条也走此入口，所有数据库修改一起提交。 */
+    /**
+     * 批量删除操作日志，单条也走此入口，所有数据库修改一起提交。
+     */
     void deleteBatch(List<String> ids);
 }

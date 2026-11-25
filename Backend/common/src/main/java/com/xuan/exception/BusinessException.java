@@ -24,7 +24,9 @@ public class BusinessException extends RuntimeException {
         this(status, code, message, retryAfter, List.of());
     }
 
-    /** 创建字段冲突异常，只保存字段名和说明，不带用户输入或数据库信息。 */
+    /**
+     * 创建字段冲突异常，只保存字段名和说明，不带用户输入或数据库信息。
+     */
     public BusinessException(int status, String code, String message, Integer retryAfter,
             List<Result.FieldError> errors) {
         super(message);

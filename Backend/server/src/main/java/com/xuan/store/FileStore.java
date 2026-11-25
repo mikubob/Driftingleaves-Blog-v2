@@ -56,7 +56,9 @@ public class FileStore {
         }
     }
 
-    /** 创建上传临时文件，放在存储根目录，保证后续移动在同一个文件系统内完成。 */
+    /**
+     * 创建上传临时文件，放在存储根目录，保证后续移动在同一个文件系统内完成。
+     */
     public Path temporary() {
         try {
             Files.createDirectories(files.getLocalRoot());
@@ -66,8 +68,11 @@ public class FileStore {
         }
     }
 
-    /** 保存已校验的文件，按类型分目录，使用服务端随机文件名，不使用展示名称作为路径。 */
+    /**
+     * 保存已校验的文件，按类型分目录，使用服务端随机文件名，不使用展示名称作为路径。
+     */
     public void store(Path temporary, String extension, BlogFile file, boolean publicImage) {
+        // 1. 启用 OSS 时直接上传至私有 Bucket，不返回云端直链。
         AliOssClient client = oss.getIfAvailable();
         if (client != null) {
             file.setStorageType("oss");
@@ -79,6 +84,8 @@ public class FileStore {
             }
             return;
         }
+
+        // 2. 未启用 OSS 时按类型分目录原子移动到本地存储目录。
         file.setStorageType("local");
         file.setBucket("");
         String category = publicImage ? FileUtils.PUBLIC_IMAGE_CATEGORY : FileUtils.getFileCategory(extension);
@@ -92,13 +99,17 @@ public class FileStore {
         }
     }
 
-    /** 根据服务端保存的目录区分公开图片和普通附件。 */
+    /**
+     * 根据服务端保存的目录区分公开图片和普通附件。
+     */
     public boolean isPublicImage(BlogFile file) {
         String prefix = "oss".equals(file.getStorageType()) ? ossProperties.getKeyPrefix() : "";
         return file.getObjectKey().startsWith(prefix + FileUtils.PUBLIC_IMAGE_CATEGORY + "/");
     }
 
-    /** 读取文件内容，必须在业务锁内调用并限制大小，关闭流后返回；文件缺失或大小变化时返回 503。 */
+    /**
+     * 读取文件内容，必须在业务锁内调用并限制大小，关闭流后返回；文件缺失或大小变化时返回 503。
+     */
     public byte[] read(BlogFile file) {
         String key = file.getObjectKey();
         String extension = key == null ? "" : key.substring(key.lastIndexOf('.') + 1);
@@ -119,7 +130,9 @@ public class FileStore {
         }
     }
 
-    /** 删除存储文件，已不存在时也算成功，供数据库提交失败后的删除重试使用。 */
+    /**
+     * 删除存储文件，已不存在时也算成功，供数据库提交失败后的删除重试使用。
+     */
     public void delete(BlogFile file) {
         if ("oss".equals(file.getStorageType())) {
             ossClient(file).delete(file.getObjectKey());
@@ -132,7 +145,9 @@ public class FileStore {
         }
     }
 
-    /** 清理临时文件或回滚后残留的文件，失败时记录固定错误，不记录路径或云端响应。 */
+    /**
+     * 清理临时文件或回滚后残留的文件，失败时记录固定错误，不记录路径或云端响应。
+     */
     public void cleanup(Path temporary, BlogFile stored) {
         try {
             if (stored != null && stored.getObjectKey() != null) {
@@ -150,7 +165,9 @@ public class FileStore {
         }
     }
 
-    /** 获取 OSS 客户端，检查文件记录中的 Bucket，不能访问其他存储空间。 */
+    /**
+     * 获取 OSS 客户端，检查文件记录中的 Bucket，不能访问其他存储空间。
+     */
     private AliOssClient ossClient(BlogFile file) {
         AliOssClient client = oss.getIfAvailable();
         if (client == null || !ossProperties.getBucket().equals(file.getBucket())) {
@@ -159,7 +176,9 @@ public class FileStore {
         return client;
     }
 
-    /** 获取本地文件路径，文件存在时检查真实路径，不存在时检查父目录，防止访问根目录之外。 */
+    /**
+     * 获取本地文件路径，文件存在时检查真实路径，不存在时检查父目录，防止访问根目录之外。
+     */
     private Path localTarget(BlogFile file) throws IOException {
         if (!"local".equals(file.getStorageType()) || !"".equals(file.getBucket())
                 || file.getObjectKey() == null
@@ -182,7 +201,9 @@ public class FileStore {
         return target;
     }
 
-    /** 返回文件存储不可用错误，文件缺失时也不能返回空内容充当成功。 */
+    /**
+     * 返回文件存储不可用错误，文件缺失时也不能返回空内容充当成功。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "引用文件存储暂不可用");
     }

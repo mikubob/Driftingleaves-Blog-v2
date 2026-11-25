@@ -1,85 +1,152 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 友链没有 URL 或名称唯一键，维护结果立即反映在公开查询里。 -->
 <mapper namespace="com.xuan.mapper.FriendLinkMapper">
+
+    <!-- 后台友链与申请人结果映射 -->
     <resultMap id="adminLink" type="com.xuan.vo.AdminLinkVO" autoMapping="true">
         <id property="linkId" column="link_id"/>
-        <association property="applicant" javaType="com.xuan.vo.AdminLinkVO$Applicant"
-                     notNullColumn="joined_user_id">
+        <association property="applicant" javaType="com.xuan.vo.AdminLinkVO$Applicant" notNullColumn="joined_user_id">
             <id property="userId" column="joined_user_id"/>
             <result property="nickname" column="joined_nickname"/>
         </association>
     </resultMap>
 
+    <!-- 分页查询公开展示中的友情链接 -->
     <select id="publicLinkPage" resultType="com.xuan.entity.BlogFriendLink">
-        SELECT * FROM blog_friend_link WHERE status = 1 ORDER BY sort_order ASC, link_id ASC
+        SELECT *
+        FROM blog_friend_link
+        WHERE status = 1
+        ORDER BY sort_order ASC, link_id ASC
     </select>
 
-    <!-- 保留后台创建及申请人已删除的记录，账号禁用时仍读取昵称。 -->
+    <!-- 后台友链及申请人查询公共片段 -->
     <sql id="adminLinks">
-        SELECT f.link_id, f.link_name, f.url, f.avatar, f.description, f.sort_order, f.status,
-               f.create_time, f.update_time, f.source, u.user_id AS joined_user_id, u.nickname AS joined_nickname
+        SELECT
+            f.link_id,
+            f.link_name,
+            f.url,
+            f.avatar,
+            f.description,
+            f.sort_order,
+            f.status,
+            f.create_time,
+            f.update_time,
+            f.source,
+            u.user_id AS joined_user_id,
+            u.nickname AS joined_nickname
         FROM blog_friend_link f
         LEFT JOIN sys_user u ON u.user_id = f.applicant_id
     </sql>
 
+    <!-- 分页查询后台友情链接列表 -->
     <select id="adminLinkPage" resultMap="adminLink">
         <include refid="adminLinks"/>
         <where>
-            <if test="query.status != null">AND f.status = #{query.status}</if>
-            <if test="query.source != null">AND f.source = #{query.source}</if>
-            <if test="applicantId != null">AND f.applicant_id = #{applicantId}</if>
+            <if test="query.status != null">
+                AND f.status = #{query.status}
+            </if>
+            <if test="query.source != null">
+                AND f.source = #{query.source}
+            </if>
+            <if test="applicantId != null">
+                AND f.applicant_id = #{applicantId}
+            </if>
             <if test="query.keyword != null">
-                AND (INSTR(f.link_name, #{query.keyword}) &gt; 0 OR INSTR(f.url, #{query.keyword}) &gt; 0)
+                AND (
+                    INSTR(f.link_name, #{query.keyword}) &gt; 0
+                    OR INSTR(f.url, #{query.keyword}) &gt; 0
+                )
             </if>
         </where>
         ORDER BY f.sort_order ASC, f.link_id ASC
     </select>
 
+    <!-- 根据友链 ID 查询后台友链详情 -->
     <select id="adminLinkDetail" resultMap="adminLink">
         <include refid="adminLinks"/>
         WHERE f.link_id = #{id}
     </select>
 
-    <!-- 写事务持有此锁到版本校验、保存和成功审计完成。 -->
+    <!-- 加行锁查询友链记录 -->
     <select id="lockById" resultType="com.xuan.model.LinkApplicationRow">
-        SELECT * FROM blog_friend_link WHERE link_id = #{id} FOR UPDATE
+        SELECT *
+        FROM blog_friend_link
+        WHERE link_id = #{id}
+        FOR UPDATE
     </select>
 
-    <!-- 查询当前绑定账号的申请，各来源都可作为本人申请。 -->
+    <!-- 查询指定用户当前的友链申请记录 -->
     <select id="findApplication" resultType="com.xuan.entity.BlogFriendLink">
-        SELECT * FROM blog_friend_link WHERE applicant_id = #{userId}
+        SELECT *
+        FROM blog_friend_link
+        WHERE applicant_id = #{userId}
     </select>
 
+    <!-- 新增友情链接并回填自增主键 -->
     <insert id="insertLink" useGeneratedKeys="true" keyProperty="link.linkId" keyColumn="link_id">
-        INSERT INTO blog_friend_link (applicant_id, source, link_name, url, avatar, description, sort_order, status)
-        VALUES (#{applicantId,jdbcType=BIGINT}, #{source}, #{link.linkName}, #{link.url}, #{link.avatar},
-                #{link.description}, #{link.sortOrder}, #{link.status})
+        INSERT INTO blog_friend_link (
+            applicant_id,
+            source,
+            link_name,
+            url,
+            avatar,
+            description,
+            sort_order,
+            status
+        )
+        VALUES (
+            #{applicantId,jdbcType=BIGINT},
+            #{source},
+            #{link.linkName},
+            #{link.url},
+            #{link.avatar},
+            #{link.description},
+            #{link.sortOrder},
+            #{link.status}
+        )
     </insert>
 
+    <!-- 按友链 ID 与申请用户 ID 删除本人友链申请 -->
     <delete id="deleteApplication">
-        DELETE FROM blog_friend_link WHERE link_id = #{id} AND applicant_id = #{userId}
+        DELETE FROM blog_friend_link
+        WHERE link_id = #{id}
+          AND applicant_id = #{userId}
     </delete>
 
+    <!-- 查询用户在指定自然日的友链申请提交次数 -->
     <select id="applicationCount" resultType="int">
-        SELECT submission_count FROM blog_friend_link_quota
-        WHERE user_id = #{userId} AND submission_date = #{date}
+        SELECT submission_count
+        FROM blog_friend_link_quota
+        WHERE user_id = #{userId}
+          AND submission_date = #{date}
     </select>
 
-    <!-- 每个账号只保存最近一次提交所在日期的次数，删除申请不删除次数。 -->
+    <!-- 保存或更新用户当日友链申请次数 -->
     <insert id="saveApplicationCount">
         INSERT INTO blog_friend_link_quota (user_id, submission_date, submission_count)
         VALUES (#{userId}, #{date}, #{count})
-        ON DUPLICATE KEY UPDATE submission_date = #{date}, submission_count = #{count}
+        ON DUPLICATE KEY UPDATE
+            submission_date = #{date},
+            submission_count = #{count}
     </insert>
 
+    <!-- 完整更新友情链接资料，显式写入可空字段以支持清空 -->
     <update id="updateLink">
-        UPDATE blog_friend_link SET link_name=#{link.linkName}, url=#{link.url}, avatar=#{link.avatar},
-        description=#{link.description}, sort_order=#{link.sortOrder}, applicant_id=#{applicantId,jdbcType=BIGINT}
-        WHERE link_id=#{link.linkId}
+        UPDATE blog_friend_link
+        SET link_name = #{link.linkName},
+            url = #{link.url},
+            avatar = #{link.avatar},
+            description = #{link.description},
+            sort_order = #{link.sortOrder},
+            applicant_id = #{applicantId,jdbcType=BIGINT}
+        WHERE link_id = #{link.linkId}
     </update>
-    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+
+    <!-- 更新友情链接状态 -->
     <update id="updateStatus">
-        UPDATE blog_friend_link SET status = #{status} WHERE link_id = #{id}
+        UPDATE blog_friend_link
+        SET status = #{status}
+        WHERE link_id = #{id}
     </update>
+
 </mapper>

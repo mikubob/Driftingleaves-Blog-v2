@@ -5,17 +5,33 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
- * 文章点赞数据接口，按文章和用户的组合主键操作，不另存点赞计数。
+ * 文章点赞数据访问接口
  */
 @Mapper
 public interface ArticleLikeMapper {
 
-    /** 同一条 SQL 返回当前用户是否点赞和真实明细总数。 */
+    /**
+     * 查询当前用户对文章的点赞状态及真实点赞总数
+     *
+     * @param article 文章 ID
+     * @param user 用户 ID
+     * @return 点赞状态与总数
+     */
     LikeStateVO state(@Param("article") long article, @Param("user") long user);
 
-    /** 已持有文章锁且确认不存在该复合键，唯一约束仍保留。 */
+    /**
+     * 新增一条文章点赞记录，调用方须已持有文章行锁。
+     *
+     * @param article 文章 ID
+     * @param user 用户 ID
+     */
     void add(@Param("article") long article, @Param("user") long user);
 
-    /** 不存在也成功，不能删到其他用户的点赞。 */
+    /**
+     * 删除指定用户对文章的点赞记录
+     *
+     * @param article 文章 ID
+     * @param user 用户 ID
+     */
     void remove(@Param("article") long article, @Param("user") long user);
 }

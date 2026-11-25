@@ -1,11 +1,11 @@
 package com.xuan.controller.auth;
 
 import com.xuan.annotation.RateLimit;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
 import com.xuan.dto.ProfilePatchDTO;
 import com.xuan.result.Result;
-import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IUserService;
 import com.xuan.vo.CapabilitiesVO;
 import com.xuan.vo.MeVO;
@@ -14,6 +14,7 @@ import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.UserProfileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,115 +29,129 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 本人资料和安全设置接口，用户取当前会话，不接受目标用户id。
+ * 本人资料与安全设置接口
  */
+@Slf4j
 @RestController
 @RequestMapping({"/admin/me", "/blog/me"})
 @RequiredArgsConstructor
 public class MeController {
 
-    private final IUserService users;
-    private final AuthorizationProvider authorization;
+    private final IUserService userService;
 
     /**
-     * 查询当前用户资料，版本放在 X-Revision，修改时需原样传回。
+     * 查询当前用户资料及版本
      *
      * @return 本人资料及 X-Revision 响应头
      */
     @GetMapping
     public ResponseEntity<Result<MeVO>> me() {
-        return profile(users.me());
+        log.info("查询当前用户资料");
+        UserProfileVO profile = userService.me();
+        return profileResponse(profile);
     }
 
     /**
-     * 修改当前用户资料，未传字段保持不变，null 只清空可空字段；未传版本返回 428，版本过期返回 412。
+     * 修改当前用户资料
      *
-     * @param body 已校验的允许修改的资料字段，以及客户端有没有传
-     * @param revision 原样携带的带引号 If-Revision；可缺失以交由业务层区分错误
-     * @return 更新后的本人资料和对应 X-Revision
+     * @param body 修改的资料字段
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的本人资料及 X-Revision 响应头
      */
     @PatchMapping("/profile")
     public ResponseEntity<Result<MeVO>> patch(@Valid @RequestBody ProfilePatchDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(users.patch(body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("修改当前用户资料");
+        UserProfileVO profile = userService.patch(body, revision);
+        return profileResponse(profile);
     }
 
     /**
-     * 设置或修改当前用户密码，最近认证、旧密码或 OAuth 身份和全部会话撤销都由业务层处理；成功后要重新登录。
+     * 设置或修改当前用户密码
      *
-     * @param body 已校验的长度和 UTF-8 字节限制的密码请求
-     * @return data 为 null 的成功结果
+     * @param body 密码设置参数
+     * @return 成功结果
      */
     @PutMapping("/password")
     @RateLimit(value = "me.password", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<Void> password(@Valid @RequestBody PasswordSetDTO body) {
-        users.setPassword(body);
+        log.info("设置或修改当前用户密码");
+        userService.setPassword(body);
         return Result.ok(null);
     }
 
     /**
-     * 清除当前用户密码并撤销全部会话；用户锁内核对旧密码和剩余登录方式，不能删掉最后一种。
+     * 清除当前用户密码
      *
-     * @param body 包含当前密码的已校验的请求
-     * @return data 为 null 的成功结果
+     * @param body 清除密码参数
+     * @return 成功结果
      */
     @DeleteMapping("/password")
     @RateLimit(value = "me.password", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<Void> clearPassword(@Valid @RequestBody PasswordClearDTO body) {
-        users.clearPassword(body);
+        log.info("清除当前用户密码");
+        userService.clearPassword(body);
         return Result.ok(null);
     }
 
     /**
-     * 查询当前启用用户的角色、权限及每项范围，member 也能查；这不表示获得后台入口，资源 SQL 仍要检查归属。
+     * 查询当前用户角色、权限及数据范围
      *
-     * @return 按字典序排列的有效授权及权限到 ALL/SELF 的映射
+     * @return 权限能力视图
      */
     @GetMapping("/capabilities")
     public Result<CapabilitiesVO> capabilities() {
-        return Result.ok(authorization.capabilities(users.requireCurrent()));
+        log.info("查询当前用户权限能力");
+        CapabilitiesVO capabilities = userService.currentCapabilities();
+        return Result.ok(capabilities);
     }
 
     /**
-     * 查询本人能访问的菜单；没有 admin:access 就返回空列表，已授权的隐藏项和按钮保留，按钮不能生成页面路由。
+     * 查询当前用户可访问的菜单树
      *
-     * @return 已检查权限和全部上级菜单的菜单树
+     * @return 菜单树列表
      */
     @GetMapping("/menus")
     public Result<List<MenuNodeVO>> menus() {
-        return Result.ok(authorization.menus(users.requireCurrent()));
+        log.info("查询当前用户菜单树");
+        List<MenuNodeVO> menuList = userService.currentMenus();
+        return Result.ok(menuList);
     }
 
     /**
-     * 查询本人第三方绑定，只返回当前可用的平台及绑定时间，不返回绑定id、uuid 或平台 Token。
+     * 查询当前用户的第三方绑定列表
      *
-     * @return 按平台升序排列的绑定列表，无绑定时为空列表
+     * @return 第三方绑定列表
      */
     @GetMapping("/oauth-bindings")
     public Result<List<OAuthBindingVO>> bindings() {
-        return Result.ok(users.bindings());
+        log.info("查询当前用户第三方绑定");
+        List<OAuthBindingVO> bindingList = userService.bindings();
+        return Result.ok(bindingList);
     }
 
     /**
-     * 解绑本人指定平台并撤销全部会话；先查最近认证和剩余登录方式，未绑定或平台关闭按约定报错。
+     * 解绑当前用户的指定第三方平台
      *
-     * @param source 待解绑的服务端允许的平台标识
-     * @return data 为 null 的成功结果
+     * @param source 平台标识
+     * @return 成功结果
      */
     @DeleteMapping("/oauth-bindings/{source}")
     public Result<Void> unbind(@PathVariable String source) {
-        users.unbind(source);
+        log.info("解绑当前用户第三方平台: source={}", source);
+        userService.unbind(source);
         return Result.ok(null);
     }
 
     /**
-     * 返回本人资料，版本只放在 X-Revision，响应体不含敏感信息。
+     * 组装本人资料响应，版本放在 X-Revision 响应头。
      *
-     * @param result 用户服务生成的返回资料与带引号版本
-     * @return 统一成功响应及原样保留的版本响应头
+     * @param result 用户资料与版本
+     * @return 200 响应
      */
-    private ResponseEntity<Result<MeVO>> profile(UserProfileVO result) {
-        // 服务端生成的带引号版本原样放响应头，响应体只返回约定的资料。
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.user()));
+    private ResponseEntity<Result<MeVO>> profileResponse(UserProfileVO result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.user()));
     }
 }

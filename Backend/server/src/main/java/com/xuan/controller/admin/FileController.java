@@ -2,18 +2,19 @@ package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
 import com.xuan.annotation.RateLimit;
-import com.xuan.controller.FileResponse;
 import com.xuan.dto.BatchIdsDTO;
 import com.xuan.dto.FileQueryDTO;
-import com.xuan.properties.PublicSiteProperties;
+import com.xuan.model.FileContent;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IFileService;
+import com.xuan.utils.FileResponseUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchFileResultsVO;
 import com.xuan.vo.FileVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,69 +30,118 @@ import org.springframework.web.multipart.MultipartFile;
 import java.net.URI;
 
 /**
- * 后台文件管理接口，提供文件资料、上传和读取，私密文件通过后台会话读取后预览。
+ * 管理端文件接口
  */
+@Slf4j
 @RestController
 @RequiredArgsConstructor
 public class FileController {
 
-    private final IFileService files;
-    private final PublicSiteProperties sites;
+    private final IFileService fileService;
 
-    /** 分页查询文件资料，不返回每条记录的版本，筛选上传者不能扩大查询权限范围。 */
+    /**
+     * 分页查询文件列表
+     *
+     * @param query 查询参数
+     * @return 文件分页结果
+     */
     @GetMapping("/admin/files")
     @SaCheckPermission("blog:file:query")
     public Result<PageResult<FileVO>> list(@Valid @ModelAttribute FileQueryDTO query) {
-        return Result.ok(files.listFiles(query));
+        log.info("分页查询文件列表: {}", query);
+        PageResult<FileVO> pageResult = fileService.listFiles(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询文件详情，文件资料不能编辑，不返回 X-Revision。 */
+    /**
+     * 根据 ID 查询文件详情
+     *
+     * @param fileId 文件 ID
+     * @return 文件详情
+     */
     @GetMapping("/admin/files/{fileId}")
     @SaCheckPermission("blog:file:query")
     public Result<FileVO> detail(@PathVariable String fileId) {
-        return Result.ok(files.detail(IdUtils.parse(fileId)));
+        log.info("根据 ID 查询文件详情: fileId={}", fileId);
+        FileVO file = fileService.detail(IdUtils.parse(fileId));
+        return Result.ok(file);
     }
 
-    /** 上传文件，每用户和可信 IP 每分钟最多十次，每个请求计一次，成功返回文件资料的 Location。 */
+    /**
+     * 上传文件
+     *
+     * @param file 上传文件
+     * @param usage 使用场景标识
+     * @return 201 响应及文件资料
+     */
     @PostMapping(value = "/admin/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("blog:file:upload")
     @RateLimit(value = "file-upload", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResponseEntity<Result<FileVO>> upload(@RequestParam("file") MultipartFile file,
             @RequestParam(value = "usage", required = false) String usage) {
-        FileVO value = files.upload(file, false, usage);
-        return ResponseEntity.created(URI.create("/api/v1/admin/files/" + value.fileId())).body(Result.ok(value));
+        log.info("上传文件: fileName={}, usage={}", file.getOriginalFilename(), usage);
+        FileVO value = fileService.upload(file, false, usage);
+        URI location = URI.create("/api/v1/admin/files/" + value.fileId());
+        return ResponseEntity.created(location).body(Result.ok(value));
     }
 
-    /** 上传公开展示图片，与普通上传共用限流和文件校验，成功后返回可直接使用的地址。 */
+    /**
+     * 上传公开展示图片
+     *
+     * @param file 上传图片文件
+     * @param usage 使用场景标识
+     * @return 201 响应及公开展示地址
+     */
     @PostMapping(value = "/admin/files/display-images", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @SaCheckPermission("blog:file:upload")
     @RateLimit(value = "file-upload", limit = 10, dimension = RateLimit.Dimension.USER)
     public ResponseEntity<Result<String>> uploadDisplayImage(@RequestParam("file") MultipartFile file,
             @RequestParam(value = "usage", required = false) String usage) {
-        URI publicApi = sites.base("api");
-        FileVO value = files.upload(file, true, usage);
-        URI url = URI.create(publicApi + "/blog/display-images/" + value.fileId());
+        log.info("上传公开展示图片: fileName={}, usage={}", file.getOriginalFilename(), usage);
+        URI url = fileService.uploadDisplayImage(file, usage);
         return ResponseEntity.created(url).body(Result.ok(url.toString()));
     }
 
-    /** 读取原文件供预览，与文章是否公开无关，文件内容不放进 Result。 */
+    /**
+     * 读取原文件内容
+     *
+     * @param fileId 文件 ID
+     * @return 文件内联响应
+     */
     @GetMapping("/admin/files/{fileId}/content")
     @SaCheckPermission("blog:file:query")
     public ResponseEntity<Resource> original(@PathVariable String fileId) {
-        return FileResponse.inline(files.original(IdUtils.parse(fileId)));
+        log.info("读取原文件内容: fileId={}", fileId);
+        FileContent content = fileService.original(IdUtils.parse(fileId));
+        return FileResponseUtils.inline(content);
     }
 
-    /** 批量删除文件，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除文件
+     *
+     * @param body 批量删除参数
+     * @return 批量删除结果
+     */
     @PostMapping("/admin/files/batch-delete")
     @SaCheckPermission("blog:file:delete")
     public Result<BatchFileResultsVO> delete(@Valid @RequestBody BatchIdsDTO body) {
-        return Result.ok(files.deleteBatch(body.ids()));
+        log.info("批量删除文件: count={}", body.ids().size());
+        BatchFileResultsVO result = fileService.deleteBatch(body.ids());
+        return Result.ok(result);
     }
 
-    /** 读取后台文章附件，分别检查文章和文件的查询权限及范围，文章必须引用该文件。 */
+    /**
+     * 读取后台文章附件内容
+     *
+     * @param articleId 文章 ID
+     * @param fileId 文件 ID
+     * @return 文件内联响应
+     */
     @GetMapping("/admin/articles/{articleId}/files/{fileId}/content")
     @SaCheckPermission({"blog:article:query", "blog:file:query"})
     public ResponseEntity<Resource> attachment(@PathVariable String articleId, @PathVariable String fileId) {
-        return FileResponse.inline(files.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), true));
+        log.info("读取后台文章附件: articleId={}, fileId={}", articleId, fileId);
+        FileContent content = fileService.attachment(IdUtils.parse(articleId), IdUtils.parse(fileId), true);
+        return FileResponseUtils.inline(content);
     }
 }

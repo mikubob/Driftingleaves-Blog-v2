@@ -11,6 +11,7 @@ import com.xuan.vo.OperationLogDetailVO;
 import com.xuan.vo.OperationLogVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,34 +21,55 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台操作日志接口，只提供查询和清理。
+ * 管理端操作日志接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/operation-logs")
 @RequiredArgsConstructor
 public class OperationLogController {
 
-    private final IOperationLogService logs;
+    private final IOperationLogService operationLogService;
 
-    /** 分页查询操作日志，列表不返回操作参数摘要。 */
+    /**
+     * 分页查询操作日志列表
+     *
+     * @param query 查询参数
+     * @return 操作日志分页结果
+     */
     @GetMapping
     @SaCheckPermission("sys:log:query")
     public Result<PageResult<OperationLogVO>> list(@Valid @ModelAttribute OperationLogQueryDTO query) {
-        return Result.ok(logs.listLogs(query));
+        log.info("分页查询操作日志列表: {}", query);
+        PageResult<OperationLogVO> pageResult = operationLogService.listLogs(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询操作日志详情，记录不可编辑，不返回版本。 */
+    /**
+     * 根据 ID 查询操作日志详情
+     *
+     * @param id 日志 ID
+     * @return 操作日志详情
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("sys:log:query")
     public Result<OperationLogDetailVO> detail(@PathVariable String id) {
-        return Result.ok(logs.detail(IdUtils.parse(id)));
+        log.info("根据 ID 查询操作日志详情: id={}", id);
+        OperationLogDetailVO detail = operationLogService.detail(IdUtils.parse(id));
+        return Result.ok(detail);
     }
 
-    /** 批量删除操作日志，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除操作日志
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:log:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        logs.deleteBatch(body.ids());
+        log.info("批量删除操作日志: count={}", body.ids().size());
+        operationLogService.deleteBatch(body.ids());
         return Result.ok(null);
     }
 }

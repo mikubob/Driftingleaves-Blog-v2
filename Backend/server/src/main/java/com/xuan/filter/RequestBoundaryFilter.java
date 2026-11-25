@@ -1,5 +1,7 @@
 package com.xuan.filter;
 
+import com.xuan.constant.ErrorCode;
+import com.xuan.constant.HttpConstants;
 import com.xuan.result.Result;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
@@ -30,7 +32,6 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class RequestBoundaryFilter extends OncePerRequestFilter {
 
-    private static final int MAX_JSON_BYTES = 8 * 1024 * 1024;
     private final JsonMapper json;
 
     /**
@@ -40,8 +41,8 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
         // 1. 进入业务前先设置禁止缓存和来源策略，报错时也要生效。
-        response.setHeader("Cache-Control", "no-store");
-        response.setHeader("Referrer-Policy", "no-referrer");
+        response.setHeader(HttpConstants.HEADER_CACHE_CONTROL, HttpConstants.CACHE_NO_STORE);
+        response.setHeader(HttpConstants.HEADER_REFERRER_POLICY, HttpConstants.REFERRER_NO_REFERRER);
 
         // 2. 这里只限制 JSON 请求，其他类型交给各自处理器。
         String contentType = request.getContentType();
@@ -51,12 +52,12 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
         }
 
         // 3. 最多多读一个字节来判断超限，不能把无限大的请求体整个读进内存。
-        byte[] body = request.getInputStream().readNBytes(MAX_JSON_BYTES + 1);
-        if (body.length > MAX_JSON_BYTES) {
+        byte[] body = request.getInputStream().readNBytes(HttpConstants.MAX_JSON_BODY_BYTES + 1);
+        if (body.length > HttpConstants.MAX_JSON_BODY_BYTES) {
             response.setStatus(413);
-            response.setContentType("application/json;charset=UTF-8");
+            response.setContentType(HttpConstants.APPLICATION_JSON_UTF8);
             response.getWriter()
-                    .write(json.writeValueAsString(Result.error("PAYLOAD_TOO_LARGE", "JSON请求体超过8MiB")));
+                    .write(json.writeValueAsString(Result.error(ErrorCode.PAYLOAD_TOO_LARGE, "JSON请求体超过8MiB")));
             return;
         }
 

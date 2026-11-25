@@ -18,6 +18,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.PermissionProfileVO;
@@ -190,15 +191,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      * @param revision 客户端详情版本，拒绝通配符和多个版本
      */
     private void checkRevision(SysPermission permission, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(permission).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "权限已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(permission).revision(), revision, "权限已修改，请重新获取");
     }
 
     /**
@@ -227,11 +220,14 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
                 permission.getCreateTime(), permission.getUpdateTime());
     }
 
-    /** 批量删除权限，先检查整批目标，删除后撤销所有受影响用户的会话。 */
+    /**
+     * 批量删除权限，先检查整批目标，删除后撤销所有受影响用户的会话。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:permission", permission = "sys:permission:delete")
     public void deleteBatch(List<BatchItemDTO> items) {
+        // 1. 锁定管理员保护检查点并检查删除权限，汇总全部受影响用户后按 ID 升序加锁。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
@@ -246,6 +242,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         for (long id : lockedUsers) {
             users.lockById(id);
         }
+
+        // 2. 逐条锁定权限，复核版本、内置权限保护与菜单引用。
         for (var item : sorted) {
             long permissionId = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -267,6 +265,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
             }
             // 菜单外键仍是 RESTRICT，只有角色关联允许 CASCADE；撤销会话失败时字典和关联一起回滚。
         }
+
+        // 3. 批量删除权限，校验仍存在有效管理员后撤销受影响用户会话。
         for (var item : sorted) {
             permissions.deleteById(IdUtils.parse(item.id()));
         }
@@ -276,11 +276,14 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         revoke(new ArrayList<>(affected));
     }
 
-    /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
+    /**
+     * 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "sys:permission", permission = "sys:permission:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        // 1. 锁定管理员保护检查点与受影响用户，按 ID 升序锁定全部目标权限并检查版本。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
@@ -307,6 +310,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
             rows.add(row);
         }
 
+        // 2. 批量更新状态并记录受影响用户，若涉及管理权限则校验最后有效管理员。
         Set<Long> revoked = new TreeSet<>();
         Map<Long, String> versions = new HashMap<>();
         boolean protect = false;
@@ -323,7 +327,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         if (protect && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
-        // 版本和整批校验已完成，撤销本人的会话后不再重查当前 Token。
+
+        // 3. 撤销受影响用户会话并按原请求顺序返回新版本。
         revoke(new ArrayList<>(revoked));
         return BatchUtils.versions(items, versions);
     }

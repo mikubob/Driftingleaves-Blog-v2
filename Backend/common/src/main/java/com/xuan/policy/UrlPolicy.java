@@ -12,7 +12,9 @@ import java.util.regex.Pattern;
  */
 public final class UrlPolicy {
 
-    /** 与当前前端约定使用的图标键一致，其他图标可直接使用外部URL。 */
+    /**
+     * 与当前前端约定使用的图标键一致，其他图标可直接使用外部URL。
+     */
     private static final Set<String> ICONS = Set.of("document", "setting", "home", "chart", "folder", "tag", "chat",
             "link", "picture", "music", "mail", "user", "lock", "menu", "key", "github");
     private static final Pattern EMAIL = Pattern.compile(
@@ -22,12 +24,16 @@ public final class UrlPolicy {
     private UrlPolicy() {
     }
 
-    /** 检查图标，只允许已注册名称或外部 HTTP(S) 地址。 */
+    /**
+     * 检查图标，只允许已注册名称或外部 HTTP(S) 地址。
+     */
     public static boolean validIcon(String value) {
         return value == null || ICONS.contains(value) || valid(value);
     }
 
-    /** 检查社交链接中的邮箱地址，只允许单个邮箱，不接受查询参数、# 片段或控制字符。 */
+    /**
+     * 检查社交链接中的邮箱地址，只允许单个邮箱，不接受查询参数、# 片段或控制字符。
+     */
     public static boolean validSocial(String value) {
         if (value != null && value.startsWith("mailto:")) {
             String email = value.substring(7);

@@ -6,7 +6,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 创建社交链接，在资料字段之外指定初始状态。 */
+/**
+ * 创建社交链接，在资料字段之外指定初始状态。
+ */
 @Getter
 @Setter
 public class SocialCreateDTO extends SocialWriteDTO {

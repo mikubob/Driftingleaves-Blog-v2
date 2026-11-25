@@ -49,7 +49,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
     private final AuthRateLimiter limiter;
     private final ObjectProvider<HttpServletRequest> requests;
 
-    /** 查询博客公开统计。 */
+    /**
+     * 查询博客公开统计。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "statistics", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -58,7 +60,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return statistics.publicStatistics(today.atStartOfDay(), today.plusDays(1).atStartOfDay(), now());
     }
 
-    /** 查询后台统计总览。 */
+    /**
+     * 查询后台统计总览。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminStatisticsVO overview(StatisticsQueryDTO query) {
@@ -68,7 +72,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return statistics.overview(range.lower(), range.upper(), query.siteCode(), now());
     }
 
-    /** 查询每日浏览量。 */
+    /**
+     * 查询每日浏览量。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ViewTrendVO> viewTrend(StatisticsQueryDTO query) {
@@ -84,7 +90,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return result;
     }
 
-    /** 查询每日新增及累计访客数。 */
+    /**
+     * 查询每日新增及累计访客数。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<VisitorTrendVO> visitorTrend(StatisticsQueryDTO query) {
@@ -103,7 +111,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return result;
     }
 
-    /** 按省份统计访客数。 */
+    /**
+     * 按省份统计访客数。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ProvinceMetricVO> provinces(StatisticsQueryDTO query) {
@@ -113,7 +123,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return statistics.provinces(range.lower(), range.upper(), query.siteCode());
     }
 
-    /** 查询指定日期内的文章访问排行。 */
+    /**
+     * 查询指定日期内的文章访问排行。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ArticleViewMetricVO> articles(StatisticsQueryDTO query) {
@@ -123,7 +135,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return statistics.articles(range.lower(), range.upper(), query.limit());
     }
 
-    /** 检查后台报表频率，只统计 HTTP 请求，直接业务调用不读取请求信息。 */
+    /**
+     * 检查后台报表频率，只统计 HTTP 请求，直接业务调用不读取请求信息。
+     */
     private void limitReport() {
         if (RequestContextHolder.getRequestAttributes() == null) {
             return;
@@ -131,7 +145,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         limiter.report(requests.getObject(), sessions.currentUserId());
     }
 
-    /** 检查统计查询权限，公开接口不支持指定日期，后台需要入口权限和本次报表的 ALL 范围。 */
+    /**
+     * 检查统计查询权限，公开接口不支持指定日期，后台需要入口权限和本次报表的 ALL 范围。
+     */
     private void requireAdmin() {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -141,7 +157,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         }
     }
 
-    /** 检查统计日期范围，起止日期必须一起传，最多 367 天；结束于 9999 年时不向数据库传入 10000 年。 */
+    /**
+     * 检查统计日期范围，起止日期必须一起传，最多 367 天；结束于 9999 年时不向数据库传入 10000 年。
+     */
     private Range range(StatisticsQueryDTO query) {
         try {
             if ((query.begin() == null) != (query.end() == null)) {
@@ -159,7 +177,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         }
     }
 
-    /** 解析统计日期，不接受带时间的值、无效闰日或超出数据库范围的年份。 */
+    /**
+     * 解析统计日期，不接受带时间的值、无效闰日或超出数据库范围的年份。
+     */
     private LocalDate date(String value) {
         if (!value.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
             throw new IllegalArgumentException();
@@ -171,7 +191,9 @@ public class StatisticsServiceImpl implements IStatisticsService {
         return date;
     }
 
-    /** 获取公开文章查询使用的 UTC 截止时间。 */
+    /**
+     * 获取公开文章查询使用的 UTC 截止时间。
+     */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }

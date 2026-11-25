@@ -18,6 +18,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.TagProfileVO;
 import com.xuan.vo.TagPublicDetailVO;
@@ -48,7 +49,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** 前台按 ID 升序取标签，不返回创建和修改时间。 */
+    /**
+     * 前台按 ID 升序取标签，不返回创建和修改时间。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -57,7 +60,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
                 LocalDateTime.now(ZoneOffset.UTC)));
     }
 
-    /** 根据slug查询标签及公开文章数，在同一个只读事务中读取，不增加文章阅读量。 */
+    /**
+     * 根据slug查询标签及公开文章数，在同一个只读事务中读取，不增加文章阅读量。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -69,7 +74,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return value;
     }
 
-    /** 先检查后台和标签查询权限，再按名称查找，不按当前作者缩小范围。 */
+    /**
+     * 先检查后台和标签查询权限，再按名称查找，不按当前作者缩小范围。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogTag> listTags(TagQueryDTO query) {
@@ -77,7 +84,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()), query));
     }
 
-    /** 根据id查询标签详情及版本，在同一个只读事务中读取，标签不存在时返回 404。 */
+    /**
+     * 根据id查询标签详情及版本，在同一个只读事务中读取，标签不存在时返回 404。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public TagProfileVO detail(long id) {
@@ -85,7 +94,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return profile(requireTag(tags.selectById(id)));
     }
 
-    /** 锁住操作者后重新检查权限，只写名称和 slug，时间由数据库填写。 */
+    /**
+     * 锁住操作者后重新检查权限，只写名称和 slug，时间由数据库填写。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:tag", permission = "blog:tag:create")
@@ -111,7 +122,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return tags.selectById(row.getTagId());
     }
 
-    /** 锁住标签并核对版本后替换资料，原来的文章关联保留。 */
+    /**
+     * 锁住标签并核对版本后替换资料，原来的文章关联保留。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:tag", permission = "blog:tag:update", targetIdArgument = 0)
@@ -136,7 +149,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return profile(tags.selectById(id));
     }
 
-    /** 先锁操作者、检查权限，再锁标签；等待结束后还要重新检查权限。 */
+    /**
+     * 先锁操作者、检查权限，再锁标签；等待结束后还要重新检查权限。
+     */
     private BlogTag lockTag(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -145,7 +160,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return requireTag(row);
     }
 
-    /** 字典没有“本人标签”，SELF 也允许操作，但后台入口和业务权限缺一不可。 */
+    /**
+     * 字典没有“本人标签”，SELF 也允许操作，但后台入口和业务权限缺一不可。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -153,7 +170,9 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         authorization.requireScope(actor, "blog:tag:" + operation);
     }
 
-    /** 权限检查通过后，再把没查到的标签报成 404。 */
+    /**
+     * 权限检查通过后，再把没查到的标签报成 404。
+     */
     private BlogTag requireTag(BlogTag row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "标签不存在");
@@ -161,26 +180,24 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
         return row;
     }
 
-    /** 在标签锁内检查单个带引号的版本，不能用通配符跳过检查。 */
+    /**
+     * 在标签锁内检查单个带引号的版本，不能用通配符跳过检查。
+     */
     private void checkRevision(BlogTag row, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(row).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "标签已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(row).revision(), revision, "标签已修改，请重新获取");
     }
 
-    /** 版本只包含 ID、名称和 slug，排除数据库维护的时间。 */
+    /**
+     * 版本只包含 ID、名称和 slug，排除数据库维护的时间。
+     */
     private TagProfileVO profile(BlogTag row) {
         String value = json.writeValueAsString(List.of(row.getTagId(), row.getTagName(), row.getSlug()));
         return new TagProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
     }
 
-    /** 批量删除标签，先加锁并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量删除标签，先加锁并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:tag", permission = "blog:tag:delete")

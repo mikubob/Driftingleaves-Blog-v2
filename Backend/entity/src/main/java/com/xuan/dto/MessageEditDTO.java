@@ -49,7 +49,9 @@ public class MessageEditDTO {
         notifyReply = value;
     }
 
-    /** 检查回复字段是否完整。 */
+    /**
+     * 检查回复字段是否完整。
+     */
     @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 3;

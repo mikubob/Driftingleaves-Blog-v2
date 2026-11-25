@@ -9,6 +9,7 @@ import com.xuan.service.ISubscriptionService;
 import com.xuan.vo.SubscriptionVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,42 +19,68 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 本人邮件订阅接口，用户取当前会话，不接受 userId 参数。
+ * 本人邮件订阅接口
  */
+@Slf4j
 @RestController("meSubscriptionController")
 @RequestMapping("/blog/me/rss-subscription")
 @RequiredArgsConstructor
 public class MySubscriptionController {
 
-    private final ISubscriptionService subscriptions;
+    private final ISubscriptionService subscriptionService;
 
-    /** 查询本人订阅，未申请时返回 null，不返回票据。 */
+    /**
+     * 查询本人订阅状态
+     *
+     * @return 订阅信息，未申请时返回 null
+     */
     @GetMapping
     public Result<SubscriptionVO> own() {
-        return Result.ok(subscriptions.own());
+        log.info("查询本人邮件订阅状态");
+        SubscriptionVO subscription = subscriptionService.own();
+        return Result.ok(subscription);
     }
 
-    /** 申请订阅或重发确认邮件，同账号和可信 IP 共用每分钟五次限制。 */
+    /**
+     * 申请订阅或重发确认邮件
+     *
+     * @param request 订阅参数
+     * @return 订阅信息
+     */
     @PutMapping
     @SaCheckPermission("blog:rss:subscribe")
     @RateLimit(value = "subscription-request", limit = 5, dimension = RateLimit.Dimension.USER)
     public Result<SubscriptionVO> request(@Valid @RequestBody SubscriptionWriteDTO request) {
-        return Result.ok(subscriptions.request(request));
+        log.info("申请邮件订阅");
+        SubscriptionVO subscription = subscriptionService.request(request);
+        return Result.ok(subscription);
     }
 
-    /** 确认订阅，当前会话必须属于申请邮件的用户。 */
+    /**
+     * 确认本人邮件订阅
+     *
+     * @param request 订阅确认票据参数
+     * @return 确认后的订阅信息
+     */
     @PostMapping("/confirm")
     @SaCheckPermission("blog:rss:subscribe")
     @RateLimit(value = "subscription-confirm", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<SubscriptionVO> confirm(@Valid @RequestBody SubscriptionTicketDTO request) {
-        return Result.ok(subscriptions.confirm(request.ticket()));
+        log.info("确认本人邮件订阅");
+        SubscriptionVO subscription = subscriptionService.confirm(request.ticket());
+        return Result.ok(subscription);
     }
 
-    /** 取消本人订阅，不存在或已退订时也返回 200。 */
+    /**
+     * 取消本人邮件订阅
+     *
+     * @return 成功结果
+     */
     @DeleteMapping
     @SaCheckPermission("blog:rss:unsubscribe")
     public Result<Void> cancel() {
-        subscriptions.cancelOwn();
+        log.info("取消本人邮件订阅");
+        subscriptionService.cancelOwn();
         return Result.ok(null);
     }
 }

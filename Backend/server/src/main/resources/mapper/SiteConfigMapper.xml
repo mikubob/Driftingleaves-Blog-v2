@@ -1,23 +1,38 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 白名单在查询里落实，即使误插了公开配置也不能把未知键带给前台。 -->
 <mapper namespace="com.xuan.mapper.SiteConfigMapper">
+
+    <!-- 查询白名单站点配置列表，公开查询仅返回公开的 site 配置 -->
     <select id="configs" resultType="com.xuan.entity.BlogSiteConfig">
-        SELECT * FROM blog_site_config WHERE
+        SELECT *
+        FROM blog_site_config
+        WHERE
         <choose>
-            <when test="publicOnly">config_key='site' AND is_public=1</when>
-            <otherwise>config_key IN ('site','comment','message')</otherwise>
+            <when test="publicOnly">
+                config_key = 'site' AND is_public = 1
+            </when>
+            <otherwise>
+                config_key IN ('site', 'comment', 'message')
+            </otherwise>
         </choose>
         ORDER BY config_key ASC
     </select>
 
+    <!-- 根据配置键加行锁查询站点配置 -->
     <select id="lockByKey" resultType="com.xuan.entity.BlogSiteConfig">
-        SELECT * FROM blog_site_config WHERE config_key=#{key} FOR UPDATE
+        SELECT *
+        FROM blog_site_config
+        WHERE config_key = #{key}
+        FOR UPDATE
     </select>
 
-    <!-- JSON 和公开标记同一条语句更新，不能只保存一半。 -->
+    <!-- 完整更新站点配置值、说明与公开标记 -->
     <update id="updateConfig">
-        UPDATE blog_site_config SET config_value=#{config.configValue}, description=#{config.description},
-        is_public=#{config.isPublic} WHERE config_key=#{config.configKey}
+        UPDATE blog_site_config
+        SET config_value = #{config.configValue},
+            description = #{config.description},
+            is_public = #{config.isPublic}
+        WHERE config_key = #{config.configKey}
     </update>
+
 </mapper>

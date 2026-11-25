@@ -23,7 +23,9 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-/** 在事务第一次查询前记录缓存调用信息，内部通过代理调用时共用同一个缓存版本。 */
+/**
+ * 在事务第一次查询前记录缓存调用信息，内部通过代理调用时共用同一个缓存版本。
+ */
 @Aspect
 @Component
 @Order(80)
@@ -33,11 +35,14 @@ public class PublicCacheAspect {
     private static final DefaultParameterNameDiscoverer PARAMETERS = new DefaultParameterNameDiscoverer();
     private final PublicCacheStore store;
 
-    /** 处理公开查询缓存，只缓存已声明的方法，不缓存私有业务或通用 Mapper。 */
+    /**
+     * 处理公开查询缓存，只缓存已声明的方法，不缓存私有业务或通用 Mapper。
+     */
     @Around("@annotation(org.springframework.cache.annotation.Cacheable) || " +
             "@annotation(org.springframework.cache.annotation.CacheEvict) || @annotation(org.springframework.cache.annotation.Caching) || " +
             "@annotation(com.xuan.annotation.PublicCacheRead)")
     public Object around(ProceedingJoinPoint point) throws Throwable {
+        // 1. 解析目标方法上的失效注解并计算 SpEL 条件，汇总本次调用需要保护的缓存域。
         var method = AopUtils.getMostSpecificMethod(((MethodSignature) point.getSignature()).getMethod(), point.getTarget().getClass());
         Set<String> evictions = new LinkedHashSet<>();
         CacheEvict single = method.getAnnotation(CacheEvict.class);
@@ -53,6 +58,8 @@ public class PublicCacheAspect {
                 }
             }
         }
+
+        // 2. 打开当前层缓存上下文，并在事务首次查询前记录各读缓存域的起始版本。
         PublicCacheContext.open(method.getGenericReturnType(), evictions);
         try {
             Set<String> reads = new LinkedHashSet<>();
@@ -72,11 +79,14 @@ public class PublicCacheAspect {
             reads.forEach(store::beginRead);
             return point.proceed();
         } finally {
+            // 3. 无论成功或异常都关闭当前层上下文，避免线程复用串扰。
             PublicCacheContext.close();
         }
     }
 
-    /** 按方法入参检查失效条件，写保护与 CacheEvict 使用同一份条件。 */
+    /**
+     * 按方法入参检查失效条件，写保护与 CacheEvict 使用同一份条件。
+     */
     private boolean applies(CacheEvict rule, EvaluationContext arguments) {
         return rule.condition().isEmpty()
                 || Boolean.TRUE.equals(EXPRESSIONS.parseExpression(rule.condition()).getValue(arguments, Boolean.class));

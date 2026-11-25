@@ -23,13 +23,17 @@ import java.util.List;
 @EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
 
-    /** 配置 Redis 会话存储，复用官方 DAO 并添加本站前缀，避免与其他应用混用。 */
+    /**
+     * 配置 Redis 会话存储，复用官方 DAO 并添加本站前缀，避免与其他应用混用。
+     */
     @Bean
     @Primary
     public SaTokenDaoForRedisTemplate sessionDao(RedisConnectionFactory factory, AuthProperties properties) {
         // 1. 沿用官方 DAO，只补上保留 TTL 和本站键前缀的行为。
         SaTokenDaoForRedisTemplate dao = new SaTokenDaoForRedisTemplate() {
-            /** 更新会话并保留过期时间，Redis 5 不支持 KEEPTTL，改用脚本，已过期的会话不再写入。 */
+            /**
+             * 更新会话并保留过期时间，Redis 5 不支持 KEEPTTL，改用脚本，已过期的会话不再写入。
+             */
             @Override
             public void setStringAndKeepTTL(String finalKey, String value) {
                 // 一次 Lua 里读旧 TTL 并设置新值，键已经过期就不能更新复活。

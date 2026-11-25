@@ -12,32 +12,87 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 评论数据接口，SQL 限制操作范围，写入时依次锁住配置、文章和评论。
+ * 文章评论数据访问接口
  */
 @Mapper
 public interface CommentMapper extends BaseMapper<BlogComment> {
 
-    /** 只锁 comment 配置，不顺带实现站点配置管理；锁保持到事务结束。 */
+    /**
+     * 加行锁查询 comment 站点配置，调用方须处于写事务内。
+     *
+     * @return 评论配置记录
+     */
     BlogSiteConfig lockConfig();
 
-    /** 读取已确认可见的当前页评论，根评论倒序、整组回复正序。 */
+    /**
+     * 根据已筛选可见的评论 ID 列表查询前台评论详情
+     *
+     * @param article 文章 ID
+     * @param ids 评论 ID 列表
+     * @param replies true 按回复正序排列，false 按根评论倒序排列
+     * @return 评论记录列表
+     */
     List<CommentRow> publicRows(@Param("article") long article,
-            @Param("ids") List<Long> ids, @Param("replies") boolean replies);
+            @Param("ids") List<Long> ids,
+            @Param("replies") boolean replies);
 
-    /** 查询本人评论，文章标题和 slug 仅在文章公开时返回。 */
-    IPage<CommentRow> commentPage(IPage<CommentRow> page, @Param("article") Long article,
-            @Param("user") Long user, @Param("status") Integer status,
+    /**
+     * 分页查询本人评论列表，文章公开时返回标题与 slug。
+     *
+     * @param page 分页参数
+     * @param article 文章 ID，可为空
+     * @param user 评论作者用户 ID
+     * @param status 审核状态，可为空
+     * @param now 当前 UTC 时间
+     * @return 评论分页结果
+     */
+    IPage<CommentRow> commentPage(IPage<CommentRow> page,
+            @Param("article") Long article,
+            @Param("user") Long user,
+            @Param("status") Integer status,
             @Param("now") LocalDateTime now);
 
-    /** 分页查询后台评论及直接回复标记；parent为0查根节点，null保留平铺，author始终限定文章范围。 */
-    IPage<CommentRow> adminPage(IPage<CommentRow> page, @Param("article") Long article,
-            @Param("user") Long user, @Param("status") Integer status,
-            @Param("author") Long author, @Param("parent") Long parent);
+    /**
+     * 分页查询后台评论列表，parent 为 0 查根节点，为 null 保留平铺，author 限定所属文章作者范围。
+     *
+     * @param page 分页参数
+     * @param article 文章 ID，可为空
+     * @param user 评论作者用户 ID，可为空
+     * @param status 审核状态，可为空
+     * @param author SELF 范围文章作者 ID，ALL 范围为 null
+     * @param parent 父评论 ID，可为空
+     * @return 后台评论分页结果
+     */
+    IPage<CommentRow> adminPage(IPage<CommentRow> page,
+            @Param("article") Long article,
+            @Param("user") Long user,
+            @Param("status") Integer status,
+            @Param("author") Long author,
+            @Param("parent") Long parent);
 
-    /** 查询、审核、管理删除分别传自己的 author 范围；本人查询和删除固定 user。 */
-    CommentRow scoped(@Param("id") long id, @Param("author") Long author,
-            @Param("user") Long user, @Param("lock") boolean lock);
+    /**
+     * 按权限范围查询单条评论，lock 为 true 时加行锁。
+     *
+     * @param id 评论 ID
+     * @param author SELF 范围文章作者 ID，ALL 范围为 null
+     * @param user 评论作者用户 ID（本人操作时传入）
+     * @param lock 是否加行锁
+     * @return 评论记录，不存在或越界时返回 null
+     */
+    CommentRow scoped(@Param("id") long id,
+            @Param("author") Long author,
+            @Param("user") Long user,
+            @Param("lock") boolean lock);
 
-    /** 锁内写审核结果，SQL 再限制当前操作范围，不改文章、作者和父节点。 */
-    int change(@Param("comment") BlogComment comment, @Param("author") Long author, @Param("user") Long user);
+    /**
+     * 更新评论审核状态，并在 SQL 中限制操作范围。
+     *
+     * @param comment 待更新的评论实体
+     * @param author SELF 范围文章作者 ID，ALL 范围为 null
+     * @param user 评论作者用户 ID，可为空
+     * @return 受影响行数
+     */
+    int change(@Param("comment") BlogComment comment,
+            @Param("author") Long author,
+            @Param("user") Long user);
 }

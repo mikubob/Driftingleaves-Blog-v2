@@ -36,7 +36,9 @@ public class RateLimitAspect {
     private final AuthProperties properties;
     private final SessionManager sessions;
 
-    /** 检查公开 GET 请求频率，在参数转换后、读取缓存或修改数据前执行。 */
+    /**
+     * 检查公开 GET 请求频率，在参数转换后、读取缓存或修改数据前执行。
+     */
     @Around("execution(public * com.xuan.service.impl.*.public*(..)) || " +
             "execution(* com.xuan.service.impl.ArticleServiceImpl.archives(..)) || " +
             "execution(* com.xuan.service.impl.ArticleServiceImpl.rankings(..)) || " +
@@ -44,6 +46,7 @@ public class RateLimitAspect {
             "execution(* com.xuan.service.impl.FeedServiceImpl.sitemap(..)) || " +
             "execution(* com.xuan.service.impl.FileServiceImpl.attachment(..))")
     public Object publicReads(ProceedingJoinPoint point) throws Throwable {
+        // 1. 仅对 HTTP GET 请求执行公开读限流，内部调用直接放行。
         var attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
         if (attributes == null) {
             return point.proceed();
@@ -52,7 +55,8 @@ public class RateLimitAspect {
         if (!"GET".equals(request.getMethod())) {
             return point.proceed();
         }
-        // 查询id保留字符串，计入限流次数前先检查格式，拒绝前导零；Service 使用同一规则转换类型。
+
+        // 2. 计入限流次数前先校验字符串 ID 格式，拒绝前导零等非法输入。
         for (Object argument : point.getArgs()) {
             if (argument instanceof ArticleQueryDTO query) {
                 IdUtils.parse(query.categoryId());
@@ -64,6 +68,8 @@ public class RateLimitAspect {
                 IdUtils.parse(query.parentId());
             }
         }
+
+        // 3. 按公开路径匹配基础读、搜索、详情、XML 与附件的梯度限流规则。
         String path = request.getServletPath();
         if (path.matches("/blog/articles/[^/]+/files/[^/]+/content")) {
             hitIp("public-file", 120, request);
@@ -82,14 +88,18 @@ public class RateLimitAspect {
         return point.proceed();
     }
 
-    /** 按操作和可信客户端 IP 统计一分钟内的请求次数。 */
+    /**
+     * 按操作和可信客户端 IP 统计一分钟内的请求次数。
+     */
     private void hitIp(String operation, int limit, HttpServletRequest request) {
         String clientIp = String.valueOf(IpUtils.clientIp(request, properties.getTrustedProxies()));
         String key = properties.getRedisPrefix() + "rate:interface:" + operation + ":ip:" + TokenUtils.digest(clientIp);
         limiter.hit(List.of(key), 60, limit);
     }
 
-    /** 检查请求频率，按操作名、可信 IP 和登录会话计数，超限时不执行方法。 */
+    /**
+     * 检查请求频率，按操作名、可信 IP 和登录会话计数，超限时不执行方法。
+     */
     @Around("@annotation(rule)")
     public Object around(ProceedingJoinPoint point, RateLimit rule) throws Throwable {
         if (!rule.value().matches("[a-zA-Z0-9:._-]{1,100}") || rule.limit() < 1 || rule.windowSeconds() < 1) {

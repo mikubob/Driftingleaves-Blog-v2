@@ -1,16 +1,14 @@
 package com.xuan.controller.blog;
 
 import com.xuan.dto.OnlineTicketCreateDTO;
-import com.xuan.exception.BusinessException;
-import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
 import com.xuan.security.WebSession;
 import com.xuan.service.IOnlineService;
-import com.xuan.utils.IpUtils;
 import com.xuan.vo.OnlineTicketVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestAttribute;
@@ -19,23 +17,32 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 在线统计票据接口，可以不登录，票据只用于在线统计。 */
+/**
+ * 博客端在线统计票据接口
+ */
+@Slf4j
 @RestController("blogOnlineController")
 @RequestMapping("/blog/analytics/online/tickets")
 @RequiredArgsConstructor
 public class OnlineController {
-    private final IOnlineService online;
-    private final AuthProperties auth;
 
-    /** 生成在线统计票据，成功返回 201，博客身份从当前登录 Cookie 读取，响应禁止缓存。 */
+    private final IOnlineService onlineService;
+
+    /**
+     * 生成博客端在线统计票据
+     *
+     * @param body 票据创建参数
+     * @param origin 已校验的请求来源
+     * @param request 当前 HTTP 请求
+     * @return 在线统计票据
+     */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body,
-            @RequestAttribute(WebSession.VERIFIED_ORIGIN) String origin, HttpServletRequest request) {
-        if (!"blog".equals(body.siteCode())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
-        }
-        return Result.ok(online.issue(body, origin,
-                IpUtils.clientIp(request, auth.getTrustedProxies())));
+            @RequestAttribute(WebSession.VERIFIED_ORIGIN) String origin,
+            HttpServletRequest request) {
+        log.info("生成博客端在线统计票据: pagePath={}", body.pagePath());
+        OnlineTicketVO ticket = onlineService.issueForSite("blog", body, origin, request);
+        return Result.ok(ticket);
     }
 }

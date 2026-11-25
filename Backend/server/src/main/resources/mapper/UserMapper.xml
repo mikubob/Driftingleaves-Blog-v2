@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 用户行锁必须由业务事务持有，权限和版本仍由业务层检查，不能靠 Mapper 代替。 -->
 <mapper namespace="com.xuan.mapper.UserMapper">
-    <!-- 只查角色展示字段，不按启用状态过滤，禁用用户和禁用角色的关联都要保留。 -->
+
+    <!-- 查询用户已分配的全部角色（含禁用角色），按角色 ID 升序排列 -->
     <select id="assignedRoles" resultType="com.xuan.vo.UserRoleVO">
         SELECT r.role_id, r.role_code, r.role_name, r.status
         FROM sys_user_role ur
@@ -11,123 +11,191 @@
         ORDER BY r.role_id
     </select>
 
-    <!-- 一次查出两个字段的冲突，不能只按数据库首先报出的唯一键提示。 -->
+    <!-- 检查用户名与邮箱唯一冲突字段，修改时排除当前用户 -->
     <select id="findIdentityConflicts" resultType="string">
-        SELECT 'username' WHERE EXISTS (
-            SELECT 1 FROM sys_user WHERE username = #{user.username}
-            <if test="user.userId != null">AND user_id != #{user.userId}</if>
+        SELECT 'username'
+        WHERE EXISTS (
+            SELECT 1
+            FROM sys_user
+            WHERE username = #{user.username}
+            <if test="user.userId != null">
+                AND user_id != #{user.userId}
+            </if>
         )
         UNION ALL
-        SELECT 'email' WHERE EXISTS (
-            SELECT 1 FROM sys_user WHERE email = #{user.email}
-            <if test="user.userId != null">AND user_id != #{user.userId}</if>
+        SELECT 'email'
+        WHERE EXISTS (
+            SELECT 1
+            FROM sys_user
+            WHERE email = #{user.email}
+            <if test="user.userId != null">
+                AND user_id != #{user.userId}
+            </if>
         )
     </select>
 
-    <!-- 列表和分页插件的总数用同样条件，INSTR 把 SQL 通配符当普通字符。 -->
+    <!-- 分页查询后台用户列表 -->
     <select id="adminPage" resultType="com.xuan.entity.SysUser">
-        SELECT u.* FROM sys_user u
+        SELECT u.*
+        FROM sys_user u
         <where>
             <if test="query.keyword != null">
-                AND (INSTR(u.username, #{query.keyword}) > 0 OR INSTR(u.nickname, #{query.keyword}) > 0
-                OR INSTR(u.email, #{query.keyword}) > 0)
+                AND (
+                    INSTR(u.username, #{query.keyword}) &gt; 0
+                    OR INSTR(u.nickname, #{query.keyword}) &gt; 0
+                    OR INSTR(u.email, #{query.keyword}) &gt; 0
+                )
             </if>
-            <if test="query.status != null">AND u.status = #{query.status}</if>
+            <if test="query.status != null">
+                AND u.status = #{query.status}
+            </if>
             <if test="roleId != null">
-                AND EXISTS (SELECT 1 FROM sys_user_role ur WHERE ur.user_id = u.user_id AND ur.role_id = #{roleId})
+                AND EXISTS (
+                    SELECT 1
+                    FROM sys_user_role ur
+                    WHERE ur.user_id = u.user_id
+                      AND ur.role_id = #{roleId}
+                )
             </if>
         </where>
         ORDER BY u.create_time DESC, u.user_id DESC
     </select>
 
-    <!-- 这是管理写事务的第一把锁，禁用角色也得锁，避免绕过最后管理员检查。 -->
+    <!-- 锁定初始化管理员角色行（role_id = 1），用于串行保护最后有效管理员 -->
     <select id="lockAdminGuard" resultType="long">
-        SELECT role_id FROM sys_role WHERE role_id = 1 FOR UPDATE
+        SELECT role_id
+        FROM sys_role
+        WHERE role_id = 1
+        FOR UPDATE
     </select>
 
-    <!-- 用户锁后再按角色 ID 升序加锁，是否存在、启用由业务层一起检查。 -->
+    <!-- 按角色 ID 升序加行锁查询候选角色列表 -->
     <select id="lockRoles" resultType="com.xuan.entity.SysRole">
-        SELECT * FROM sys_role WHERE role_id IN
-        <foreach collection="roleIds" item="id" open="(" separator="," close=")">#{id}</foreach>
-        ORDER BY role_id FOR UPDATE
+        SELECT *
+        FROM sys_role
+        WHERE role_id IN
+        <foreach collection="roleIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY role_id
+        FOR UPDATE
     </select>
 
-    <!-- 只写后台资料和状态，用户名、密码、时间和角色关联不改。 -->
+    <!-- 完整更新后台用户资料和状态，显式写入可空字段以支持清空 -->
     <update id="updateAdmin">
-        UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email}, avatar = #{user.avatar},
-        intro = #{user.intro}, status = #{user.status} WHERE user_id = #{user.userId}
+        UPDATE sys_user
+        SET nickname = #{user.nickname},
+            email = #{user.email},
+            avatar = #{user.avatar},
+            intro = #{user.intro},
+            status = #{user.status}
+        WHERE user_id = #{user.userId}
     </update>
 
-    <!-- 用户删除只清理既有级联关联，内容仍引用时必须整批拒绝。 -->
+    <!-- 检查用户是否存在文章、评论、文件、主人资料或留言内容引用 -->
     <select id="hasContentReferences" resultType="boolean">
-        SELECT EXISTS(SELECT 1 FROM blog_article WHERE author_id = #{userId})
-            OR EXISTS(SELECT 1 FROM blog_comment WHERE user_id = #{userId})
-            OR EXISTS(SELECT 1 FROM blog_file WHERE uploader_id = #{userId})
-            OR EXISTS(SELECT 1 FROM home_profile WHERE user_id = #{userId})
-            OR EXISTS(SELECT 1 FROM blog_message WHERE user_id = #{userId})
+        SELECT EXISTS (SELECT 1 FROM blog_article WHERE author_id = #{userId})
+            OR EXISTS (SELECT 1 FROM blog_comment WHERE user_id = #{userId})
+            OR EXISTS (SELECT 1 FROM blog_file WHERE uploader_id = #{userId})
+            OR EXISTS (SELECT 1 FROM home_profile WHERE user_id = #{userId})
+            OR EXISTS (SELECT 1 FROM blog_message WHERE user_id = #{userId})
     </select>
 
-    <!-- 完整替换前清掉旧关联，后续插入失败时一起回滚。 -->
+    <!-- 清空指定用户的全部角色关联 -->
     <delete id="deleteRoles">
-        DELETE FROM sys_user_role WHERE user_id = #{userId}
+        DELETE FROM sys_user_role
+        WHERE user_id = #{userId}
     </delete>
 
-    <!-- 用完整的两列主键写入检查过的关联，空集合由业务层跳过。 -->
+    <!-- 批量插入用户与角色的复合主键关联 -->
     <insert id="insertRoles">
-        INSERT INTO sys_user_role (user_id, role_id) VALUES
-        <foreach collection="roleIds" item="id" separator=",">(#{userId}, #{id})</foreach>
+        INSERT INTO sys_user_role (user_id, role_id)
+        VALUES
+        <foreach collection="roleIds" item="id" separator=", ">
+            (#{userId}, #{id})
+        </foreach>
     </insert>
 
-    <!-- 按固定系统管理权限检查修改后的有效管理员，新增权限不会自动扩大保护名单。 -->
+    <!-- 统计具备全部指定权限的有效管理员人数 -->
     <select id="effectiveAdminCount" resultType="long">
         <bind name="requiredCount" value="permissions.size()"/>
-        SELECT COUNT(*) FROM sys_user u
+        SELECT COUNT(*)
+        FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id AND ur.role_id = 1
-        JOIN sys_role r ON r.role_id = ur.role_id AND r.role_code = 'admin' AND r.status = 1 AND r.data_scope = 'ALL'
-        WHERE u.status = 1 AND (
-        SELECT COUNT(*) FROM sys_role_permission rp
-        JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
-        WHERE rp.role_id = 1 AND p.permission_code IN
-        <foreach collection="permissions" item="code" open="(" separator="," close=")">#{code}</foreach>
-        ) = #{requiredCount}
+        JOIN sys_role r ON r.role_id = ur.role_id
+            AND r.role_code = 'admin'
+            AND r.status = 1
+            AND r.data_scope = 'ALL'
+        WHERE u.status = 1
+          AND (
+              SELECT COUNT(*)
+              FROM sys_role_permission rp
+              JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
+              WHERE rp.role_id = 1
+                AND p.permission_code IN
+                <foreach collection="permissions" item="code" open="(" separator=", " close=")">
+                    #{code}
+                </foreach>
+          ) = #{requiredCount}
     </select>
-    <!-- 登录、密码、绑定和解绑共用用户锁，时间由数据库维护。 -->
 
-    <!-- 按用户名取完整内部资料并拿排他行锁，先不过滤 status；密码通过后由业务层检查启用状态，认证失败统一报错。 -->
+    <!-- 按用户名加行锁查询用户记录 -->
     <select id="lockByUsername" resultType="com.xuan.entity.SysUser">
-        SELECT * FROM sys_user WHERE username = #{username} FOR UPDATE
+        SELECT *
+        FROM sys_user
+        WHERE username = #{username}
+        FOR UPDATE
     </select>
 
-    <!-- 邮箱登录与资料修改共用用户锁，禁用状态仍交给业务层判断。 -->
+    <!-- 按邮箱加行锁查询用户记录 -->
     <select id="lockByEmail" resultType="com.xuan.entity.SysUser">
-        SELECT * FROM sys_user WHERE email = #{email} FOR UPDATE
+        SELECT *
+        FROM sys_user
+        WHERE email = #{email}
+        FOR UPDATE
     </select>
 
-    <!-- 按用户 ID 拿登录、密码和绑定共用的行锁，同一用户的安全操作在这里排队，不存在时由调用方按场景报错。 -->
+    <!-- 按用户 ID 加行锁查询用户记录 -->
     <select id="lockById" resultType="com.xuan.entity.SysUser">
-        SELECT * FROM sys_user WHERE user_id = #{userId} FOR UPDATE
+        SELECT *
+        FROM sys_user
+        WHERE user_id = #{userId}
+        FOR UPDATE
     </select>
 
-    <!-- 这里只更新本人允许修改的四个字段，PATCH 没传的值已由业务层合并；NULL 要清空，账号、密码和角色不改。 -->
+    <!-- 更新本人允许修改的资料字段，显式写入可空字段以支持清空 -->
     <update id="updateProfile">
-        UPDATE sys_user SET nickname = #{user.nickname}, email = #{user.email},
-        avatar = #{user.avatar}, intro = #{user.intro} WHERE user_id = #{user.userId}
+        UPDATE sys_user
+        SET nickname = #{user.nickname},
+            email = #{user.email},
+            avatar = #{user.avatar},
+            intro = #{user.intro}
+        WHERE user_id = #{user.userId}
     </update>
 
-    <!-- 这里只更新目标用户密码哈希，NULL 就清除；业务层先查最近认证、旧凭据和剩余登录方式，提交前还要撤销 Redis 会话。 -->
+    <!-- 更新用户密码哈希，传入 null 时清除本站密码 -->
     <update id="updatePassword">
-        UPDATE sys_user SET password_hash = #{hash} WHERE user_id = #{userId}
+        UPDATE sys_user
+        SET password_hash = #{hash}
+        WHERE user_id = #{userId}
     </update>
 
-    <!-- 最近登录用数据库当前毫秒时间，连接固定 UTC，并与用户锁和会话签发在同一事务。 -->
+    <!-- 更新用户最近登录时间、IP 与归属地 -->
     <update id="updateLastLogin">
-        UPDATE sys_user SET last_login_time = CURRENT_TIMESTAMP(3),
-        last_login_ip = #{ip}, last_login_location = #{location} WHERE user_id = #{userId}
+        UPDATE sys_user
+        SET last_login_time = CURRENT_TIMESTAMP(3),
+            last_login_ip = #{ip},
+            last_login_location = #{location}
+        WHERE user_id = #{userId}
     </update>
 
-    <!-- 只给新用户插入启用的 member 关联，user_id、role_id 一起作主键；没有可用角色时插入零行，业务层必须回滚注册。 -->
+    <!-- 为新注册用户分配启用状态的 member 角色 -->
     <insert id="assignMember">
         INSERT INTO sys_user_role (user_id, role_id)
-        SELECT #{userId}, role_id FROM sys_role WHERE role_code = 'member' AND status = 1
+        SELECT #{userId}, role_id
+        FROM sys_role
+        WHERE role_code = 'member'
+          AND status = 1
     </insert>
+
 </mapper>

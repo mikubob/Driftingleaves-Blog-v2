@@ -31,7 +31,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
 
-    /** 查询本人对公开文章的点赞状态，在同一个只读事务中检查文章和点赞记录，不要求点赞权限。 */
+    /**
+     * 查询本人对公开文章的点赞状态，在同一个只读事务中检查文章和点赞记录，不要求点赞权限。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public LikeStateVO state(long article) {
@@ -40,7 +42,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return likes.state(article, actor);
     }
 
-    /** 为文章点赞，先锁住文章，再按文章和用户查询点赞记录；唯一键冲突时让事务失败。 */
+    /**
+     * 为文章点赞，先锁住文章，再按文章和用户查询点赞记录；唯一键冲突时让事务失败。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LikeStateVO like(long article) {
@@ -51,7 +55,9 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
         return likes.state(article, actor);
     }
 
-    /** 取消文章点赞，没有记录时也返回 false；非公开文章拒绝操作并保留原记录。 */
+    /**
+     * 取消文章点赞，没有记录时也返回 false；非公开文章拒绝操作并保留原记录。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LikeStateVO unlike(long article) {

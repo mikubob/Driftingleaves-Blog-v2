@@ -8,13 +8,17 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.util.Locale;
 
-/** 图片压缩与转码工具，使用已解码的原图，避免重复解码和多次有损压缩。 */
+/**
+ * 图片压缩与转码工具，使用已解码的原图，避免重复解码和多次有损压缩。
+ */
 public final class ImageCompressUtils {
 
     private ImageCompressUtils() {
     }
 
-    /** 压缩并转码图片；开启后全部转为配置的输出格式（默认 webp），超限时逐步降低质量重试。 */
+    /**
+     * 压缩并转码图片；开启后全部转为配置的输出格式（默认 webp），超限时逐步降低质量重试。
+     */
     public static byte[] compress(byte[] original, BufferedImage image, String extension,
             ImageProperties properties) throws IOException {
         if (!properties.isEnabled()) {
@@ -49,7 +53,9 @@ public final class ImageCompressUtils {
         return result;
     }
 
-    /** 使用 Thumbnailator 按目标格式和质量编码到内存，强制标准色彩类型防止 WebP 偏色。 */
+    /**
+     * 使用 Thumbnailator 按目标格式和质量编码到内存，强制标准色彩类型防止 WebP 偏色。
+     */
     private static byte[] encode(BufferedImage image, double scale, String outputFormat,
             float quality) throws IOException {
         int imageType = ("png".equals(outputFormat) || "webp".equals(outputFormat))

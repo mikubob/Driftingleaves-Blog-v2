@@ -23,7 +23,9 @@ public interface OAuthProviderClient {
      */
     void requireEnabled(String source);
 
-    /** 获取已启用平台的固定 HTTPS 回调路径。 */
+    /**
+     * 获取已启用平台的固定 HTTPS 回调路径。
+     */
     String callbackPath(String source);
 
     /**

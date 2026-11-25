@@ -6,7 +6,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 批量设置0或1状态，单个目标也提交一项。 */
+/**
+ * 批量设置0或1状态，单个目标也提交一项。
+ */
 @Getter
 @Setter
 public class BatchBinaryStatusDTO extends BatchRevisionDTO {

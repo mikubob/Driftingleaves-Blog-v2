@@ -6,37 +6,89 @@ import com.xuan.vo.ProvinceMetricVO;
 import com.xuan.vo.PublicStatisticsVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 统计查询接口，按保留明细汇总，UTC 起止时间由业务层传入，内容数量按当前数据统计。
+ * 统计报表数据访问接口
  */
+@Mapper
 public interface StatisticsMapper {
 
-    /** PUBLIC内容及blog站点汇总，不返回访客原始字段。 */
-    PublicStatisticsVO publicStatistics(@Param("today") LocalDateTime today, @Param("tomorrow") LocalDateTime tomorrow,
+    /**
+     * 查询博客端公开统计汇总
+     *
+     * @param today 当日 UTC 起始时间
+     * @param tomorrow 次日 UTC 起始时间
+     * @param now 当前 UTC 时间
+     * @return 公开统计数据
+     */
+    PublicStatisticsVO publicStatistics(@Param("today") LocalDateTime today,
+            @Param("tomorrow") LocalDateTime tomorrow,
             @Param("now") LocalDateTime now);
 
-    /** 日期只限制访问指标，文章/评论/留言取当前状态。 */
-    AdminStatisticsVO overview(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
-            @Param("site") String site, @Param("now") LocalDateTime now);
+    /**
+     * 查询管理端统计总览，时间范围仅作用于访问指标。
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param site 站点编码，可为空
+     * @param now 当前 UTC 时间
+     * @return 管理端统计总览
+     */
+    AdminStatisticsVO overview(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
+            @Param("site") String site,
+            @Param("now") LocalDateTime now);
 
-    /** 按日期统计浏览量，有数据的日期由 SQL 汇总，没有数据的日期由 Service 补零。 */
-    List<ViewTrendVO> viewTrend(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
+    /**
+     * 按日期统计每日浏览量，缺失日期由业务层补零。
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param site 站点编码，可为空
+     * @return 每日浏览量列表
+     */
+    List<ViewTrendVO> viewTrend(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
             @Param("site") String site);
 
-    /** 首访按visitor.first_visit_time，site筛选要求区间内有本站访问。 */
-    List<VisitorTrendVO> visitorTrend(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
+    /**
+     * 按首次访问日期统计每日新增访客趋势
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param site 站点编码，可为空
+     * @return 访客趋势列表
+     */
+    List<VisitorTrendVO> visitorTrend(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
             @Param("site") String site);
 
-    /** 访客先去重再按当前province分组，不是访问当时的地域记录。 */
-    List<ProvinceMetricVO> provinces(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
+    /**
+     * 按访客当前省份统计去重后的访客分布
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param site 站点编码，可为空
+     * @return 省份分布列表
+     */
+    List<ProvinceMetricVO> provinces(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
             @Param("site") String site);
 
-    /** 只统计blog明细，排除回收站，允许后台查看当前草稿/私密历史访问。 */
-    List<ArticleViewMetricVO> articles(@Param("begin") LocalDateTime begin, @Param("end") LocalDateTime end,
+    /**
+     * 统计指定时间段内的文章访问排行（仅统计 blog 站点且排除回收站文章）
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param limit 返回条数上限
+     * @return 文章访问排行列表
+     */
+    List<ArticleViewMetricVO> articles(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
             @Param("limit") int limit);
 }

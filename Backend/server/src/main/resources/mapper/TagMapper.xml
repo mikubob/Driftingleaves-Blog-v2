@@ -1,37 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 标签没有隐藏状态，公开查询只少返回后台的时间字段。 -->
 <mapper namespace="com.xuan.mapper.TagMapper">
-    <!-- 列表和详情只统计公开文章，没有公开文章时返回零。 -->
+
+    <!-- 公开标签公共列，实时统计关联的公开文章数量 -->
     <sql id="publicColumns">
-        t.tag_id,t.tag_name,t.slug,
-        CAST((SELECT COUNT(*) FROM blog_article_tag r JOIN blog_article a ON a.article_id=r.article_id
-        WHERE r.tag_id=t.tag_id AND
-        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count
+        t.tag_id,
+        t.tag_name,
+        t.slug,
+        CAST((
+            SELECT COUNT(*)
+            FROM blog_article_tag r
+            JOIN blog_article a ON a.article_id = r.article_id
+            WHERE r.tag_id = t.tag_id
+              AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
+        ) AS CHAR) AS article_count
     </sql>
 
+    <!-- 根据 slug 查询公开标签详情 -->
     <select id="publicBySlug" resultType="com.xuan.vo.TagPublicDetailVO">
-        SELECT <include refid="publicColumns"/>
-        FROM blog_tag t WHERE t.slug=#{slug}
+        SELECT
+            <include refid="publicColumns"/>
+        FROM blog_tag t
+        WHERE t.slug = #{slug}
     </select>
 
+    <!-- 分页查询公开标签列表 -->
     <select id="publicPage" resultType="com.xuan.vo.TagPublicDetailVO">
-        SELECT <include refid="publicColumns"/>
+        SELECT
+            <include refid="publicColumns"/>
         FROM blog_tag t
         ORDER BY t.tag_id ASC
     </select>
 
-    <!-- INSTR 把百分号、下划线当普通文字，总数和列表不会各用一套条件。 -->
+    <!-- 分页查询后台标签列表 -->
     <select id="tagPage" resultType="com.xuan.entity.BlogTag">
-        SELECT * FROM blog_tag
+        SELECT *
+        FROM blog_tag
         <where>
-            <if test="query.keyword != null">INSTR(tag_name, #{query.keyword}) &gt; 0</if>
+            <if test="query.keyword != null">
+                INSTR(tag_name, #{query.keyword}) &gt; 0
+            </if>
         </where>
         ORDER BY tag_id ASC
     </select>
 
-    <!-- 先锁字典再删除，文章保存持有共享锁时这里会等待。 -->
+    <!-- 加行锁查询标签记录 -->
     <select id="lockById" resultType="com.xuan.entity.BlogTag">
-        SELECT * FROM blog_tag WHERE tag_id = #{id} FOR UPDATE
+        SELECT *
+        FROM blog_tag
+        WHERE tag_id = #{id}
+        FOR UPDATE
     </select>
+
 </mapper>

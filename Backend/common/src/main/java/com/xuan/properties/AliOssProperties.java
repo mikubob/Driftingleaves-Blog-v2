@@ -21,12 +21,18 @@ public class AliOssProperties {
     private String bucket;
     private String accessKeyId;
     private String accessKeySecret;
-    /** STS 凭据从外部配置读取，目前不会自动续期。 */
+    /**
+     * STS 凭据从外部配置读取，目前不会自动续期。
+     */
     private String securityToken;
-    /** 读写都限制在这个专属前缀内，前缀不能留空。 */
+    /**
+     * 读写都限制在这个专属前缀内，前缀不能留空。
+     */
     private String keyPrefix = "drifting-leaves-v2/";
 
-    /** 检查 OSS 配置是否完整，仅在启用时校验，报错不包含凭据或地址。 */
+    /**
+     * 检查 OSS 配置是否完整，仅在启用时校验，报错不包含凭据或地址。
+     */
     public void validateEnabled() {
         URI uri;
         try {

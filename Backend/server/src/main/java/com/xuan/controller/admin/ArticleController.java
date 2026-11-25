@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.AdminArticleQueryDTO;
 import com.xuan.dto.ArticleWriteDTO;
 import com.xuan.dto.BatchRevisionDTO;
@@ -15,6 +16,7 @@ import com.xuan.vo.ArticleProfileVO;
 import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,108 +32,144 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台文章管理接口，先检查权限，再由业务事务检查范围和版本。
+ * 管理端文章接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/articles")
 @RequiredArgsConstructor
 public class ArticleController {
 
-    private final IArticleService articles;
+    private final IArticleService articleService;
 
     /**
-     * 分页查询后台文章，按查询权限限定范围，默认不查回收站，列表不带正文和每条记录的版本。
+     * 分页条件查询后台文章列表
      *
-     * @param query 已校验的分页及过滤，authorId不能扩大SELF
-     * @return 200后台文章分页
+     * @param query 查询参数
+     * @return 后台文章分页结果
      */
     @GetMapping
     @SaCheckPermission("blog:article:query")
     public Result<PageResult<ArticleAdminVO>> list(@Valid @ModelAttribute AdminArticleQueryDTO query) {
-        return Result.ok(articles.adminArticles(query));
+        log.info("分页查询后台文章列表: {}", query);
+        PageResult<ArticleAdminVO> pageResult = articleService.adminArticles(query);
+        return Result.ok(pageResult);
     }
 
     /**
-     * 根据id查询文章完整详情，按查询权限限定范围，回收站文章也能查。
+     * 根据 ID 查询文章详情
      *
-     * @param articleId 正十进制目标ID
-     * @return 200详情及X-Revision，不存在或越界404
+     * @param articleId 文章 ID
+     * @return 文章详情及 X-Revision 响应头
      */
     @GetMapping("/{articleId}")
     @SaCheckPermission("blog:article:query")
     public ResponseEntity<Result<ArticleAdminDetailVO>> detail(@PathVariable String articleId) {
-        return profile(articles.detail(IdUtils.parse(articleId)));
+        log.info("根据 ID 查询后台文章详情: articleId={}", articleId);
+        ArticleProfileVO profile = articleService.detail(IdUtils.parse(articleId));
+        return profileResponse(profile);
     }
 
     /**
-     * 创建文章草稿，先检查后台入口和创建权限，作者取当前用户，失败时不保留部分内容。
+     * 创建文章草稿
      *
-     * @param body 已校验的创建字段及默认值，不接受身份或服务端字段
-     * @return 201 完整详情、Location及X-Revision
+     * @param body 文章写入参数
+     * @return 201 响应、Location 及 X-Revision 响应头
      */
     @PostMapping
     @SaCheckPermission("blog:article:create")
     public ResponseEntity<Result<ArticleAdminDetailVO>> create(@Valid @RequestBody ArticleWriteDTO body) {
-        ArticleProfileVO result = articles.create(body);
-        return ResponseEntity.created(URI.create("/api/v1/admin/articles/" + result.article().getArticleId()))
-                .header("X-Revision", result.revision()).body(Result.ok(result.article()));
+        log.info("创建文章草稿: title={}", body.getTitle());
+        ArticleProfileVO result = articleService.create(body);
+        URI location = URI.create("/api/v1/admin/articles/" + result.article().getArticleId());
+        return ResponseEntity.created(location)
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.article()));
     }
 
     /**
-     * 根据id更新文章，PUT 要传完整资料，可空字段也要传；加锁后检查更新权限范围，已发布文章还要检查发布权限范围。
+     * 根据 ID 更新文章
      *
-     * @param articleId 正十进制目标ID
-     * @param body 全部允许的内容字段，不接受状态或HTML
-     * @param revision 原样详情版本，缺失交给权限检查后的锁事务返回428
-     * @return 200详情及新X-Revision，过期412，不部分覆盖
+     * @param articleId 文章 ID
+     * @param body 完整文章内容参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的文章详情及新 X-Revision 响应头
      */
     @PutMapping("/{articleId}")
     @SaCheckPermission("blog:article:update")
     public ResponseEntity<Result<ArticleAdminDetailVO>> update(@PathVariable String articleId,
             @Validated(ArticleWriteDTO.Replace.class) @RequestBody ArticleWriteDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(articles.update(IdUtils.parse(articleId), body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新文章: articleId={}", articleId);
+        ArticleProfileVO profile = articleService.update(IdUtils.parse(articleId), body, revision);
+        return profileResponse(profile);
     }
 
-    /** 批量发布或下架文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量发布或下架文章
+     *
+     * @param body 批量状态变更参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-status")
     @SaCheckPermission("blog:article:publish")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchStatusDTO body) {
-        return Result.ok(articles.changeStatusBatch(body.getItems(), body.getStatus()));
+        log.info("批量修改文章发布状态: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = articleService.changeStatusBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量将文章移入回收站，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量将文章移入回收站
+     *
+     * @param body 批量操作参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-recycle")
     @SaCheckPermission("blog:article:delete")
     public Result<Void> recycle(@Valid @RequestBody BatchRevisionDTO body) {
-        articles.recycleBatch(body.getItems());
+        log.info("批量移入回收站: count={}", body.getItems().size());
+        articleService.recycleBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 批量恢复回收站文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量恢复回收站文章
+     *
+     * @param body 批量操作参数
+     * @return 恢复后的批量版本信息
+     */
     @PostMapping("/batch-restore")
     @SaCheckPermission("blog:article:restore")
     public Result<BatchVersionsVO> restore(@Valid @RequestBody BatchRevisionDTO body) {
-        return Result.ok(articles.restoreBatch(body.getItems()));
+        log.info("批量恢复回收站文章: count={}", body.getItems().size());
+        BatchVersionsVO versions = articleService.restoreBatch(body.getItems());
+        return Result.ok(versions);
     }
 
-    /** 批量永久删除回收站文章，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量永久删除回收站文章
+     *
+     * @param body 批量操作参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-permanent-delete")
     @SaCheckPermission({"blog:article:delete", "blog:article:purge"})
     public Result<Void> purge(@Valid @RequestBody BatchRevisionDTO body) {
-        articles.purgeBatch(body.getItems());
+        log.info("批量永久删除文章: count={}", body.getItems().size());
+        articleService.purgeBatch(body.getItems());
         return Result.ok(null);
     }
 
-
-
     /**
-     * 返回文章详情，整体版本放在响应头，响应体只包含后台允许返回的字段。
+     * 组装文章详情响应，版本放在 X-Revision 响应头。
      *
-     * @param result 同一个只读事务或加锁事务生成的详情与版本
-     * @return 200 约定详情及X-Revision
+     * @param result 文章详情与版本
+     * @return 200 响应
      */
-    private ResponseEntity<Result<ArticleAdminDetailVO>> profile(ArticleProfileVO result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.article()));
+    private ResponseEntity<Result<ArticleAdminDetailVO>> profileResponse(ArticleProfileVO result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.article()));
     }
 }

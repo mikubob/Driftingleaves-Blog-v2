@@ -5,113 +5,121 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.RoleQueryDTO;
 import com.xuan.entity.SysMenu;
 import com.xuan.entity.SysRole;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * 角色数据接口，角色和授权一起保存，业务层依次拿保护锁、用户锁和角色锁。
+ * 角色数据访问接口
  */
+@Mapper
 public interface RoleMapper extends BaseMapper<SysRole> {
 
     /**
-     * 编码和名称按文字包含查找，状态精确匹配，按 ID 升序分页，总数用同样条件。
+     * 分页查询角色列表，按角色 ID 升序排列。
      *
-     * @param page 分页请求
-     * @param query 已校验的过滤条件
-     * @return 包含禁用角色的内部实体分页
+     * @param page 分页参数
+     * @param query 查询条件
+     * @return 角色分页结果
      */
     IPage<SysRole> rolePage(IPage<SysRole> page, @Param("query") RoleQueryDTO query);
 
     /**
-     * 查全部权限关联，禁用权限也保留。
+     * 查询角色关联的全部权限 ID（含禁用权限），按 ID 升序排列。
      *
      * @param roleId 角色 ID
-     * @return 权限 ID 升序集合
+     * @return 权限 ID 列表
      */
     List<Long> permissionIds(@Param("roleId") long roleId);
 
     /**
-     * 查全部菜单关联，禁用菜单也保留。
+     * 查询角色关联的全部菜单 ID（含禁用菜单），按 ID 升序排列。
      *
      * @param roleId 角色 ID
-     * @return 菜单 ID 升序集合
+     * @return 菜单 ID 列表
      */
     List<Long> menuIds(@Param("roleId") long roleId);
 
     /**
-     * 持有保护锁时找出要退出登录的全部关联用户，禁用用户也要包括。
+     * 查询角色关联的全部用户 ID（含禁用用户），按 ID 升序去重。
      *
-     * @param roleId 目标角色 ID
-     * @return 用户 ID 升序集合；调用方随后按序锁定用户
+     * @param roleId 角色 ID
+     * @return 用户 ID 列表
      */
     List<Long> userIds(@Param("roleId") long roleId);
 
     /**
-     * 先拿用户锁再锁角色，不能先把禁用角色过滤掉。
+     * 加行锁查询角色记录，调用方须处于写事务内。
      *
      * @param roleId 角色 ID
-     * @return 当前角色；不存在为 null
+     * @return 锁定的角色记录，不存在时返回 null
      */
     SysRole lockById(@Param("roleId") long roleId);
 
     /**
-     * 替换角色资料、范围和状态，说明为 NULL 时也要清空。
+     * 完整更新角色资料、数据范围和状态，显式写入可空字段以支持清空。
      *
-     * @param role 已锁定并通过版本检查的角色，不修改编码与审计字段
-     * @return 影响行数
+     * @param role 待更新的角色实体
+     * @return 受影响行数
      */
     int updateRole(@Param("role") SysRole role);
 
     /**
-     * 按 ID 从小到大锁定本次权限，再查是否存在、是否启用。
+     * 按 ID 升序加共享锁查询启用状态的权限 ID 列表
      *
-     * @param ids 非空排序权限集合
-     * @return 当前启用权限 ID；数量不足时调用方拒绝整笔授权
+     * @param ids 候选权限 ID 列表
+     * @return 启用状态的权限 ID 列表
      */
     List<Long> lockEnabledPermissions(@Param("ids") List<Long> ids);
 
     /**
-     * 持有固定结构锁时取菜单树，用来补齐祖先并检查访问权限。
+     * 查询全部菜单节点（含禁用项），用于校验菜单树与补齐祖先。
      *
-     * @return 全部菜单节点，包含禁用项
+     * @return 菜单列表
      */
     List<SysMenu> allMenus();
 
     /**
-     * 整体替换前先清掉角色权限，调用方事务保证它和菜单一起提交。
+     * 清空指定角色的全部权限关联
      *
-     * @param roleId 已锁定角色
-     * @return 删除数
+     * @param roleId 角色 ID
+     * @return 删除行数
      */
     int deletePermissions(@Param("roleId") long roleId);
 
     /**
-     * 整体替换前先清掉角色菜单，调用方事务保证它和权限一起提交。
+     * 清空指定角色的全部菜单关联
      *
-     * @param roleId 已锁定角色
-     * @return 删除数
+     * @param roleId 角色 ID
+     * @return 删除行数
      */
     int deleteMenus(@Param("roleId") long roleId);
 
     /**
-     * 插入已校验的角色权限两列主键，空集合由调用方直接跳过。
+     * 批量插入角色与权限的复合主键关联
      *
-     * @param roleId 已锁定角色
-     * @param ids 非空有效权限集合
-     * @return 插入数
+     * @param roleId 角色 ID
+     * @param ids 权限 ID 列表
+     * @return 插入行数
      */
     int insertPermissions(@Param("roleId") long roleId, @Param("ids") List<Long> ids);
 
     /**
-     * 插入已补齐祖先、查过访问权限的菜单集合，空集合由调用方跳过。
+     * 批量插入角色与菜单的复合主键关联
      *
-     * @param roleId 已锁定角色
-     * @param ids 非空菜单集合
-     * @return 插入数
+     * @param roleId 角色 ID
+     * @param ids 菜单 ID 列表
+     * @return 插入行数
      */
     int insertMenus(@Param("roleId") long roleId, @Param("ids") List<Long> ids);
-    /** 全部目标加锁并通过版本检查后，只更新状态。 */
-    int updateStatus(@Param("id") long id, @Param("status") int status);
 
+    /**
+     * 更新角色状态
+     *
+     * @param id 角色 ID
+     * @param status 目标状态
+     * @return 受影响行数
+     */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
 }

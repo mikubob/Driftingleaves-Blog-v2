@@ -10,6 +10,7 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.LinkPublicVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,38 +25,65 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 查询公开友情链接，登录用户可提交、查看和删除本人的申请。
+ * 博客端友情链接与申请接口
  */
+@Slf4j
 @RestController("publicFriendLinkController")
 @RequestMapping("/blog")
 @RequiredArgsConstructor
 public class FriendLinkController {
 
-    private final IFriendLinkService links;
+    private final IFriendLinkService friendLinkService;
 
-    /** 分页查询友情链接，只接受分页参数，不允许用 status 查询非公开记录。 */
+    /**
+     * 分页查询公开友情链接列表
+     *
+     * @param query 分页参数
+     * @return 友链分页结果
+     */
     @GetMapping("/links")
     public Result<PageResult<LinkPublicVO>> list(@Valid @ModelAttribute PageQueryDTO query) {
-        return Result.ok(links.publicLinks(query));
+        log.info("分页查询公开友情链接列表: {}", query);
+        PageResult<LinkPublicVO> pageResult = friendLinkService.publicLinks(query);
+        return Result.ok(pageResult);
     }
 
-    /** 查询当前账号的友链申请，没有申请时 data 为 null。 */
+    /**
+     * 查询当前用户的友链申请
+     *
+     * @return 友链申请记录，无申请时返回 null
+     */
     @GetMapping("/me/link-application")
     public Result<BlogFriendLink> application() {
-        return Result.ok(links.ownApplication());
+        log.info("查询本人友链申请");
+        BlogFriendLink application = friendLinkService.ownApplication();
+        return Result.ok(application);
     }
 
-    /** 提交本人友链申请，成功返回 201 和申请查询地址。 */
+    /**
+     * 提交本人友链申请
+     *
+     * @param body 友链申请参数
+     * @return 201 响应及申请记录
+     */
     @PostMapping(path = "/me/link-application", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Result<BlogFriendLink>> apply(@Valid @RequestBody LinkApplicationDTO body) {
-        BlogFriendLink application = links.submitApplication(body);
-        return ResponseEntity.created(URI.create("/api/v1/blog/me/link-application")).body(Result.ok(application));
+        log.info("提交本人友链申请: {}", body);
+        BlogFriendLink application = friendLinkService.submitApplication(body);
+        URI location = URI.create("/api/v1/blog/me/link-application");
+        return ResponseEntity.created(location).body(Result.ok(application));
     }
 
-    /** 根据id删除本人的友链申请，不要求 If-Revision。 */
+    /**
+     * 删除本人的友链申请
+     *
+     * @param linkId 友链申请 ID
+     * @return 成功结果
+     */
     @DeleteMapping("/me/link-application/{linkId}")
     public Result<Void> deleteApplication(@PathVariable String linkId) {
-        links.deleteOwnApplication(IdUtils.parse(linkId));
+        log.info("删除本人友链申请: linkId={}", linkId);
+        friendLinkService.deleteOwnApplication(IdUtils.parse(linkId));
         return Result.ok(null);
     }
 }

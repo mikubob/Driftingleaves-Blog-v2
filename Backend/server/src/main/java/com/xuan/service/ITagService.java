@@ -17,24 +17,38 @@ import java.util.List;
  */
 public interface ITagService extends IService<BlogTag> {
 
-    /** 获取前台标签列表，没有关联文章的标签也会返回。 */
+    /**
+     * 获取前台标签列表，没有关联文章的标签也会返回。
+     */
     PageResult<TagPublicDetailVO> publicTags(PageQueryDTO query);
 
-    /** 按大小写敏感 slug 查询标签，空标签的公开文章数为零。 */
+    /**
+     * 按大小写敏感 slug 查询标签，空标签的公开文章数为零。
+     */
     TagPublicDetailVO publicDetail(String slug);
 
-    /** 获取后台标签列表，按名称字面筛选。 */
+    /**
+     * 获取后台标签列表，按名称字面筛选。
+     */
     PageResult<BlogTag> listTags(TagQueryDTO query);
 
-    /** 获取标签详情和当前版本，不存在就返回 404。 */
+    /**
+     * 获取标签详情和当前版本，不存在就返回 404。
+     */
     TagProfileVO detail(long id);
 
-    /** 新增标签，不自动关联文章。 */
+    /**
+     * 新增标签，不自动关联文章。
+     */
     BlogTag create(TagWriteDTO request);
 
-    /** 根据id更新标签，先锁住标签并检查版本，再替换名称和 slug。 */
+    /**
+     * 根据id更新标签，先锁住标签并检查版本，再替换名称和 slug。
+     */
     TagProfileVO update(long id, TagWriteDTO request, String revision);
 
-    /** 批量删除标签，单条也走此入口，所有数据库修改一起提交。 */
+    /**
+     * 批量删除标签，单条也走此入口，所有数据库修改一起提交。
+     */
     void deleteBatch(List<BatchItemDTO> items);
 }

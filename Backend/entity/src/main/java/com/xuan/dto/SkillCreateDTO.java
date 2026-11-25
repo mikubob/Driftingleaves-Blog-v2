@@ -6,7 +6,9 @@ import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
 
-/** 创建技能，在资料字段之外指定初始状态。 */
+/**
+ * 创建技能，在资料字段之外指定初始状态。
+ */
 @Getter
 @Setter
 public class SkillCreateDTO extends SkillWriteDTO {

@@ -1,49 +1,78 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 分类不按作者划分，隐藏分类也能在后台查到。 -->
 <mapper namespace="com.xuan.mapper.CategoryMapper">
-    <!-- 列表和详情只统计公开文章，没有公开文章时返回零。 -->
+
+    <!-- 公开分类公共列，实时统计分类下公开文章数量 -->
     <sql id="publicColumns">
-        c.category_id,c.category_name,c.slug,c.description,c.sort_order,
-        CAST((SELECT COUNT(*) FROM blog_article a WHERE a.category_id=c.category_id AND
-        <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>) AS CHAR) AS article_count
+        c.category_id,
+        c.category_name,
+        c.slug,
+        c.description,
+        c.sort_order,
+        CAST((
+            SELECT COUNT(*)
+            FROM blog_article a
+            WHERE a.category_id = c.category_id
+              AND <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
+        ) AS CHAR) AS article_count
     </sql>
 
+    <!-- 根据 slug 查询公开展示中的分类详情 -->
     <select id="publicBySlug" resultType="com.xuan.vo.CategoryPublicDetailVO">
-        SELECT <include refid="publicColumns"/>
-        FROM blog_category c WHERE c.slug=#{slug} AND c.status=1
+        SELECT
+            <include refid="publicColumns"/>
+        FROM blog_category c
+        WHERE c.slug = #{slug}
+          AND c.status = 1
     </select>
 
+    <!-- 分页查询公开展示中的分类列表 -->
     <select id="publicPage" resultType="com.xuan.vo.CategoryPublicDetailVO">
-        SELECT <include refid="publicColumns"/>
-        FROM blog_category c WHERE c.status = 1
+        SELECT
+            <include refid="publicColumns"/>
+        FROM blog_category c
+        WHERE c.status = 1
         ORDER BY c.sort_order ASC, c.category_id ASC
     </select>
 
-    <!-- 后台列表可以筛选隐藏分类。 -->
+    <!-- 分页查询后台分类列表 -->
     <select id="categoryPage" resultType="com.xuan.entity.BlogCategory">
-        SELECT * FROM blog_category
+        SELECT *
+        FROM blog_category
         <where>
-            <if test="query.status != null">AND status = #{query.status}</if>
-            <if test="query.keyword != null">AND INSTR(category_name, #{query.keyword}) &gt; 0</if>
+            <if test="query.status != null">
+                AND status = #{query.status}
+            </if>
+            <if test="query.keyword != null">
+                AND INSTR(category_name, #{query.keyword}) &gt; 0
+            </if>
         </where>
         ORDER BY sort_order ASC, category_id ASC
     </select>
 
-    <!-- 文章保存会拿分类共享锁，删除要等那些保存结束，不能留失效关联。 -->
+    <!-- 加行锁查询分类记录 -->
     <select id="lockById" resultType="com.xuan.entity.BlogCategory">
-        SELECT * FROM blog_category WHERE category_id = #{id} FOR UPDATE
+        SELECT *
+        FROM blog_category
+        WHERE category_id = #{id}
+        FOR UPDATE
     </select>
 
-    <!-- 批量目标已全部加锁并通过版本检查，只修改展示状态。 -->
+    <!-- 更新分类展示状态 -->
     <update id="updateStatus">
-        UPDATE blog_category SET status = #{status} WHERE category_id = #{id}
+        UPDATE blog_category
+        SET status = #{status}
+        WHERE category_id = #{id}
     </update>
 
-    <!-- description 为 null 就清空，保留展示状态，不改数据库维护的时间。 -->
+    <!-- 完整更新分类资料，description 为 null 时显式清空 -->
     <update id="updateCategory">
-        UPDATE blog_category SET category_name = #{category.categoryName}, slug = #{category.slug},
-        description = #{category.description}, sort_order = #{category.sortOrder}
+        UPDATE blog_category
+        SET category_name = #{category.categoryName},
+            slug = #{category.slug},
+            description = #{category.description},
+            sort_order = #{category.sortOrder}
         WHERE category_id = #{category.categoryId}
     </update>
+
 </mapper>

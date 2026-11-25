@@ -42,12 +42,16 @@ public final class IpUtils {
         return current;
     }
 
-    /** 检查是否为可信代理，先统一地址格式，避免漏掉同一 IPv6 地址的不同写法。 */
+    /**
+     * 检查是否为可信代理，先统一地址格式，避免漏掉同一 IPv6 地址的不同写法。
+     */
     private static boolean trusted(String ip, List<String> proxies) {
         return proxies.stream().anyMatch(proxy -> ip.equals(normalize(proxy)));
     }
 
-    /** 统一 IP 地址格式，只接受完整地址，不接受端口、zone ID、主机名或 IPv4 缩写。 */
+    /**
+     * 统一 IP 地址格式，只接受完整地址，不接受端口、zone ID、主机名或 IPv4 缩写。
+     */
     public static String normalize(String value) {
         if (StrUtil.isEmpty(value) || value.length() > 45) {
             return null;

@@ -18,12 +18,16 @@ public final class CommentVisibilityPolicy {
     private CommentVisibilityPolicy() {
     }
 
-    /** 判断评论是否可见，逐级检查并缓存结果；仅审核通过的评论可见，未通过的上级隐藏全部下级回复，不受 SQL 递归深度限制。 */
+    /**
+     * 判断评论是否可见，逐级检查并缓存结果；仅审核通过的评论可见，未通过的上级隐藏全部下级回复，不受 SQL 递归深度限制。
+     */
     public static Set<Long> visible(List<CommentNode> nodes) {
         return visible(nodes, null);
     }
 
-    /** 判断当前读者可见的评论，未通过的节点仅作者本人可见，全部上级仍须逐级检查。 */
+    /**
+     * 判断当前读者可见的评论，未通过的节点仅作者本人可见，全部上级仍须逐级检查。
+     */
     public static Set<Long> visible(List<CommentNode> nodes, Long viewer) {
         Map<Long, CommentNode> byId = new HashMap<>();
         nodes.forEach(node -> byId.put(node.getCommentId(), node));

@@ -16,7 +16,9 @@ public final class QueryTimeUtils {
     private QueryTimeUtils() {
     }
 
-    /** 将接口时间转为数据库 UTC 时间，不使用本地时区。 */
+    /**
+     * 将接口时间转为数据库 UTC 时间，不使用本地时区。
+     */
     public static LocalDateTime parse(String value) {
         if (ObjectUtil.isNull(value)) {
             return null;
@@ -35,7 +37,9 @@ public final class QueryTimeUtils {
         }
     }
 
-    /** 检查查询时间范围，包含开始时刻、不包含结束时刻，可以只传一端。 */
+    /**
+     * 检查查询时间范围，包含开始时刻、不包含结束时刻，可以只传一端。
+     */
     public static void requireRange(LocalDateTime begin, LocalDateTime end) {
         if (ObjectUtil.isNotNull(begin) && ObjectUtil.isNotNull(end) && !begin.isBefore(end)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "开始时间必须早于结束时间，请调整时间范围。");

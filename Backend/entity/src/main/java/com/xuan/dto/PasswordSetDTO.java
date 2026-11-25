@@ -28,7 +28,9 @@ public class PasswordSetDTO {
         currentPassword = value;
     }
 
-    /** 记下客户端有没有传这个字段。 */
+    /**
+     * 记下客户端有没有传这个字段。
+     */
     public boolean hasCurrentPassword() {
         return currentPasswordPresent;
     }

@@ -11,7 +11,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 
-/** 按接口所属端读取和签发登录 Cookie。 */
+/**
+ * 按接口所属端读取和签发登录 Cookie。
+ */
 public enum WebSession {
 
     ADMIN("admin", "__Host-dl-admin-session", SessionManager.ADMIN_TIMEOUT_SECONDS),
@@ -39,7 +41,9 @@ public enum WebSession {
         return null;
     }
 
-    /** 核对页面账号，身份仍由当前登录会话决定。 */
+    /**
+     * 核对页面账号，身份仍由当前登录会话决定。
+     */
     public static void requireExpectedUser(String expectedUserId, Object currentUserId) {
         if (!currentUserId.toString().equals(expectedUserId)) {
             throw new BusinessException(409, "SESSION_ACCOUNT_CHANGED", "登录账号已变化，请刷新页面后重试");
@@ -81,6 +85,13 @@ public enum WebSession {
 
     public ResponseEntity<Result<Void>> logout(SessionManager sessions) {
         sessions.logout();
+        return clearLoginCookie();
+    }
+
+    /**
+     * 清除当前端登录 Cookie 并返回统一成功响应。
+     */
+    public ResponseEntity<Result<Void>> clearLoginCookie() {
         return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, cookie("", 0)).body(Result.ok(null));
     }
 

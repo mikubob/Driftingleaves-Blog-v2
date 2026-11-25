@@ -91,13 +91,17 @@ public class MusicWriteDTO {
         sortOrder = value;
     }
 
-    /** 创建和替换都必须提供可空字段，防止漏传被当作清空。 */
+    /**
+     * 创建和替换都必须提供可空字段，防止漏传被当作清空。
+     */
     @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
         return present.size() == 8;
     }
 
-    /** 歌词地址与类型一起出现；时长只收整数秒。 */
+    /**
+     * 歌词地址与类型一起出现；时长只收整数秒。
+     */
     @AssertTrue(message = "歌词地址和格式须同时填写或同时清空，时长须为整数秒。")
     public boolean isValidLyrics() {
         return (lyricUrl == null) == (lyricType == null)

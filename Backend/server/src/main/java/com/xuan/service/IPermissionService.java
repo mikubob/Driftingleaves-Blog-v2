@@ -18,21 +18,33 @@ import java.util.List;
  */
 public interface IPermissionService extends IService<SysPermission> {
 
-    /** 分页查询权限，按编码、名称、模块和状态筛选，在同一个只读事务中按id升序查询。 */
+    /**
+     * 分页查询权限，按编码、名称、模块和状态筛选，在同一个只读事务中按id升序查询。
+     */
     PageResult<PermissionVO> listPermissions(PermissionQueryDTO query);
 
-    /** 检查权限后取完整字典资料和版本，不存在返回 404。 */
+    /**
+     * 检查权限后取完整字典资料和版本，不存在返回 404。
+     */
     PermissionProfileVO detail(long permissionId);
 
-    /** 创建字典项不代表增加后端功能，也不自动授予角色，重复编码返回 409。 */
+    /**
+     * 创建字典项不代表增加后端功能，也不自动授予角色，重复编码返回 409。
+     */
     PermissionVO create(PermissionCreateDTO request);
 
-    /** 根据id更新权限，加锁并检查版本后完整替换资料；状态改变时撤销全部关联用户的会话，Redis 操作失败就回滚。 */
+    /**
+     * 根据id更新权限，加锁并检查版本后完整替换资料；状态改变时撤销全部关联用户的会话，Redis 操作失败就回滚。
+     */
     PermissionProfileVO update(long permissionId, PermissionUpdateDTO request, String revision);
 
-    /** 批量删除权限，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量删除权限，单条也走此入口，任一失败则整批回滚。
+     */
     void deleteBatch(List<BatchItemDTO> items);
-    /** 批量修改状态，单条也走此入口，全部版本通过后写入。 */
+    /**
+     * 批量修改状态，单条也走此入口，全部版本通过后写入。
+     */
     BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
 
 }

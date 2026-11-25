@@ -1,45 +1,66 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 字典和授权在同一业务事务处理，菜单外键保留 RESTRICT，不能随权限删除门禁。 -->
 <mapper namespace="com.xuan.mapper.PermissionMapper">
-    <!-- 分页和计数共用条件，INSTR 把百分号、下划线、反斜杠当普通字符。 -->
+
+    <!-- 分页查询权限列表，按权限 ID 升序排列 -->
     <select id="permissionPage" resultType="com.xuan.entity.SysPermission">
-        SELECT * FROM sys_permission
+        SELECT *
+        FROM sys_permission
         <where>
             <if test="query.keyword != null">
-                AND (INSTR(permission_code, #{query.keyword}) > 0 OR INSTR(permission_name, #{query.keyword}) > 0)
+                AND (
+                    INSTR(permission_code, #{query.keyword}) &gt; 0
+                    OR INSTR(permission_name, #{query.keyword}) &gt; 0
+                )
             </if>
-            <if test="query.module != null">AND module = #{query.module}</if>
-            <if test="query.status != null">AND status = #{query.status}</if>
+            <if test="query.module != null">
+                AND module = #{query.module}
+            </if>
+            <if test="query.status != null">
+                AND status = #{query.status}
+            </if>
         </where>
         ORDER BY permission_id ASC
     </select>
 
-    <!-- 禁用角色和用户也算受影响，多角色关联同一用户只撤销一次会话。 -->
+    <!-- 查询指定权限关联的全部用户 ID，按用户 ID 升序去重 -->
     <select id="userIds" resultType="long">
-        SELECT DISTINCT ur.user_id FROM sys_user_role ur
+        SELECT DISTINCT ur.user_id
+        FROM sys_user_role ur
         JOIN sys_role_permission rp ON rp.role_id = ur.role_id
-        WHERE rp.permission_id = #{permissionId} ORDER BY ur.user_id
+        WHERE rp.permission_id = #{permissionId}
+        ORDER BY ur.user_id
     </select>
 
-    <!-- 先拿固定保护锁和升序用户锁，再锁目标权限，读取最新状态及版本字段。 -->
+    <!-- 加行锁查询权限记录 -->
     <select id="lockById" resultType="com.xuan.entity.SysPermission">
-        SELECT * FROM sys_permission WHERE permission_id = #{permissionId} FOR UPDATE
+        SELECT *
+        FROM sys_permission
+        WHERE permission_id = #{permissionId}
+        FOR UPDATE
     </select>
 
-    <!-- 编码不能改，禁用不删角色授权或菜单限制，重新启用也不能恢复旧 Token。 -->
+    <!-- 完整更新权限资料，显式写入可空说明字段 -->
     <update id="updatePermission">
-        UPDATE sys_permission SET permission_name = #{permission.permissionName}, module = #{permission.module},
-        description = #{permission.description}
+        UPDATE sys_permission
+        SET permission_name = #{permission.permissionName},
+            module = #{permission.module},
+            description = #{permission.description}
         WHERE permission_id = #{permission.permissionId}
     </update>
 
-    <!-- 禁用、隐藏菜单也算引用，不能因为删权限就撤掉它们的访问限制。 -->
+    <!-- 统计引用指定权限的菜单数量（含禁用菜单） -->
     <select id="menuReferences" resultType="long">
-        SELECT COUNT(*) FROM sys_menu WHERE permission_id = #{permissionId}
+        SELECT COUNT(*)
+        FROM sys_menu
+        WHERE permission_id = #{permissionId}
     </select>
-    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+
+    <!-- 更新权限状态 -->
     <update id="updateStatus">
-        UPDATE sys_permission SET status = #{status} WHERE permission_id = #{id}
+        UPDATE sys_permission
+        SET status = #{status}
+        WHERE permission_id = #{id}
     </update>
+
 </mapper>

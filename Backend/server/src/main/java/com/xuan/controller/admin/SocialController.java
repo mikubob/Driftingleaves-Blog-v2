@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.DisplayQueryDTO;
@@ -15,6 +16,7 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,64 +31,116 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台社交链接管理接口，业务层在同一事务中检查权限和版本、保存资料。
+ * 管理端社交链接接口
  */
+@Slf4j
 @RestController("adminSocialController")
 @RequestMapping("/admin/home/social-links")
 @RequiredArgsConstructor
 public class SocialController {
 
-    private final ISocialService items;
+    private final ISocialService socialService;
 
-    /** 分页查询社交链接，列表不带每条记录的版本，编辑前先查询详情。 */
+    /**
+     * 分页查询社交链接列表
+     *
+     * @param query 查询参数
+     * @return 社交链接分页结果
+     */
     @GetMapping
     @SaCheckPermission("home:social:query")
     public Result<PageResult<HomeSocialLink>> list(@Valid @ModelAttribute DisplayQueryDTO query) {
-        return Result.ok(items.listItems(query));
+        log.info("分页查询社交链接列表: {}", query);
+        PageResult<HomeSocialLink> pageResult = socialService.listItems(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询社交链接详情，版本放在 X-Revision 响应头。 */
+    /**
+     * 根据 ID 查询社交链接详情
+     *
+     * @param id 社交链接 ID
+     * @return 社交链接详情及 X-Revision 响应头
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("home:social:query")
     public ResponseEntity<Result<HomeSocialLink>> detail(@PathVariable String id) {
-        return profile(items.detail(IdUtils.parse(id)));
+        log.info("根据 ID 查询社交链接详情: id={}", id);
+        ResourceVersion<HomeSocialLink> result = socialService.detail(IdUtils.parse(id));
+        return versionResponse(result);
     }
 
-    /** 新增社交链接，成功后返回 201 和新版本。 */
+    /**
+     * 新增社交链接
+     *
+     * @param request 社交链接创建参数
+     * @return 201 响应、Location 及 X-Revision 响应头
+     */
     @PostMapping
     @SaCheckPermission("home:social:create")
     public ResponseEntity<Result<HomeSocialLink>> create(@Valid @RequestBody SocialCreateDTO request) {
-        ResourceVersion<HomeSocialLink> result = items.create(request);
-        return ResponseEntity.created(URI.create("/api/v1/admin/home/social-links/" + result.value().getSocialId()))
-                .header("X-Revision", result.revision()).body(Result.ok(result.value()));
+        log.info("新增社交链接: {}", request);
+        ResourceVersion<HomeSocialLink> result = socialService.create(request);
+        URI location = URI.create("/api/v1/admin/home/social-links/" + result.value().getSocialId());
+        return ResponseEntity.created(location)
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 
-    /** 根据id更新社交链接，PUT 要传完整资料，加锁后检查版本。 */
+    /**
+     * 根据 ID 更新社交链接
+     *
+     * @param id 社交链接 ID
+     * @param request 社交链接更新参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的社交链接详情及新 X-Revision 响应头
+     */
     @PutMapping("/{id}")
     @SaCheckPermission("home:social:update")
     public ResponseEntity<Result<HomeSocialLink>> update(@PathVariable String id,
             @Valid @RequestBody SocialWriteDTO request,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(items.update(IdUtils.parse(id), request, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新社交链接: id={}", id);
+        ResourceVersion<HomeSocialLink> result = socialService.update(IdUtils.parse(id), request, revision);
+        return versionResponse(result);
     }
 
-    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    /**
+     * 批量修改社交链接展示状态
+     *
+     * @param body 批量状态变更参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-status")
     @SaCheckPermission("home:social:update")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
-        return Result.ok(items.changeStatusBatch(body.getItems(), body.getStatus()));
+        log.info("批量修改社交链接状态: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = socialService.changeStatusBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量删除社交链接，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除社交链接
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("home:social:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        items.deleteBatch(body.getItems());
+        log.info("批量删除社交链接: count={}", body.getItems().size());
+        socialService.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 返回社交链接资料，版本放在 X-Revision 响应头。 */
-    private ResponseEntity<Result<HomeSocialLink>> profile(ResourceVersion<HomeSocialLink> result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
+    /**
+     * 组装带版本头的社交链接详情响应。
+     *
+     * @param result 社交链接详情与版本
+     * @return 200 响应
+     */
+    private ResponseEntity<Result<HomeSocialLink>> versionResponse(ResourceVersion<HomeSocialLink> result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 }

@@ -6,138 +6,159 @@ import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.entity.SysRole;
 import com.xuan.entity.SysUser;
 import com.xuan.vo.UserRoleVO;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * 用户数据接口，只更新允许修改的字段，加锁和撤销会话由业务层处理。
+ * 用户数据访问接口
  */
+@Mapper
 public interface UserMapper extends BaseMapper<SysUser> {
 
     /**
-     * 写入发生唯一冲突后，按数据库排序规则同时检查用户名和邮箱，修改时排除本人。
+     * 发生唯一键冲突后，检查用户名和邮箱冲突的字段名，修改时排除当前用户。
      *
-     * @param user 写入失败的用户资料，创建时 userId 可为空
-     * @return 冲突字段名，只含 username、email，不返回其他账号资料
+     * @param user 待校验的用户资料
+     * @return 冲突字段名列表（username 或 email）
      */
     List<String> findIdentityConflicts(@Param("user") SysUser user);
 
     /**
-     * 按字面关键词、状态和全部角色关联筛选，创建时间相同时再按 ID 倒序排。
+     * 分页查询后台用户列表，按创建时间与用户 ID 倒序排列。
      *
-     * @param page 分页插件使用的请求页码和页大小
-     * @param query 已校验的关键词及状态
-     * @param roleId 可空角色过滤，不因角色禁用而忽略关联
-     * @return 内部用户分页，不直接序列化实体
+     * @param page 分页参数
+     * @param query 查询条件
+     * @param roleId 角色 ID 筛选，可为空
+     * @return 用户分页结果
      */
-    IPage<SysUser> adminPage(IPage<SysUser> page, @Param("query") AdminUserQueryDTO query,
+    IPage<SysUser> adminPage(IPage<SysUser> page,
+            @Param("query") AdminUserQueryDTO query,
             @Param("roleId") Long roleId);
 
-    /** 查询用户全部已分配角色，按id升序返回，保留禁用角色供后台展示。 */
+    /**
+     * 查询用户已分配的全部角色（含禁用角色），按角色 ID 升序排列。
+     *
+     * @param userId 用户 ID
+     * @return 角色列表
+     */
     List<UserRoleVO> assignedRoles(@Param("userId") long userId);
 
     /**
-     * 所有管理写事务先锁初始化角色这一行，串行检查最后管理员。
+     * 锁定初始化管理员角色行（role_id = 1），用于串行保护最后一个有效管理员。
      *
-     * @return role_id=1；缺失时为 null，调用方须拒绝写入
+     * @return 锁定的角色 ID，缺失时返回 null
      */
     Long lockAdminGuard();
 
     /**
-     * 用户锁之后，再按 ID 升序锁角色，整体替换前检查是否存在和启用。
+     * 按角色 ID 升序加共享锁查询候选角色列表
      *
-     * @param roleIds 非空且排序后的角色 ID
-     * @return 当前存在的角色实体，包含禁用项
+     * @param roleIds 角色 ID 列表
+     * @return 存在的角色列表
      */
     List<SysRole> lockRoles(@Param("roleIds") List<Long> roleIds);
 
     /**
-     * 只替换后台资料和状态，可空字段传 NULL 时也要清空。
+     * 完整更新后台用户资料和状态，显式写入可空字段以支持清空。
      *
-     * @param user 已锁定且通过版本与权限复核的目标用户
-     * @return 更新影响行数
+     * @param user 待更新的用户实体
+     * @return 受影响行数
      */
     int updateAdmin(@Param("user") SysUser user);
 
-    /** 持有用户行锁时检查所有 RESTRICT 内容引用，不忽略回收站中的文章。 */
+    /**
+     * 检查用户是否存在文章、文件、评论或留言等内容引用
+     *
+     * @param userId 用户 ID
+     * @return 是否存在引用
+     */
     boolean hasContentReferences(@Param("userId") long userId);
 
     /**
-     * 清掉用户全部角色关联，调用前要在事务里拿到保护锁和用户锁。
+     * 清空指定用户的全部角色关联
      *
-     * @param userId 已锁定的目标用户
-     * @return 删除关联数
+     * @param userId 用户 ID
+     * @return 删除行数
      */
     int deleteRoles(@Param("userId") long userId);
 
     /**
-     * 用完整的两列主键插入角色关联，调用方已锁住用户和所有启用角色。
+     * 批量插入用户与角色的复合主键关联
      *
-     * @param userId 目标用户 ID
-     * @param roleIds 非空且不重复的已校验的角色 ID
-     * @return 插入关联数
+     * @param userId 用户 ID
+     * @param roleIds 角色 ID 列表
+     * @return 插入行数
      */
     int insertRoles(@Param("userId") long userId, @Param("roleIds") List<Long> roleIds);
 
     /**
-     * 检查这次修改后还剩多少有效管理员，调用方必须先拿到固定保护锁。
+     * 统计当前有效管理员数量，调用方须先持有管理保护锁。
      *
-     * @param permissions 当前 SQL 的全部初始系统权限及后台入口码
-     * @return 启用且关联启用 ALL admin 角色、具有全部指定启用权限的用户数
+     * @param permissions 有效管理员必须具备的全部权限编码列表
+     * @return 有效管理员人数
      */
     long effectiveAdminCount(@Param("permissions") List<String> permissions);
 
     /**
-     * 按用户名锁住用户，再验证密码；必须在事务内调用，禁用用户也先查出，凭据通过后再由业务层查状态。
+     * 按用户名加行锁查询用户记录，调用方须处于写事务内。
      *
-     * @param username 已完成入口格式校验及首尾空白处理的用户名
-     * @return 内部用户实体，包含密码哈希；不存在时为 null
+     * @param username 用户名
+     * @return 锁定的用户实体，不存在时返回 null
      */
     SysUser lockByUsername(@Param("username") String username);
 
-    /** 邮箱唯一；登录在事务内锁住当前归属，避免换邮箱时使用旧资料发会话。 */
+    /**
+     * 按邮箱加行锁查询用户记录，调用方须处于写事务内。
+     *
+     * @param email 邮箱地址
+     * @return 锁定的用户实体，不存在时返回 null
+     */
     SysUser lockByEmail(@Param("email") String email);
 
     /**
-     * 按本站用户 ID 锁住这一行，登录、密码、绑定和解绑都共用它，事务、身份和状态由调用方检查。
+     * 按用户 ID 加行锁查询用户记录，调用方须处于写事务内。
      *
-     * @param userId 服务端确认的本站用户 ID
-     * @return 用户实体；不存在时为 null
+     * @param userId 用户 ID
+     * @return 锁定的用户实体，不存在时返回 null
      */
     SysUser lockById(@Param("userId") long userId);
 
     /**
-     * 只更新昵称、邮箱、头像和简介，NULL 也要写；调用方负责用户行锁和版本检查。
+     * 更新本人允许修改的资料字段，显式写入可空字段以支持清空。
      *
-     * @param user 按 PATCH 规则合并后的用户资料：没传的字段不改，传入 null 时清空可空字段
-     * @return 更新影响行数
+     * @param user 待更新的用户资料实体
+     * @return 受影响行数
      */
     int updateProfile(@Param("user") SysUser user);
 
     /**
-     * 更新本站密码哈希，传 null 就清除；最近认证、旧密码、最后登录方式和撤销会话由业务层处理。
+     * 更新用户密码哈希，传入 null 时清除本站密码。
      *
-     * @param userId 已锁定的用户 ID
-     * @param hash 新 BCrypt 哈希；清除密码时为 null
-     * @return 更新影响行数
+     * @param userId 用户 ID
+     * @param hash BCrypt 密码哈希，清除密码时为 null
+     * @return 受影响行数
      */
     int updatePassword(@Param("userId") long userId, @Param("hash") String hash);
 
     /**
-     * 用数据库 UTC 毫秒时间记录最近登录，同时保存可信 IP 和地域，与会话签发处于同一事务。
+     * 更新用户最近登录时间、IP 与归属地
      *
-     * @param userId 已确认启用且持有行锁的用户 ID
-     * @return 更新影响行数
+     * @param userId 用户 ID
+     * @param ip 可信客户端 IP
+     * @param location 归属地描述
+     * @return 受影响行数
      */
-    int updateLastLogin(@Param("userId") long userId, @Param("ip") String ip,
+    int updateLastLogin(@Param("userId") long userId,
+            @Param("ip") String ip,
             @Param("location") String location);
 
     /**
-     * 给新用户分配启用的 member 角色，写 user_id、role_id 关联；角色缺失或禁用就不插入，调用方必须回滚注册。
+     * 为新注册用户分配启用状态的 member 角色
      *
-     * @param userId 当前注册事务创建的用户 ID
-     * @return 成功插入为 1，未找到可用 member 为 0
+     * @param userId 用户 ID
+     * @return 插入行数（成功为 1，member 角色不可用时为 0）
      */
     int assignMember(@Param("userId") long userId);
 }

@@ -25,7 +25,9 @@ public class AliOssClient {
     private final String bucket;
     private final String prefix;
 
-    /** 初始化 OSS 文件客户端，不保留明文凭据，SDK 由容器关闭。 */
+    /**
+     * 初始化 OSS 文件客户端，不保留明文凭据，SDK 由容器关闭。
+     */
     public AliOssClient(OSS oss, AliOssProperties properties) {
         properties.validateEnabled();
         this.oss = oss;
@@ -87,7 +89,9 @@ public class AliOssClient {
         }
     }
 
-    /** 检查 OSS 文件是否存在，不下载内容或访问外部链接。 */
+    /**
+     * 检查 OSS 文件是否存在，不下载内容或访问外部链接。
+     */
     public boolean exists(String key) {
         requireKey(key);
         try {
@@ -97,7 +101,9 @@ public class AliOssClient {
         }
     }
 
-    /** 删除 OSS 文件，业务层先确认无人引用，云端删除失败时报错。 */
+    /**
+     * 删除 OSS 文件，业务层先确认无人引用，云端删除失败时报错。
+     */
     public void delete(String key) {
         requireKey(key);
         try {
@@ -107,7 +113,9 @@ public class AliOssClient {
         }
     }
 
-    /** 记录写入失败的错误编号和请求 ID，不记录响应正文、签名或存储路径。 */
+    /**
+     * 记录写入失败的错误编号和请求 ID，不记录响应正文、签名或存储路径。
+     */
     private void logWriteFailure(String action, RuntimeException exception) {
         if (exception instanceof OSSException error) {
             LOGGER.log(System.Logger.Level.ERROR, "{0}，错误码={1}，EC={2}，RequestId={3}",
@@ -122,12 +130,16 @@ public class AliOssClient {
                 logIdentifier(error.getRequestId()));
     }
 
-    /** OSS 错误编号只记录单行标识，丢弃空值和异常格式。 */
+    /**
+     * OSS 错误编号只记录单行标识，丢弃空值和异常格式。
+     */
     private String logIdentifier(String value) {
         return value != null && value.matches("[A-Za-z0-9_-]{1,80}") ? value : "-";
     }
 
-    /** 检查 OSS 文件路径，只接受完整合法的对象键，不通过解码或整理路径放宽检查。 */
+    /**
+     * 检查 OSS 文件路径，只接受完整合法的对象键，不通过解码或整理路径放宽检查。
+     */
     private void requireKey(String key) {
         if (key == null || key.length() > 512 || !key.startsWith(prefix)
                 || !FileUtils.validObjectKey(key.substring(prefix.length()))) {
@@ -135,7 +147,9 @@ public class AliOssClient {
         }
     }
 
-    /** 返回 OSS 服务错误，不带 SDK 异常、签名、Bucket 或内部地址。 */
+    /**
+     * 返回 OSS 服务错误，不带 SDK 异常、签名、Bucket 或内部地址。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "对象存储暂不可用");
     }

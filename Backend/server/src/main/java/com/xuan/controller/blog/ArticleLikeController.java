@@ -8,6 +8,7 @@ import com.xuan.service.IArticleLikeService;
 import com.xuan.utils.IdUtils;
 import com.xuan.vo.LikeStateVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,41 +18,67 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 文章点赞接口，用户取当前会话，点赞和取消共用每用户、IP 每分钟六十次限制。
+ * 博客端文章点赞接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/blog/articles/{articleId}/like")
 @RequiredArgsConstructor
 public class ArticleLikeController {
 
-    private final IArticleLikeService likes;
+    private final IArticleLikeService articleLikeService;
 
-    /** 查询本人点赞状态，只要求登录和文章公开，不额外检查点赞权限。 */
+    /**
+     * 查询当前用户对文章的点赞状态
+     *
+     * @param articleId 文章 ID
+     * @return 点赞状态
+     */
     @GetMapping
     public Result<LikeStateVO> state(@PathVariable String articleId) {
-        return Result.ok(likes.state(IdUtils.parse(articleId)));
+        log.info("查询文章点赞状态: articleId={}", articleId);
+        LikeStateVO state = articleLikeService.state(IdUtils.parse(articleId));
+        return Result.ok(state);
     }
 
-    /** 为文章点赞，重复提交仍返回 true，不切换为取消。 */
+    /**
+     * 为文章点赞
+     *
+     * @param articleId 文章 ID
+     * @param body 请求体，必须为空
+     * @return 点赞状态
+     */
     @PutMapping
     @SaCheckPermission("blog:article:like")
     @RateLimit(value = "article:like", limit = 60, dimension = RateLimit.Dimension.USER)
     public Result<LikeStateVO> like(@PathVariable String articleId, @RequestBody(required = false) String body) {
+        log.info("文章点赞: articleId={}", articleId);
         rejectBody(body);
-        return Result.ok(likes.like(IdUtils.parse(articleId)));
+        LikeStateVO state = articleLikeService.like(IdUtils.parse(articleId));
+        return Result.ok(state);
     }
 
-    /** 取消文章点赞，原本未点赞时也返回 false；非公开文章拒绝操作并保留原记录。 */
+    /**
+     * 取消文章点赞
+     *
+     * @param articleId 文章 ID
+     * @param body 请求体，必须为空
+     * @return 点赞状态
+     */
     @DeleteMapping
     @SaCheckPermission("blog:article:like")
     @RateLimit(value = "article:like", limit = 60, dimension = RateLimit.Dimension.USER)
     public Result<LikeStateVO> unlike(@PathVariable String articleId, @RequestBody(required = false) String body) {
+        log.info("取消文章点赞: articleId={}", articleId);
         rejectBody(body);
-        return Result.ok(likes.unlike(IdUtils.parse(articleId)));
+        LikeStateVO state = articleLikeService.unlike(IdUtils.parse(articleId));
+        return Result.ok(state);
     }
 
     /**
-     * 点赞接口不收请求体，传入实际内容时返回 400。
+     * 拒绝非空请求体。
+     *
+     * @param body 原始请求体
      */
     private void rejectBody(String body) {
         if (body != null) {

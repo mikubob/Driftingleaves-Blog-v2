@@ -1,31 +1,56 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 全站资源由Service检查ALL权限，公开列表过滤隐藏记录。 -->
 <mapper namespace="com.xuan.mapper.SocialMapper">
-    <select id="resourcePage" resultType="com.xuan.entity.HomeSocialLink">
-        SELECT * FROM home_social_link
-        <where>
-            <if test="publicOnly">AND status = 1</if>
-            <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
-            <if test="!publicOnly and query.keyword != null">AND (INSTR(name, #{query.keyword}) &gt; 0)</if>
 
+    <!-- 分页查询社交链接列表，公开查询仅返回启用记录 -->
+    <select id="resourcePage" resultType="com.xuan.entity.HomeSocialLink">
+        SELECT *
+        FROM home_social_link
+        <where>
+            <if test="publicOnly">
+                AND status = 1
+            </if>
+            <if test="!publicOnly and query.status != null">
+                AND status = #{query.status}
+            </if>
+            <if test="!publicOnly and query.keyword != null">
+                AND (INSTR(name, #{query.keyword}) &gt; 0)
+            </if>
         </where>
         ORDER BY sort_order ASC, social_id ASC
     </select>
 
+    <!-- 加行锁查询社交链接记录 -->
     <select id="lockById" resultType="com.xuan.entity.HomeSocialLink">
-        SELECT * FROM home_social_link WHERE social_id = #{id} FOR UPDATE
+        SELECT *
+        FROM home_social_link
+        WHERE social_id = #{id}
+        FOR UPDATE
     </select>
 
+    <!-- 完整更新社交链接资料，可空字段显式写入以支持清空 -->
     <update id="replace">
-        UPDATE home_social_link SET name=#{row.name}, icon=#{row.icon}, url=#{row.url}, sort_order=#{row.sortOrder} WHERE social_id = #{row.socialId}
+        UPDATE home_social_link
+        SET name = #{row.name},
+            icon = #{row.icon},
+            url = #{row.url},
+            sort_order = #{row.sortOrder}
+        WHERE social_id = #{row.socialId}
     </update>
 
-    <select id="publicItems" resultType="com.xuan.entity.HomeSocialLink">SELECT * FROM home_social_link WHERE status=1
+    <!-- 查询全部公开展示的社交链接列表 -->
+    <select id="publicItems" resultType="com.xuan.entity.HomeSocialLink">
+        SELECT *
+        FROM home_social_link
+        WHERE status = 1
         ORDER BY sort_order, social_id
     </select>
-    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+
+    <!-- 更新社交链接展示状态 -->
     <update id="updateStatus">
-        UPDATE home_social_link SET status = #{status} WHERE social_id = #{id}
+        UPDATE home_social_link
+        SET status = #{status}
+        WHERE social_id = #{id}
     </update>
+
 </mapper>

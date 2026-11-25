@@ -22,7 +22,9 @@ public class VirtualThreadConfig {
         return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("audit-", 0).factory());
     }
 
-    /** 创建在线连接执行器，执行票据、身份查询和消息发送，不继承请求线程信息。 */
+    /**
+     * 创建在线连接执行器，执行票据、身份查询和消息发送，不继承请求线程信息。
+     */
     @Bean(name = "onlineExecutor", destroyMethod = "close", defaultCandidate = false)
     public ExecutorService onlineExecutor() {
         return Executors.newThreadPerTaskExecutor(Thread.ofVirtual()

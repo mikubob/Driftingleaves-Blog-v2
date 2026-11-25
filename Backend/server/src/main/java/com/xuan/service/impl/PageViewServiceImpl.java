@@ -39,7 +39,9 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
 
-    /** 分页查询后台浏览记录。 */
+    /**
+     * 分页查询后台浏览记录。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogPageView> listViews(PageViewQueryDTO query) {
@@ -55,7 +57,9 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
                         IdUtils.parse(query.userId()), IdUtils.parse(query.articleId()), begin, end));
     }
 
-    /** 查询与清理分别使用自己的ALL，不能借另一项权限扩大范围。 */
+    /**
+     * 查询与清理分别使用自己的ALL，不能借另一项权限扩大范围。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -65,7 +69,9 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
         }
     }
 
-    /** 批量删除浏览记录，先加锁并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量删除浏览记录，先加锁并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:view", permission = "blog:view:delete")

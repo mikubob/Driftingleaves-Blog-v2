@@ -33,7 +33,9 @@ public class PageViewCreateDTO {
 
     private Long articleId;
 
-    /** 区分请求中未提供字段与显式传入 null。 */
+    /**
+     * 区分请求中未提供字段与显式传入 null。
+     */
     @Getter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
@@ -67,7 +69,9 @@ public class PageViewCreateDTO {
         articleId = value;
     }
 
-    /** 可空字段必须显式出现。 */
+    /**
+     * 可空字段必须显式出现。
+     */
     @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 6;

@@ -54,7 +54,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     private final JsonMapper json;
     private final Clock clock;
 
-    /** 分页查询访客。 */
+    /**
+     * 分页查询访客。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<VisitorVO> listVisitors(VisitorQueryDTO query) {
@@ -62,7 +64,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return PageResult.from(visitors.visitorPage(new Page<>(query.page(), query.pageSize()), query));
     }
 
-    /** 根据id查询访客详情及版本。 */
+    /**
+     * 根据id查询访客详情及版本。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ResourceVersion<VisitorVO> detail(long id) {
@@ -75,7 +79,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
                 row.isBlocked(), row.blockedUntil(), row.blockedIpAddress(), row.ipAddress()));
     }
 
-    /** 操作者和目标锁各自等待后重新检查原会话和独立ALL。 */
+    /**
+     * 操作者和目标锁各自等待后重新检查原会话和独立ALL。
+     */
     private BlogVisitor lock(long id, String operation) {
         users.lockById(sessions.currentUserId());
         requireAdmin(operation);
@@ -89,14 +95,18 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
                 row.getIpAddress());
     }
 
-    /** 将封禁目标计入版本，防止访客换网后封错地址。 */
+    /**
+     * 将封禁目标计入版本，防止访客换网后封错地址。
+     */
     private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil, String blockedIp, String lastIp) {
         String targetIp = blockedIp == null ? lastIp : blockedIp;
         return "\"" + TokenUtils.digest(json.writeValueAsString(
                 Arrays.asList(isBlocked, blockedUntil, blockedIp, targetIp))) + "\"";
     }
 
-    /** 无独立ALL时不能查看或修改全站统计标识。 */
+    /**
+     * 无独立ALL时不能查看或修改全站统计标识。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -106,7 +116,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         }
     }
 
-    /** 检查权限后才报告不存在。 */
+    /**
+     * 检查权限后才报告不存在。
+     */
     private BlogVisitor required(BlogVisitor row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "访客统计不存在");
@@ -114,7 +126,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return row;
     }
 
-    /** 批量删除访客，先加锁并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量删除访客，先加锁并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:visitor", permission = "blog:visitor:delete")
@@ -137,12 +151,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         }
     }
 
-
-    /** 批量封禁访客 IP，先锁定并检查全部目标，再一起保存。 */
+    /**
+     * 批量封禁访客 IP，先锁定并检查全部目标，再一起保存。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-block", target = "blog:visitor", permission = "blog:visitor:block")
     public BatchVersionsVO blockBatch(List<BatchItemDTO> items, String until) {
+        // 1. 按 ID 升序锁定全部目标访客，检查版本并提取规范化 IP 地址。
         var sorted = BatchUtils.sorted(items);
         List<BlogVisitor> rows = new ArrayList<>();
         LocalDateTime end = QueryTimeUtils.parse(until);
@@ -162,6 +178,8 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             row.setBlockedIpAddress(ip);
             rows.add(row);
         }
+
+        // 2. 校验封禁截止时间，全部通过后统一落库并返回新版本。
         if (end != null && !end.isAfter(now())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
         }
@@ -173,7 +191,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量解除访客限制，先加锁并检查全部目标，结果按原来的选择顺序返回。 */
+    /**
+     * 批量解除访客限制，先加锁并检查全部目标，结果按原来的选择顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-unblock", target = "blog:visitor", permission = "blog:visitor:unblock")

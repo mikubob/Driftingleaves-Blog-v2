@@ -20,14 +20,18 @@ public final class MessageVisibilityPolicy {
     private MessageVisibilityPolicy() {
     }
 
-    /** 按id整理上级留言信息，不包含原文、邮箱或 IP。 */
+    /**
+     * 按id整理上级留言信息，不包含原文、邮箱或 IP。
+     */
     public static Map<Long, MessageNode> index(List<MessageNode> nodes) {
         Map<Long, MessageNode> result = new HashMap<>();
         nodes.forEach(node -> result.put(node.getMessageId(), node));
         return result;
     }
 
-    /** 判断留言是否可见，从根留言逐级检查，缺少上级或出现循环时拒绝，自己隐藏的留言仅本人可见。 */
+    /**
+     * 判断留言是否可见，从根留言逐级检查，缺少上级或出现循环时拒绝，自己隐藏的留言仅本人可见。
+     */
     public static boolean visible(long id, Map<Long, MessageNode> nodes, Long viewer) {
         List<MessageNode> path = new ArrayList<>();
         Set<Long> seen = new HashSet<>();

@@ -15,6 +15,7 @@ import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.DiscussionConversationVO;
 import com.xuan.vo.MessagePrivateVO;
 import com.xuan.vo.MessagePublicVO;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
@@ -23,37 +24,80 @@ import java.util.List;
  */
 public interface IMessageService extends IService<BlogMessage> {
 
-    /** 分页查询根留言或整组回复，未登录和已登录用户都只统计自己能看到的留言。 */
+    /**
+     * 分页查询根留言或整组回复，未登录和已登录用户都只统计自己能看到的留言。
+     */
     PageResult<MessagePublicVO> publicMessages(MessagePublicQueryDTO query);
 
-    /** 查询匿名留言首页，通过 Spring 代理读取缓存。 */
+    /**
+     * 查询匿名留言首页，通过 Spring 代理读取缓存。
+     */
     PageResult<MessagePublicVO> cachedAnonymousHome();
 
-    /** 发表留言，作者取当前登录用户，有效管理员免审，其他用户按配置审核；私密性受全部上级限制，只保存发布时的属地和设备类型。 */
+    /**
+     * 校验算术验证码并发表留言，验证码在开启数据库事务前完成核验。
+     *
+     * @param request 留言创建参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 新建留言视图
+     */
+    MessagePrivateVO createWithCaptcha(MessageCreateDTO request, HttpServletRequest httpRequest);
+
+    /**
+     * 发表留言，作者取当前登录用户，有效管理员免审，其他用户按配置审核；私密性受全部上级限制，只保存发布时的属地和设备类型。
+     */
     MessagePrivateVO create(MessageCreateDTO request, String ip, String userAgent);
 
-    /** 分页查询本人留言，只使用当前登录用户的id。 */
+    /**
+     * 分页查询本人留言，只使用当前登录用户的id。
+     */
     PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query);
 
-    /** 根据id查询本人留言及版本，查询他人留言返回 404。 */
+    /**
+     * 根据id查询本人留言及版本，查询他人留言返回 404。
+     */
     ResourceVersion<MessagePrivateVO> ownDetail(long id);
 
-    /** 根据id删除本人留言及全部子回复，只能选择自己的留言。 */
+    /**
+     * 根据id删除本人留言及全部子回复，只能选择自己的留言。
+     */
     void deleteOwn(long id);
 
-    /** 分页查询后台留言或一层回复，未传parentId保留平铺；查询权限须有ALL，不放宽前台私密限制。 */
+    /**
+     * 分页查询后台留言或一层回复，未传parentId保留平铺；查询权限须有ALL，不放宽前台私密限制。
+     */
     PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query);
 
-    /** 查询主记录及整组回复，按当前查询权限限定范围。 */
+    /**
+     * 查询主记录及整组回复，按当前查询权限限定范围。
+     */
     DiscussionConversationVO<MessagePrivateVO> conversation(long id, DiscussionConversationQueryDTO query);
 
-    /** 根据id查询后台留言及版本，需要 ALL 范围，详情和版本在同一个只读事务中读取。 */
+    /**
+     * 根据id查询后台留言及版本，需要 ALL 范围，详情和版本在同一个只读事务中读取。
+     */
     ResourceVersion<MessagePrivateVO> adminDetail(long id);
 
-    /** 在后台回复留言，作者取实际操作者，遵守全部上级留言的私密限制，记录本次请求的属地和设备类型。 */
+    /**
+     * 在后台回复留言，从请求中解析可信客户端 IP 与 User-Agent 后保存。
+     *
+     * @param id 目标留言 ID
+     * @param request 回复内容参数
+     * @param httpRequest 当前 HTTP 请求
+     * @return 新建回复视图
+     */
+    MessagePrivateVO replyAdmin(long id, MessageEditDTO request, HttpServletRequest httpRequest);
+
+    /**
+     * 在后台回复留言，作者取实际操作者，遵守全部上级留言的私密限制，记录本次请求的属地和设备类型。
+     */
     MessagePrivateVO replyAdmin(long id, MessageEditDTO request, String ip, String userAgent);
-    /** 批量审核留言，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量审核留言，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status);
-    /** 批量删除留言及全部子回复，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量删除留言及全部子回复，单条也走此入口，任一失败则整批回滚。
+     */
     void deleteBatch(List<String> ids);
 }

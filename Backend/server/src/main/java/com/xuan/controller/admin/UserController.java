@@ -1,20 +1,22 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.UserRolesDTO;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IUserService;
+import com.xuan.utils.IdUtils;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.UserAdminVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,130 +31,147 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台用户管理接口，检查后台入口和对应操作权限。
+ * 管理端用户接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/users")
 @RequiredArgsConstructor
 public class UserController {
 
-    private final IUserService users;
+    private final IUserService userService;
 
     /**
-     * 分页查询用户，SELF 不缩小范围，关键词和角色筛选使用同一套 SQL 条件。
+     * 分页查询用户列表
      *
-     * @param query 已校验的分页及过滤参数
-     * @return 无逐条版本的脱敏分页结果
+     * @param query 查询参数
+     * @return 用户分页结果
      */
     @GetMapping
     @SaCheckPermission("sys:user:query")
     public Result<PageResult<UserAdminVO>> list(@Valid @ModelAttribute AdminUserQueryDTO query) {
-        return Result.ok(users.adminList(query, query.roleId() == null ? null : id(query.roleId())));
+        log.info("分页查询用户列表: {}", query);
+        Long roleId = IdUtils.parse(query.roleId());
+        PageResult<UserAdminVO> pageResult = userService.adminList(query, roleId);
+        return Result.ok(pageResult);
     }
 
     /**
-     * 根据id查询用户详情及版本，禁用用户也能查看。
+     * 根据 ID 查询用户详情
      *
-     * @param userId 正十进制用户 ID
-     * @return 资料、完整角色及其名称和状态、X-Revision；不存在返回 404
+     * @param userId 用户 ID
+     * @return 用户详情及 X-Revision 响应头
      */
     @GetMapping("/{userId}")
     @SaCheckPermission("sys:user:query")
     public ResponseEntity<Result<UserAdminVO>> detail(@PathVariable String userId) {
-        return profile(users.adminDetail(id(userId)));
+        log.info("根据 ID 查询用户详情: userId={}", userId);
+        AdminUserProfileVO profile = userService.adminDetail(IdUtils.parse(userId));
+        return profileResponse(profile);
     }
 
     /**
-     * 创建有本站密码、没有角色的用户，不自动登录。
+     * 创建用户
      *
-     * @param body 已校验的创建字段，不接受 roleIds
-     * @return 201 资料及对应详情 Location
+     * @param body 用户创建参数
+     * @return 201 响应及详情 Location
      */
     @PostMapping
     @SaCheckPermission("sys:user:create")
     public ResponseEntity<Result<UserAdminVO>> create(@Valid @RequestBody AdminUserCreateDTO body) {
-        UserAdminVO user = users.adminCreate(body);
-        return ResponseEntity.created(URI.create("/api/v1/admin/users/" + user.userId())).body(Result.ok(user));
+        log.info("创建用户: username={}", body.getUsername());
+        UserAdminVO user = userService.adminCreate(body);
+        URI location = URI.create("/api/v1/admin/users/" + user.userId());
+        return ResponseEntity.created(location).body(Result.ok(user));
     }
 
     /**
-     * 根据id更新用户资料并保留状态，由业务层加锁并检查版本。
+     * 根据 ID 更新用户资料
      *
-     * @param userId 目标用户 ID
-     * @param body 含可空字段的完整资料
-     * @param revision 带引号的版本；缺失交由 Service 返回 428
-     * @return 更新资料及新 X-Revision
+     * @param userId 用户 ID
+     * @param body 用户更新参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的用户详情及新 X-Revision 响应头
      */
     @PutMapping("/{userId}")
     @SaCheckPermission("sys:user:update")
     public ResponseEntity<Result<UserAdminVO>> update(@PathVariable String userId,
             @Valid @RequestBody AdminUserUpdateDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(users.adminUpdate(id(userId), body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新用户资料: userId={}", userId);
+        AdminUserProfileVO profile = userService.adminUpdate(IdUtils.parse(userId), body, revision);
+        return profileResponse(profile);
     }
 
     /**
-     * 根据id更新用户角色，完整替换角色列表；保留最后一个有效管理员，提交前撤销该用户的全部会话。
+     * 根据 ID 更新用户角色
      *
-     * @param userId 目标用户 ID
-     * @param body 去重且最多一百项的角色集合，空集合清空
-     * @param revision 用户详情的整体版本
-     * @return 更新资料及新 X-Revision
+     * @param userId 用户 ID
+     * @param body 角色分配参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的用户详情及新 X-Revision 响应头
      */
     @PutMapping("/{userId}/roles")
     @SaCheckPermission("sys:user:assignRole")
     public ResponseEntity<Result<UserAdminVO>> roles(@PathVariable String userId,
             @Valid @RequestBody UserRolesDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(users.adminAssignRoles(id(userId), body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("分配用户角色: userId={}", userId);
+        AdminUserProfileVO profile = userService.adminAssignRoles(IdUtils.parse(userId), body, revision);
+        return profileResponse(profile);
     }
 
-    /** 批量启用用户，单条也走此接口，每个用户都要检查版本，不恢复旧会话。 */
+    /**
+     * 批量启用用户
+     *
+     * @param body 批量操作参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-enable")
     @SaCheckPermission("sys:user:update")
     public Result<BatchVersionsVO> enable(@Valid @RequestBody BatchRevisionDTO body) {
-        return Result.ok(users.adminSetStatusBatch(body.getItems(), 1));
+        log.info("批量启用用户: count={}", body.getItems().size());
+        BatchVersionsVO versions = userService.adminSetStatusBatch(body.getItems(), 1);
+        return Result.ok(versions);
     }
 
-    /** 批量禁用用户，确保整批修改后仍有有效管理员，实际禁用时撤销全部会话。 */
+    /**
+     * 批量禁用用户
+     *
+     * @param body 批量操作参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-disable")
     @SaCheckPermission("sys:user:update")
     public Result<BatchVersionsVO> disable(@Valid @RequestBody BatchRevisionDTO body) {
-        return Result.ok(users.adminSetStatusBatch(body.getItems(), 0));
+        log.info("批量禁用用户: count={}", body.getItems().size());
+        BatchVersionsVO versions = userService.adminSetStatusBatch(body.getItems(), 0);
+        return Result.ok(versions);
     }
 
-    /** 批量删除用户，单条也要放进 items；内容引用或版本检查失败时，整批用户都保留。 */
+    /**
+     * 批量删除用户
+     *
+     * @param body 批量操作参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:user:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        users.adminDeleteBatch(body.getItems());
+        log.info("批量删除用户: count={}", body.getItems().size());
+        userService.adminDeleteBatch(body.getItems());
         return Result.ok(null);
     }
 
     /**
-     * 检查路径和查询 ID，不能有前导零、符号、空白或超过 Long 范围。
+     * 组装用户详情响应，版本放在 X-Revision 响应头。
      *
-     * @param value 原始 ID 文本
-     * @return 已确认的内部 Long ID
+     * @param result 用户详情与版本
+     * @return 200 响应
      */
-    private long id(String value) {
-        if (value.matches("[1-9][0-9]{0,18}")) {
-            try {
-                return Long.parseLong(value);
-            } catch (NumberFormatException exception) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "ID超出范围");
-            }
-        }
-        throw new BusinessException(400, "VALIDATION_ERROR", "ID须为正十进制字符串");
-    }
-
-    /**
-     * 内部资料转成统一响应，版本只放响应头。
-     *
-     * @param result 资料及其带引号版本
-     * @return 成功响应及 X-Revision
-     */
-    private ResponseEntity<Result<UserAdminVO>> profile(AdminUserProfileVO result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.user()));
+    private ResponseEntity<Result<UserAdminVO>> profileResponse(AdminUserProfileVO result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.user()));
     }
 }

@@ -26,7 +26,9 @@ public class FileUrlPolicy {
     private final FileProperties files;
     private final AliOssProperties ossProperties;
 
-    /** 解析本站附件路径，普通链接和外部地址返回 null，拒绝存储直链和编码不明确的地址。 */
+    /**
+     * 解析本站附件路径，普通链接和外部地址返回 null，拒绝存储直链和编码不明确的地址。
+     */
     public String attachmentPath(String value) {
         URI uri;
         try {
@@ -81,7 +83,9 @@ public class FileUrlPolicy {
         return raw;
     }
 
-    /** 判断是否为本站地址，只使用部署配置，不相信请求 Host 或转发头。 */
+    /**
+     * 判断是否为本站地址，只使用部署配置，不相信请求 Host 或转发头。
+     */
     public boolean siteOrigin(URI uri) {
         Set<String> origins = new HashSet<>(auth.getAllowedOrigins());
         origins.addAll(files.getPublicOrigins());
@@ -91,7 +95,9 @@ public class FileUrlPolicy {
                 && port(origin) == port(uri));
     }
 
-    /** 获取地址端口，未指定时使用 HTTP 或 HTTPS 对应的默认端口。 */
+    /**
+     * 获取地址端口，未指定时使用 HTTP 或 HTTPS 对应的默认端口。
+     */
     private int port(URI uri) {
         if (uri.getPort() >= 0) {
             return uri.getPort();
@@ -99,7 +105,9 @@ public class FileUrlPolicy {
         return "http".equalsIgnoreCase(uri.getScheme()) ? 80 : 443;
     }
 
-    /** 判断是否为存储域名，OSS endpoint 和 Bucket 地址都不能绕过附件接口直接公开。 */
+    /**
+     * 判断是否为存储域名，OSS endpoint 和 Bucket 地址都不能绕过附件接口直接公开。
+     */
     private boolean storageHost(String host) {
         String endpoint = ossProperties.getEndpoint();
         if (StrUtil.nullToEmpty(endpoint).isBlank()) {
@@ -109,7 +117,9 @@ public class FileUrlPolicy {
         return host.equalsIgnoreCase(storage) || host.equalsIgnoreCase(ossProperties.getBucket() + "." + storage);
     }
 
-    /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
+    /**
+     * 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。
+     */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "附件地址无效，请从本站文件列表重新选择，不要填写存储直链或修改附件地址。");
     }

@@ -21,9 +21,13 @@ import java.util.Map;
 @ConfigurationProperties("app.auth")
 public class AuthProperties {
 
-    /** 兼容旧站绝对附件地址，不用于 HTTP 或 WebSocket 跨域。 */
+    /**
+     * 兼容旧站绝对附件地址，不用于 HTTP 或 WebSocket 跨域。
+     */
     private List<String> allowedOrigins = new ArrayList<>();
-    /** 从右往左跳过这些明确配置的代理，不能直接相信转发头里的最左地址。 */
+    /**
+     * 从右往左跳过这些明确配置的代理，不能直接相信转发头里的最左地址。
+     */
     private List<String> trustedProxies = new ArrayList<>();
 
     @NotBlank
@@ -37,7 +41,9 @@ public class AuthProperties {
     private Rate rate = new Rate();
     private Map<String, Provider> providers = new LinkedHashMap<>();
 
-    /** 认证限流配置，按时间窗口限制各类请求。 */
+    /**
+     * 认证限流配置，按时间窗口限制各类请求。
+     */
     @Data
     public static class Rate {
 
@@ -54,7 +60,9 @@ public class AuthProperties {
         private int oauth = 20;
     }
 
-    /** 第三方登录平台配置，只有启用的平台才参与登录。 */
+    /**
+     * 第三方登录平台配置，只有启用的平台才参与登录。
+     */
     @Data
     public static class Provider {
 

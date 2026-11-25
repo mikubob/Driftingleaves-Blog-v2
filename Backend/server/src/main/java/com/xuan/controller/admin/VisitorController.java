@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchBlockDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.VisitorQueryDTO;
@@ -13,6 +14,7 @@ import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.VisitorVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -24,53 +26,95 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 查询访客统计和管理访客 IP 封禁。
+ * 管理端访客接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/visitors")
 @RequiredArgsConstructor
 public class VisitorController {
 
-    private final IVisitorService visitors;
+    private final IVisitorService visitorService;
 
-    /** 分页查询访客资料及浏览次数，需要 ALL 范围。 */
+    /**
+     * 分页查询访客列表
+     *
+     * @param query 查询参数
+     * @return 访客分页结果
+     */
     @GetMapping
     @SaCheckPermission("blog:visitor:query")
     public Result<PageResult<VisitorVO>> list(@Valid @ModelAttribute VisitorQueryDTO query) {
-        return Result.ok(visitors.listVisitors(query));
+        log.info("分页查询访客列表: {}", query);
+        PageResult<VisitorVO> pageResult = visitorService.listVisitors(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询访客详情及封禁版本。 */
+    /**
+     * 根据 ID 查询访客详情
+     *
+     * @param id 访客 ID
+     * @return 访客详情及 X-Revision 响应头
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("blog:visitor:query")
     public ResponseEntity<Result<VisitorVO>> detail(@PathVariable String id) {
-        return response(visitors.detail(IdUtils.parse(id)));
+        log.info("根据 ID 查询访客详情: id={}", id);
+        ResourceVersion<VisitorVO> result = visitorService.detail(IdUtils.parse(id));
+        return versionResponse(result);
     }
 
-    /** 批量封禁访客 IP，单条也走此接口。 */
+    /**
+     * 批量封禁访客 IP
+     *
+     * @param body 批量封禁参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-block")
     @SaCheckPermission("blog:visitor:block")
     public Result<BatchVersionsVO> block(@Valid @RequestBody BatchBlockDTO body) {
-        return Result.ok(visitors.blockBatch(body.getItems(), body.getBlockedUntil()));
+        log.info("批量封禁访客: count={}", body.getItems().size());
+        BatchVersionsVO versions = visitorService.blockBatch(body.getItems(), body.getBlockedUntil());
+        return Result.ok(versions);
     }
 
-    /** 批量解除访客限制，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量解除访客限制
+     *
+     * @param body 批量操作参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-unblock")
     @SaCheckPermission("blog:visitor:unblock")
     public Result<BatchVersionsVO> unblock(@Valid @RequestBody BatchRevisionDTO body) {
-        return Result.ok(visitors.unblockBatch(body.getItems()));
+        log.info("批量解封访客: count={}", body.getItems().size());
+        BatchVersionsVO versions = visitorService.unblockBatch(body.getItems());
+        return Result.ok(versions);
     }
 
-    /** 批量删除访客，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除访客
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:visitor:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        visitors.deleteBatch(body.getItems());
+        log.info("批量删除访客: count={}", body.getItems().size());
+        visitorService.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 返回访客资料，版本只放在 X-Revision 响应头。 */
-    private ResponseEntity<Result<VisitorVO>> response(ResourceVersion<VisitorVO> result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
+    /**
+     * 组装带版本头的访客详情响应。
+     *
+     * @param result 访客详情与版本
+     * @return 200 响应
+     */
+    private ResponseEntity<Result<VisitorVO>> versionResponse(ResourceVersion<VisitorVO> result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 }

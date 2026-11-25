@@ -1,12 +1,16 @@
 package com.xuan.handle;
 
-/** 将请求字段转换成页面上的中文名称，不回显用户输入。 */
+/**
+ * 将请求字段转换成页面上的中文名称，不回显用户输入。
+ */
 final class RequestMessages {
 
     private RequestMessages() {
     }
 
-    /** 解析列表和嵌套字段的名称，未知字段使用普通填写提示。 */
+    /**
+     * 解析列表和嵌套字段的名称，未知字段使用普通填写提示。
+     */
     static String name(String field) {
         if (field == null) {
             return "填写内容";

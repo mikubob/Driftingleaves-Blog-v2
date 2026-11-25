@@ -19,27 +19,43 @@ import java.util.List;
  */
 public interface ICategoryService extends IService<BlogCategory> {
 
-    /** 获取展示中的分类，只返回前台需要的资料。 */
+    /**
+     * 获取展示中的分类，只返回前台需要的资料。
+     */
     PageResult<CategoryPublicDetailVO> publicCategories(PageQueryDTO query);
 
-    /** 按大小写敏感 slug 查询展示中的分类，计数只含公开文章。 */
+    /**
+     * 按大小写敏感 slug 查询展示中的分类，计数只含公开文章。
+     */
     CategoryPublicDetailVO publicDetail(String slug);
 
-    /** 获取后台分类列表，隐藏分类也能查。 */
+    /**
+     * 获取后台分类列表，隐藏分类也能查。
+     */
     PageResult<BlogCategory> listCategories(CategoryQueryDTO query);
 
-    /** 获取分类详情和当前版本，不存在就返回 404。 */
+    /**
+     * 获取分类详情和当前版本，不存在就返回 404。
+     */
     CategoryProfileVO detail(long id);
 
-    /** 创建分类，不自动修改文章。 */
+    /**
+     * 创建分类，不自动修改文章。
+     */
     BlogCategory create(CategoryCreateDTO request);
 
-    /** 根据id更新分类，先锁住分类并检查版本，再完整替换资料，保留展示状态。 */
+    /**
+     * 根据id更新分类，先锁住分类并检查版本，再完整替换资料，保留展示状态。
+     */
     CategoryProfileVO update(long id, CategoryUpdateDTO request, String revision);
 
-    /** 批量展示或隐藏分类，全部目标检查通过后写入，版本按原选择顺序返回。 */
+    /**
+     * 批量展示或隐藏分类，全部目标检查通过后写入，版本按原选择顺序返回。
+     */
     BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
 
-    /** 批量删除分类，单条也走此入口，所有数据库修改一起提交。 */
+    /**
+     * 批量删除分类，单条也走此入口，所有数据库修改一起提交。
+     */
     void deleteBatch(List<BatchItemDTO> items);
 }

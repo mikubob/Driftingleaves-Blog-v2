@@ -66,7 +66,9 @@ public class MessageCreateDTO {
         notifyReply = value;
     }
 
-    /** 可空parentId也必须显式出现。 */
+    /**
+     * 可空parentId也必须显式出现。
+     */
     @AssertTrue(message = "表单内容未完整提交，请刷新页面后重试。")
     public boolean isComplete() {
         return present.size() == 5;

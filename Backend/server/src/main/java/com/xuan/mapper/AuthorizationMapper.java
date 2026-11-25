@@ -4,65 +4,76 @@ import com.xuan.entity.SysMenu;
 import lombok.Data;
 import lombok.Getter;
 import lombok.Setter;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * 用户授权查询接口，用户、角色和权限都必须有效，不能按角色名跳过检查。
+ * 用户授权数据访问接口
  */
+@Mapper
 public interface AuthorizationMapper {
 
     /**
-     * 查询启用用户的启用角色码，按字典序返回；不能用显示名称鉴权，也不给 admin 隐含通配权限。
+     * 查询启用用户的有效角色编码列表，按字典序排列。
      *
-     * @param userId 当前会话的本站用户 ID
-     * @return 有效角色码列表，无有效角色时为空列表
+     * @param userId 用户 ID
+     * @return 有效角色编码列表
      */
     List<String> roleCodes(@Param("userId") long userId);
 
     /**
-     * 取用户已分配的全部角色 ID 并升序排列，禁用角色也参与用户整体版本，但不能拿它判断有效权限。
+     * 查询用户已分配的全部角色 ID 列表（含禁用角色，用于计算用户整体版本），按 ID 升序排列。
      *
-     * @param userId 当前会话的本站用户 ID
-     * @return 完整角色关联 ID 列表
+     * @param userId 用户 ID
+     * @return 角色 ID 列表
      */
     List<Long> roleIds(@Param("userId") long userId);
 
     /**
-     * 查询有效用户、角色和权限，保留每个角色的范围，业务层再逐权限合并 ALL 和 SELF。
+     * 查询用户有效角色授予的权限及对应数据范围明细
      *
-     * @param userId 当前会话的本站用户 ID
-     * @return 权限与授予角色范围的明细列表，不在 SQL 中合并为用户全局范围
+     * @param userId 用户 ID
+     * @return 权限与数据范围明细列表
      */
     List<Grant> grants(@Param("userId") long userId);
 
     /**
-     * 查询有效角色授予的启用菜单，按排序值和id排列；业务层在同一个读取事务中检查权限和全部上级菜单，再移除空目录。
+     * 查询用户有效角色授予的启用菜单列表，按排序值与菜单 ID 排列。
      *
-     * @param userId 当前会话的本站用户 ID
-     * @return 去重后的菜单候选列表，包含已授权的隐藏项和按钮
+     * @param userId 用户 ID
+     * @return 菜单授权候选列表
      */
     List<MenuGrant> menus(@Param("userId") long userId);
 
     /**
-     * 一行就是一个有效角色授予的一项权限和范围。
+     * 角色权限与数据范围明细
      */
     @Data
     class Grant {
 
+        /**
+         * 权限编码
+         */
         private String permissionCode;
-        /** 只把本角色的 ALL 或 SELF 合并到当前 permissionCode，不能影响别的权限。 */
+
+        /**
+         * 本条角色授权对应的数据范围（ALL 或 SELF）
+         */
         private String dataScope;
     }
 
     /**
-     * 菜单查询结果里的 permissionCode 仍从权限字典读取。
+     * 带关联权限编码的菜单记录
      */
     @Getter
     @Setter
     class MenuGrant extends SysMenu {
 
+        /**
+         * 菜单关联的权限编码
+         */
         private String permissionCode;
     }
 }

@@ -4,50 +4,64 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.PermissionQueryDTO;
 import com.xuan.entity.SysPermission;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
 /**
- * 权限数据接口，业务层先拿保护锁，再按id升序锁用户，最后锁目标权限。
+ * 权限数据访问接口
  */
+@Mapper
 public interface PermissionMapper extends BaseMapper<SysPermission> {
+
     /**
-     * 列表和总数共用条件，编码、名称按文字包含查找，模块和状态精确匹配。
+     * 分页查询权限列表，按权限 ID 升序排列。
+     *
      * @param page 分页参数
-     * @param query 已校验的查询条件
-     * @return ID 升序的完整状态分页
+     * @param query 查询条件
+     * @return 权限分页结果
      */
     IPage<SysPermission> permissionPage(IPage<SysPermission> page, @Param("query") PermissionQueryDTO query);
 
     /**
-     * 持有保护锁时找全部关联用户，不过滤用户、角色或权限状态。
-     * @param permissionId 目标权限
-     * @return 去重升序的用户 ID，由调用方随后锁定
+     * 查询指定权限关联的全部用户 ID（含禁用角色和用户），按 ID 升序去重。
+     *
+     * @param permissionId 权限 ID
+     * @return 用户 ID 列表
      */
     List<Long> userIds(@Param("permissionId") long permissionId);
 
     /**
-     * 先拿用户锁再锁目标权限，不按状态过滤。
+     * 加行锁查询权限记录，调用方须处于写事务内。
+     *
      * @param permissionId 权限 ID
-     * @return 当前权限，不存在为 null；调用方要持有写事务
+     * @return 锁定的权限记录，不存在时返回 null
      */
     SysPermission lockById(@Param("permissionId") long permissionId);
 
     /**
-     * 完整替换资料和状态，NULL 也要写，编码和时间字段不改。
-     * @param permission 已锁定且通过版本检查的实体
-     * @return 更新数，由调用方事务处理状态变化和会话撤销
+     * 完整更新权限资料和状态，显式写入可空字段以支持清空。
+     *
+     * @param permission 待更新的权限实体
+     * @return 受影响行数
      */
     int updatePermission(@Param("permission") SysPermission permission);
 
     /**
-     * 持有保护锁时检查全部菜单引用，无论菜单状态如何都不能悄悄删掉权限门禁。
-     * @param permissionId 已锁定目标权限
-     * @return 引用菜单数，非零时禁止删除
+     * 统计引用指定权限的菜单数量（含禁用菜单）
+     *
+     * @param permissionId 权限 ID
+     * @return 引用数量
      */
     long menuReferences(@Param("permissionId") long permissionId);
-    /** 全部目标加锁并通过版本检查后，只更新状态。 */
-    int updateStatus(@Param("id") long id, @Param("status") int status);
 
+    /**
+     * 更新权限状态
+     *
+     * @param id 权限 ID
+     * @param status 目标状态
+     * @return 受影响行数
+     */
+    int updateStatus(@Param("id") long id, @Param("status") int status);
 }

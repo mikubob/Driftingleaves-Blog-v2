@@ -11,7 +11,9 @@ public final class IdUtils {
     private IdUtils() {
     }
 
-    /** 将字符串id转为 Long，未传时返回 null，包含符号、前导零或超出范围时报错。 */
+    /**
+     * 将字符串id转为 Long，未传时返回 null，包含符号、前导零或超出范围时报错。
+     */
     public static Long parse(String value) {
         if (ObjectUtil.isNull(value)) {
             return null;

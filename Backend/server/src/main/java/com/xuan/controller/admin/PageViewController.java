@@ -9,6 +9,7 @@ import com.xuan.result.Result;
 import com.xuan.service.IPageViewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,27 +18,41 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 后台浏览记录接口，只提供分页查询和清理，不修改历史归属。
+ * 管理端浏览记录接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/page-views")
 @RequiredArgsConstructor
 public class PageViewController {
 
-    private final IPageViewService views;
+    private final IPageViewService pageViewService;
 
-    /** 分页查询浏览记录，需要 ALL 范围，只接受已声明的筛选字段。 */
+    /**
+     * 分页查询浏览记录列表
+     *
+     * @param query 查询参数
+     * @return 浏览记录分页结果
+     */
     @GetMapping
     @SaCheckPermission("blog:view:query")
     public Result<PageResult<BlogPageView>> list(@Valid @ModelAttribute PageViewQueryDTO query) {
-        return Result.ok(views.listViews(query));
+        log.info("分页查询浏览记录列表: {}", query);
+        PageResult<BlogPageView> pageResult = pageViewService.listViews(query);
+        return Result.ok(pageResult);
     }
 
-    /** 批量删除浏览记录，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除浏览记录
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:view:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        views.deleteBatch(body.ids());
+        log.info("批量删除浏览记录: count={}", body.ids().size());
+        pageViewService.deleteBatch(body.ids());
         return Result.ok(null);
     }
 }

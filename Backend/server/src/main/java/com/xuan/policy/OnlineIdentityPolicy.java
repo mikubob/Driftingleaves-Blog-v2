@@ -8,14 +8,18 @@ import com.xuan.session.SessionManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-/** 在线身份检查，离开 HTTP 请求后仍检查原会话和账号，不凭统计标识恢复登录。 */
+/**
+ * 在线身份检查，离开 HTTP 请求后仍检查原会话和账号，不凭统计标识恢复登录。
+ */
 @Component
 @RequiredArgsConstructor
 public class OnlineIdentityPolicy {
     private final SessionManager sessions;
     private final UserMapper users;
 
-    /** 检查在线用户，重新查询原会话和账号启用状态，查询失败时不能改为访客继续。 */
+    /**
+     * 检查在线用户，重新查询原会话和账号启用状态，查询失败时不能改为访客继续。
+     */
     public void requireActive(OnlineBinding binding) {
         if (binding.userId() == null) {
             return;

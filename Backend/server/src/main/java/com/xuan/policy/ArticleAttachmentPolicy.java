@@ -49,6 +49,7 @@ public class ArticleAttachmentPolicy {
      * @return 清理后的 HTML 和去重后的附件id；跨文章引用或编码不明确时返回 400
      */
     public References inspect(Long articleId, String markdown, String cover) {
+        // 1. 解析 Markdown AST 中的链接与图片，校验并收集站内附件 ID。
         Set<Long> ids = new TreeSet<>();
         PARSER.parse(markdown).accept(new AbstractVisitor() {
             /**
@@ -69,11 +70,15 @@ public class ArticleAttachmentPolicy {
                 visitChildren(image);
             }
         });
+
+        // 2. 渲染并清理 HTML 后规范化所有 a[href] 与 img[src] 地址。
         Document document = Jsoup.parseBodyFragment(MarkdownUtils.toHtml(markdown));
         for (Element element : document.select("a[href], img[src]")) {
             String attribute = element.normalName().equals("a") ? "href" : "src";
             element.attr(attribute, canonical(element.attr(attribute), articleId, ids));
         }
+
+        // 3. 校验封面地址，允许当前文章站内附件或合法外部 HTTP(S) 链接。
         String normalizedCover = cover == null ? null : canonical(cover, articleId, ids);
         if (normalizedCover != null && !CONTEXT.matcher(normalizedCover).matches() && !UrlPolicy.valid(
                 normalizedCover)) {
@@ -82,7 +87,9 @@ public class ArticleAttachmentPolicy {
         return new References(normalizedCover, document.body().html(), Set.copyOf(ids));
     }
 
-    /** 检查并整理文章附件地址，本站附件必须属于当前文章，外部地址保持原样。 */
+    /**
+     * 检查并整理文章附件地址，本站附件必须属于当前文章，外部地址保持原样。
+     */
     private String canonical(String value, Long articleId, Set<Long> ids) {
         String path = urls.attachmentPath(value);
         if (path == null) {
@@ -96,7 +103,9 @@ public class ArticleAttachmentPolicy {
         return path;
     }
 
-    /** 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。 */
+    /**
+     * 返回附件地址错误，不带原 URL、存储路径或私密文件的存在信息。
+     */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "文章附件或封面地址无效，请先保存草稿，再通过当前文章上传并插入图片；外部封面请使用有效的 HTTP(S) 地址。");
     }

@@ -11,6 +11,7 @@ import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.ISiteConfigService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ConfigProfileVO;
 import com.xuan.vo.ConfigVO;
@@ -48,7 +49,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
     private final AuthorizationProvider authorization;
     private final JsonMapper json;
 
-    /** SQL 同时限制 site 与公开标记，不会因为错误公开 comment 而暴露审核策略。 */
+    /**
+     * SQL 同时限制 site 与公开标记，不会因为错误公开 comment 而暴露审核策略。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "configs", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -56,7 +59,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return configs.configs(true).stream().map(this::view).toList();
     }
 
-    /** 后台只能列出三个白名单键，SELF 对这个全站资源同样有效。 */
+    /**
+     * 后台只能列出三个白名单键，SELF 对这个全站资源同样有效。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ConfigVO> listConfigs() {
@@ -64,7 +69,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return configs.configs(false).stream().map(this::view).toList();
     }
 
-    /** 根据配置键查询站点配置及版本，先检查权限再检查配置键，资料和版本在同一个只读事务中读取。 */
+    /**
+     * 根据配置键查询站点配置及版本，先检查权限再检查配置键，资料和版本在同一个只读事务中读取。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public ConfigProfileVO detail(String key) {
@@ -73,7 +80,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return profile(requireConfig(configs.selectById(key)));
     }
 
-    /** 先锁操作者、再锁配置；评论新增也要此行锁，开关变更不会越过正在提交的评论。 */
+    /**
+     * 先锁操作者、再锁配置；评论新增也要此行锁，开关变更不会越过正在提交的评论。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:config", permission = "blog:config:update")
@@ -99,7 +108,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return profile(configs.selectById(key));
     }
 
-    /** 检查本次配置操作权限，查询权限不能代替更新权限。 */
+    /**
+     * 检查本次配置操作权限，查询权限不能代替更新权限。
+     */
     private void requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -107,14 +118,18 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         authorization.requireScope(actor, "blog:config:" + operation);
     }
 
-    /** 不查任意数据库配置键，未知键统一404。 */
+    /**
+     * 不查任意数据库配置键，未知键统一404。
+     */
     private void requireKey(String key) {
         if (!KEYS.contains(key)) {
             throw new BusinessException(404, "NOT_FOUND", "配置不存在");
         }
     }
 
-    /** 初始化配置缺失不能通过 PUT 偷偷新建。 */
+    /**
+     * 初始化配置缺失不能通过 PUT 偷偷新建。
+     */
     private BlogSiteConfig requireConfig(BlogSiteConfig row) {
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "配置不存在");
@@ -122,11 +137,16 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return row;
     }
 
-    /** 整理配置字段，按固定顺序生成对象，避免 MySQL 调整 JSON 属性顺序后版本无故改变。 */
+    /**
+     * 整理配置字段，按固定顺序生成对象，避免 MySQL 调整 JSON 属性顺序后版本无故改变。
+     */
     private Map<String, Object> policy(String key, Map<String, Object> value, int isPublic) {
+        // 1. 限制单条配置 JSON 总大小不超过 16 KiB。
         if (json.writeValueAsString(value).getBytes(StandardCharsets.UTF_8).length > 16 * 1024) {
             throw new BusinessException(400, "VALIDATION_ERROR", "配置内容不能超过 16 KiB，请缩短后重试。");
         }
+
+        // 2. 按配置键校验白名单字段与类型，并按固定顺序组装有序 Map。
         Map<String, Object> result = new LinkedHashMap<>();
         if ("site".equals(key)) {
             if (!value.keySet().equals(Set.of("title", "description", "icp", "publicSecurityRecord", "startDate"))) {
@@ -165,7 +185,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return result;
     }
 
-    /** 内层文本同样按 Unicode 字符校验，不让数字或 null 冒充字符串。 */
+    /**
+     * 内层文本同样按 Unicode 字符校验，不让数字或 null 冒充字符串。
+     */
     private String text(String name, Object value, int min, int max) {
         if (!(value instanceof String text)) {
             throw new BusinessException(400, "VALIDATION_ERROR", name + "必须填写文本，请重新输入。");
@@ -178,7 +200,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return clean;
     }
 
-    /** 数据库配置损坏时明确503，不能返回空对象或默认开启；错误里不带原始配置。 */
+    /**
+     * 数据库配置损坏时明确503，不能返回空对象或默认开启；错误里不带原始配置。
+     */
     private ConfigVO view(BlogSiteConfig row) {
         try {
             Map<String, Object> raw = json.readValue(row.getConfigValue(), new TypeReference<Map<String, Object>>() { });
@@ -192,7 +216,9 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         }
     }
 
-    /** 计算配置版本，只包含已保存的业务字段，不受数据库更新时间或 JSON 属性顺序影响。 */
+    /**
+     * 计算配置版本，只包含已保存的业务字段，不受数据库更新时间或 JSON 属性顺序影响。
+     */
     private ConfigProfileVO profile(BlogSiteConfig row) {
         ConfigVO value = view(row);
         String digest = json.writeValueAsString(Arrays.asList(value.configKey(), value.configValue(),
@@ -200,20 +226,16 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
         return new ConfigProfileVO(value, "\"" + TokenUtils.digest(digest) + "\"");
     }
 
-    /** 权限和目标检查后再查版本，同目标更新也不能绕过旧版本。 */
+    /**
+     * 权限和目标检查后再查版本，同目标更新也不能绕过旧版本。
+     */
     private void checkRevision(BlogSiteConfig row, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(row).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "配置已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(row).revision(), revision, "配置已修改，请重新获取");
     }
 
-    /** 配置字段错误只返回通用提示，不回显可能误填的敏感值。 */
+    /**
+     * 配置字段错误只返回通用提示，不回显可能误填的敏感值。
+     */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "配置项目不完整或包含不支持的设置，请刷新设置页面后重新填写。");
     }

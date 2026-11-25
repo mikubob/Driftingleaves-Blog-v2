@@ -47,7 +47,9 @@ public class RedisOAuthStore implements AuthStateCache {
         return value;
     }
 
-    /** 一次性使用授权流程，调用方先核对浏览器、操作和原会话，不匹配时不能删除。 */
+    /**
+     * 一次性使用授权流程，调用方先核对浏览器、操作和原会话，不匹配时不能删除。
+     */
     public void consume(String kind, String secret, String expected) {
         // 1. 在同一次 Lua 里比较完整记录并删除，并发请求只能有一个成功。
         Long consumed = redis.execute(CONSUME, List.of(key(kind, secret)), expected);

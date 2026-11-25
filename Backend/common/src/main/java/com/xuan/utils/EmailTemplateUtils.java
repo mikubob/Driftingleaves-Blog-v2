@@ -4,13 +4,17 @@ import cn.hutool.core.util.EscapeUtil;
 
 import java.time.Year;
 
-/** 生成邮件卡片，动态文本和链接先转义再放入 HTML。 */
+/**
+ * 生成邮件卡片，动态文本和链接先转义再放入 HTML。
+ */
 public final class EmailTemplateUtils {
 
     private EmailTemplateUtils() {
     }
 
-    /** 生成邮箱验证码卡片，标明操作用途和五分钟有效期。 */
+    /**
+     * 生成邮箱验证码卡片，标明操作用途和五分钟有效期。
+     */
     public static String verificationCode(String action, String code) {
         String content = """
                 <h2 style="margin:0 0 24px;color:#333;font-size:20px;font-weight:500;">您好！</h2>
@@ -27,7 +31,9 @@ public final class EmailTemplateUtils {
         return layout("邮箱验证 · " + action, content);
     }
 
-    /** 生成订阅确认邮件，链接仍进入需要登录的固定确认页。 */
+    /**
+     * 生成订阅确认邮件，链接仍进入需要登录的固定确认页。
+     */
     public static String subscriptionConfirmation(String url) {
         String content = """
                 <h2 style="margin:0 0 24px;color:#333;font-size:20px;font-weight:500;">您好！</h2>
@@ -40,7 +46,9 @@ public final class EmailTemplateUtils {
         return layout("确认邮件订阅", content);
     }
 
-    /** 生成文章和留言通知卡片，正文由业务层控制，不加入私密原文。 */
+    /**
+     * 生成文章和留言通知卡片，正文由业务层控制，不加入私密原文。
+     */
     public static String notification(String title, String description, String detail, String buttonText,
             String url, String unsubscribeUrl) {
         String content = """
@@ -58,14 +66,18 @@ public final class EmailTemplateUtils {
         return layout(title, content);
     }
 
-    /** 生成邮件中的操作按钮，链接使用双引号属性并转义。 */
+    /**
+     * 生成邮件中的操作按钮，链接使用双引号属性并转义。
+     */
     private static String button(String text, String url) {
         return """
                 <a href="%s" style="display:inline-block;padding:12px 28px;background:#333;border-radius:6px;color:#fff;font-size:16px;text-decoration:none;">%s</a>
                 """.formatted(EscapeUtil.escapeHtml4(url), EscapeUtil.escapeHtml4(text));
     }
 
-    /** 生成共用页眉和页脚，使用内联样式，避免邮箱过滤 style 标签后丢失布局。 */
+    /**
+     * 生成共用页眉和页脚，使用内联样式，避免邮箱过滤 style 标签后丢失布局。
+     */
     private static String layout(String title, String content) {
         return """
                 <!DOCTYPE html>

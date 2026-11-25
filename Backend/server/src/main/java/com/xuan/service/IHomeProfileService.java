@@ -11,12 +11,18 @@ import com.xuan.vo.HomeProfilePublicVO;
  */
 public interface IHomeProfileService extends IService<HomeProfile> {
 
-    /** 查询站点主人公开资料，未设置时返回 null。 */
+    /**
+     * 查询站点主人公开资料，未设置时返回 null。
+     */
     HomeProfilePublicVO publicProfile();
 
-    /** 查询站点主人资料及版本，尚未设置时也返回版本，供首次保存使用。 */
+    /**
+     * 查询站点主人资料及版本，尚未设置时也返回版本，供首次保存使用。
+     */
     ResourceVersion<HomeProfile> detail();
 
-    /** 设置或更新站点主人资料，先锁住站点和所选的启用账号，再完整替换资料。 */
+    /**
+     * 设置或更新站点主人资料，先锁住站点和所选的启用账号，再完整替换资料。
+     */
     ResourceVersion<HomeProfile> replace(HomeProfileWriteDTO request, String revision);
 }

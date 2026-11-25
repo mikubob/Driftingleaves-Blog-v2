@@ -1,5 +1,7 @@
 package com.xuan.result;
 
+import com.xuan.constant.ErrorCode;
+
 import java.util.List;
 
 /**
@@ -7,12 +9,16 @@ import java.util.List;
  */
 public record Result<T>(String code, String msg, T data, List<FieldError> errors) {
 
-    /** 生成成功响应，没有业务结果就传 null。 */
+    /**
+     * 生成成功响应，没有业务结果就传 null。
+     */
     public static <T> Result<T> ok(T data) {
-        return new Result<>("OK", "成功", data, List.of());
+        return new Result<>(ErrorCode.OK, "成功", data, List.of());
     }
 
-    /** 生成失败响应，不带内部异常详情。 */
+    /**
+     * 生成失败响应，不带内部异常详情。
+     */
     public static Result<Void> error(String code, String message) {
         return new Result<>(code, message, null, List.of());
     }

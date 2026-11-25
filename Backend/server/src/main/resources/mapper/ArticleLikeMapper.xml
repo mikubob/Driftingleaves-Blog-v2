@@ -1,17 +1,34 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 文章锁保证 PUT/DELETE 串行，完整复合主键保证数据库里没有重复点赞。 -->
 <mapper namespace="com.xuan.mapper.ArticleLikeMapper">
+
+    <!-- 查询当前用户对文章的点赞状态及文章真实点赞总数 -->
     <select id="state" resultType="com.xuan.vo.LikeStateVO">
-        SELECT EXISTS(SELECT 1 FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}) AS liked,
-        (SELECT COUNT(*) FROM blog_article_like WHERE article_id = #{article}) AS like_count
+        SELECT
+            EXISTS(
+                SELECT 1
+                FROM blog_article_like
+                WHERE article_id = #{article}
+                  AND user_id = #{user}
+            ) AS liked,
+            (
+                SELECT COUNT(*)
+                FROM blog_article_like
+                WHERE article_id = #{article}
+            ) AS like_count
     </select>
 
+    <!-- 新增一条文章点赞记录，复合主键防止重复点赞 -->
     <insert id="add">
-        INSERT INTO blog_article_like(article_id, user_id) VALUES(#{article}, #{user})
+        INSERT INTO blog_article_like (article_id, user_id)
+        VALUES (#{article}, #{user})
     </insert>
 
+    <!-- 删除指定用户对文章的点赞记录 -->
     <delete id="remove">
-        DELETE FROM blog_article_like WHERE article_id = #{article} AND user_id = #{user}
+        DELETE FROM blog_article_like
+        WHERE article_id = #{article}
+          AND user_id = #{user}
     </delete>
+
 </mapper>

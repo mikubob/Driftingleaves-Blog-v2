@@ -1,42 +1,77 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 全站资源由Service检查ALL权限，公开列表过滤隐藏记录。 -->
 <mapper namespace="com.xuan.mapper.MusicMapper">
-    <select id="resourcePage" resultType="com.xuan.entity.BlogMusic">
-        SELECT * FROM blog_music
-        <where>
-            <if test="publicOnly">AND status = 1</if>
-            <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
-            <if test="!publicOnly and query.keyword != null">AND (INSTR(title, #{query.keyword}) &gt; 0 OR INSTR(artist,
-                #{query.keyword}) &gt; 0)
-            </if>
 
+    <!-- 分页查询音乐列表，公开查询仅返回启用记录 -->
+    <select id="resourcePage" resultType="com.xuan.entity.BlogMusic">
+        SELECT *
+        FROM blog_music
+        <where>
+            <if test="publicOnly">
+                AND status = 1
+            </if>
+            <if test="!publicOnly and query.status != null">
+                AND status = #{query.status}
+            </if>
+            <if test="!publicOnly and query.keyword != null">
+                AND (
+                    INSTR(title, #{query.keyword}) &gt; 0
+                    OR INSTR(artist, #{query.keyword}) &gt; 0
+                )
+            </if>
         </where>
         ORDER BY sort_order ASC, music_id ASC
     </select>
 
+    <!-- 加行锁查询音乐记录 -->
     <select id="lockById" resultType="com.xuan.entity.BlogMusic">
-        SELECT * FROM blog_music WHERE music_id = #{id} FOR UPDATE
+        SELECT *
+        FROM blog_music
+        WHERE music_id = #{id}
+        FOR UPDATE
     </select>
 
+    <!-- 完整更新音乐资料，可空字段显式写入以支持清空 -->
     <update id="replace">
-        UPDATE blog_music SET title=#{row.title}, artist=#{row.artist}, duration_seconds=#{row.durationSeconds},
-        cover_url=#{row.coverUrl}, audio_url=#{row.audioUrl}, lyric_url=#{row.lyricUrl}, lyric_type=#{row.lyricType},
-        sort_order=#{row.sortOrder} WHERE music_id = #{row.musicId}
+        UPDATE blog_music
+        SET title = #{row.title},
+            artist = #{row.artist},
+            duration_seconds = #{row.durationSeconds},
+            cover_url = #{row.coverUrl},
+            audio_url = #{row.audioUrl},
+            lyric_url = #{row.lyricUrl},
+            lyric_type = #{row.lyricType},
+            sort_order = #{row.sortOrder}
+        WHERE music_id = #{row.musicId}
     </update>
 
+    <!-- 检查是否存在任意状态曲目引用指定文件地址 -->
     <select id="hasFileReference" resultType="boolean">
-        SELECT EXISTS(SELECT 1 FROM blog_music
-        WHERE cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
+        SELECT EXISTS (
+            SELECT 1
+            FROM blog_music
+            WHERE cover_url = #{url}
+               OR audio_url = #{url}
+               OR lyric_url = #{url}
+        )
     </select>
 
+    <!-- 加行锁查询一条引用指定文件地址的公开曲目 -->
     <select id="lockPublicFileReference" resultType="com.xuan.entity.BlogMusic">
-        SELECT * FROM blog_music WHERE status = 1
-        AND (cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
-        ORDER BY music_id LIMIT 1 FOR UPDATE
+        SELECT *
+        FROM blog_music
+        WHERE status = 1
+          AND (cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
+        ORDER BY music_id
+        LIMIT 1
+        FOR UPDATE
     </select>
-    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+
+    <!-- 更新音乐展示状态 -->
     <update id="updateStatus">
-        UPDATE blog_music SET status = #{status} WHERE music_id = #{id}
+        UPDATE blog_music
+        SET status = #{status}
+        WHERE music_id = #{id}
     </update>
+
 </mapper>

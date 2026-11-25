@@ -1,21 +1,23 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
 import com.xuan.dto.RoleQueryDTO;
 import com.xuan.dto.RoleUpdateDTO;
-import com.xuan.exception.BusinessException;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.service.IRoleService;
+import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.RoleProfileVO;
 import com.xuan.vo.RoleVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -30,115 +32,132 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台角色管理接口，检查登录、后台入口和角色操作权限。
+ * 管理端角色接口
  */
+@Slf4j
 @RestController
 @RequestMapping("/admin/roles")
 @RequiredArgsConstructor
 public class RoleController {
-    private final IRoleService roles;
+
+    private final IRoleService roleService;
 
     /**
-     * 分页查询角色，先检查后台入口和查询权限，SELF 不缩小全站角色范围。
-     * @param query 已校验的分页、关键词及状态
-     * @return 含完整授权关联的分页；无逐条 X-Revision
+     * 分页查询角色列表
+     *
+     * @param query 查询参数
+     * @return 角色分页结果
      */
     @GetMapping
     @SaCheckPermission("sys:role:query")
     public Result<PageResult<RoleVO>> list(@Valid @ModelAttribute RoleQueryDTO query) {
-        return Result.ok(roles.listRoles(query));
+        log.info("分页查询角色列表: {}", query);
+        PageResult<RoleVO> pageResult = roleService.listRoles(query);
+        return Result.ok(pageResult);
     }
 
     /**
-     * 根据id查询角色详情及版本，先检查后台入口和查询权限，禁用角色也能查。
-     * @param roleId 正十进制角色 ID
-     * @return 详情及 X-Revision；不存在返回 404
+     * 根据 ID 查询角色详情
+     *
+     * @param roleId 角色 ID
+     * @return 角色详情及 X-Revision 响应头
      */
     @GetMapping("/{roleId}")
     @SaCheckPermission("sys:role:query")
     public ResponseEntity<Result<RoleVO>> detail(@PathVariable String roleId) {
-        return profile(roles.detail(id(roleId)));
+        log.info("根据 ID 查询角色详情: roleId={}", roleId);
+        RoleProfileVO profile = roleService.detail(IdUtils.parse(roleId));
+        return profileResponse(profile);
     }
 
     /**
-     * 新增角色，先检查后台入口和创建权限，初始不分配权限，不接受关联集合和时间字段。
-     * @param body 已校验的创建字段
-     * @return 201 角色及详情 Location，无 X-Revision
+     * 新增角色
+     *
+     * @param body 角色创建参数
+     * @return 201 响应及详情 Location
      */
     @PostMapping
     @SaCheckPermission("sys:role:create")
     public ResponseEntity<Result<RoleVO>> create(@Valid @RequestBody RoleCreateDTO body) {
-        RoleVO role = roles.create(body);
-        return ResponseEntity.created(URI.create("/api/v1/admin/roles/" + role.roleId())).body(Result.ok(role));
+        log.info("新增角色: roleCode={}", body.getRoleCode());
+        RoleVO role = roleService.create(body);
+        URI location = URI.create("/api/v1/admin/roles/" + role.roleId());
+        return ResponseEntity.created(location).body(Result.ok(role));
     }
 
     /**
-     * 根据id更新角色，先检查后台入口和更新权限，再完整替换资料及状态；加锁后检查版本和最后一个有效管理员。
+     * 根据 ID 更新角色
+     *
      * @param roleId 角色 ID
-     * @param body 全部允许字段，说明可为 null 但不可省略
-     * @param revision 单个详情版本，缺失交由 Service 返回 428
-     * @return 更新详情及新 X-Revision
+     * @param body 角色更新参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的角色详情及新 X-Revision 响应头
      */
     @PutMapping("/{roleId}")
     @SaCheckPermission("sys:role:update")
     public ResponseEntity<Result<RoleVO>> update(@PathVariable String roleId,
             @Valid @RequestBody RoleUpdateDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(roles.update(id(roleId), body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新角色: roleId={}", roleId);
+        RoleProfileVO profile = roleService.update(IdUtils.parse(roleId), body, revision);
+        return profileResponse(profile);
     }
 
-    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    /**
+     * 批量修改角色状态
+     *
+     * @param body 批量状态变更参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-status")
     @SaCheckPermission("sys:role:update")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
-        return Result.ok(roles.changeStatusBatch(body.getItems(), body.getStatus()));
+        log.info("批量修改角色状态: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = roleService.changeStatusBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量删除角色，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除角色
+     *
+     * @param body 批量操作参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:role:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        roles.deleteBatch(body.getItems());
+        log.info("批量删除角色: count={}", body.getItems().size());
+        roleService.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 
     /**
-     * 根据id更新角色权限和菜单，先检查后台入口和授权权限，补齐上级菜单，不自动增加接口权限。
-     * @param roleId 目标角色
-     * @param body 两个必填且不重复的集合，空数组允许清空
-     * @param revision 资料和授权共用的详情版本
-     * @return 最终集合及新 X-Revision，任一失败整笔回滚
+     * 根据 ID 更新角色权限与菜单授权
+     *
+     * @param roleId 角色 ID
+     * @param body 授权参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的角色详情及新 X-Revision 响应头
      */
     @PutMapping("/{roleId}/grants")
     @SaCheckPermission("sys:role:grant")
     public ResponseEntity<Result<RoleVO>> grants(@PathVariable String roleId,
             @Valid @RequestBody RoleGrantDTO body,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(roles.grants(id(roleId), body, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新角色授权: roleId={}", roleId);
+        RoleProfileVO profile = roleService.grants(IdUtils.parse(roleId), body, revision);
+        return profileResponse(profile);
     }
 
     /**
-     * 检查路径 ID，前导零、符号、小数或超过 Long 范围都拒绝。
-     * @param value 原始路径文本
-     * @return 内部 Long ID
+     * 组装角色详情响应，版本放在 X-Revision 响应头。
+     *
+     * @param result 角色详情与版本
+     * @return 200 响应
      */
-    private long id(String value) {
-        if (value.matches("[1-9][0-9]{0,18}")) {
-            try {
-                return Long.parseLong(value);
-            } catch (NumberFormatException exception) {
-                throw new BusinessException(400, "VALIDATION_ERROR", "ID超出范围");
-            }
-        }
-        throw new BusinessException(400, "VALIDATION_ERROR", "ID须为正十进制字符串");
-    }
-
-    /**
-     * 角色整体版本放响应头，响应体只给约定的角色字段。
-     * @param result 同一事务读取的角色及版本
-     * @return 200 详情与 X-Revision
-     */
-    private ResponseEntity<Result<RoleVO>> profile(RoleProfileVO result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.role()));
+    private ResponseEntity<Result<RoleVO>> profileResponse(RoleProfileVO result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.role()));
     }
 }

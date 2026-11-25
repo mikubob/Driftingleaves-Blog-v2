@@ -1,56 +1,71 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 角色、权限和菜单各自都要查启用状态，不能因为角色名是 admin 就自动给通配权限。 -->
 <mapper namespace="com.xuan.mapper.AuthorizationMapper">
-    <!-- 授权实时查库，不用旧缓存，下次请求马上能看到用户、角色或权限禁用。 -->
 
-    <!-- 公开讨论仅展示这两种身份，管理员同时显示本站作者。 -->
+    <!-- 讨论区作者与管理员徽标计算片段 -->
     <sql id="discussionBadges">
         (u.status = 1 AND EXISTS (
-            SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.role_id = ur.role_id
-            WHERE ur.user_id = u.user_id AND r.status = 1 AND r.role_code IN ('author', 'admin')
+            SELECT 1
+            FROM sys_user_role ur
+            JOIN sys_role r ON r.role_id = ur.role_id
+            WHERE ur.user_id = u.user_id
+              AND r.status = 1
+              AND r.role_code IN ('author', 'admin')
         )) AS site_author,
         (u.status = 1 AND EXISTS (
-            SELECT 1 FROM sys_user_role ur JOIN sys_role r ON r.role_id = ur.role_id
-            WHERE ur.user_id = u.user_id AND r.status = 1 AND r.role_code = 'admin'
+            SELECT 1
+            FROM sys_user_role ur
+            JOIN sys_role r ON r.role_id = ur.role_id
+            WHERE ur.user_id = u.user_id
+              AND r.status = 1
+              AND r.role_code = 'admin'
         )) AS site_admin
     </sql>
 
-    <!-- 查启用用户的启用角色码，按字典序返回，不用显示名称或角色权重推算权限。 -->
+    <!-- 查询启用用户的有效角色编码，按字典序排列 -->
     <select id="roleCodes" resultType="string">
-        SELECT r.role_code FROM sys_user u
+        SELECT r.role_code
+        FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
-        WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY r.role_code
+        WHERE u.user_id = #{userId}
+          AND u.status = 1
+        ORDER BY r.role_code
     </select>
 
-    <!-- 查全部已分配角色 ID 并升序返回，禁用角色也参与用户整体版本，但不能用它判断有效权限。 -->
+    <!-- 查询用户已分配的全部角色 ID（含禁用角色），用于计算用户整体版本 -->
     <select id="roleIds" resultType="long">
-        SELECT role_id FROM sys_user_role WHERE user_id = #{userId} ORDER BY role_id
+        SELECT role_id
+        FROM sys_user_role
+        WHERE user_id = #{userId}
+        ORDER BY role_id
     </select>
 
-    <!-- 每个有效角色分别返回它授予的启用权限和范围，同权限保留多行；业务层只合并真正授予它的角色，不能借无关 ALL 角色扩大范围。 -->
+    <!-- 查询用户有效角色授予的启用权限及对应数据范围明细 -->
     <select id="grants" resultType="com.xuan.mapper.AuthorizationMapper$Grant">
-        <!-- 从用户实际角色关联出发，保留各个角色的权限和数据范围。 -->
-        SELECT p.permission_code, r.data_scope FROM sys_user u
+        SELECT p.permission_code, r.data_scope
+        FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
         JOIN sys_role_permission rp ON rp.role_id = r.role_id
-        <!-- 权限本身也要启用，不能只看角色启用了就放行。 -->
         JOIN sys_permission p ON p.permission_id = rp.permission_id AND p.status = 1
-        WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY p.permission_code
+        WHERE u.user_id = #{userId}
+          AND u.status = 1
+        ORDER BY p.permission_code
     </select>
 
-    <!-- 查询有效角色授予的启用菜单和权限编码，用 DISTINCT 去重；保留隐藏菜单和按钮，再由业务层检查权限、全部上级菜单和空目录。 -->
+    <!-- 查询用户有效角色授予的启用菜单及关联权限编码，保留隐藏项和按钮 -->
     <select id="menus" resultType="com.xuan.mapper.AuthorizationMapper$MenuGrant">
-        <!-- 按角色菜单授权取启用节点，is_visible 只管显示，不能当作撤权。 -->
-        SELECT DISTINCT m.*, p.permission_code FROM sys_user u
+        SELECT DISTINCT m.*, p.permission_code
+        FROM sys_user u
         JOIN sys_user_role ur ON ur.user_id = u.user_id
         JOIN sys_role r ON r.role_id = ur.role_id AND r.status = 1
         JOIN sys_role_menu rm ON rm.role_id = r.role_id
         JOIN sys_menu m ON m.menu_id = rm.menu_id AND m.status = 1
-        <!-- 左连接保留不需要权限的目录，其他缺有效权限的候选由业务层去掉。 -->
         LEFT JOIN sys_permission p ON p.permission_id = m.permission_id AND p.status = 1
-        WHERE u.user_id = #{userId} AND u.status = 1 ORDER BY m.sort_order, m.menu_id
+        WHERE u.user_id = #{userId}
+          AND u.status = 1
+        ORDER BY m.sort_order, m.menu_id
     </select>
+
 </mapper>

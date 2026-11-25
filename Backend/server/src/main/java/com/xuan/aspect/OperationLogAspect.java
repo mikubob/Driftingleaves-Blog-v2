@@ -139,7 +139,9 @@ public class OperationLogAspect {
     private final Clock clock;
     private final JsonMapper json;
 
-    /** 记录本次操作，先保存 JSON 参数供成功和失败日志共用，不记录响应或异常原文。 */
+    /**
+     * 记录本次操作，先保存 JSON 参数供成功和失败日志共用，不记录响应或异常原文。
+     */
     @Around("@annotation(operation)")
     public Object around(ProceedingJoinPoint point, OperationLog operation) throws Throwable {
         if (!TransactionSynchronizationManager.isActualTransactionActive()
@@ -197,14 +199,19 @@ public class OperationLogAspect {
         }
     }
 
-    /** 提取日志参数，只保存已登记的业务字段，上传只记录文件信息。 */
+    /**
+     * 提取日志参数，只保存已登记的业务字段，上传只记录文件信息。
+     */
     private ObjectNode operationData(ProceedingJoinPoint point) {
+        // 1. 遍历切点参数，仅按白名单提取脱敏后的审计摘要。
         String[] names = ((MethodSignature) point.getSignature()).getParameterNames();
         Object[] arguments = point.getArgs();
         ObjectNode data = json.createObjectNode();
         for (int index = 0; index < arguments.length; index++) {
             Object argument = arguments[index];
             String name = names[index];
+
+            // 1.1 批量目标只记 ID 列表和选中条数。
             if (argument instanceof List<?> selected && ("items".equals(name) || "ids".equals(name))) {
                 var ids = json.createArrayNode();
                 for (Object value : selected) {
@@ -218,6 +225,8 @@ public class OperationLogAspect {
                 data.put("selectedCount", Integer.toString(ids.size()));
                 continue;
             }
+
+            // 1.2 上传文件只记文件名、类型与字节数，不记二进制内容。
             if (argument instanceof MultipartFile file) {
                 ObjectNode metadata = json.createObjectNode();
                 metadata.put("originalFilename", file.getOriginalFilename());
@@ -226,6 +235,8 @@ public class OperationLogAspect {
                 data.set(name, metadata);
                 continue;
             }
+
+            // 1.3 已登记 DTO 仅保留白名单字段；站点配置额外过滤内层允许键。
             if (argument != null && DATA_FIELDS.containsKey(argument.getClass())) {
                 ObjectNode value = json.valueToTree(argument);
                 value.retain(DATA_FIELDS.get(argument.getClass()));
@@ -242,6 +253,8 @@ public class OperationLogAspect {
                 data.set(name, value);
                 continue;
             }
+
+            // 1.4 标量参数仅记录白名单中的简单值。
             if (SCALAR_FIELDS.contains(name)
                     && (argument == null || argument instanceof String
                     || argument instanceof Long || argument instanceof Integer)) {
@@ -251,7 +264,9 @@ public class OperationLogAspect {
         return data;
     }
 
-    /** 从已知的创建结果中获取目标id。 */
+    /**
+     * 从已知的创建结果中获取目标id。
+     */
     private Long createdId(Object value) {
         if (value == null) {
             return null;
@@ -279,7 +294,9 @@ public class OperationLogAspect {
         };
     }
 
-    /** 获取可记录的错误码，只保留名单中的固定值，不保存异常原文。 */
+    /**
+     * 获取可记录的错误码，只保留名单中的固定值，不保存异常原文。
+     */
     private String safeError(Throwable error) {
         if (error instanceof NotLoginException) {
             return "UNAUTHENTICATED";

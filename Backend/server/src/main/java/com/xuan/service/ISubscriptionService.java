@@ -17,29 +17,47 @@ import java.util.List;
  */
 public interface ISubscriptionService extends IService<BlogRssSubscription> {
 
-    /** 查询本人订阅，未申请订阅时返回 null。 */
+    /**
+     * 查询本人订阅，未申请订阅时返回 null。
+     */
     SubscriptionVO own();
 
-    /** 申请订阅，只能使用当前账号邮箱；保存待验证状态后发送确认邮件，发送失败返回 503，可以重新发送。 */
+    /**
+     * 申请订阅，只能使用当前账号邮箱；保存待验证状态后发送确认邮件，发送失败返回 503，可以重新发送。
+     */
     SubscriptionVO request(SubscriptionWriteDTO request);
 
-    /** 确认订阅，在用户锁内检查并一次性使用本次申请的票据，然后保存激活状态。 */
+    /**
+     * 确认订阅，在用户锁内检查并一次性使用本次申请的票据，然后保存激活状态。
+     */
     SubscriptionVO confirm(String ticket);
 
-    /** 取消本人订阅，没有订阅或已经退订时也返回成功。 */
+    /**
+     * 取消本人订阅，没有订阅或已经退订时也返回成功。
+     */
     void cancelOwn();
 
-    /** 根据邮件票据取消订阅，只能取消票据对应轮次的订阅，重复退订也返回成功。 */
+    /**
+     * 根据邮件票据取消订阅，只能取消票据对应轮次的订阅，重复退订也返回成功。
+     */
     void cancelTicket(String ticket);
 
-    /** 分页查询订阅，需要 ALL 范围，不返回票据。 */
+    /**
+     * 分页查询订阅，需要 ALL 范围，不返回票据。
+     */
     PageResult<BlogRssSubscription> listSubscriptions(SubscriptionQueryDTO query);
 
-    /** 根据id查询订阅详情及版本，资料和版本在同一个只读事务中读取。 */
+    /**
+     * 根据id查询订阅详情及版本，资料和版本在同一个只读事务中读取。
+     */
     ResourceVersion<BlogRssSubscription> detail(long id);
 
-    /** 批量删除订阅，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量删除订阅，单条也走此入口，任一失败则整批回滚。
+     */
     void deleteBatch(List<BatchItemDTO> items);
-    /** 批量修改订阅状态，单条也走此入口，任一失败则整批回滚。 */
+    /**
+     * 批量修改订阅状态，单条也走此入口，任一失败则整批回滚。
+     */
     BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status);
 }

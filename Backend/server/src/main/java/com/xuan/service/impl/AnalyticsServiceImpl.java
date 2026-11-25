@@ -10,6 +10,7 @@ import com.xuan.mapper.PageViewMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.mapper.VisitorMapper;
 import com.xuan.model.ArticleRow;
+import com.xuan.properties.AuthProperties;
 import com.xuan.properties.PublicSiteProperties;
 import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.service.IAnalyticsService;
@@ -18,7 +19,9 @@ import com.xuan.session.SessionManager;
 import com.xuan.utils.IpUtils;
 import com.xuan.utils.SitePathUtils;
 import com.xuan.vo.TrackingResultVO;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +39,7 @@ import java.time.temporal.ChronoUnit;
 public class AnalyticsServiceImpl implements IAnalyticsService {
 
     private final PublicSiteProperties sites;
+    private final AuthProperties authProperties;
     private final VisitorMapper visitors;
     private final PageViewMapper views;
     private final ArticleMapper articles;
@@ -45,8 +49,31 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
     private final IpLocationResolver locations;
     private final Clock clock;
     private final AuthRateLimiter limiter;
+    private final ObjectProvider<IAnalyticsService> self;
 
-    /** 记录站点访问。 */
+    /**
+     * 校验站点归属并解析客户端信息，再通过代理调用事务方法保存访问记录。
+     *
+     * @param expectedSiteCode 接口所属端站点编码
+     * @param request 访问记录参数
+     * @param origin 请求来源
+     * @param httpRequest 当前 HTTP 请求
+     * @return 采集结果
+     */
+    @Override
+    public TrackingResultVO trackSite(String expectedSiteCode, PageViewCreateDTO request, String origin,
+            HttpServletRequest httpRequest) {
+        if (!expectedSiteCode.equals(request.getSiteCode())) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
+        }
+        String clientIp = IpUtils.clientIp(httpRequest, authProperties.getTrustedProxies());
+        String userAgent = httpRequest.getHeader("User-Agent");
+        return self.getObject().track(request, origin, clientIp, userAgent);
+    }
+
+    /**
+     * 记录站点访问。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public TrackingResultVO track(PageViewCreateDTO request, String origin, String ip, String userAgent) {
@@ -118,7 +145,9 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         return new TrackingResultVO(true);
     }
 
-    /** 检查可选的登录信息，博客可使用当前登录 Cookie，加锁等待后要重新检查。 */
+    /**
+     * 检查可选的登录信息，博客可使用当前登录 Cookie，加锁等待后要重新检查。
+     */
     private Long current() {
         if (sessions.currentToken() == null) {
             return null;
@@ -128,12 +157,16 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         return actor;
     }
 
-    /** 获取访问记录的 UTC 时间，不使用机器本地时间，也不增加文章累计阅读量。 */
+    /**
+     * 获取访问记录的 UTC 时间，不使用机器本地时间，也不增加文章累计阅读量。
+     */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
-    /** 返回访问参数错误，不带客户端传入的路径或id。 */
+    /**
+     * 返回访问参数错误，不带客户端传入的路径或id。
+     */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "文章关联与访问路径不匹配");
     }

@@ -16,7 +16,9 @@ public class IpLocationResolver implements AutoCloseable {
     private static final GeoInfo UNKNOWN = new GeoInfo(null, null, null);
     private final Ip2Region database;
 
-    /** 数据库由应用先加载并检查，关闭解析器时一起释放。 */
+    /**
+     * 数据库由应用先加载并检查，关闭解析器时一起释放。
+     */
     public IpLocationResolver(Ip2Region database) {
         this.database = database;
     }
@@ -51,7 +53,9 @@ public class IpLocationResolver implements AutoCloseable {
         return StrUtil.nullToDefault(info.country(), "未知");
     }
 
-    /** 把整理好的 IP 交给官方查询器，它支持并发；这里只取国家、省、市。 */
+    /**
+     * 把整理好的 IP 交给官方查询器，它支持并发；这里只取国家、省、市。
+     */
     private GeoInfo lookup(String ip) {
         if (ip == null || isLoopback(ip)) {
             return UNKNOWN;
@@ -73,12 +77,16 @@ public class IpLocationResolver implements AutoCloseable {
         }
     }
 
-    /** IPv4 和 IPv6 回环地址都显示本地，不再查库。 */
+    /**
+     * IPv4 和 IPv6 回环地址都显示本地，不再查库。
+     */
     private boolean isLoopback(String ip) {
         return ip != null && (ip.startsWith("127.") || "0:0:0:0:0:0:0:1".equals(ip));
     }
 
-    /** 库里的 0 表示没查到，返回时换成 null。 */
+    /**
+     * 库里的 0 表示没查到，返回时换成 null。
+     */
     private String part(String[] parts, int index) {
         if (index >= parts.length) {
             return null;
@@ -87,7 +95,9 @@ public class IpLocationResolver implements AutoCloseable {
         return StrUtil.isEmpty(value) || "0".equals(value) ? null : value;
     }
 
-    /** 查询器共用到应用退出，由 Spring 关闭，不要查一次就关一次。 */
+    /**
+     * 查询器共用到应用退出，由 Spring 关闭，不要查一次就关一次。
+     */
     @Override
     public void close() throws InterruptedException {
         database.close();

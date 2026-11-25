@@ -23,7 +23,9 @@ public class FailureAuditWriter {
     private final OperationLogMapper logs;
     private final TransactionTemplate transaction;
 
-    /** 初始化失败日志写入器，使用专用线程池，只接收已去掉敏感信息的记录。 */
+    /**
+     * 初始化失败日志写入器，使用专用线程池，只接收已去掉敏感信息的记录。
+     */
     public FailureAuditWriter(@Qualifier("auditExecutor") ExecutorService executor,
             OperationLogMapper logs, PlatformTransactionManager manager) {
         this.executor = executor;

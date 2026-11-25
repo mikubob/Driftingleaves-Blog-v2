@@ -1,5 +1,6 @@
 package com.xuan.handle;
 
+import com.xuan.constant.HttpConstants;
 import com.xuan.exception.BusinessException;
 import com.xuan.properties.AuthProperties;
 import com.xuan.ratelimit.NotFoundRateLimiter;
@@ -16,7 +17,9 @@ import org.springframework.http.server.ServletServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
 
-/** 记录接口返回的 404，在输出 JSON 前计数，服务故障不计入。 */
+/**
+ * 记录接口返回的 404，在输出 JSON 前计数，服务故障不计入。
+ */
 @RestControllerAdvice
 @RequiredArgsConstructor
 public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
@@ -24,13 +27,17 @@ public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
     private final NotFoundRateLimiter guard;
     private final AuthProperties properties;
 
-    /** 在响应写出时检查状态，不受方法是否返回 ResponseEntity 影响。 */
+    /**
+     * 在响应写出时检查状态，不受方法是否返回 ResponseEntity 影响。
+     */
     @Override
     public boolean supports(MethodParameter returnType, Class<? extends HttpMessageConverter<?>> converterType) {
         return true;
     }
 
-    /** 检查 404 次数，超限时改为返回封禁状态和剩余秒数。 */
+    /**
+     * 检查 404 次数，超限时改为返回封禁状态和剩余秒数。
+     */
     @Override
     public Object beforeBodyWrite(Object body, MethodParameter returnType, MediaType contentType,
             Class<? extends HttpMessageConverter<?>> converterType, ServerHttpRequest request,
@@ -46,7 +53,7 @@ public class NotFoundResponseAdvice implements ResponseBodyAdvice<Object> {
         } catch (BusinessException exception) {
             servletResponse.getServletResponse().setStatus(exception.getStatus());
             if (exception.getRetryAfter() != null) {
-                response.getHeaders().set("Retry-After", exception.getRetryAfter().toString());
+                response.getHeaders().set(HttpConstants.HEADER_RETRY_AFTER, exception.getRetryAfter().toString());
             }
             return Result.error(exception.getCode(), exception.getMessage());
         }

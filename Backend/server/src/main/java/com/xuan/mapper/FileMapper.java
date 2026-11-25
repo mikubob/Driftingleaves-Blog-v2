@@ -11,23 +11,44 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 文件数据接口，SQL 限制上传者范围，文章引用分批读取，不另建引用表。
+ * 文件数据访问接口
  */
 @Mapper
 public interface FileMapper extends BaseMapper<BlogFile> {
 
-    /** 分页查询文件，按原始文件名或存储文件名字面匹配，列表和总数共用上传者范围。 */
-    IPage<BlogFile> filePage(IPage<BlogFile> page, @Param("query") FileQueryDTO query,
-            @Param("uploader") Long uploader, @Param("filterUploader") Long filterUploader);
+    /**
+     * 分页查询文件列表，并在 SQL 中限制上传者权限范围。
+     *
+     * @param page 分页参数
+     * @param query 查询条件
+     * @param uploader SELF 范围上传者 ID，ALL 范围为 null
+     * @param filterUploader 筛选条件中的上传者 ID，可为空
+     * @return 文件分页结果
+     */
+    IPage<BlogFile> filePage(IPage<BlogFile> page,
+            @Param("query") FileQueryDTO query,
+            @Param("uploader") Long uploader,
+            @Param("filterUploader") Long filterUploader);
 
-    /** 调用方已经持有文件行锁，并在锁后重新计算 delete 范围。 */
+    /**
+     * 按上传者权限范围删除文件记录，调用方须已持有文件行锁。
+     *
+     * @param id 文件 ID
+     * @param uploader SELF 范围上传者 ID，ALL 范围为 null
+     * @return 受影响行数
+     */
     int deleteScoped(@Param("id") long id, @Param("uploader") Long uploader);
 
-    /** 持文件锁后按主键向前扫描全部状态的文章，READ COMMITTED 下读取最新正文与封面。 */
+    /**
+     * 按文章主键游标分批扫描全部文章封面与正文，用于检查文件引用。
+     *
+     * @param after 上一批最大文章 ID
+     * @return 文章引用信息列表
+     */
     List<ArticleReference> referencesAfter(@Param("after") long after);
 
     /**
-     * 仅取删除引用检查用的源资料，缺正文时不能当作没有引用。
+     * 文章文件引用检查模型
      */
     @Data
     class ArticleReference {

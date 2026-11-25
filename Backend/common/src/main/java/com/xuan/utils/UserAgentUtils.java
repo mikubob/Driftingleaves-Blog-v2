@@ -1,12 +1,16 @@
 package com.xuan.utils;
 
-/** 设备识别工具，从请求头获取浏览器和系统，不公开原始 User-Agent。 */
+/**
+ * 设备识别工具，从请求头获取浏览器和系统，不公开原始 User-Agent。
+ */
 public final class UserAgentUtils {
 
     private UserAgentUtils() {
     }
 
-    /** 识别浏览器，先检查衍生浏览器，再检查 Chrome 和 Safari，避免把兼容标记认错。 */
+    /**
+     * 识别浏览器，先检查衍生浏览器，再检查 Chrome 和 Safari，避免把兼容标记认错。
+     */
     public static String browser(String agent) {
         if (agent == null || agent.isBlank()) {
             return null;
@@ -41,7 +45,9 @@ public final class UserAgentUtils {
         return null;
     }
 
-    /** 识别操作系统，先检查手机系统，再检查兼容标记，无法识别时留空。 */
+    /**
+     * 识别操作系统，先检查手机系统，再检查兼容标记，无法识别时留空。
+     */
     public static String operatingSystem(String agent) {
         if (agent == null || agent.isBlank()) {
             return null;

@@ -37,6 +37,7 @@ import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.MarkdownUtils.ArticleContent;
 import com.xuan.utils.MarkdownUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.ArchiveVO;
 import com.xuan.vo.ArticleAdminDetailVO;
@@ -108,11 +109,13 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @PublicCacheRead({"articles", "search"})
     public PageResult<ArticlePublicVO> publicArticles(ArticleQueryDTO query) {
+        // 1. 先尝试读取公开文章列表缓存，空页直接返回。
         PageResult<ArticlePublicVO> cached = self.getObject().cachedPublicArticles(query);
         if (cached.records().isEmpty()) {
             return cached;
         }
 
+        // 2. 实时查询当前页文章的公开计数；若发现有文章已下架则回源重新分页。
         List<Long> ids = cached.records().stream().map(ArticlePublicVO::getArticleId).toList();
         Map<Long, ArticleRow> counts = new HashMap<>();
         for (ArticleRow row : articles.publicCounts(ids, now())) {
@@ -139,6 +142,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             return page;
         }
 
+        // 3. 实时计算每篇文章的可见评论总数并补齐到结果中。
         Map<Long, List<CommentNode>> comments = new HashMap<>();
         for (CommentNode node : articles.commentNodesByArticles(ids)) {
             comments.computeIfAbsent(node.getArticleId(), id -> new ArrayList<>()).add(node);
@@ -149,7 +153,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return page;
     }
 
-    /** 缓存公开文章列表，通过 Spring 代理调用；当前阅读量、点赞数和评论数由外层事务补充。 */
+    /**
+     * 缓存公开文章列表，通过 Spring 代理调用；当前阅读量、点赞数和评论数由外层事务补充。
+     */
     @Override
     @Caching(cacheable = {
             @Cacheable(cacheNames = "articles", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
@@ -164,7 +170,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return page;
     }
 
-    /** 直接从数据库分页查询公开文章，评论数由列表入口按页补充。 */
+    /**
+     * 直接从数据库分页查询公开文章，评论数由列表入口按页补充。
+     */
     private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
         YearMonth month = query.month() == null ? null : YearMonth.parse(query.month());
         ArticleFilter filter = new ArticleFilter(true, null, query.keyword(), IdUtils.parse(query.categoryId()),
@@ -174,7 +182,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 .convert(row -> publicView(row, new ArticlePublicVO())));
     }
 
-    /** 分页查询有公开文章的作者，列表和总数在同一个只读事务中读取。 */
+    /**
+     * 分页查询有公开文章的作者，列表和总数在同一个只读事务中读取。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -182,7 +192,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return PageResult.from(articles.authorPage(new Page<>(query.page(), query.pageSize()), now()));
     }
 
-    /** 查询作者公开资料，不能据此判断没有公开文章的账号是否存在。 */
+    /**
+     * 查询作者公开资料，不能据此判断没有公开文章的账号是否存在。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -194,7 +206,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return value;
     }
 
-    /** 查询本人点赞的文章，使用当前点赞用户，不要求后台权限或点赞写权限。 */
+    /**
+     * 查询本人点赞的文章，使用当前点赞用户，不要求后台权限或点赞写权限。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<LikedArticleVO> likedArticles(PageQueryDTO query) {
@@ -239,7 +253,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return value;
     }
 
-    /** 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态、正文和附件，并查询当前互动数。 */
+    /**
+     * 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态、正文和附件，并查询当前互动数。
+     */
     @Override
     @Cacheable(cacheNames = "articleDetail", key = "T(com.xuan.utils.TokenUtils).digest(#row.slug + ':' + #row.articleId + ':' + #markdown + ':' + #row.coverUrl)")
     public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown) {
@@ -371,17 +387,23 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             @CacheEvict(cacheNames = "comments", allEntries = true)
     })
     public ArticleProfileVO update(long id, ArticleWriteDTO request, String revision) {
+        // 1. 校验请求内容并解析正文和封面中引用的站内文件。
         validateWrite(request);
         References next = resources.inspect(id, request.getMarkdownContent(), request.getCoverUrl());
+
+        // 2. 按顺序锁住文件和文章，复核权限、版本及未回收状态；已发布文章同步检查发布条件。
         LockedArticle locked = lockArticle(id, "update", revision, next.fileIds());
         ArticleRow article = locked.article();
         requireNormal(article);
         if (article.getStatus() == 1) {
             requirePublishable(request.getMarkdownContent(), request.getArticleType(), request.getOriginalUrl());
         }
-        // 拿锁后重新检查最终文件引用和字典，锁前读到的资料只能帮助定位，不能当最终校验。
+
+        // 3. 拿锁后重新检查最终文件引用并锁定分类、标签，防止并发删除。
         validateFiles(next.fileIds(), locked.files());
         lockAssociations(request.getCategoryId(), request.getTagIds());
+
+        // 4. 更新文章元数据与正文、标签关联，返回最新详情与版本。
         apply(article, request, next.coverUrl());
         articles.updateArticle(article, requireAdmin("update"));
         saveBody(id, request, next.html());
@@ -397,22 +419,29 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @return 新详情及版本；首次发布写当前UTC，后续保留，回收站拒绝变更
      */
     private ArticleProfileVO changeStatus(long id, int status, String revision) {
+        // 1. 锁定文章并复核发布权限、版本及状态流转合法性。
         LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
         validateStatusChange(id, status, locked);
         ArticleRow article = locked.article();
+
+        // 2. 首次发布时记录 UTC 发布时间，更新文章状态。
         boolean firstPublic = status == 1 && article.getPublishTime() == null && article.getVisibility() == 1;
         if (status == 1 && article.getPublishTime() == null) {
             article.setPublishTime(now());
         }
         article.setStatus(status);
         articles.updateArticle(article, requireAdmin("publish"));
+
+        // 3. 首次公开发布提交后异步通知订阅者。
         if (firstPublic) {
             notifications.afterArticlePublished(id);
         }
         return profile(articles.scoped(id, null, false));
     }
 
-    /** 检查发布或下架条件，发布时校验正文和附件并锁住分类、标签。 */
+    /**
+     * 检查发布或下架条件，发布时校验正文和附件并锁住分类、标签。
+     */
     private void validateStatusChange(long id, int status, LockedArticle locked) {
         ArticleRow article = locked.article();
         requireNormal(article);
@@ -460,8 +489,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return profile(articles.scoped(id, null, false));
     }
 
-    /** 永久删除文章前，先锁住全部评论，再从子回复到父评论依次删除；保留文件，成功日志和文章相关记录一起提交。 */
+    /**
+     * 永久删除文章前，先锁住全部评论，再从子回复到父评论依次删除；保留文件，成功日志和文章相关记录一起提交。
+     */
     private void purge(long id, String revision) {
+        // 1. 锁定文章并确认位于回收站，随后锁定该文章全部评论并复核删除权限。
         ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
         if (article.getDeletedAt() == null) {
             throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
@@ -469,7 +501,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         List<CommentNode> nodes = articles.lockComments(id);
         requireArticle(articles.scoped(id, requireAdmin("purge"), false));
 
-        // 不假设父 ID 小于子 ID，也不使用有深度限制的递归 SQL。
+        // 2. 拓扑排序自底向上从叶子回复删到顶层评论，避免外键约束冲突。
         Map<Long, Long> parents = new HashMap<>();
         Map<Long, Integer> children = new HashMap<>();
         for (CommentNode node : nodes) {
@@ -492,6 +524,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 leaves.add(parent);
             }
         }
+
+        // 3. 删除文章主记录（正文与标签关联随数据库级联清理，保留附件文件）。
         articles.deleteScoped(id, requireAdmin("purge"));
     }
 
@@ -543,6 +577,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @return 锁后最新文章；等待中正文/关联变化必须412，绝不晚于文章锁补拿文件锁
      */
     private LockedArticle lockArticle(long id, String operation, String revision, Set<Long> added) {
+        // 1. 锁住操作者，汇总新旧引用的站内文件并按 ID 升序加锁。
         users.lockById(sessions.currentUserId());
         ArticleRow located = requireArticle(articles.scoped(id, requireAdmin(operation), false));
         References old = resources.inspect(id, content(id).getMarkdownContent(), located.getCoverUrl());
@@ -552,14 +587,17 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         for (long file : locked) {
             lockedFiles.put(file, articles.lockFile(file));
         }
+
+        // 2. 锁定文章与现有标签，等待锁结束后复核操作权限、范围及已发布文章的发布权限。
         ArticleRow current = requireArticle(articles.scoped(id, requireAdmin(operation), true));
-        // 等到文章锁后重查身份和 SQL 范围，不能拿等待前的权限或 Token 继续写。
         current = requireArticle(articles.scoped(id, requireAdmin(operation), false));
         if ("update".equals(operation) && current.getStatus() == 1) {
             requireArticle(articles.scoped(id, requireAdmin("publish"), false));
         }
         articles.lockCurrentTags(id);
         current = requireArticle(articles.scoped(id, requireAdmin(operation), false));
+
+        // 3. 校验编辑版本并确认等锁期间未新增未锁定的文件引用。
         checkRevision(current, revision);
         References latest = resources.inspect(id, content(id).getMarkdownContent(), current.getCoverUrl());
         if (!locked.containsAll(latest.fileIds())) {
@@ -746,17 +784,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @param expected 客户端原样版本；缺失428、格式错误400、过期412
      */
     private void checkRevision(BlogArticle article, String expected) {
-        if (expected == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!expected.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
         String actual = revision(article, content(article.getArticleId()).getMarkdownContent(),
                 articles.tags(article.getArticleId()).stream().map(BlogTag::getTagId).toList());
-        if (!actual.equals(expected)) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "文章已修改，请重新获取");
-        }
+        RevisionUtils.check(actual, expected, "文章已修改，请重新获取");
     }
 
     /**
@@ -834,7 +864,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return commentCount(articles.commentNodes(id));
     }
 
-    /** 按单篇文章的评论链统计公开评论数。 */
+    /**
+     * 按单篇文章的评论链统计公开评论数。
+     */
     private long commentCount(List<CommentNode> nodes) {
         Set<Long> visible = CommentVisibilityPolicy.visible(nodes);
         return nodes.stream().filter(node -> node.getStatus() == 1 && visible.contains(node.getCommentId())).count();
@@ -860,7 +892,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return LocalDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MILLIS);
     }
 
-    /** 批量发布或下架文章，先锁住并检查全部目标，版本按原选择顺序返回。 */
+    /**
+     * 批量发布或下架文章，先锁住并检查全部目标，版本按原选择顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:article", permission = "blog:article:publish")
@@ -894,7 +928,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量将文章移入回收站，先锁住并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量将文章移入回收站，先锁住并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:article", permission = "blog:article:delete")
@@ -926,7 +962,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
     }
 
-    /** 批量恢复回收站文章，先锁住并检查全部目标，版本按原选择顺序返回。 */
+    /**
+     * 批量恢复回收站文章，先锁住并检查全部目标，版本按原选择顺序返回。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-restore", target = "blog:article", permission = "blog:article:restore")
@@ -963,7 +1001,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量永久删除回收站文章，先锁住并检查全部目标，任一失败则整批回滚。 */
+    /**
+     * 批量永久删除回收站文章，先锁住并检查全部目标，任一失败则整批回滚。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-purge", target = "blog:article", permission = "blog:article:purge")
@@ -998,7 +1038,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
     }
 
-    /** 多篇文章先锁全部引用文件，再锁文章，保持文件引用与删除的既有锁顺序。 */
+    /**
+     * 多篇文章先锁全部引用文件，再锁文章，保持文件引用与删除的既有锁顺序。
+     */
     private void lockBatchFiles(List<BatchItemDTO> items, String operation) {
         users.lockById(sessions.currentUserId());
         Set<Long> files = new TreeSet<>();

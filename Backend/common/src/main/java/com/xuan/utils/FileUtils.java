@@ -1,6 +1,8 @@
 package com.xuan.utils;
 
-/** 文件类型工具，根据扩展名确定存储目录，上传允许的类型另行校验。 */
+/**
+ * 文件类型工具，根据扩展名确定存储目录，上传允许的类型另行校验。
+ */
 public final class FileUtils {
 
     public static final String PUBLIC_IMAGE_CATEGORY = "publicimage";
@@ -8,7 +10,9 @@ public final class FileUtils {
     private FileUtils() {
     }
 
-    /** 根据扩展名查询文件分类，参数为不带点的小写后缀，未知类型返回 other。 */
+    /**
+     * 根据扩展名查询文件分类，参数为不带点的小写后缀，未知类型返回 other。
+     */
     public static String getFileCategory(String extension) {
         return switch (extension) {
             case "jpg", "png", "gif", "bmp", "webp", "jpeg", "svg", "ico", "tiff" -> "image";
@@ -25,7 +29,9 @@ public final class FileUtils {
         };
     }
 
-    /** 根据扩展名获取 MIME 类型，上传、保存资料和读取文件使用相同规则。 */
+    /**
+     * 根据扩展名获取 MIME 类型，上传、保存资料和读取文件使用相同规则。
+     */
     public static String mimeType(String extension) {
         return switch (extension) {
             case "png" -> "image/png";
@@ -41,7 +47,9 @@ public final class FileUtils {
         };
     }
 
-    /** 根据文件类型获取大小上限，单位为字节，图片、歌词和音频分别限制。 */
+    /**
+     * 根据文件类型获取大小上限，单位为字节，图片、歌词和音频分别限制。
+     */
     public static int maxBytes(String extension) {
         String mime = mimeType(extension);
         if (mime == null) {
@@ -53,7 +61,9 @@ public final class FileUtils {
         return mime.startsWith("audio/") ? 60 * 1024 * 1024 : 1024 * 1024;
     }
 
-    /** 检查文件存储路径，本地和 OSS 都只允许分类正确的随机文件名，不接受客户端路径。 */
+    /**
+     * 检查文件存储路径，本地和 OSS 都只允许分类正确的随机文件名，不接受客户端路径。
+     */
     public static boolean validObjectKey(String key) {
         if (key == null || !key.matches("[a-z]+/[A-Za-z0-9_-]+\\.[a-z0-9]+")) {
             return false;

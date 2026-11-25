@@ -18,6 +18,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.MenuNodeVO;
@@ -48,7 +49,9 @@ import java.util.TreeSet;
 @RequiredArgsConstructor
 public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements IMenuService {
 
-    /** 这些键与 SQL 种子的前端注册约定一致，键存在不代表对应页面或业务已经实现。 */
+    /**
+     * 这些键与 SQL 种子的前端注册约定一致，键存在不代表对应页面或业务已经实现。
+     */
     private static final Set<String> COMPONENTS = Set.of("Layout", "content/article/index", "content/category/index",
             "content/tag/index", "content/comment/index", "content/link/index", "content/file/index",
             "content/message/index", "content/music/index", "content/rss/index", "system/user/index",
@@ -355,15 +358,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      * @param revision 客户端原样传递的详情版本
      */
     private void checkRevision(SysMenu menu, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(menu).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "菜单已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(menu).revision(), revision, "菜单已修改，请重新获取");
     }
 
     /**
@@ -394,11 +389,14 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
                 menu.getCreateTime(), menu.getUpdateTime());
     }
 
-    /** 在结构保护锁下验证整批叶子，关联清理与数据库审计共同提交。 */
+    /**
+     * 在结构保护锁下验证整批叶子，关联清理与数据库审计共同提交。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:menu", permission = "sys:menu:delete")
     public void deleteBatch(List<BatchItemDTO> items) {
+        // 1. 锁定菜单结构检查点及受影响用户，防止并发修改菜单树。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "菜单结构检查点未初始化");
         }
@@ -410,6 +408,8 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         for (long id : affected) {
             users.lockById(id);
         }
+
+        // 2. 逐条锁定菜单，复核权限、版本并确认不存在未删除的子节点。
         Map<Long, SysMenu> nodes = new LinkedHashMap<>();
         menus.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));
         for (var item : sorted) {
@@ -422,16 +422,21 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
                 throw new BusinessException(409, "RESOURCE_IN_USE", "菜单仍有子节点");
             }
         }
+
+        // 3. 全部校验通过后执行批量删除。
         for (long id : ids) {
             menus.deleteById(id);
         }
     }
 
-    /** 批量切换菜单状态，持有结构保护锁，保留树结构、访问权限及角色关联。 */
+    /**
+     * 批量切换菜单状态，持有结构保护锁，保留树结构、访问权限及角色关联。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "sys:menu", permission = "sys:menu:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        // 1. 锁定菜单结构检查点，收集受影响分支用户并按 ID 升序加锁。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "菜单结构检查点未初始化");
         }
@@ -447,6 +452,8 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         for (long userId : affected) {
             users.lockById(userId);
         }
+
+        // 2. 按 ID 升序锁定全部目标菜单并校验版本。
         List<SysMenu> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
             SysMenu row = menus.lockById(IdUtils.parse(item.id()));
@@ -455,6 +462,8 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
             checkRevision(row, item.revision());
             rows.add(row);
         }
+
+        // 3. 批量更新状态并按原请求顺序返回新版本。
         Map<Long, String> versions = new HashMap<>();
         for (SysMenu row : rows) {
             if (row.getStatus() != status) {

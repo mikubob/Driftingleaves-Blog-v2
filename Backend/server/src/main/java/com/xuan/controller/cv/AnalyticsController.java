@@ -1,39 +1,42 @@
 package com.xuan.controller.cv;
 
 import com.xuan.dto.PageViewCreateDTO;
-import com.xuan.exception.BusinessException;
-import com.xuan.properties.AuthProperties;
 import com.xuan.result.Result;
 import com.xuan.service.IAnalyticsService;
-import com.xuan.utils.IpUtils;
 import com.xuan.vo.TrackingResultVO;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 公开访问统计接口，只返回是否记录，不创建登录会话。
+ * 简历端访问统计接口
  */
+@Slf4j
 @RestController("cvAnalyticsController")
 @RequestMapping("/cv/analytics/page-views")
 @RequiredArgsConstructor
 public class AnalyticsController {
 
-    private final IAnalyticsService analytics;
-    private final AuthProperties auth;
+    private final IAnalyticsService analyticsService;
 
-    /** 记录站点访问，检查 Origin 是否匹配站点配置，按可信代理规则获取 IP。 */
+    /**
+     * 记录简历端页面访问
+     *
+     * @param body 访问记录参数
+     * @param request 当前 HTTP 请求
+     * @return 采集结果
+     */
     @PostMapping
-    public Result<TrackingResultVO> track(@Valid @RequestBody PageViewCreateDTO body, HttpServletRequest request) {
-        if (!"cv".equals(body.getSiteCode())) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
-        }
-        return Result.ok(
-                analytics.track(body, request.getHeader("Origin"), IpUtils.clientIp(request, auth.getTrustedProxies()),
-                        request.getHeader("User-Agent")));
+    public Result<TrackingResultVO> track(@Valid @RequestBody PageViewCreateDTO body,
+            HttpServletRequest request) {
+        log.info("记录简历端页面访问: pagePath={}", body.getPagePath());
+        String origin = request.getHeader("Origin");
+        TrackingResultVO result = analyticsService.trackSite("cv", body, origin, request);
+        return Result.ok(result);
     }
 }

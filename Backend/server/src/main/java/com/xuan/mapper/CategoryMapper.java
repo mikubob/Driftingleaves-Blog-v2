@@ -5,30 +5,66 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.CategoryQueryDTO;
 import com.xuan.entity.BlogCategory;
 import com.xuan.vo.CategoryPublicDetailVO;
+import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
 
 /**
- * 分类数据接口，删除分类时由外键处理文章关联。
+ * 文章分类数据访问接口
  */
+@Mapper
 public interface CategoryMapper extends BaseMapper<BlogCategory> {
 
-    /** 分类必须展示，文章计数复用 PUBLIC 条件，零篇也返回详情。 */
+    /**
+     * 根据 slug 查询公开展示中的分类详情及公开文章数
+     *
+     * @param slug 分类 slug
+     * @param now 当前 UTC 时间
+     * @return 公开分类详情，隐藏或不存在时返回 null
+     */
     CategoryPublicDetailVO publicBySlug(@Param("slug") String slug, @Param("now") LocalDateTime now);
 
-    /** 分页查询展示中的分类和公开文章数。 */
+    /**
+     * 分页查询公开展示中的分类及公开文章数
+     *
+     * @param page 分页参数
+     * @param now 当前 UTC 时间
+     * @return 公开分类分页结果
+     */
     IPage<CategoryPublicDetailVO> publicPage(IPage<CategoryPublicDetailVO> page, @Param("now") LocalDateTime now);
 
-    /** 按状态和名称查找后台分类。 */
+    /**
+     * 分页查询后台分类列表
+     *
+     * @param page 分页参数
+     * @param query 查询条件
+     * @return 分类分页结果
+     */
     IPage<BlogCategory> categoryPage(IPage<BlogCategory> page, @Param("query") CategoryQueryDTO query);
 
-    /** 先锁住分类再检查版本，调用方要在写事务里使用。 */
+    /**
+     * 加行锁查询分类记录，调用方须处于写事务内。
+     *
+     * @param id 分类 ID
+     * @return 锁定的分类记录，不存在时返回 null
+     */
     BlogCategory lockById(@Param("id") long id);
 
-    /** 持有分类锁并通过版本检查后，只修改展示状态。 */
+    /**
+     * 更新分类展示状态
+     *
+     * @param id 分类 ID
+     * @param status 目标状态
+     * @return 受影响行数
+     */
     int updateStatus(@Param("id") long id, @Param("status") int status);
 
-    /** 把可空说明也写进去，避免清空说明时被默认更新策略忽略。 */
+    /**
+     * 更新分类资料，显式写入可空字段以支持清空说明。
+     *
+     * @param category 待更新的分类实体
+     * @return 受影响行数
+     */
     int updateCategory(@Param("category") BlogCategory category);
 }

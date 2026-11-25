@@ -21,6 +21,7 @@ import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.RoleProfileVO;
@@ -295,15 +296,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      * @param revision 客户端原样携带的单个带引号版本
      */
     private void checkRevision(SysRole role, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(role).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "角色已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(role).revision(), revision, "角色已修改，请重新获取");
     }
 
     /**
@@ -331,11 +324,14 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 roles.permissionIds(role.getRoleId()), roles.menuIds(role.getRoleId()));
     }
 
-    /** 批量删除角色，先检查整批目标，删除后撤销所有受影响用户的会话。 */
+    /**
+     * 批量删除角色，先检查整批目标，删除后撤销所有受影响用户的会话。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:role", permission = "sys:role:delete")
     public void deleteBatch(List<BatchItemDTO> items) {
+        // 1. 锁定管理员保护检查点并检查删除权限，按 ID 升序锁定全部受影响用户。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
@@ -350,6 +346,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         for (long id : lockedUsers) {
             users.lockById(id);
         }
+
+        // 2. 逐条锁定目标角色，复核版本并禁止删除内置角色。
         for (var item : sorted) {
             long roleId = IdUtils.parse(item.id());
             String revision = item.revision();
@@ -361,6 +359,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 throw new BusinessException(409, "STATE_CONFLICT", "内置角色禁止删除");
             }
         }
+
+        // 3. 批量删除角色，校验有效管理员数量后撤销受影响用户会话。
         for (var item : sorted) {
             roles.deleteById(IdUtils.parse(item.id()));
         }
@@ -370,12 +370,15 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         revoke(new ArrayList<>(affected));
     }
 
-    /** 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。 */
+    /**
+     * 批量切换状态，先检查整批目标，再按最终状态保护管理员，最后撤销受影响用户会话。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @CacheEvict(cacheNames = {"comments", "messages"}, allEntries = true)
     @OperationLog(type = "batch-status", target = "sys:role", permission = "sys:role:update")
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
+        // 1. 锁定管理员保护检查点与受影响用户，按 ID 升序锁定全部目标角色并检查版本。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
@@ -402,6 +405,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
             rows.add(row);
         }
 
+        // 2. 批量更新角色状态并记录受影响用户，变更管理员角色时校验最后有效管理员。
         Set<Long> changed = new TreeSet<>();
         Set<Long> revoked = new TreeSet<>();
         Map<Long, String> versions = new HashMap<>();
@@ -418,7 +422,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         if (changed.contains(1L) && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
         }
-        // 版本和整批校验已完成，撤销本人的会话后不再重查当前 Token。
+
+        // 3. 撤销受影响用户会话并按原请求顺序返回新版本。
         revoke(new ArrayList<>(revoked));
         return BatchUtils.versions(items, versions);
     }

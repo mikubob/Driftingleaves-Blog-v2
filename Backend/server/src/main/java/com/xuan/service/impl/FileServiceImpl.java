@@ -18,6 +18,7 @@ import com.xuan.policy.ArticleAttachmentPolicy;
 import com.xuan.policy.FileUploadUsagePolicy;
 import com.xuan.policy.MusicAttachmentPolicy;
 import com.xuan.properties.ImageProperties;
+import com.xuan.properties.PublicSiteProperties;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
 import com.xuan.service.IFileService;
@@ -48,6 +49,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.math.BigInteger;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
@@ -87,9 +89,12 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     private final MusicAttachmentPolicy musicResources;
     private final FileStore storage;
     private final ImageProperties imageProperties;
+    private final PublicSiteProperties publicSiteProperties;
     private final JsonMapper json;
 
-    /** 分页查询文件，在同一个只读事务中查询文件资料和总数，筛选上传者不能扩大查询权限的 SELF 范围。 */
+    /**
+     * 分页查询文件，在同一个只读事务中查询文件资料和总数，筛选上传者不能扩大查询权限的 SELF 范围。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<FileVO> listFiles(FileQueryDTO query) {
@@ -98,19 +103,38 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 requireAdmin("query"), filter).convert(this::view));
     }
 
-    /** 根据id查询文件详情，不返回编辑版本或存储目录。 */
+    /**
+     * 根据id查询文件详情，不返回编辑版本或存储目录。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public FileVO detail(long id) {
         return view(requireFile(articles.scopedFile(id, requireAdmin("query"))));
     }
 
-    /** 上传文件，先临时保存并校验，再写入存储和数据库；日志写入或事务提交失败时清理新文件。 */
+    /**
+     * 上传公开展示图片，复用文件上传校验与事务，成功后拼接公开访问地址返回。
+     *
+     * @param file 上传图片文件
+     * @param usage 使用场景标识
+     * @return 公开展示图片访问地址
+     */
+    @Override
+    public URI uploadDisplayImage(MultipartFile file, String usage) {
+        URI publicApi = publicSiteProperties.base("api");
+        FileVO value = fileService.getObject().upload(file, true, usage);
+        return URI.create(publicApi + "/blog/display-images/" + value.fileId());
+    }
+
+    /**
+     * 上传文件，先临时保存并校验，再写入存储和数据库；日志写入或事务提交失败时清理新文件。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "upload", target = "blog:file", permission = "blog:file:upload")
     public FileVO upload(MultipartFile upload, boolean publicImage, String usage) {
         users.lockById(sessions.currentUserId());
+        // 1. 检查上传权限、文件名、扩展名及文件大小上限。
         requireAdmin("upload");
         String name = upload.getOriginalFilename();
         name = name == null ? "" : name.replaceAll("[/\\\\\\p{Cc}]", "").strip();
@@ -129,6 +153,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         if (upload.getSize() > limit) {
             throw tooLarge();
         }
+
+        // 2. 创建临时文件并登记事务结束后清理逻辑，回滚时同步删除已写入的对象。
         Path temporary = storage.temporary();
         BlogFile row = new BlogFile();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
@@ -140,6 +166,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 storage.cleanup(temporary, status == STATUS_COMMITTED ? null : row);
             }
         });
+
+        // 3. 读取字节流并按实际类型校验内容（图片额外执行压缩转码）。
         try (InputStream input = upload.getInputStream()) {
             byte[] bytes = input.readNBytes(limit + 1);
             if (bytes.length > limit) {
@@ -165,6 +193,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             } else {
                 validateLyrics(bytes, extension);
             }
+
+            // 4. 写入对象存储并复核上传权限，最后保存文件元数据记录。
             row.setUploaderId(sessions.currentUserId());
             row.setOriginalName(name);
             row.setMimeType(mime);
@@ -180,7 +210,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         }
     }
 
-    /** 原文件读取不依赖任何文章，等待文件锁后重新检查原 Token、权限和上传者范围。 */
+    /**
+     * 原文件读取不依赖任何文章，等待文件锁后重新检查原 Token、权限和上传者范围。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileContent original(long id) {
@@ -189,7 +221,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return content(requireFile(articles.scopedFile(id, requireAdmin("query"))));
     }
 
-    /** 只读取专门公开上传的图片，使用固定文件名，避免公开原始文件名。 */
+    /**
+     * 只读取专门公开上传的图片，使用固定文件名，避免公开原始文件名。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileContent displayImage(long id) {
@@ -205,15 +239,20 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return new FileContent(name, file.getMimeType(), storage.read(file));
     }
 
-    /** 删除文件，锁住文件后检查所有文章的正文和封面引用；先删除存储文件，再一起提交文件记录删除和成功日志。 */
+    /**
+     * 删除文件，锁住文件后检查所有文章的正文和封面引用；先删除存储文件，再一起提交文件记录删除和成功日志。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "delete", target = "blog:file", permission = "blog:file:delete", targetIdArgument = 0)
     public void delete(long id) {
+        // 1. 锁住操作者和目标文件，复核删除权限与范围。
         users.lockById(sessions.currentUserId());
         requireAdmin("delete");
         articles.lockFile(id);
         BlogFile row = requireFile(articles.scopedFile(id, requireAdmin("delete")));
+
+        // 2. 检查音乐与所有文章正文、封面引用，仍被引用时拒绝删除。
         if (music.hasFileReference(musicResources.fileUrl(id))) {
             throw new BusinessException(409, "RESOURCE_IN_USE", "文件仍被音乐引用");
         }
@@ -234,6 +273,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 after = article.getArticleId();
             }
         }
+
+        // 3. 再次确认权限后先删存储对象，并登记未提交时的告警日志。
         Long scope = requireAdmin("delete");
         requireFile(articles.scopedFile(id, scope));
         storage.delete(row);
@@ -252,7 +293,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         files.deleteScoped(id, scope);
     }
 
-    /** 读取文章附件，先锁文件再锁文章，重新检查公开状态或文章、文件各自的权限范围，并确认正文或封面引用了该文件。 */
+    /**
+     * 读取文章附件，先锁文件再锁文章，重新检查公开状态或文章、文件各自的权限范围，并确认正文或封面引用了该文件。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileContent attachment(long articleId, long fileId, boolean admin) {
@@ -280,7 +323,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return content(file);
     }
 
-    /** 文件锁早于音乐锁；隐藏曲目不能通过文件地址匿名读取。 */
+    /**
+     * 文件锁早于音乐锁；隐藏曲目不能通过文件地址匿名读取。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public FileContent musicAttachment(long fileId) {
@@ -292,7 +337,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return content(file);
     }
 
-    /** 校验音频容器和首个音频头，不信扩展名或浏览器声明的 Content-Type。 */
+    /**
+     * 校验音频容器和首个音频头，不信扩展名或浏览器声明的 Content-Type。
+     */
     private void validateAudio(byte[] bytes, String extension) {
         boolean valid = false;
         if (bytes.length >= 42 && "flac".equals(extension)) {
@@ -350,13 +397,18 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         }
     }
 
-    /** 仅用于已检查长度的音频头，不解码用户文本。 */
+    /**
+     * 仅用于已检查长度的音频头，不解码用户文本。
+     */
     private String ascii(byte[] bytes, int offset, int length) {
         return new String(bytes, offset, length, StandardCharsets.US_ASCII);
     }
 
-    /** 歌词必须为 UTF-8 文本；JSON 行使用秒数 time 与纯文本 text。 */
+    /**
+     * 歌词必须为 UTF-8 文本；JSON 行使用秒数 time 与纯文本 text。
+     */
     private void validateLyrics(byte[] bytes, String extension) {
+        // 1. 严格按 UTF-8 解码并去除可选 BOM，拒绝空白和非法控制字符。
         String text;
         try {
             text = StandardCharsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes)).toString();
@@ -370,6 +422,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 && character != '\n' && character != '\r' && character != '\t')) {
             throw invalid();
         }
+
+        // 2. LRC 须至少包含一条时间戳；JSON 须为非空数组且每行含非负有限秒数 time 与文本 text。
         if ("lrc".equals(extension) && !Pattern.compile("\\[[0-9]{1,6}:[0-5][0-9](?:\\.[0-9]{1,3})?]")
                 .matcher(text).find()) {
             throw invalid();
@@ -393,9 +447,12 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         }
     }
 
-    /** 只信 ImageIO 识别结果，先读尺寸限制内存，再实际解码；声明的 Content-Type 不参与。 */
+    /**
+     * 只信 ImageIO 识别结果，先读尺寸限制内存，再实际解码；声明的 Content-Type 不参与。
+     */
     private BufferedImage validateImage(Path path, String extension) {
         try (ImageInputStream input = ImageIO.createImageInputStream(path.toFile())) {
+            // 1. 通过 ImageIO 识别真实图片格式，校验与扩展名一致。
             Iterator<ImageReader> readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext()) {
                 throw invalid();
@@ -413,11 +470,15 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 if (!matched) {
                     throw invalid();
                 }
+
+                // 2. 解码前先检查宽高与总像素上限，防止图片炸弹耗尽内存。
                 int width = reader.getWidth(0);
                 int height = reader.getHeight(0);
                 if (width < 1 || height < 1 || width > 10000 || height > 10000 || (long) width * height > 25000000) {
                     throw invalid();
                 }
+
+                // 3. 注册警告监听并完整解码，确保图片数据无损坏或畸形块。
                 reader.addIIOReadWarningListener((source, warning) -> {
                     throw invalid();
                 });
@@ -434,7 +495,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         }
     }
 
-    /** 检查文件操作权限，原 Token 和账号必须仍有效，ALL/SELF 只使用本次操作的授权。 */
+    /**
+     * 检查文件操作权限，原 Token 和账号必须仍有效，ALL/SELF 只使用本次操作的授权。
+     */
     private Long requireAdmin(String operation) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -442,7 +505,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return "ALL".equals(authorization.requireScope(actor, "blog:file:" + operation)) ? null : actor;
     }
 
-    /** 检查文章查询范围，文件的 ALL 权限不能扩大文章的 SELF 范围。 */
+    /**
+     * 检查文章查询范围，文件的 ALL 权限不能扩大文章的 SELF 范围。
+     */
     private Long articleScope() {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
@@ -450,7 +515,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return "ALL".equals(authorization.requireScope(actor, "blog:article:query")) ? null : actor;
     }
 
-    /** 整理文件响应，返回上传时保存的用途。 */
+    /**
+     * 整理文件响应，返回上传时保存的用途。
+     */
     private FileVO view(BlogFile row) {
         String objectKey = row.getObjectKey();
         String storedName = objectKey.substring(objectKey.lastIndexOf('/') + 1);
@@ -460,7 +527,9 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                 "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row), usage, List.of(usage));
     }
 
-    /** 检查文件是否存在，先校验权限和范围；文件不存在或无权访问时都返回 404。 */
+    /**
+     * 检查文件是否存在，先校验权限和范围；文件不存在或无权访问时都返回 404。
+     */
     private BlogFile requireFile(BlogFile row) {
         if (row == null) {
             throw missing();
@@ -468,32 +537,44 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         return row;
     }
 
-    /** 在持锁事务里读完文件，避免返回延迟流后状态已经变化。 */
+    /**
+     * 在持锁事务里读完文件，避免返回延迟流后状态已经变化。
+     */
     private FileContent content(BlogFile row) {
         return new FileContent(row.getOriginalName(), row.getMimeType(), storage.read(row));
     }
 
-    /** 内容校验失败不回显文件内容、名称或解析器异常。 */
+    /**
+     * 内容校验失败不回显文件内容、名称或解析器异常。
+     */
     private BusinessException invalid() {
         return new BusinessException(400, "VALIDATION_ERROR", "文件内容无法识别，请确认文件未损坏且与扩展名一致，重新选择后上传。");
     }
 
-    /** 总请求上限之外，每种类型仍执行自己的字节上限。 */
+    /**
+     * 总请求上限之外，每种类型仍执行自己的字节上限。
+     */
     private BusinessException tooLarge() {
         return new BusinessException(413, "PAYLOAD_TOO_LARGE", "图片限10MiB、音频限60MiB、歌词限1MiB");
     }
 
-    /** 私密资源和不存在资源共用错误，避免透露其状态。 */
+    /**
+     * 私密资源和不存在资源共用错误，避免透露其状态。
+     */
     private BusinessException missing() {
         return new BusinessException(404, "NOT_FOUND", "文件或引用内容不存在");
     }
 
-    /** 存储故障让事务失败，不能返回空图片成功。 */
+    /**
+     * 存储故障让事务失败，不能返回空图片成功。
+     */
     private BusinessException unavailable() {
         return new BusinessException(503, "SERVICE_UNAVAILABLE", "文件存储暂不可用");
     }
 
-    /** 批量删除文件，存储无法整批回滚，每个文件通过服务代理单独提交，并返回实际结果。 */
+    /**
+     * 批量删除文件，存储无法整批回滚，每个文件通过服务代理单独提交，并返回实际结果。
+     */
     @Override
     public BatchFileResultsVO deleteBatch(List<String> ids) {
         requireAdmin("delete");

@@ -51,7 +51,9 @@ public class FeedServiceImpl implements IFeedService {
     private final JsonMapper json;
     private final Clock clock;
 
-    /** 生成最近二十篇公开文章的RSS订阅。 */
+    /**
+     * 生成最近二十篇公开文章的RSS订阅。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "rss", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
@@ -78,11 +80,14 @@ public class FeedServiceImpl implements IFeedService {
         return xml.append("</channel></rss>").toString();
     }
 
-    /** 生成站点地图或地图索引。 */
+    /**
+     * 生成站点地图或地图索引。
+     */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "sitemap", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public String sitemap(Integer requested) {
+        // 1. 初始化分页收集器，先写入已配置的公开站点首页地址。
         int wanted = ObjectUtil.defaultIfNull(requested, 1);
         SitemapPages pages = new SitemapPages(wanted);
         pages.add(sites.base("blog").toString(), null);
@@ -92,6 +97,8 @@ public class FeedServiceImpl implements IFeedService {
         if (!StrUtil.nullToEmpty(sites.getCvBaseUrl()).isBlank()) {
             pages.add(sites.base("cv").toString(), null);
         }
+
+        // 2. 按游标分批读取公开文章、分类和标签，按条数与字节数上限切分站点地图页。
         int kind = 0;
         long after = 0;
         LocalDateTime at = now();
@@ -112,6 +119,8 @@ public class FeedServiceImpl implements IFeedService {
                 after = row.getResourceId();
             }
         }
+
+        // 3. 单页或明确指定页码时返回具体 urlset，多页且未指定页码时返回 sitemapindex。
         if (wanted > pages.page) {
             throw new BusinessException(404, "NOT_FOUND", "站点地图页不存在");
         }
@@ -129,7 +138,9 @@ public class FeedServiceImpl implements IFeedService {
         return index.append("</sitemapindex>").toString();
     }
 
-    /** XML1.0不合法控制字符替换为替代符，再转义文本与属性特殊字符。 */
+    /**
+     * XML1.0不合法控制字符替换为替代符，再转义文本与属性特殊字符。
+     */
     private static String escape(String value) {
         if (value == null) {
             return "";
@@ -140,7 +151,9 @@ public class FeedServiceImpl implements IFeedService {
         return EscapeUtil.escapeXml(clean.toString());
     }
 
-    /** 复用文章详情的正文和附件检查，订阅地址使用公开配置，不增加阅读量。 */
+    /**
+     * 复用文章详情的正文和附件检查，订阅地址使用公开配置，不增加阅读量。
+     */
     private String articleHtml(BlogArticle row, String link) {
         BlogArticleContent content = articles.content(row.getArticleId());
         if (content == null) {
@@ -161,12 +174,16 @@ public class FeedServiceImpl implements IFeedService {
         return document.body().html();
     }
 
-    /** 所有来自资料表的文本都经过同一个XML编码。 */
+    /**
+     * 所有来自资料表的文本都经过同一个XML编码。
+     */
     private static String tag(String name, String value) {
         return "<" + name + ">" + escape(value) + "</" + name + ">";
     }
 
-    /** 不依赖执行机器本地时区。 */
+    /**
+     * 不依赖执行机器本地时区。
+     */
     private LocalDateTime now() {
         return LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
     }
@@ -186,7 +203,9 @@ public class FeedServiceImpl implements IFeedService {
             this.wanted = wanted;
         }
 
-        /** XML编码后的实际字节计入50MiB限制，不能按Java字符数估算。 */
+        /**
+         * XML编码后的实际字节计入50MiB限制，不能按Java字符数估算。
+         */
         private void add(String link, LocalDateTime updated) {
             String entry = "<url>" + tag("loc", link) + (updated == null ? "" : tag("lastmod",
                     updated.atOffset(ZoneOffset.UTC).toString())) + "</url>";

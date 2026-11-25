@@ -39,10 +39,13 @@ import com.xuan.store.EmailCodeStore;
 import com.xuan.utils.BatchUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.IpUtils;
+import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.BatchVersionsVO;
+import com.xuan.vo.CapabilitiesVO;
 import com.xuan.vo.MeVO;
+import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserAdminVO;
@@ -250,7 +253,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             @CacheEvict(cacheNames = "messages", allEntries = true)
     })
     public BatchVersionsVO adminSetStatusBatch(List<BatchItemDTO> items, int status) {
+        // 1. 锁定管理员保护检查点、操作者及全部目标用户，复核权限与逐项版本。
         Map<Long, SysUser> targets = lockAdminTargets(items, "sys:user:update");
+
+        // 2. 批量更新用户状态，禁用时记录待撤销会话列表并保护最后有效管理员。
         List<Long> revoked = new ArrayList<>();
         Map<Long, String> versions = new HashMap<>();
         for (SysUser user : targets.values()) {
@@ -266,6 +272,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         if (status == 0) {
             requireRemainingAdmin();
         }
+
+        // 3. 撤销被禁用用户的全部会话并按原请求顺序返回新版本。
         // 主动撤销本人的会话后不再复核当前 Token，否则合法的自我禁用会必然回滚。
         for (long userId : revoked) {
             sessions.revokeAll(userId);
@@ -273,7 +281,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return BatchUtils.versions(items, versions);
     }
 
-    /** 批量删除用户，用户锁阻止新增外键引用，所有引用检查完成后才开始删除。 */
+    /**
+     * 批量删除用户，用户锁阻止新增外键引用，所有引用检查完成后才开始删除。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "sys:user", permission = "sys:user:delete")
@@ -302,6 +312,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @return 按数值升序排列的已锁定用户，任一校验失败均不写入
      */
     private Map<Long, SysUser> lockAdminTargets(List<BatchItemDTO> items, String permission) {
+        // 1. 锁定管理员保护检查点，并将操作者与全部目标用户按 ID 升序加锁。
         if (users.lockAdminGuard() == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "管理员保护角色未初始化");
         }
@@ -316,6 +327,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
         requireAdmin(permission);
 
+        // 2. 逐项检查目标存在性与编辑版本，全部通过后再返回给调用方写入。
         Map<Long, SysUser> targets = new LinkedHashMap<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
             long userId = IdUtils.parse(item.id());
@@ -385,15 +397,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param revision 客户端原样携带的版本
      */
     private void checkRevision(SysUser user, String revision) {
-        if (revision == null) {
-            throw new BusinessException(428, "PRECONDITION_REQUIRED", "尚未取得编辑版本，请重新打开详情后再操作。");
-        }
-        if (!revision.matches("\"[0-9a-f]{64}\"")) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "编辑版本无效，请保留当前输入，重新打开详情后再操作。");
-        }
-        if (!revision.equals(profile(user).revision())) {
-            throw new BusinessException(412, "REVISION_CONFLICT", "资料已修改，请重新获取");
-        }
+        RevisionUtils.check(profile(user).revision(), revision);
     }
 
     /**
@@ -475,7 +479,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return createSession(user, clock.millis(), method, timeoutSeconds);
     }
 
-    /** 发送注册或前台登录验证码，发送不创建账号，验证码只能用于请求指定的操作。 */
+    /**
+     * 发送注册或前台登录验证码，发送不创建账号，验证码只能用于请求指定的操作。
+     */
     @Override
     public void sendEmailCode(EmailCodeDTO request) {
         if (request.purpose() == EmailCodeDTO.Purpose.REGISTER) {
@@ -490,7 +496,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         emailCodes.send(request.email(), EmailCodeStore.LOGIN);
     }
 
-    /** 发送后台登录验证码，邮件发送失败不会签发会话或假装成功。 */
+    /**
+     * 发送后台登录验证码，邮件发送失败不会签发会话或假装成功。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void sendAdminEmailCode(AdminEmailCodeDTO request) {
@@ -503,7 +511,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         emailCodes.send(user.getEmail(), EmailCodeStore.ADMIN_LOGIN);
     }
 
-    /** 使用邮箱验证码登录，按登录端隔离验证码，后台必须拥有入口权限。 */
+    /**
+     * 使用邮箱验证码登录，按登录端隔离验证码，后台必须拥有入口权限。
+     */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LoginSession loginEmail(EmailLoginDTO request, int timeoutSeconds) {
@@ -523,7 +533,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return createSession(user, clock.millis(), admin ? "ADMIN_EMAIL" : "EMAIL", timeoutSeconds);
     }
 
-    /** 提示邮箱未注册，仍按登录失败计数。 */
+    /**
+     * 提示邮箱未注册，仍按登录失败计数。
+     */
     private BusinessException unregisteredEmail() {
         return new BusinessException(401, "AUTH_FAILED", "该邮箱未注册");
     }
@@ -789,6 +801,26 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
         // 认证时间用平台验证成功的时间，兑换等待不能刷新最近认证窗口。
         return createSession(user, authenticatedAt, admin ? "ADMIN_OAUTH" : "OAUTH", timeoutSeconds);
+    }
+
+    /**
+     * 查询当前启用用户的角色、权限及数据范围。
+     *
+     * @return 当前用户权限能力视图
+     */
+    @Override
+    public CapabilitiesVO currentCapabilities() {
+        return permissions.capabilities(requireCurrent());
+    }
+
+    /**
+     * 查询当前用户可访问的菜单树。
+     *
+     * @return 菜单树列表
+     */
+    @Override
+    public List<MenuNodeVO> currentMenus() {
+        return permissions.menus(requireCurrent());
     }
 
     /**

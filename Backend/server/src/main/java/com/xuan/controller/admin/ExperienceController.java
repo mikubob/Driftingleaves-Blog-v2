@@ -1,6 +1,7 @@
 package com.xuan.controller.admin;
 
 import cn.dev33.satoken.annotation.SaCheckPermission;
+import com.xuan.constant.HttpConstants;
 import com.xuan.dto.BatchBinaryStatusDTO;
 import com.xuan.dto.BatchRevisionDTO;
 import com.xuan.dto.ExperienceCreateDTO;
@@ -15,6 +16,7 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.BatchVersionsVO;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -29,64 +31,116 @@ import org.springframework.web.bind.annotation.RestController;
 import java.net.URI;
 
 /**
- * 后台经历管理接口，业务层在同一事务中检查权限和版本、保存资料。
+ * 管理端简历经历接口
  */
+@Slf4j
 @RestController("adminExperienceController")
 @RequestMapping("/admin/cv/experiences")
 @RequiredArgsConstructor
 public class ExperienceController {
 
-    private final IExperienceService items;
+    private final IExperienceService experienceService;
 
-    /** 分页查询经历，列表不带每条记录的版本，编辑前先查询详情。 */
+    /**
+     * 分页查询经历列表
+     *
+     * @param query 查询参数
+     * @return 经历分页结果
+     */
     @GetMapping
     @SaCheckPermission("cv:experience:query")
     public Result<PageResult<CvExperience>> list(@Valid @ModelAttribute ExperienceQueryDTO query) {
-        return Result.ok(items.listItems(query));
+        log.info("分页查询经历列表: {}", query);
+        PageResult<CvExperience> pageResult = experienceService.listItems(query);
+        return Result.ok(pageResult);
     }
 
-    /** 根据id查询经历详情，版本放在 X-Revision 响应头。 */
+    /**
+     * 根据 ID 查询经历详情
+     *
+     * @param id 经历 ID
+     * @return 经历详情及 X-Revision 响应头
+     */
     @GetMapping("/{id}")
     @SaCheckPermission("cv:experience:query")
     public ResponseEntity<Result<CvExperience>> detail(@PathVariable String id) {
-        return profile(items.detail(IdUtils.parse(id)));
+        log.info("根据 ID 查询经历详情: id={}", id);
+        ResourceVersion<CvExperience> result = experienceService.detail(IdUtils.parse(id));
+        return versionResponse(result);
     }
 
-    /** 新增经历，成功后返回 201 和新版本。 */
+    /**
+     * 新增经历
+     *
+     * @param request 经历创建参数
+     * @return 201 响应、Location 及 X-Revision 响应头
+     */
     @PostMapping
     @SaCheckPermission("cv:experience:create")
     public ResponseEntity<Result<CvExperience>> create(@Valid @RequestBody ExperienceCreateDTO request) {
-        ResourceVersion<CvExperience> result = items.create(request);
-        return ResponseEntity.created(URI.create("/api/v1/admin/cv/experiences/" + result.value().getExperienceId()))
-                .header("X-Revision", result.revision()).body(Result.ok(result.value()));
+        log.info("新增经历: {}", request);
+        ResourceVersion<CvExperience> result = experienceService.create(request);
+        URI location = URI.create("/api/v1/admin/cv/experiences/" + result.value().getExperienceId());
+        return ResponseEntity.created(location)
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 
-    /** 根据id更新经历，PUT 要传完整资料，加锁后检查版本。 */
+    /**
+     * 根据 ID 更新经历
+     *
+     * @param id 经历 ID
+     * @param request 经历更新参数
+     * @param revision 请求头携带的 If-Revision 版本
+     * @return 更新后的经历详情及新 X-Revision 响应头
+     */
     @PutMapping("/{id}")
     @SaCheckPermission("cv:experience:update")
     public ResponseEntity<Result<CvExperience>> update(@PathVariable String id,
             @Valid @RequestBody ExperienceWriteDTO request,
-            @RequestHeader(value = "If-Revision", required = false) String revision) {
-        return profile(items.update(IdUtils.parse(id), request, revision));
+            @RequestHeader(value = HttpConstants.HEADER_IF_REVISION, required = false) String revision) {
+        log.info("更新经历: id={}", id);
+        ResourceVersion<CvExperience> result = experienceService.update(IdUtils.parse(id), request, revision);
+        return versionResponse(result);
     }
 
-    /** 批量修改状态，单条也提交一项，任一失败则整批回滚。 */
+    /**
+     * 批量修改经历展示状态
+     *
+     * @param body 批量状态变更参数
+     * @return 更新后的批量版本信息
+     */
     @PutMapping("/batch-status")
     @SaCheckPermission("cv:experience:update")
     public Result<BatchVersionsVO> status(@Valid @RequestBody BatchBinaryStatusDTO body) {
-        return Result.ok(items.changeStatusBatch(body.getItems(), body.getStatus()));
+        log.info("批量修改经历状态: count={}, status={}", body.getItems().size(), body.getStatus());
+        BatchVersionsVO versions = experienceService.changeStatusBatch(body.getItems(), body.getStatus());
+        return Result.ok(versions);
     }
 
-    /** 批量删除经历，单条也走此接口，业务层统一检查权限、版本并处理失败。 */
+    /**
+     * 批量删除经历
+     *
+     * @param body 批量删除参数
+     * @return 成功结果
+     */
     @PostMapping("/batch-delete")
     @SaCheckPermission("cv:experience:delete")
     public Result<Void> delete(@Valid @RequestBody BatchRevisionDTO body) {
-        items.deleteBatch(body.getItems());
+        log.info("批量删除经历: count={}", body.getItems().size());
+        experienceService.deleteBatch(body.getItems());
         return Result.ok(null);
     }
 
-    /** 返回经历资料，版本放在 X-Revision 响应头。 */
-    private ResponseEntity<Result<CvExperience>> profile(ResourceVersion<CvExperience> result) {
-        return ResponseEntity.ok().header("X-Revision", result.revision()).body(Result.ok(result.value()));
+    /**
+     * 组装带版本头的经历详情响应。
+     *
+     * @param result 经历详情与版本
+     * @return 200 响应
+     */
+    private ResponseEntity<Result<CvExperience>> versionResponse(ResourceVersion<CvExperience> result) {
+        return ResponseEntity.ok()
+                .header(HttpConstants.HEADER_X_REVISION, result.revision())
+                .body(Result.ok(result.value()));
     }
 }

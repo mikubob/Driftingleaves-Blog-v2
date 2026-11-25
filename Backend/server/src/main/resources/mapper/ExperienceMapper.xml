@@ -1,29 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<!-- 全站资源由Service检查ALL权限，公开列表过滤隐藏记录。 -->
 <mapper namespace="com.xuan.mapper.ExperienceMapper">
+
+    <!-- 分页查询简历经历列表，公开查询仅返回启用记录 -->
     <select id="resourcePage" resultType="com.xuan.entity.CvExperience">
-        SELECT * FROM cv_experience
+        SELECT *
+        FROM cv_experience
         <where>
-            <if test="publicOnly">AND status = 1</if>
-            <if test="!publicOnly and query.status != null">AND status = #{query.status}</if>
-            <if test="!publicOnly and query.keyword != null">AND (INSTR(title, #{query.keyword}) &gt; 0)</if>
-            <if test="query.experienceType != null">AND experience_type = #{query.experienceType}</if>
+            <if test="publicOnly">
+                AND status = 1
+            </if>
+            <if test="!publicOnly and query.status != null">
+                AND status = #{query.status}
+            </if>
+            <if test="!publicOnly and query.keyword != null">
+                AND (INSTR(title, #{query.keyword}) &gt; 0)
+            </if>
+            <if test="query.experienceType != null">
+                AND experience_type = #{query.experienceType}
+            </if>
         </where>
         ORDER BY sort_order ASC, start_date DESC, experience_id DESC
     </select>
 
+    <!-- 加行锁查询经历记录 -->
     <select id="lockById" resultType="com.xuan.entity.CvExperience">
-        SELECT * FROM cv_experience WHERE experience_id = #{id} FOR UPDATE
+        SELECT *
+        FROM cv_experience
+        WHERE experience_id = #{id}
+        FOR UPDATE
     </select>
 
+    <!-- 完整更新经历资料，可空字段显式写入以支持清空 -->
     <update id="replace">
-        UPDATE cv_experience SET experience_type=#{row.experienceType}, title=#{row.title}, subtitle=#{row.subtitle},
-        logo_url=#{row.logoUrl}, content=#{row.content}, start_date=#{row.startDate}, end_date=#{row.endDate},
-        sort_order=#{row.sortOrder} WHERE experience_id = #{row.experienceId}
+        UPDATE cv_experience
+        SET experience_type = #{row.experienceType},
+            title = #{row.title},
+            subtitle = #{row.subtitle},
+            logo_url = #{row.logoUrl},
+            content = #{row.content},
+            start_date = #{row.startDate},
+            end_date = #{row.endDate},
+            sort_order = #{row.sortOrder}
+        WHERE experience_id = #{row.experienceId}
     </update>
-    <!-- 状态切换不覆盖名称、地址、授权关联和其他资料。 -->
+
+    <!-- 更新经历展示状态 -->
     <update id="updateStatus">
-        UPDATE cv_experience SET status = #{status} WHERE experience_id = #{id}
+        UPDATE cv_experience
+        SET status = #{status}
+        WHERE experience_id = #{id}
     </update>
+
 </mapper>
