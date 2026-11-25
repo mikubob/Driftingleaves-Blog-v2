@@ -81,10 +81,10 @@ public class ArticleController {
     public ResponseEntity<Result<ArticleAdminDetailVO>> create(@Valid @RequestBody ArticleWriteDTO body) {
         log.info("创建文章草稿: title={}", body.getTitle());
         ArticleProfileVO result = articleService.create(body);
-        URI location = URI.create("/api/v1/admin/articles/" + result.article().getArticleId());
+        URI location = URI.create("/api/v1/admin/articles/" + result.getArticle().getArticleId());
         return ResponseEntity.created(location)
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.article()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getArticle()));
     }
 
     /**
@@ -169,7 +169,7 @@ public class ArticleController {
      */
     private ResponseEntity<Result<ArticleAdminDetailVO>> profileResponse(ArticleProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.article()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getArticle()));
     }
 }

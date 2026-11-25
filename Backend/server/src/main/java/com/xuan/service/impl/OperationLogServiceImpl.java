@@ -50,11 +50,11 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<OperationLogVO> listLogs(OperationLogQueryDTO query) {
         requireAdmin("query");
-        LocalDateTime begin = QueryTimeUtils.parse(query.begin());
-        LocalDateTime end = QueryTimeUtils.parse(query.end());
+        LocalDateTime begin = QueryTimeUtils.parse(query.getBegin());
+        LocalDateTime end = QueryTimeUtils.parse(query.getEnd());
         QueryTimeUtils.requireRange(begin, end);
-        return PageResult.from(logs.logPage(new Page<>(query.page(), query.pageSize()), query,
-                IdUtils.parse(query.userId()), IdUtils.parse(query.targetId()), begin, end));
+        return PageResult.from(logs.logPage(new Page<>(query.getPage(), query.getPageSize()), query,
+                IdUtils.parse(query.getUserId()), IdUtils.parse(query.getTargetId()), begin, end));
     }
 
     /**
@@ -67,10 +67,19 @@ public class OperationLogServiceImpl extends ServiceImpl<OperationLogMapper, Sys
         SysOperationLog row = required(logs.selectById(id));
         Map<String, Object> data = row.getOperationData() == null ? null
                 : json.readValue(row.getOperationData(), new TypeReference<Map<String, Object>>() { });
-        return new OperationLogDetailVO(row.getLogId(), row.getUserId(), row.getOperationType(),
-                row.getOperationTarget(),
-                row.getTargetId(), row.getPermissionCode(), row.getResult(), row.getErrorMessage(), row.getIpAddress(),
-                row.getOperationTime(), data);
+        return OperationLogDetailVO.builder()
+                .logId(row.getLogId())
+                .userId(row.getUserId())
+                .operationType(row.getOperationType())
+                .operationTarget(row.getOperationTarget())
+                .targetId(row.getTargetId())
+                .permissionCode(row.getPermissionCode())
+                .result(row.getResult())
+                .errorMessage(row.getErrorMessage())
+                .ipAddress(row.getIpAddress())
+                .operationTime(row.getOperationTime())
+                .operationData(data)
+                .build();
     }
 
     /**

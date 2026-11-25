@@ -105,7 +105,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId) {
         requireAdmin("sys:user:query");
-        return PageResult.from(users.adminPage(new Page<>(query.page(), query.pageSize()), query, roleId)
+        return PageResult.from(users.adminPage(new Page<>(query.getPage(), query.getPageSize()), query, roleId)
                 .convert(this::adminView));
     }
 
@@ -141,14 +141,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         UrlPolicy.requireValid(request.getAvatar());
 
         // 2. 写入允许创建的字段，角色通过单独的授权操作分配。
-        SysUser user = new SysUser();
-        user.setUsername(request.getUsername());
-        user.setPasswordHash(encoder.encode(request.getPassword()));
-        user.setNickname(request.getNickname());
-        user.setEmail(request.getEmail());
-        user.setAvatar(request.getAvatar());
-        user.setIntro(request.getIntro());
-        user.setStatus(request.getStatus());
+        SysUser user = SysUser.builder()
+                .username(request.getUsername())
+                .passwordHash(encoder.encode(request.getPassword()))
+                .nickname(request.getNickname())
+                .email(request.getEmail())
+                .avatar(request.getAvatar())
+                .intro(request.getIntro())
+                .status(request.getStatus())
+                .build();
         try {
             users.insert(user);
         } catch (DuplicateKeyException exception) {
@@ -212,7 +213,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 1. 先拿固定保护锁和升序用户锁，再查当前权限及整体版本。
         SysUser user = lockAdminTarget(userId, "sys:user:assignRole");
         checkRevision(user, revision);
-        List<Long> next = request.roleIds().stream().sorted().toList();
+        List<Long> next = request.getRoleIds().stream().sorted().toList();
 
         // 2. 用户锁之后按 ID 升序锁角色，有缺失或禁用项就整笔失败。
         if (CollUtil.isNotEmpty(next)) {
@@ -267,7 +268,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                     revoked.add(user.getUserId());
                 }
             }
-            versions.put(user.getUserId(), profile(user).revision());
+            versions.put(user.getUserId(), profile(user).getRevision());
         }
         if (status == 0) {
             requireRemainingAdmin();
@@ -318,7 +319,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
         Set<Long> ids = new TreeSet<>();
         for (BatchItemDTO item : items) {
-            ids.add(IdUtils.parse(item.id()));
+            ids.add(IdUtils.parse(item.getId()));
         }
         ids.add(sessions.currentUserId());
         Map<Long, SysUser> locked = new HashMap<>();
@@ -330,12 +331,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 2. 逐项检查目标存在性与编辑版本，全部通过后再返回给调用方写入。
         Map<Long, SysUser> targets = new LinkedHashMap<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            long userId = IdUtils.parse(item.id());
+            long userId = IdUtils.parse(item.getId());
             SysUser user = locked.get(userId);
             if (user == null) {
                 throw new BusinessException(404, "NOT_FOUND", "用户不存在");
             }
-            checkRevision(user, item.revision());
+            checkRevision(user, item.getRevision());
             targets.put(userId, user);
         }
         return targets;
@@ -397,7 +398,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param revision 客户端原样携带的版本
      */
     private void checkRevision(SysUser user, String revision) {
-        RevisionUtils.check(profile(user).revision(), revision);
+        RevisionUtils.check(profile(user).getRevision(), revision);
     }
 
     /**
@@ -407,7 +408,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @return 脱敏资料及仅由业务字段和完整角色集合生成的版本
      */
     private AdminUserProfileVO adminProfile(SysUser user) {
-        return new AdminUserProfileVO(adminView(user), profile(user).revision());
+        return AdminUserProfileVO.builder()
+                .user(adminView(user))
+                .revision(profile(user).getRevision())
+                .build();
     }
 
     /**
@@ -418,11 +422,24 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     private UserAdminVO adminView(SysUser user) {
         List<UserRoleVO> roles = users.assignedRoles(user.getUserId());
-        List<Long> roleIds = roles.stream().map(UserRoleVO::roleId).toList();
-        return new UserAdminVO(user.getUserId(), user.getUsername(), user.getNickname(), user.getEmail(),
-                user.getAvatar(), user.getIntro(), user.getStatus(), user.getPasswordHash() != null,
-                user.getLastLoginTime(), user.getCreateTime(), user.getUpdateTime(),
-                roleIds, user.getLastLoginIp(), user.getLastLoginLocation(), roles);
+        List<Long> roleIds = roles.stream().map(UserRoleVO::getRoleId).toList();
+        return UserAdminVO.builder()
+                .userId(user.getUserId())
+                .username(user.getUsername())
+                .nickname(user.getNickname())
+                .email(user.getEmail())
+                .avatar(user.getAvatar())
+                .intro(user.getIntro())
+                .status(user.getStatus())
+                .hasPassword(user.getPasswordHash() != null)
+                .lastLoginTime(user.getLastLoginTime())
+                .createTime(user.getCreateTime())
+                .updateTime(user.getUpdateTime())
+                .roleIds(roleIds)
+                .lastLoginIp(user.getLastLoginIp())
+                .lastLoginLocation(user.getLastLoginLocation())
+                .roles(roles)
+                .build();
     }
 
     /**
@@ -434,14 +451,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public MeVO register(RegisterDTO request) {
-        emailCodes.verify(request.email(), EmailCodeStore.REGISTER, request.emailCode());
+        emailCodes.verify(request.getEmail(), EmailCodeStore.REGISTER, request.getEmailCode());
         // 1. 只写注册允许的字段，密码用随机盐编码，账号状态由服务端确定。
-        SysUser user = new SysUser();
-        user.setUsername(request.username());
-        user.setNickname(request.nickname());
-        user.setEmail(request.email());
-        user.setPasswordHash(encoder.encode(request.password()));
-        user.setStatus(1);
+        SysUser user = SysUser.builder()
+                .username(request.getUsername())
+                .nickname(request.getNickname())
+                .email(request.getEmail())
+                .passwordHash(encoder.encode(request.getPassword()))
+                .status(1)
+                .build();
 
         // 2. 用户和 member 关联在同一事务创建，初始化角色缺了就全部回滚。
         createMember(user);
@@ -461,11 +479,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LoginSession login(LoginDTO request, int timeoutSeconds) {
         // 1. 先锁用户再验凭据，避免旧密码验证通过后越过并发退出登录的时点又发 Token。
-        SysUser user = users.lockByUsername(request.username());
+        SysUser user = users.lockByUsername(request.getUsername());
 
         // 2. 用户不存在、没密码或密码输错统一报失败，不能透露账号类型。
         if (user == null || user.getPasswordHash() == null
-                || !encoder.matches(request.password(), user.getPasswordHash())) {
+                || !encoder.matches(request.getPassword(), user.getPasswordHash())) {
             throw new BusinessException(401, "AUTH_FAILED", "账号或密码错误");
         }
 
@@ -484,16 +502,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      */
     @Override
     public void sendEmailCode(EmailCodeDTO request) {
-        if (request.purpose() == EmailCodeDTO.Purpose.REGISTER) {
-            emailCodes.send(request.email(), EmailCodeStore.REGISTER);
+        if (request.getPurpose() == EmailCodeDTO.Purpose.REGISTER) {
+            emailCodes.send(request.getEmail(), EmailCodeStore.REGISTER);
             return;
         }
 
-        boolean registered = users.exists(Wrappers.<SysUser>lambdaQuery().eq(SysUser::getEmail, request.email()));
+        boolean registered = users.exists(Wrappers.<SysUser>lambdaQuery().eq(SysUser::getEmail, request.getEmail()));
         if (!registered) {
             throw unregisteredEmail();
         }
-        emailCodes.send(request.email(), EmailCodeStore.LOGIN);
+        emailCodes.send(request.getEmail(), EmailCodeStore.LOGIN);
     }
 
     /**
@@ -502,7 +520,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void sendAdminEmailCode(AdminEmailCodeDTO request) {
-        SysUser user = users.lockByEmail(request.email());
+        SysUser user = users.lockByEmail(request.getEmail());
         if (user == null) {
             throw unregisteredEmail();
         }
@@ -517,15 +535,15 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LoginSession loginEmail(EmailLoginDTO request, int timeoutSeconds) {
-        SysUser user = users.lockByEmail(request.email());
+        SysUser user = users.lockByEmail(request.getEmail());
         boolean admin = timeoutSeconds == SessionManager.ADMIN_TIMEOUT_SECONDS;
         String purpose = admin ? EmailCodeStore.ADMIN_LOGIN : EmailCodeStore.LOGIN;
         if (user == null) {
-            emailCodes.discard(request.email(), purpose);
+            emailCodes.discard(request.getEmail(), purpose);
             throw unregisteredEmail();
         }
 
-        emailCodes.verify(request.email(), purpose, request.emailCode());
+        emailCodes.verify(request.getEmail(), purpose, request.getEmailCode());
         enabled(user);
         if (admin) {
             permissions.requireScope(user.getUserId(), "admin:access");
@@ -655,7 +673,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         if (user.getPasswordHash() == null) {
             throw new BusinessException(409, "STATE_CONFLICT", "尚未设置密码");
         }
-        verifyPassword(user, request.currentPassword());
+        verifyPassword(user, request.getCurrentPassword());
 
         // 2. 只有配置可用的平台绑定才算其他登录方式，不能清掉最后一种。
         if (!hasAvailableBinding(user.getUserId(), null)) {
@@ -676,7 +694,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     public List<OAuthBindingVO> bindings() {
         return oauth.findByUser(requireCurrent()).stream()
                 .filter(binding -> providers.enabledSources().contains(binding.getSource()))
-                .map(binding -> new OAuthBindingVO(binding.getSource(), binding.getCreateTime())).toList();
+                .map(binding -> OAuthBindingVO.builder()
+                        .source(binding.getSource())
+                        .createTime(binding.getCreateTime())
+                        .build()).toList();
     }
 
     /**
@@ -753,7 +774,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         for (SysUserOauth binding : bindings) {
             if (source.equals(binding.getSource())) {
                 if (uuid.equals(binding.getUuid())) {
-                    return new OAuthBindingVO(source, binding.getCreateTime());
+                    return OAuthBindingVO.builder().source(source).createTime(binding.getCreateTime()).build();
                 }
                 throw new BusinessException(409, "OAUTH_BIND_CONFLICT", "该平台身份已被绑定");
             }
@@ -768,7 +789,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
         // 4. 只返回平台和数据库生成的绑定时间，不带 uuid。
         return oauth.findByUser(userId).stream().filter(binding -> source.equals(binding.getSource()))
-                .map(binding -> new OAuthBindingVO(source, binding.getCreateTime())).findFirst().orElseThrow();
+                .map(binding -> OAuthBindingVO.builder().source(source).createTime(binding.getCreateTime()).build()).findFirst().orElseThrow();
     }
 
     /**
@@ -894,10 +915,11 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @param uuid 平台确认的原样身份标识
      */
     private void insertBinding(long userId, String source, String uuid) {
-        SysUserOauth binding = new SysUserOauth();
-        binding.setUserId(userId);
-        binding.setSource(source);
-        binding.setUuid(uuid);
+        SysUserOauth binding = SysUserOauth.builder()
+                .userId(userId)
+                .source(source)
+                .uuid(uuid)
+                .build();
         oauth.insert(binding);
     }
 
@@ -964,7 +986,13 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             ip = IpUtils.clientIp(attributes.getRequest(), auth.getTrustedProxies());
         }
         users.updateLastLogin(user.getUserId(), ip, ip == null ? null : locations.getIpLocation(ip));
-        return new LoginSession(token, new SessionVO(timeoutSeconds, view(users.selectById(user.getUserId()))));
+        return LoginSession.builder()
+                .token(token)
+                .response(SessionVO.builder()
+                .expiresIn(timeoutSeconds)
+                .user(view(users.selectById(user.getUserId())))
+                .build())
+                .build();
     }
 
     /**
@@ -980,7 +1008,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                 authorization.roleIds(user.getUserId())));
 
         // 2. 版本要保留引号，客户端用 If-Revision 原样带回来。
-        return new UserProfileVO(view(user), "\"" + TokenUtils.digest(canonical) + "\"");
+        return UserProfileVO.builder()
+                .user(view(user))
+                .revision("\"" + TokenUtils.digest(canonical) + "\"")
+                .build();
     }
 
     /**
@@ -990,8 +1021,18 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @return 可对外返回的本人资料
      */
     private MeVO view(SysUser user) {
-        return new MeVO(user.getUserId(), user.getUsername(), user.getNickname(), user.getEmail(),
-                user.getAvatar(), user.getIntro(), user.getStatus(), user.getPasswordHash() != null,
-                user.getLastLoginTime(), user.getCreateTime(), user.getUpdateTime());
+        return MeVO.builder()
+                .userId(user.getUserId())
+                .username(user.getUsername())
+                .nickname(user.getNickname())
+                .email(user.getEmail())
+                .avatar(user.getAvatar())
+                .intro(user.getIntro())
+                .status(user.getStatus())
+                .hasPassword(user.getPasswordHash() != null)
+                .lastLoginTime(user.getLastLoginTime())
+                .createTime(user.getCreateTime())
+                .updateTime(user.getUpdateTime())
+                .build();
     }
 }

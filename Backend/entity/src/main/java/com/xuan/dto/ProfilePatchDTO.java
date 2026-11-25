@@ -4,37 +4,63 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * setter 记下字段有没有出现，才能分清没传、传 null 和传空串。
  */
-@Getter
-public class ProfilePatchDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ProfilePatchDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 昵称
     @TextLength(min = 1, max = 64)
     private String nickname;
 
+    // 电子邮箱
     @Email
     @TextLength(max = 254)
     private String email;
 
+    // 头像URL
     @TextLength(max = 2048)
     private String avatar;
 
+    // 个人简介
     @TextLength(max = 500)
     private String intro;
 
+    // 是否传入昵称
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean nicknamePresent;
 
+    // 是否传入邮箱
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean emailPresent;
 
+    // 是否传入头像
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean avatarPresent;
 
+    // 是否传入个人简介
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean introPresent;
 
     public void setNickname(String value) {

@@ -9,8 +9,15 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.groups.Default;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -18,8 +25,14 @@ import java.util.Set;
 /**
  * 创建文章可以用默认值，完整修改时所有字段都要填；Markdown 原文不去空白。
  */
-@Getter
-public class ArticleWriteDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ArticleWriteDTO implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * 完整替换时，公共字段的校验也要执行。
@@ -28,54 +41,74 @@ public class ArticleWriteDTO {
 
     }
 
+    // 标题
     @NotNull
     @TextLength(min = 1, max = 200)
     private String title;
 
+    // URL别名
     @NotNull
     @Size(max = 200)
     @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", message = "只能使用字母、数字及分隔词语的单个连字符，不能包含空格或连续连字符")
     private String slug;
 
+    // 摘要
     @NotNull
     @TextLength(max = 500)
+    @Builder.Default
     private String summary = "";
+
+    // 分类ID
     private Long categoryId;
 
+    // 封面图URL
     @TextLength(max = 2048)
     private String coverUrl;
 
+    // 文章类型 1-原创 2-转载 3-翻译
     @NotNull
     @Min(1)
     @Max(3)
+    @Builder.Default
     private Integer articleType = 1;
 
+    // 原文链接
     @TextLength(max = 2048)
     private String originalUrl;
 
+    // 可见性 1-公开 2-私密
     @NotNull
     @Min(1)
     @Max(2)
+    @Builder.Default
     private Integer visibility = 1;
 
+    // 是否置顶 0-否 1-是
     @NotNull
     @Min(0)
     @Max(1)
+    @Builder.Default
     private Integer isTop = 0;
 
+    // 是否允许评论 0-否 1-是
     @NotNull
     @Min(0)
     @Max(1)
+    @Builder.Default
     private Integer allowComment = 1;
 
+    // Markdown正文内容
     @NotNull
     private String markdownContent;
 
+    // 标签ID列表
     @NotNull
     @Size(max = 20)
+    @Builder.Default
     private List<@NotNull Long> tagIds = List.of();
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setTitle(String value) {

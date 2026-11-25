@@ -81,7 +81,7 @@ public class FileController {
             @RequestParam(value = "usage", required = false) String usage) {
         log.info("上传文件: fileName={}, usage={}", file.getOriginalFilename(), usage);
         FileVO value = fileService.upload(file, false, usage);
-        URI location = URI.create("/api/v1/admin/files/" + value.fileId());
+        URI location = URI.create("/api/v1/admin/files/" + value.getFileId());
         return ResponseEntity.created(location).body(Result.ok(value));
     }
 
@@ -125,8 +125,8 @@ public class FileController {
     @PostMapping("/admin/files/batch-delete")
     @SaCheckPermission("blog:file:delete")
     public Result<BatchFileResultsVO> delete(@Valid @RequestBody BatchIdsDTO body) {
-        log.info("批量删除文件: count={}", body.ids().size());
-        BatchFileResultsVO result = fileService.deleteBatch(body.ids());
+        log.info("批量删除文件: count={}", body.getIds().size());
+        BatchFileResultsVO result = fileService.deleteBatch(body.getIds());
         return Result.ok(result);
     }
 

@@ -85,7 +85,7 @@ public class SiteConfigController {
      */
     private ResponseEntity<Result<ConfigVO>> profileResponse(ConfigProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.config()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getConfig()));
     }
 }

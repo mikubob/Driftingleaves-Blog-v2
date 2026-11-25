@@ -76,11 +76,11 @@ public enum WebSession {
     }
 
     public ResponseEntity<Result<SessionVO>> login(LoginSession login) {
-        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, issue(login)).body(Result.ok(login.response()));
+        return ResponseEntity.ok().header(HttpHeaders.SET_COOKIE, issue(login)).body(Result.ok(login.getResponse()));
     }
 
     public String issue(LoginSession login) {
-        return cookie(login.token(), timeoutSeconds);
+        return cookie(login.getToken(), timeoutSeconds);
     }
 
     public ResponseEntity<Result<Void>> logout(SessionManager sessions) {

@@ -4,73 +4,69 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
 import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
  * 评论记录，删除时连同全部子回复一起删除。
  */
 @Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
 @TableName("blog_comment")
-public class BlogComment {
+public class BlogComment implements Serializable {
 
-    /**
-     * 评论ID。
-     */
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 评论ID
     @TableId(value = "comment_id", type = IdType.AUTO)
     private Long commentId;
 
-    /**
-     * 所属文章ID，关联blog_article.article_id。
-     */
+    // 所属文章ID，关联blog_article.article_id
     @TableField("article_id")
     private Long articleId;
 
-    /**
-     * 仅登录用户评论。
-     */
+    // 仅登录用户评论
     @TableField("user_id")
     private Long userId;
 
-    /**
-     * 被回复的评论ID，必须属于同一文章。
-     */
+    // 被回复的评论ID，必须属于同一文章
     @TableField("parent_id")
     private Long parentId;
 
-    /**
-     * 纯文本或只保留安全标签的内容。
-     */
+    // 纯文本或只保留安全标签的内容
     @TableField("content")
     private String content;
 
-    /**
-     * 发布时的 IP 属地，只保存地域文字，不公开原始 IP。
-     */
+    // 发布时的 IP 属地，只保存地域文字，不公开原始 IP
     @TableField("location")
     private String location;
 
+    // 操作系统
     @TableField("user_agent_os")
     private String userAgentOs;
+
+    // 浏览器
     @TableField("user_agent_browser")
     private String userAgentBrowser;
 
-    /**
-     * 0待审核 1通过 2驳回。
-     */
+    // 0待审核 1通过 2驳回
     @TableField("status")
     private Integer status;
 
-    /**
-     * 创建时间由数据库填写，应用不用赋值。
-     */
+    // 创建时间由数据库填写，应用不用赋值
     @TableField("create_time")
     private LocalDateTime createTime;
 
-    /**
-     * 修改记录时数据库自动更新时间，应用不用赋值。
-     */
+    // 修改记录时数据库自动更新时间，应用不用赋值
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

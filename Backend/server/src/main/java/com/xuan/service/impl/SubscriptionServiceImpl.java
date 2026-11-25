@@ -98,7 +98,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
                 throw new BusinessException(409, "STATE_CONFLICT", "请先在个人资料中设置账号邮箱");
             }
             email = email.strip().toLowerCase(Locale.ROOT);
-            if (!email.equals(request.email())) {
+            if (!email.equals(request.getEmail())) {
                 throw new BusinessException(400, "VALIDATION_ERROR", "订阅邮箱必须与当前登录账号邮箱一致");
             }
             if (row != null && row.getStatus() == 1 && row.getEmail().equals(email)) {
@@ -125,7 +125,12 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             String round = TokenUtils.random();
             tickets.newDeliveryRound(row.getSubscriptionId());
             tickets.issue(ticket, actor, round, json.writeValueAsString(
-                    new SubscriptionConfirmation(actor, row.getSubscriptionId(), row.getEmail(), round)));
+                    SubscriptionConfirmation.builder()
+                            .userId(actor)
+                            .subscriptionId(row.getSubscriptionId())
+                            .email(row.getEmail())
+                            .round(round)
+                            .build()));
             return new Application(subscriptions.selectById(row.getSubscriptionId()), ticket);
         });
 
@@ -154,12 +159,12 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         // 2. 票据必须匹配当前用户、账号邮箱和申请轮次，验证后只能消费一次。
         String raw = tickets.read("confirm", ticket);
         SubscriptionConfirmation value = confirmation(raw);
-        if (row == null || row.getStatus() != 0 || value.userId() != actor || value.subscriptionId() != row.getSubscriptionId()
-                || !value.email().equals(row.getEmail()) || user.getEmail() == null
+        if (row == null || row.getStatus() != 0 || value.getUserId() != actor || value.getSubscriptionId() != row.getSubscriptionId()
+                || !value.getEmail().equals(row.getEmail()) || user.getEmail() == null
                 || !row.getEmail().equals(user.getEmail().strip().toLowerCase(Locale.ROOT))) {
             throw SubscriptionTicketStore.invalid();
         }
-        tickets.consume(ticket, actor, value.round(), raw);
+        tickets.consume(ticket, actor, value.getRound(), raw);
 
         // 3. 确认后激活订阅并更新投递轮次，旧退订票据不能影响本轮订阅。
         row.setStatus(1);
@@ -194,16 +199,16 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public void cancelTicket(String ticket) {
         SubscriptionUnsubscribe value = unsubscribe(tickets.read("unsubscribe", ticket));
-        BlogRssSubscription located = subscriptions.selectById(value.subscriptionId());
+        BlogRssSubscription located = subscriptions.selectById(value.getSubscriptionId());
         if (located == null) {
             throw SubscriptionTicketStore.invalid();
         }
         users.lockById(located.getUserId());
-        BlogRssSubscription row = subscriptions.lockById(value.subscriptionId());
-        if (row == null || !Objects.equals(row.getEmail(), value.email()) || !Objects.equals(row.getVerifiedAt(),
-                value.verifiedAt())
-                || !Objects.equals(row.getSubscribeTime(), value.subscribeTime()) || value.round() == null
-                || !Objects.equals(tickets.deliveryRound(value.subscriptionId()), value.round())
+        BlogRssSubscription row = subscriptions.lockById(value.getSubscriptionId());
+        if (row == null || !Objects.equals(row.getEmail(), value.getEmail()) || !Objects.equals(row.getVerifiedAt(),
+                value.getVerifiedAt())
+                || !Objects.equals(row.getSubscribeTime(), value.getSubscribeTime()) || value.getRound() == null
+                || !Objects.equals(tickets.deliveryRound(value.getSubscriptionId()), value.getRound())
                 || !List.of(1, 2).contains(row.getStatus())) {
             throw SubscriptionTicketStore.invalid();
         }
@@ -217,8 +222,8 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogRssSubscription> listSubscriptions(SubscriptionQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(subscriptions.subscriptionPage(new Page<>(query.page(), query.pageSize()), query,
-                IdUtils.parse(query.userId())));
+        return PageResult.from(subscriptions.subscriptionPage(new Page<>(query.getPage(), query.getPageSize()), query,
+                IdUtils.parse(query.getUserId())));
     }
 
     /**
@@ -236,7 +241,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
      */
     private ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
         BlogRssSubscription row = lockAdmin(id, "update");
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
             throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
         }
@@ -332,9 +337,16 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
      * 不能向本人暴露其他用户ID或票据。
      */
     private SubscriptionVO view(BlogRssSubscription row) {
-        return row == null ? null : new SubscriptionVO(row.getSubscriptionId(), row.getEmail(), row.getStatus(),
-                row.getVerifiedAt(),
-                row.getSubscribeTime(), row.getUnsubscribeTime(), row.getCreateTime(), row.getUpdateTime());
+        return row == null ? null : SubscriptionVO.builder()
+                .subscriptionId(row.getSubscriptionId())
+                .email(row.getEmail())
+                .status(row.getStatus())
+                .verifiedAt(row.getVerifiedAt())
+                .subscribeTime(row.getSubscribeTime())
+                .unsubscribeTime(row.getUnsubscribeTime())
+                .createTime(row.getCreateTime())
+                .updateTime(row.getUpdateTime())
+                .build();
     }
 
     /**
@@ -380,13 +392,13 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         var sorted = BatchUtils.sorted(items);
         lockBatchUsers(sorted, "delete");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogRssSubscription row = lockAdmin(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             subscriptions.deleteById(id);
         }
     }
@@ -401,18 +413,18 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         var sorted = BatchUtils.sorted(items);
         lockBatchUsers(sorted, "update");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogRssSubscription row = lockAdmin(id, "update");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
             if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
                 throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
             }
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, changeStatus(id, status, item.revision()).revision());
+            long id = IdUtils.parse(item.getId());
+            versions.put(id, changeStatus(id, status, item.getRevision()).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
@@ -425,7 +437,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
         Set<Long> userIds = new TreeSet<>();
         userIds.add(sessions.currentUserId());
         for (var item : items) {
-            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.id()))).getUserId());
+            userIds.add(required(subscriptions.selectById(IdUtils.parse(item.getId()))).getUserId());
         }
         for (long id : userIds) {
             users.lockById(id);

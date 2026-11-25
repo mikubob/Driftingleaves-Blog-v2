@@ -67,7 +67,7 @@ public class MySubscriptionController {
     @RateLimit(value = "subscription-confirm", limit = 10, dimension = RateLimit.Dimension.USER)
     public Result<SubscriptionVO> confirm(@Valid @RequestBody SubscriptionTicketDTO request) {
         log.info("确认本人邮件订阅");
-        SubscriptionVO subscription = subscriptionService.confirm(request.ticket());
+        SubscriptionVO subscription = subscriptionService.confirm(request.getTicket());
         return Result.ok(subscription);
     }
 

@@ -5,26 +5,45 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 修改权限要填全，编码不能改，可空的说明也要传。
  */
-@Getter
-public class PermissionUpdateDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PermissionUpdateDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 权限名称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String permissionName;
 
+    // 所属模块
     @NotNull
     @Pattern(regexp = "[a-z][a-z0-9_]{0,31}", message = "须以小写字母开头，只能包含小写字母、数字或下划线，最多32位")
     private String module;
 
+    // 描述
     @TextLength(max = 255)
     private String description;
 
+    // 是否传入描述
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean descriptionPresent;
 
     public void setPermissionName(String value) {

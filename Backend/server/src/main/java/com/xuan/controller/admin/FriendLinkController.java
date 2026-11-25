@@ -140,7 +140,7 @@ public class FriendLinkController {
      */
     private <T extends BlogFriendLink> ResponseEntity<Result<T>> profileResponse(LinkProfileVO<T> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.link()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getLink()));
     }
 }

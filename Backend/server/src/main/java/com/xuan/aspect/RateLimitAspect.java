@@ -59,13 +59,13 @@ public class RateLimitAspect {
         // 2. 计入限流次数前先校验字符串 ID 格式，拒绝前导零等非法输入。
         for (Object argument : point.getArgs()) {
             if (argument instanceof ArticleQueryDTO query) {
-                IdUtils.parse(query.categoryId());
-                IdUtils.parse(query.tagId());
-                IdUtils.parse(query.authorId());
+                IdUtils.parse(query.getCategoryId());
+                IdUtils.parse(query.getTagId());
+                IdUtils.parse(query.getAuthorId());
             } else if (argument instanceof CommentPublicQueryDTO query) {
-                IdUtils.parse(query.parentId());
+                IdUtils.parse(query.getParentId());
             } else if (argument instanceof MessagePublicQueryDTO query) {
-                IdUtils.parse(query.parentId());
+                IdUtils.parse(query.getParentId());
             }
         }
 

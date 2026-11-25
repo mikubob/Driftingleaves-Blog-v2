@@ -5,8 +5,8 @@ AGENT.md
 # 后端构建与前端依赖/产物。
 **/target/
 **/node_modules/
-/Front/dist/
-/Front/coverage/
+/Front/**/dist/
+/Front/**/coverage/
 
 # 本地秘密与环境覆盖，允许提交不含秘密的示例。
 .env
@@ -22,7 +22,7 @@ AGENT.md
 /DockerForDriftingLeaves/SSL/
 
 # 浏览器检查、临时输出与 JVM 崩溃记录。
-/.playwright-cli/
+**/.playwright-cli/
 /output/
 /Backend/**/hs_err_pid*.log
 /Backend/**/replay_pid*.log

@@ -209,8 +209,13 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
             if (raw == null) {
                 throw invalid();
             }
-            return new ConfigVO(row.getConfigKey(), policy(row.getConfigKey(), raw, row.getIsPublic()),
-                    row.getDescription(), row.getIsPublic(), row.getUpdateTime());
+            return ConfigVO.builder()
+                    .configKey(row.getConfigKey())
+                    .configValue(policy(row.getConfigKey(), raw, row.getIsPublic()))
+                    .description(row.getDescription())
+                    .isPublic(row.getIsPublic())
+                    .updateTime(row.getUpdateTime())
+                    .build();
         } catch (JacksonException | BusinessException exception) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "站点配置不可用");
         }
@@ -221,16 +226,19 @@ public class SiteConfigServiceImpl extends ServiceImpl<SiteConfigMapper, BlogSit
      */
     private ConfigProfileVO profile(BlogSiteConfig row) {
         ConfigVO value = view(row);
-        String digest = json.writeValueAsString(Arrays.asList(value.configKey(), value.configValue(),
-                value.description(), value.isPublic()));
-        return new ConfigProfileVO(value, "\"" + TokenUtils.digest(digest) + "\"");
+        String digest = json.writeValueAsString(Arrays.asList(value.getConfigKey(), value.getConfigValue(),
+                value.getDescription(), value.getIsPublic()));
+        return ConfigProfileVO.builder()
+                .config(value)
+                .revision("\"" + TokenUtils.digest(digest) + "\"")
+                .build();
     }
 
     /**
      * 权限和目标检查后再查版本，同目标更新也不能绕过旧版本。
      */
     private void checkRevision(BlogSiteConfig row, String revision) {
-        RevisionUtils.check(profile(row).revision(), revision, "配置已修改，请重新获取");
+        RevisionUtils.check(profile(row).getRevision(), revision, "配置已修改，请重新获取");
     }
 
     /**

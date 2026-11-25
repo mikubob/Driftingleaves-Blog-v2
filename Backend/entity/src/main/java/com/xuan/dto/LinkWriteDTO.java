@@ -4,16 +4,31 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.EqualsAndHashCode;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
  * 友链创建可用默认值，PUT 要完整填写；URL 的公开资源规则由入口业务统一检查。
  */
-@Getter
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode(callSuper = true)
 public class LinkWriteDTO extends LinkApplicationDTO {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
 
     /**
      * 完整替换也执行公共字段校验。
@@ -22,15 +37,21 @@ public class LinkWriteDTO extends LinkApplicationDTO {
 
     }
 
+    // 排序权重
     @NotNull
+    @Builder.Default
     private Integer sortOrder = 0;
 
+    // 申请人用户ID
     private Long applicantId;
 
+    // 是否传入申请人ID
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean applicantIdPresent;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     /**
@@ -75,5 +96,4 @@ public class LinkWriteDTO extends LinkApplicationDTO {
     public boolean isCompleteReplace() {
         return present.size() == 3;
     }
-
 }

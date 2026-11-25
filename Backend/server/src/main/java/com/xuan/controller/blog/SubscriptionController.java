@@ -33,7 +33,7 @@ public class SubscriptionController {
     @RateLimit(value = "subscription-unsubscribe", limit = 30)
     public Result<Void> cancel(@Valid @RequestBody SubscriptionTicketDTO request) {
         log.info("根据邮件票据取消订阅");
-        subscriptionService.cancelTicket(request.ticket());
+        subscriptionService.cancelTicket(request.getTicket());
         return Result.ok(null);
     }
 }

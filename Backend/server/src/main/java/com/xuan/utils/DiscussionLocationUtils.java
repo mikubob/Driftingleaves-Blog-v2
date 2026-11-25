@@ -69,8 +69,8 @@ public final class DiscussionLocationUtils {
         }
 
         List<Long> ordered = nodes.stream().map(nodeId).filter(selected::contains).toList();
-        int pageSize = query.pageSize();
-        int page = query.page() == null ? Math.max(0, ordered.indexOf(id)) / pageSize + 1 : query.page();
+        int pageSize = query.getPageSize();
+        int page = query.getPage() == null ? Math.max(0, ordered.indexOf(id)) / pageSize + 1 : query.getPage();
         int total = ordered.size();
         int from = Math.min(total, (page - 1) * pageSize);
         List<Long> replyIds = ordered.subList(from, Math.min(total, from + pageSize));

@@ -37,7 +37,7 @@ public class OnlineController {
     @ResponseStatus(HttpStatus.CREATED)
     public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body,
             HttpServletRequest request) {
-        log.info("生成简历端在线统计票据: pagePath={}", body.pagePath());
+        log.info("生成简历端在线统计票据: pagePath={}", body.getPagePath());
         String origin = request.getHeader("Origin");
         OnlineTicketVO ticket = onlineService.issueForSite("cv", body, origin, request);
         return Result.ok(ticket);

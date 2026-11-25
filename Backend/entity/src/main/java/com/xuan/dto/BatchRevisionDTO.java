@@ -4,18 +4,29 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.Getter;
-import lombok.Setter;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.List;
 
 /**
  * 单条和多条共用的资源选择，不能自动去重或截断。
  */
-@Getter
-@Setter
-public class BatchRevisionDTO {
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class BatchRevisionDTO implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 选中的批量项列表
     @NotNull
     @Size(min = 1, max = 100)
     private List<@NotNull @Valid BatchItemDTO> items;
@@ -30,7 +41,7 @@ public class BatchRevisionDTO {
         }
         var seen = new HashSet<String>();
         for (BatchItemDTO item : items) {
-            if (item != null && !seen.add(item.id())) {
+            if (item != null && !seen.add(item.getId())) {
                 return false;
             }
         }

@@ -6,32 +6,49 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
  * 提交后台留言回复，只接收正文、格式和回复通知设置。
  */
-@Getter
-public class MessageEditDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class MessageEditDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 内容
     @NotNull
     @TextLength(min = 1, max = 2000)
     private String content;
 
+    // 内容格式
     @NotNull
     @Min(0)
     @Max(1)
     private Integer contentFormat;
 
+    // 是否开启回复通知
     @NotNull
     @Min(0)
     @Max(1)
     private Integer notifyReply;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setContent(String value) {

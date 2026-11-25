@@ -151,7 +151,7 @@ public class MeController {
      */
     private ResponseEntity<Result<MeVO>> profileResponse(UserProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.user()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getUser()));
     }
 }

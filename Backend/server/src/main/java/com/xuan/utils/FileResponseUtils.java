@@ -26,23 +26,23 @@ public final class FileResponseUtils {
      */
     public static ResponseEntity<Resource> inline(FileContent file) {
         // 1. 解析媒体类型，文本类文件显式补充 UTF-8，避免浏览器乱码。
-        MediaType type = MediaType.parseMediaType(file.mimeType());
-        if (file.mimeType().startsWith("text/")) {
+        MediaType type = MediaType.parseMediaType(file.getMimeType());
+        if (file.getMimeType().startsWith("text/")) {
             type = new MediaType(type, StandardCharsets.UTF_8);
         }
 
         // 2. 组装安全响应头，禁止浏览器嗅探内容类型并编码文件名。
         String disposition = ContentDisposition.inline()
-                .filename(file.name(), StandardCharsets.UTF_8)
+                .filename(file.getName(), StandardCharsets.UTF_8)
                 .build()
                 .toString();
 
         return ResponseEntity.ok()
                 .contentType(type)
-                .contentLength(file.bytes().length)
+                .contentLength(file.getBytes().length)
                 .header(HttpConstants.HEADER_CACHE_CONTROL, HttpConstants.CACHE_NO_STORE)
                 .header(HttpConstants.HEADER_CONTENT_TYPE_OPTIONS, HttpConstants.NOSNIFF)
                 .header(HttpConstants.HEADER_CONTENT_DISPOSITION, disposition)
-                .body(new ByteArrayResource(file.bytes()));
+                .body(new ByteArrayResource(file.getBytes()));
     }
 }

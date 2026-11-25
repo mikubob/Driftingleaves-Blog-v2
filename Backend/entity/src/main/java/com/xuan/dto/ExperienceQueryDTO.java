@@ -4,17 +4,61 @@ import cn.hutool.core.util.ObjectUtil;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 简历经历按类型、标题与状态筛选，公开入口不接受后台字段。
  */
-public record ExperienceQueryDTO(@Min(1) @Max(100000) Integer page,
-                                 @Min(1) @Max(100) Integer pageSize, @TextLength(min = 1, max = 100) String keyword,
-                                 @Min(0) @Max(1) Integer status, @Min(0) @Max(2) Integer experienceType) {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ExperienceQueryDTO implements Serializable {
 
-    public ExperienceQueryDTO {
-        page = ObjectUtil.defaultIfNull(page, 1);
-        pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
-        keyword = keyword == null ? null : keyword.strip();
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 页码
+    @Builder.Default
+    @Min(1)
+    @Max(100000)
+    private Integer page = 1;
+
+    // 每页条数
+    @Builder.Default
+    @Min(1)
+    @Max(100)
+    private Integer pageSize = 10;
+
+    // 搜索关键词
+    @TextLength(min = 1, max = 100)
+    private String keyword;
+
+    // 状态
+    @Min(0)
+    @Max(1)
+    private Integer status;
+
+    // 经历类型
+    @Min(0)
+    @Max(2)
+    private Integer experienceType;
+
+    public void setPage(Integer page) {
+        this.page = ObjectUtil.defaultIfNull(page, 1);
+    }
+
+    public void setPageSize(Integer pageSize) {
+        this.pageSize = ObjectUtil.defaultIfNull(pageSize, 10);
+    }
+
+    public void setKeyword(String keyword) {
+        this.keyword = keyword == null ? null : keyword.strip();
     }
 }

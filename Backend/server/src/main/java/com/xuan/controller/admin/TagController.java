@@ -121,7 +121,7 @@ public class TagController {
      */
     private ResponseEntity<Result<BlogTag>> profileResponse(TagProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.tag()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getTag()));
     }
 }

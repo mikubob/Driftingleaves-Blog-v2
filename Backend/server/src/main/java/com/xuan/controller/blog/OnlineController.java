@@ -41,7 +41,7 @@ public class OnlineController {
     public Result<OnlineTicketVO> issue(@Valid @RequestBody OnlineTicketCreateDTO body,
             @RequestAttribute(WebSession.VERIFIED_ORIGIN) String origin,
             HttpServletRequest request) {
-        log.info("生成博客端在线统计票据: pagePath={}", body.pagePath());
+        log.info("生成博客端在线统计票据: pagePath={}", body.getPagePath());
         OnlineTicketVO ticket = onlineService.issueForSite("blog", body, origin, request);
         return Result.ok(ticket);
     }

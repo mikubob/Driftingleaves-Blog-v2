@@ -81,7 +81,7 @@ public class RoleController {
     public ResponseEntity<Result<RoleVO>> create(@Valid @RequestBody RoleCreateDTO body) {
         log.info("新增角色: roleCode={}", body.getRoleCode());
         RoleVO role = roleService.create(body);
-        URI location = URI.create("/api/v1/admin/roles/" + role.roleId());
+        URI location = URI.create("/api/v1/admin/roles/" + role.getRoleId());
         return ResponseEntity.created(location).body(Result.ok(role));
     }
 
@@ -157,7 +157,7 @@ public class RoleController {
      */
     private ResponseEntity<Result<RoleVO>> profileResponse(RoleProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.role()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getRole()));
     }
 }

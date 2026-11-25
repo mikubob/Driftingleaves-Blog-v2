@@ -80,10 +80,10 @@ public class SocialController {
     public ResponseEntity<Result<HomeSocialLink>> create(@Valid @RequestBody SocialCreateDTO request) {
         log.info("新增社交链接: {}", request);
         ResourceVersion<HomeSocialLink> result = socialService.create(request);
-        URI location = URI.create("/api/v1/admin/home/social-links/" + result.value().getSocialId());
+        URI location = URI.create("/api/v1/admin/home/social-links/" + result.getValue().getSocialId());
         return ResponseEntity.created(location)
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 
     /**
@@ -140,7 +140,7 @@ public class SocialController {
      */
     private ResponseEntity<Result<HomeSocialLink>> versionResponse(ResourceVersion<HomeSocialLink> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

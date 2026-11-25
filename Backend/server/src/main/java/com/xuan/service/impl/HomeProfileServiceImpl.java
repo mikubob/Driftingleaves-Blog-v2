@@ -51,8 +51,16 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     @Cacheable(cacheNames = "home", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public HomeProfilePublicVO publicProfile() {
         HomeProfile row = profiles.selectById(1L);
-        return row == null ? null : new HomeProfilePublicVO(row.getNickname(), row.getTagline(), row.getDescription(),
-                row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(), row.getLocation());
+        return row == null ? null : HomeProfilePublicVO.builder()
+                .nickname(row.getNickname())
+                .tagline(row.getTagline())
+                .description(row.getDescription())
+                .avatar(row.getAvatar())
+                .website(row.getWebsite())
+                .publicEmail(row.getPublicEmail())
+                .githubUrl(row.getGithubUrl())
+                .location(row.getLocation())
+                .build();
     }
 
     /**
@@ -97,7 +105,7 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         }
         HomeProfile row = profiles.lockProfile();
         requireAdmin("update");
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         if (owner == null || owner.getStatus() != 1) {
             throw new BusinessException(400, "VALIDATION_ERROR", "站点主人须为启用账号");
         }

@@ -21,11 +21,11 @@ public class OnlineIdentityPolicy {
      * 检查在线用户，重新查询原会话和账号启用状态，查询失败时不能改为访客继续。
      */
     public void requireActive(OnlineBinding binding) {
-        if (binding.userId() == null) {
+        if (binding.getUserId() == null) {
             return;
         }
-        sessions.requireOriginalActive(binding.userId(), binding.tokenHash(), binding.expiresAt());
-        SysUser user = users.selectById(binding.userId());
+        sessions.requireOriginalActive(binding.getUserId(), binding.getTokenHash(), binding.getExpiresAt());
+        SysUser user = users.selectById(binding.getUserId());
         if (user == null) {
             throw new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
         }

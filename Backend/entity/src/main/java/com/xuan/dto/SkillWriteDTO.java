@@ -4,31 +4,49 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
  * 创建和修改共用资料字段，可空字段用null清空；状态不随资料修改。
  */
-@Getter
-public class SkillWriteDTO {
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class SkillWriteDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 名称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String name;
 
+    // 描述
     @TextLength(min = 1, max = 500)
     private String description;
 
+    // 图标
     @TextLength(min = 1, max = 2048)
     private String icon;
 
+    // 排序权重
     @NotNull
     private Integer sortOrder;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setName(String value) {

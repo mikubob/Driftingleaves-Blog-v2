@@ -62,7 +62,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "categories", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<CategoryPublicDetailVO> publicCategories(PageQueryDTO query) {
-        return PageResult.from(categories.publicPage(new Page<>(query.page(), query.pageSize()),
+        return PageResult.from(categories.publicPage(new Page<>(query.getPage(), query.getPageSize()),
                 LocalDateTime.now(ZoneOffset.UTC)));
     }
 
@@ -87,7 +87,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogCategory> listCategories(CategoryQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(categories.categoryPage(new Page<>(query.page(), query.pageSize()), query));
+        return PageResult.from(categories.categoryPage(new Page<>(query.getPage(), query.getPageSize()), query));
     }
 
     /**
@@ -121,12 +121,13 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     public BlogCategory create(CategoryCreateDTO request) {
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
-        BlogCategory row = new BlogCategory();
-        row.setCategoryName(request.getCategoryName());
-        row.setSlug(request.getSlug());
-        row.setDescription(request.getDescription());
-        row.setSortOrder(request.getSortOrder());
-        row.setStatus(request.getStatus());
+        BlogCategory row = BlogCategory.builder()
+                .categoryName(request.getCategoryName())
+                .slug(request.getSlug())
+                .description(request.getDescription())
+                .sortOrder(request.getSortOrder())
+                .status(request.getStatus())
+                .build();
         categories.insert(row);
         return categories.selectById(row.getCategoryId());
     }
@@ -181,8 +182,8 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         List<BlogCategory> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            BlogCategory row = lockCategory(IdUtils.parse(item.id()), "update");
-            checkRevision(row, item.revision());
+            BlogCategory row = lockCategory(IdUtils.parse(item.getId()), "update");
+            checkRevision(row, item.getRevision());
             rows.add(row);
         }
 
@@ -192,7 +193,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
                 categories.updateStatus(row.getCategoryId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getCategoryId(), profile(row).revision());
+            versions.put(row.getCategoryId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
@@ -232,7 +233,7 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
      * 持有分类锁时先核对版本；缺失、格式不对、过期分别返回 428、400、412。
      */
     private void checkRevision(BlogCategory row, String revision) {
-        RevisionUtils.check(profile(row).revision(), revision, "分类已修改，请重新获取");
+        RevisionUtils.check(profile(row).getRevision(), revision, "分类已修改，请重新获取");
     }
 
     /**
@@ -241,7 +242,10 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     private CategoryProfileVO profile(BlogCategory row) {
         String value = json.writeValueAsString(Arrays.asList(row.getCategoryId(), row.getCategoryName(), row.getSlug(),
                 row.getDescription(), row.getSortOrder(), row.getStatus()));
-        return new CategoryProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
+        return CategoryProfileVO.builder()
+                .category(row)
+                .revision("\"" + TokenUtils.digest(value) + "\"")
+                .build();
     }
 
     /**
@@ -265,13 +269,13 @@ public class CategoryServiceImpl extends ServiceImpl<CategoryMapper, BlogCategor
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogCategory row = lockCategory(id, "delete");
             checkRevision(row, revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             categories.deleteById(id);
         }
     }

@@ -114,7 +114,7 @@ public class VisitorController {
      */
     private ResponseEntity<Result<VisitorVO>> versionResponse(ResourceVersion<VisitorVO> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

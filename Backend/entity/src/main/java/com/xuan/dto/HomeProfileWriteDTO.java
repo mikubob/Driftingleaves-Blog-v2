@@ -5,48 +5,71 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Set;
 
 /**
  * 首次设置与完整替换均须提供全部字段，联系邮箱由管理员明确公开。
  */
-@Getter
-public class HomeProfileWriteDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class HomeProfileWriteDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 用户ID
     @NotNull
     private Long userId;
 
+    // 昵称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String nickname;
 
+    // 个人标语
     @NotNull
     @TextLength(max = 100)
     private String tagline;
 
+    // 描述
     @TextLength(min = 1, max = 500)
     private String description;
 
+    // 头像URL
     @TextLength(min = 1, max = 2048)
     private String avatar;
 
+    // 个人网站地址
     @TextLength(min = 1, max = 2048)
     private String website;
 
+    // 公开联系邮箱
     @Email
     @TextLength(min = 1, max = 254)
     private String publicEmail;
 
+    // GitHub地址
     @TextLength(min = 1, max = 2048)
     private String githubUrl;
 
+    // 属地信息
     @TextLength(min = 1, max = 100)
     private String location;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setUserId(Long value) {

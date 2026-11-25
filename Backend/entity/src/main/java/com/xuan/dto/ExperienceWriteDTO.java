@@ -6,8 +6,15 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.util.HashSet;
@@ -16,37 +23,52 @@ import java.util.Set;
 /**
  * 创建和修改共用资料字段，可空字段用null清空；状态不随资料修改。
  */
-@Getter
-public class ExperienceWriteDTO {
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ExperienceWriteDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 经历类型 0-工作 1-项目 2-教育
     @NotNull
     @Min(0)
     @Max(2)
     private Integer experienceType;
 
+    // 标题
     @NotNull
     @TextLength(min = 1, max = 200)
     private String title;
 
+    // 副标题
     @TextLength(min = 1, max = 200)
     private String subtitle;
 
+    // 网站图标URL
     @TextLength(min = 1, max = 2048)
     private String logoUrl;
 
+    // 内容
     @NotNull
     @TextLength(min = 1, max = 65535)
     private String content;
 
+    // 开始日期
     @NotNull
     private LocalDate startDate;
 
+    // 结束日期
     private LocalDate endDate;
 
+    // 排序权重
     @NotNull
     private Integer sortOrder;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setExperienceType(Integer value) {

@@ -69,7 +69,7 @@ public class StatisticsServiceImpl implements IStatisticsService {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.overview(range.lower(), range.upper(), query.siteCode(), now());
+        return statistics.overview(range.lower(), range.upper(), query.getSiteCode(), now());
     }
 
     /**
@@ -82,10 +82,14 @@ public class StatisticsServiceImpl implements IStatisticsService {
         Range range = range(query);
         limitReport();
         Map<LocalDate, ViewTrendVO> rows = new HashMap<>();
-        statistics.viewTrend(range.lower(), range.upper(), query.siteCode()).forEach(row -> rows.put(row.date(), row));
+        statistics.viewTrend(range.lower(), range.upper(), query.getSiteCode()).forEach(row -> rows.put(row.getDate(), row));
         List<ViewTrendVO> result = new ArrayList<>();
         for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) {
-            result.add(rows.getOrDefault(day, new ViewTrendVO(day, "0", "0")));
+            result.add(rows.getOrDefault(day, ViewTrendVO.builder()
+                    .date(day)
+                    .pageViewCount("0")
+                    .visitorCount("0")
+                    .build()));
         }
         return result;
     }
@@ -100,13 +104,17 @@ public class StatisticsServiceImpl implements IStatisticsService {
         Range range = range(query);
         limitReport();
         Map<LocalDate, VisitorTrendVO> rows = new HashMap<>();
-        statistics.visitorTrend(range.lower(), range.upper(), query.siteCode()).forEach(row -> rows.put(row.date(), row));
+        statistics.visitorTrend(range.lower(), range.upper(), query.getSiteCode()).forEach(row -> rows.put(row.getDate(), row));
         List<VisitorTrendVO> result = new ArrayList<>();
         BigInteger cumulative = BigInteger.ZERO;
         for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) {
-            String count = rows.containsKey(day) ? rows.get(day).newVisitorCount() : "0";
+            String count = rows.containsKey(day) ? rows.get(day).getNewVisitorCount() : "0";
             cumulative = cumulative.add(new BigInteger(count));
-            result.add(new VisitorTrendVO(day, count, cumulative.toString()));
+            result.add(VisitorTrendVO.builder()
+                    .date(day)
+                    .newVisitorCount(count)
+                    .cumulativeNewVisitorCount(cumulative.toString())
+                    .build());
         }
         return result;
     }
@@ -120,7 +128,7 @@ public class StatisticsServiceImpl implements IStatisticsService {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.provinces(range.lower(), range.upper(), query.siteCode());
+        return statistics.provinces(range.lower(), range.upper(), query.getSiteCode());
     }
 
     /**
@@ -132,7 +140,7 @@ public class StatisticsServiceImpl implements IStatisticsService {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.articles(range.lower(), range.upper(), query.limit());
+        return statistics.articles(range.lower(), range.upper(), query.getLimit());
     }
 
     /**
@@ -162,11 +170,11 @@ public class StatisticsServiceImpl implements IStatisticsService {
      */
     private Range range(StatisticsQueryDTO query) {
         try {
-            if ((query.begin() == null) != (query.end() == null)) {
+            if ((query.getBegin() == null) != (query.getEnd() == null)) {
                 throw new IllegalArgumentException();
             }
-            LocalDate begin = query.begin() == null ? LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC) : date(query.begin());
-            LocalDate end = query.end() == null ? begin : date(query.end());
+            LocalDate begin = query.getBegin() == null ? LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC) : date(query.getBegin());
+            LocalDate end = query.getEnd() == null ? begin : date(query.getEnd());
             if (end.isBefore(begin) || ChronoUnit.DAYS.between(begin, end) > 366) {
                 throw new IllegalArgumentException();
             }

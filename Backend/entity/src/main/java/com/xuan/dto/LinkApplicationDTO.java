@@ -2,25 +2,42 @@ package com.xuan.dto;
 
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.NotNull;
-import lombok.Getter;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 提交友链申请，只接收站点资料。
  */
-@Getter
-public class LinkApplicationDTO {
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class LinkApplicationDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 友链名称
     @NotNull
     @TextLength(min = 1, max = 100)
     private String linkName;
 
+    // 链接地址
     @NotNull
     @TextLength(min = 1, max = 2048)
     private String url;
 
+    // 头像URL
     @TextLength(max = 2048)
     private String avatar;
 
+    // 描述
     @TextLength(max = 255)
     private String description;
 

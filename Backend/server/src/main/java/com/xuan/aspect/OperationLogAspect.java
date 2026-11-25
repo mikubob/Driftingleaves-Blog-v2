@@ -216,7 +216,7 @@ public class OperationLogAspect {
                 var ids = json.createArrayNode();
                 for (Object value : selected) {
                     if (value instanceof BatchItemDTO item) {
-                        ids.add(item.id());
+                        ids.add(item.getId());
                     } else if (value instanceof String id) {
                         ids.add(id);
                     }
@@ -272,19 +272,19 @@ public class OperationLogAspect {
             return null;
         }
         if (value instanceof ResourceVersion<?> resource) {
-            return createdId(resource.value());
+            return createdId(resource.getValue());
         }
         return switch (value) {
-            case UserAdminVO user -> user.userId();
-            case RoleVO role -> role.roleId();
-            case PermissionVO permission -> permission.permissionId();
-            case MenuVO menu -> menu.menuId();
-            case ArticleProfileVO article -> article.article().getArticleId();
+            case UserAdminVO user -> user.getUserId();
+            case RoleVO role -> role.getRoleId();
+            case PermissionVO permission -> permission.getPermissionId();
+            case MenuVO menu -> menu.getMenuId();
+            case ArticleProfileVO article -> article.getArticle().getArticleId();
             case BlogCategory category -> category.getCategoryId();
             case BlogTag tag -> tag.getTagId();
             case BlogFriendLink link -> link.getLinkId();
-            case FileVO file -> file.fileId();
-            case MessagePrivateVO row -> row.messageId();
+            case FileVO file -> file.getFileId();
+            case MessagePrivateVO row -> row.getMessageId();
             case HomeProfile row -> row.getProfileId();
             case HomeSocialLink row -> row.getSocialId();
             case CvExperience row -> row.getExperienceId();

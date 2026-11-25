@@ -8,8 +8,15 @@ import jakarta.validation.constraints.Digits;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import lombok.experimental.SuperBuilder;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.Set;
@@ -17,38 +24,53 @@ import java.util.Set;
 /**
  * 创建和修改共用资料字段，可空字段用null清空；状态不随资料修改。
  */
-@Getter
-public class MusicWriteDTO {
+@Data
+@SuperBuilder
+@NoArgsConstructor
+@AllArgsConstructor
+public class MusicWriteDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 标题
     @NotNull
     @TextLength(min = 1, max = 200)
     private String title;
 
+    // 歌手
     @TextLength(min = 1, max = 200)
     private String artist;
 
+    // 时长（秒）
     @DecimalMin("0")
     @DecimalMax("4294967295")
     @Digits(integer = 10, fraction = 0)
     private BigDecimal durationSeconds;
 
+    // 封面图URL
     @TextLength(min = 1, max = 2048)
     private String coverUrl;
 
+    // 音频URL
     @NotNull
     @TextLength(min = 1, max = 2048)
     private String audioUrl;
 
+    // 歌词URL
     @TextLength(min = 1, max = 2048)
     private String lyricUrl;
 
+    // 歌词类型
     @Pattern(regexp = "lrc|json|txt", message = "请选择LRC、JSON或TXT歌词格式")
     private String lyricType;
 
+    // 排序权重
     @NotNull
     private Integer sortOrder;
 
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
 
     public void setTitle(String value) {

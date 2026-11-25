@@ -110,7 +110,7 @@ public class AuthorizationProvider implements StpInterface {
      */
     @Override
     public List<String> getPermissionList(Object loginId, String loginType) {
-        return capabilities(Long.parseLong(loginId.toString())).permissionCodes();
+        return capabilities(Long.parseLong(loginId.toString())).getPermissionCodes();
     }
 
     /**
@@ -134,14 +134,18 @@ public class AuthorizationProvider implements StpInterface {
         }
 
         // 2. 返回有效角色、权限和各自范围，不能按角色名给通配权限。
-        return new CapabilitiesVO(mapper.roleCodes(userId), List.copyOf(scopes.keySet()), scopes);
+        return CapabilitiesVO.builder()
+                .roleCodes(mapper.roleCodes(userId))
+                .permissionCodes(List.copyOf(scopes.keySet()))
+                .dataScopes(scopes)
+                .build();
     }
 
     /**
      * 获取操作权限范围，Mapper 仍需在 SQL 中限制归属，不能只依赖这里的检查。
      */
     public String requireScope(long userId, String permission) {
-        String scope = capabilities(userId).dataScopes().get(permission);
+        String scope = capabilities(userId).getDataScopes().get(permission);
         if (scope == null) {
             throw new BusinessException(403, "FORBIDDEN", "没有操作权限");
         }
@@ -155,12 +159,12 @@ public class AuthorizationProvider implements StpInterface {
     public List<MenuNodeVO> menus(long userId) {
         // 1. 先查后台入口权限，普通 member 不返回后台菜单。
         CapabilitiesVO capabilities = capabilities(userId);
-        if (!capabilities.permissionCodes().contains("admin:access")) {
+        if (!capabilities.getPermissionCodes().contains("admin:access")) {
             return List.of();
         }
 
         // 2. 菜单授权还要和有效权限一起检查；目录只管结构，授权的隐藏项保留。
-        Set<String> permissions = new HashSet<>(capabilities.permissionCodes());
+        Set<String> permissions = new HashSet<>(capabilities.getPermissionCodes());
         Map<Long, MenuGrant> candidates = new HashMap<>();
         for (MenuGrant menu : mapper.menus(userId)) {
             if ("D".equals(menu.getMenuType()) || permissions.contains(menu.getPermissionCode())) {
@@ -231,10 +235,26 @@ public class AuthorizationProvider implements StpInterface {
             }
 
             // 3. 有效的隐藏项和按钮原样保留，前端再按类型生成导航或操作。
-            result.add(new MenuNodeVO(node.getMenuId(), node.getParentId(), node.getMenuCode(), node.getMenuName(),
-                    node.getMenuType(), node.getRouteName(), node.getPath(), node.getComponent(), node.getIcon(),
-                    node.getPermissionId(), node.getSortOrder(), node.getIsVisible(), node.getKeepAlive(),
-                    node.getStatus(), node.getCreateTime(), node.getUpdateTime(), node.getPermissionCode(), nested));
+            result.add(MenuNodeVO.builder()
+                    .menuId(node.getMenuId())
+                    .parentId(node.getParentId())
+                    .menuCode(node.getMenuCode())
+                    .menuName(node.getMenuName())
+                    .menuType(node.getMenuType())
+                    .routeName(node.getRouteName())
+                    .path(node.getPath())
+                    .component(node.getComponent())
+                    .icon(node.getIcon())
+                    .permissionId(node.getPermissionId())
+                    .sortOrder(node.getSortOrder())
+                    .isVisible(node.getIsVisible())
+                    .keepAlive(node.getKeepAlive())
+                    .status(node.getStatus())
+                    .createTime(node.getCreateTime())
+                    .updateTime(node.getUpdateTime())
+                    .permissionCode(node.getPermissionCode())
+                    .children(nested)
+                    .build());
         }
         return result;
     }

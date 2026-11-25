@@ -58,8 +58,14 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "skills", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<SkillPublicVO> publicItems(DisplayQueryDTO query) {
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
-                .convert(row -> new SkillPublicVO(row.getSkillId(), row.getName(), row.getDescription(), row.getIcon(), row.getSortOrder())));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, true)
+                .convert(row -> SkillPublicVO.builder()
+                        .skillId(row.getSkillId())
+                        .name(row.getName())
+                        .description(row.getDescription())
+                        .icon(row.getIcon())
+                        .sortOrder(row.getSortOrder())
+                        .build()));
     }
 
     /**
@@ -69,7 +75,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CvSkill> listItems(DisplayQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, false));
     }
 
     /**
@@ -110,7 +116,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     public ResourceVersion<CvSkill> update(long id, SkillWriteDTO request, String revision) {
         validate(request);
         CvSkill row = lock(id, "update");
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         assign(row, request);
         items.replace(row);
         return profile(items.selectById(id));
@@ -186,13 +192,13 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             CvSkill row = lock(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             this.items.deleteById(id);
         }
     }
@@ -207,8 +213,8 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         List<CvSkill> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            CvSkill row = lock(IdUtils.parse(item.id()), "update");
-            RevisionUtils.check(profile(row).revision(), item.revision());
+            CvSkill row = lock(IdUtils.parse(item.getId()), "update");
+            RevisionUtils.check(profile(row).getRevision(), item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
@@ -217,7 +223,7 @@ public class SkillServiceImpl extends ServiceImpl<SkillMapper, CvSkill> implemen
                 this.items.updateStatus(row.getSkillId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getSkillId(), profile(row).revision());
+            versions.put(row.getSkillId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

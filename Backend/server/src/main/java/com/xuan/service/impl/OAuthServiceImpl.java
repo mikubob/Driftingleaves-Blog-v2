@@ -74,13 +74,21 @@ public class OAuthServiceImpl implements IOAuthService {
 
         // 3. 生成不可预测的 state，关联当前浏览器和操作，同一浏览器可以同时有多个流程。
         String state = TokenUtils.random();
-        OAuthFlow flow = new OAuthFlow(side.site(), TokenUtils.digest(browser), source, operation, userId, tokenHash,
-                authenticatedAt, clock.millis());
+        OAuthFlow flow = OAuthFlow.builder()
+                .site(side.site())
+                .browserHash(TokenUtils.digest(browser))
+                .source(source)
+                .operation(operation)
+                .userId(userId)
+                .tokenHash(tokenHash)
+                .authenticatedAt(authenticatedAt)
+                .createdAt(clock.millis())
+                .build();
 
         // 4. JustAuth 的 state 缓存照常保留，另存 300 秒有效的本站一次性流程。
         String url = providers.authorize(source, state);
         store.save("state", state, json.writeValueAsString(flow), Duration.ofSeconds(300));
-        return new OAuthAuthorizeVO(url, 300);
+        return OAuthAuthorizeVO.builder().authorizationUrl(url).expiresIn(300).build();
     }
 
     /**
@@ -101,20 +109,20 @@ public class OAuthServiceImpl implements IOAuthService {
         String registeredPath = providers.callbackPath(source);
         String raw = store.read("state", state);
         OAuthFlow flow = json.readValue(raw, OAuthFlow.class);
-        if (!source.equals(flow.source()) || flow.site() == null) {
+        if (!source.equals(flow.getSource()) || flow.getSite() == null) {
             throw RedisOAuthStore.invalid();
         }
 
-        String origin = sites.origin(flow.site());
+        String origin = sites.origin(flow.getSite());
         if (!origin.startsWith("https://")) {
             throw RedisOAuthStore.invalid();
         }
-        if (!side.site().equals(flow.site())) {
+        if (!side.site().equals(flow.getSite())) {
             if (!registeredPath.startsWith("/api/v1/" + side.site() + "/")) {
                 throw RedisOAuthStore.invalid();
             }
             // 登记回调只把请求转回发起端，由发起端检查浏览器 Cookie 后再换码。
-            UriComponentsBuilder redirect = UriComponentsBuilder.fromUriString(origin + "/api/v1/" + flow.site()
+            UriComponentsBuilder redirect = UriComponentsBuilder.fromUriString(origin + "/api/v1/" + flow.getSite()
                     + "/auth/oauth/" + source + "/callback").queryParam("state", state);
             if (error != null) {
                 return redirect.queryParam("error", "denied").build().toUriString();
@@ -124,12 +132,12 @@ public class OAuthServiceImpl implements IOAuthService {
             }
             return redirect.build().toUriString();
         }
-        requireBrowser(flow.browserHash(), browser);
+        requireBrowser(flow.getBrowserHash(), browser);
         String complete = origin + "/oauth/complete";
 
         // 2. 绑定按服务端保存的摘要重查原会话，平台回调不用带登录 Cookie。
-        if (flow.operation() == Operation.BIND) {
-            sessions.originalToken(flow.userId(), flow.tokenHash());
+        if (flow.getOperation() == Operation.BIND) {
+            sessions.originalToken(flow.getUserId(), flow.getTokenHash());
         }
 
         // 3. 换码前先一次性消费本站流程，并发或重放不能再调一次平台。
@@ -163,28 +171,36 @@ public class OAuthServiceImpl implements IOAuthService {
             long at = clock.millis();
             long userId;
             OAuthBindingVO binding = null;
-            if (flow.operation() == Operation.LOGIN) {
+            if (flow.getOperation() == Operation.LOGIN) {
                 userId = users.resolveOAuth(source, identity.uuid(), identity.nickname(), identity.avatar());
             } else {
-                userId = flow.userId();
-                binding = users.bindOAuth(userId, flow.tokenHash(), source, identity.uuid());
+                userId = flow.getUserId();
+                binding = users.bindOAuth(userId, flow.getTokenHash(), source, identity.uuid());
             }
 
             // 7. 只发 60 秒有效的结果票据，再跳固定完成页，URL 里不能带本站 Token。
             String ticket = TokenUtils.random();
-            OAuthTicket result = new OAuthTicket(flow.site(), flow.browserHash(), flow.source(), flow.operation(), userId,
-                    flow.tokenHash(), flow.operation() == Operation.LOGIN ? at : flow.authenticatedAt(), binding,
-                    identity.uuid());
+            OAuthTicket result = OAuthTicket.builder()
+                    .site(flow.getSite())
+                    .browserHash(flow.getBrowserHash())
+                    .source(flow.getSource())
+                    .operation(flow.getOperation())
+                    .userId(userId)
+                    .tokenHash(flow.getTokenHash())
+                    .authenticatedAt(flow.getOperation() == Operation.LOGIN ? at : flow.getAuthenticatedAt())
+                    .binding(binding)
+                    .uuid(identity.uuid())
+                    .build();
             store.save("ticket", ticket, json.writeValueAsString(result), Duration.ofSeconds(60));
-            return complete + "#ticket=" + ticket + "&operation=" + flow.operation();
+            return complete + "#ticket=" + ticket + "&operation=" + flow.getOperation();
         } catch (BusinessException exception) {
             LOGGER.log(System.Logger.Level.WARNING, "第三方授权未完成，平台={0}，操作={1}，错误码={2}",
-                    source, flow.operation(), exception.getCode());
+                    source, flow.getOperation(), exception.getCode());
             return complete + "#error=" + exception.getCode();
         } catch (DataAccessException | TransactionException exception) {
             // 可信流程消费后，业务或提交失败都跳固定完成页，不能再发票据。
             LOGGER.log(System.Logger.Level.ERROR, "第三方授权保存失败，平台={0}，操作={1}，异常类型={2}",
-                    source, flow.operation(), exception.getClass().getSimpleName());
+                    source, flow.getOperation(), exception.getClass().getSimpleName());
             return complete + "#error=SERVICE_UNAVAILABLE";
         } finally {
             // 8. 成功和失败都要清掉 JustAuth 校验值，已消费的本站流程不能恢复。
@@ -208,14 +224,14 @@ public class OAuthServiceImpl implements IOAuthService {
         // 1. 先取未过期票据并核对浏览器，不能让其他浏览器消耗结果。
         String raw = store.read("ticket", ticket);
         OAuthTicket result = json.readValue(raw, OAuthTicket.class);
-        requireBrowser(result.browserHash(), browser);
+        requireBrowser(result.getBrowserHash(), browser);
 
-        if (!side.site().equals(result.site())) {
+        if (!side.site().equals(result.getSite())) {
             throw RedisOAuthStore.invalid();
         }
 
         // 2. 绑定必须带发起时同一枚会话的 Cookie，就算是同一用户的另一枚也不行。
-        if (result.operation() == Operation.BIND) {
+        if (result.getOperation() == Operation.BIND) {
             if (side == WebSession.ADMIN) {
                 sessions.requireAdminAuthentication();
             }
@@ -224,24 +240,24 @@ public class OAuthServiceImpl implements IOAuthService {
                 throw RedisOAuthStore.invalid();
             }
             WebSession.requireExpectedUser(expectedUserId, sessions.currentUserId());
-            if (!Objects.equals(result.tokenHash(), TokenUtils.digest(token))) {
+            if (!Objects.equals(result.getTokenHash(), TokenUtils.digest(token))) {
                 throw RedisOAuthStore.invalid();
             }
-            sessions.requireActive(token, result.userId());
+            sessions.requireActive(token, result.getUserId());
         }
 
         // 3. 一次性消费后才处理兑换，响应丢失也不能重复用票据。
         store.consume("ticket", ticket, raw);
 
         // 4. 登录在用户锁内重查绑定并发会话，绑定只核对身份、返回绑定结果。
-        if (result.operation() == Operation.LOGIN) {
-            return users.loginOAuth(result.userId(), result.source(), result.uuid(), result.authenticatedAt(),
+        if (result.getOperation() == Operation.LOGIN) {
+            return users.loginOAuth(result.getUserId(), result.getSource(), result.getUuid(), result.getAuthenticatedAt(),
                     side.timeoutSeconds());
         }
-        if (users.requireCurrent() != result.userId()) {
+        if (users.requireCurrent() != result.getUserId()) {
             throw RedisOAuthStore.invalid();
         }
-        return new OAuthBindResultVO("BIND", result.binding());
+        return OAuthBindResultVO.builder().operation("BIND").binding(result.getBinding()).build();
     }
 
     /**

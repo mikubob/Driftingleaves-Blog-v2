@@ -64,7 +64,7 @@ public class AuthController {
     public ResponseEntity<Result<MeVO>> register(@Valid @RequestBody RegisterDTO body,
             HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        log.info("用户注册: username={}", body.username());
+        log.info("用户注册: username={}", body.getUsername());
         MeVO me = authService.register(body, request, browser);
         return ResponseEntity.status(201).body(Result.ok(me));
     }
@@ -80,7 +80,7 @@ public class AuthController {
     @RateLimit(value = "login-total", limit = 30)
     public ResponseEntity<Result<SessionVO>> login(@Valid @RequestBody LoginDTO body,
             HttpServletRequest request) {
-        log.info("用户名密码登录: username={}", body.username());
+        log.info("用户名密码登录: username={}", body.getUsername());
         WebSession side = WebSession.forPath(request.getServletPath());
         LoginSession session = authService.login(body, side, request);
         return side.login(session);
@@ -112,7 +112,7 @@ public class AuthController {
     @PostMapping("/blog/auth/email-code")
     public Result<Void> blogEmailCode(@Valid @RequestBody EmailCodeDTO body,
             HttpServletRequest request) {
-        log.info("发送博客端邮箱验证码: purpose={}", body.purpose());
+        log.info("发送博客端邮箱验证码: purpose={}", body.getPurpose());
         authService.sendBlogEmailCode(body, request);
         return Result.ok(null);
     }
@@ -176,10 +176,10 @@ public class AuthController {
             @Valid @RequestBody OAuthAuthorizeDTO body,
             HttpServletRequest request,
             @CookieValue(value = BROWSER_COOKIE, required = false) String browser) {
-        log.info("发起第三方授权: source={}, operation={}", source, body.operation());
+        log.info("发起第三方授权: source={}, operation={}", source, body.getOperation());
         WebSession side = WebSession.forPath(request.getServletPath());
         OAuthAuthorizeSession authorizeSession = authService.authorize(side, source, body, request, browser);
-        ResponseCookie cookie = ResponseCookie.from(BROWSER_COOKIE, authorizeSession.browserId())
+        ResponseCookie cookie = ResponseCookie.from(BROWSER_COOKIE, authorizeSession.getBrowserId())
                 .secure(true)
                 .httpOnly(true)
                 .sameSite("Lax")
@@ -188,7 +188,7 @@ public class AuthController {
                 .build();
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookie.toString())
-                .body(Result.ok(authorizeSession.authorize()));
+                .body(Result.ok(authorizeSession.getAuthorize()));
     }
 
     /**
@@ -232,7 +232,7 @@ public class AuthController {
         WebSession side = WebSession.forPath(request.getServletPath());
         Object result = authService.exchange(side, body, request, browser);
         if (result instanceof LoginSession login) {
-            OAuthLoginResultVO loginResult = new OAuthLoginResultVO("LOGIN", login.response());
+            OAuthLoginResultVO loginResult = OAuthLoginResultVO.builder().operation("LOGIN").session(login.getResponse()).build();
             return ResponseEntity.ok()
                     .header(HttpHeaders.SET_COOKIE, side.issue(login))
                     .body(Result.ok(loginResult));

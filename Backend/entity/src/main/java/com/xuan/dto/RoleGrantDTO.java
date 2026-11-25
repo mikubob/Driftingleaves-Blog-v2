@@ -3,15 +3,37 @@ package com.xuan.dto;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.List;
 
 /**
  * 权限和菜单一起完整替换，任意一组不合法就全部拒绝。
  */
-public record RoleGrantDTO(@NotNull @Size(max = 1000) List<@NotNull Long> permissionIds,
-                           @NotNull @Size(max = 1000) List<@NotNull Long> menuIds) {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RoleGrantDTO implements Serializable {
+
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 权限ID列表
+    @NotNull
+    @Size(max = 1000)
+    private List<@NotNull Long> permissionIds;
+
+    // 菜单ID列表
+    @NotNull
+    @Size(max = 1000)
+    private List<@NotNull Long> menuIds;
 
     /**
      * 检查授权列表，权限 ID 和菜单 ID 在各自列表中不能重复。

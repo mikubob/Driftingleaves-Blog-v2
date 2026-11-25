@@ -80,10 +80,10 @@ public class MusicController {
     public ResponseEntity<Result<BlogMusic>> create(@Valid @RequestBody MusicCreateDTO request) {
         log.info("新增音乐: {}", request);
         ResourceVersion<BlogMusic> result = musicService.create(request);
-        URI location = URI.create("/api/v1/admin/music/" + result.value().getMusicId());
+        URI location = URI.create("/api/v1/admin/music/" + result.getValue().getMusicId());
         return ResponseEntity.created(location)
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 
     /**
@@ -140,7 +140,7 @@ public class MusicController {
      */
     private ResponseEntity<Result<BlogMusic>> versionResponse(ResourceVersion<BlogMusic> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

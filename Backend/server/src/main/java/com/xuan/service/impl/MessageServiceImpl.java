@@ -78,7 +78,11 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> implements IMessageService {
 
-    private static final MessagePublicQueryDTO ANONYMOUS_HOME = new MessagePublicQueryDTO(1, 10, null);
+    private static final MessagePublicQueryDTO ANONYMOUS_HOME = MessagePublicQueryDTO.builder()
+            .page(1)
+            .pageSize(10)
+            .parentId(null)
+            .build();
 
     private final MessageMapper messages;
     private final SiteConfigMapper configs;
@@ -151,7 +155,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
      */
     private PageResult<MessagePublicVO> loadPublicMessages(MessagePublicQueryDTO query, Long viewer) {
         // 1. 加载全部留言节点并建立索引，校验目标父留言对当前读者可见。
-        Long parent = IdUtils.parse(query.parentId());
+        Long parent = IdUtils.parse(query.getParentId());
         List<MessageNode> nodes = messages.nodes();
         Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
         if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
@@ -191,16 +195,16 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
         Set<Long> selectedIds = new HashSet<>(selected);
         List<Long> visible = nodes.stream().map(MessageNode::getMessageId).filter(selectedIds::contains).toList();
-        int from = Math.min(visible.size(), (query.page() - 1) * query.pageSize());
-        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.pageSize()));
+        int from = Math.min(visible.size(), (query.getPage() - 1) * query.getPageSize());
+        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.getPageSize()));
         List<MessagePublicVO> rows = CollUtil.isEmpty(ids) ? List.of() : messages.visibleRows(ids).stream()
                 .map(row -> {
                     row.setReplyCount(replyCounts.getOrDefault(row.getMessageId(), 0L));
                     row.setReplyable(replyable.contains(row.getMessageId()));
                     return publicView(row, viewer);
                 }).toList();
-        return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visible.size()),
-                Long.toString((visible.size() + (long) query.pageSize() - 1) / query.pageSize()), rows);
+        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visible.size()),
+                Long.toString((visible.size() + (long) query.getPageSize() - 1) / query.getPageSize()), rows);
     }
 
     /**
@@ -223,13 +227,14 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireReplyable(path, actor, false);
 
         // 3. 作者取当前会话，管理员免审，其余按站点配置决定审核状态。
-        BlogMessage row = new BlogMessage();
-        row.setUserId(actor);
-        row.setParentId(request.getParentId());
-        row.setContent(request.getContent());
-        row.setContentFormat(request.getContentFormat());
-        row.setNotifyReply(request.getNotifyReply());
-        row.setIsSecret(request.getIsSecret() == 1 || secret(path) ? 1 : 0);
+        BlogMessage row = BlogMessage.builder()
+                .userId(actor)
+                .parentId(request.getParentId())
+                .content(request.getContent())
+                .contentFormat(request.getContentFormat())
+                .notifyReply(request.getNotifyReply())
+                .isSecret(request.getIsSecret() == 1 || secret(path) ? 1 : 0)
+                .build();
         boolean reviewRequired = policy.get("reviewRequired").asBoolean()
                 && !authorization.getRoleList(actor, null).contains("admin");
         row.setStatus(reviewRequired ? 0 : 1);
@@ -252,7 +257,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<MessagePrivateVO> ownMessages(MessageOwnQueryDTO query) {
         long actor = requireMember(null);
-        var result = messages.messagePage(new Page<>(query.page(), query.pageSize()), actor, query.status(),
+        var result = messages.messagePage(new Page<>(query.getPage(), query.getPageSize()), actor, query.getStatus(),
                 null, null, null);
         if (result.getRecords().isEmpty()) {
             return PageResult.from(result.convert(row -> privateView(row, actor)));
@@ -312,20 +317,20 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     public PageResult<MessagePrivateVO> adminMessages(MessageAdminQueryDTO query) {
         long actor = requireAdmin("query");
         Long parent;
-        if ("0".equals(query.parentId())) {
+        if ("0".equals(query.getParentId())) {
             parent = 0L;
         } else {
-            parent = IdUtils.parse(query.parentId());
+            parent = IdUtils.parse(query.getParentId());
         }
         if (parent != null && parent != 0L) {
             required(messages.scoped(parent, null));
         }
-        LocalDateTime begin = QueryTimeUtils.parse(query.begin());
-        LocalDateTime end = QueryTimeUtils.parse(query.end());
+        LocalDateTime begin = QueryTimeUtils.parse(query.getBegin());
+        LocalDateTime end = QueryTimeUtils.parse(query.getEnd());
         QueryTimeUtils.requireRange(begin, end);
         return PageResult.from(
-                messages.adminPage(new Page<>(query.page(), query.pageSize()), IdUtils.parse(query.userId()),
-                                query.status(), query.isSecret(), begin, end, parent)
+                messages.adminPage(new Page<>(query.getPage(), query.getPageSize()), IdUtils.parse(query.getUserId()),
+                                query.getStatus(), query.getIsSecret(), begin, end, parent)
                         .convert(row -> privateView(row, actor)));
     }
 
@@ -348,7 +353,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         List<MessagePrivateVO> records = replies.isEmpty() ? List.of()
                 : messages.visibleRows(replies).stream().map(row -> privateView(row, actor)).toList();
         return new DiscussionConversationVO<>(privateView(messages.visibleRows(List.of(page.rootId())).getFirst(), actor),
-                page.page(), query.pageSize(), page.total(), page.totalPages(), records);
+                page.page(), query.getPageSize(), page.total(), page.totalPages(), records);
     }
 
     /**
@@ -382,17 +387,18 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         requireReplyable(path, actor, true);
 
         // 2. 作者取实际操作人，保留上级留言的私密限制，后台回复直接设为审核通过。
-        BlogMessage row = new BlogMessage();
-        row.setUserId(actor);
-        row.setParentId(id);
-        row.setContent(request.getContent());
-        row.setContentFormat(request.getContentFormat());
-        row.setNotifyReply(request.getNotifyReply());
-        row.setIsSecret(secret(path) ? 1 : 0);
-        row.setStatus(1);
-        row.setLocation(locations.getIpLocation(ip));
-        row.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
-        row.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
+        BlogMessage row = BlogMessage.builder()
+                .userId(actor)
+                .parentId(id)
+                .content(request.getContent())
+                .contentFormat(request.getContentFormat())
+                .notifyReply(request.getNotifyReply())
+                .isSecret(secret(path) ? 1 : 0)
+                .status(1)
+                .location(locations.getIpLocation(ip))
+                .userAgentOs(UserAgentUtils.operatingSystem(userAgent))
+                .userAgentBrowser(UserAgentUtils.browser(userAgent))
+                .build();
 
         // 3. 保存回复后登记提交后的通知，不在事务提交前发送邮件。
         messages.insert(row);
@@ -584,13 +590,30 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
      */
     private MessagePrivateVO privateView(MessageRow row, Long viewer, Long rootParentId, Integer page) {
         MessagePublicVO value = publicView(row, viewer);
-        return new MessagePrivateVO(value.messageId(), value.parentId(), value.author(), value.content(),
-                value.htmlContent(), value.contentFormat(),
-                value.isSecret(), value.status(), value.editedAt(), value.isOwn(), value.createTime(),
-                value.updateTime(), row.getNotifyReply(), value.location(),
-                value.userAgentOs(), value.userAgentBrowser(), row.getHasChildren(),
-                row.getReplyToContent() == null ? null : value.replyTarget(), value.siteAuthor(), value.siteAdmin(),
-                rootParentId, page);
+        return MessagePrivateVO.builder()
+                .messageId(value.getMessageId())
+                .parentId(value.getParentId())
+                .author(value.getAuthor())
+                .content(value.getContent())
+                .htmlContent(value.getHtmlContent())
+                .contentFormat(value.getContentFormat())
+                .isSecret(value.getIsSecret())
+                .status(value.getStatus())
+                .editedAt(value.getEditedAt())
+                .isOwn(value.isOwn())
+                .createTime(value.getCreateTime())
+                .updateTime(value.getUpdateTime())
+                .notifyReply(row.getNotifyReply())
+                .location(value.getLocation())
+                .userAgentOs(value.getUserAgentOs())
+                .userAgentBrowser(value.getUserAgentBrowser())
+                .hasChildren(row.getHasChildren())
+                .replyTarget(row.getReplyToContent() == null ? null : value.getReplyTarget())
+                .siteAuthor(value.isSiteAuthor())
+                .siteAdmin(value.isSiteAdmin())
+                .rootParentId(rootParentId)
+                .page(page)
+                .build();
     }
 
     /**
@@ -601,16 +624,35 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         int format = row.getContentFormat();
         String html = format == 1 ? MarkdownUtils.toHtml(content) : "<p>" + content.replace("&", "&amp;")
                 .replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>\n") + "</p>";
-        return new MessagePublicVO(row.getMessageId(), row.getParentId(),
-                new ArticlePublicVO.Author(row.getUserId(), row.getAuthorNickname(),
-                        row.getAuthorAvatar()),
-                content, html, format, row.getIsSecret(), row.getStatus(), row.getEditedAt(),
-                Objects.equals(viewer, row.getUserId()), row.getCreateTime(), row.getUpdateTime(),
-                row.getLocation(), row.getUserAgentOs(),
-                row.getUserAgentBrowser(), row.getReplyCount(),
-                row.getParentId() == null ? null : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()),
-                row.getReplyable() == null ? row.getStatus() == 1 : row.getReplyable(),
-                row.isSiteAuthor(), row.isSiteAdmin());
+        return MessagePublicVO.builder()
+                .messageId(row.getMessageId())
+                .parentId(row.getParentId())
+                .author(ArticlePublicVO.Author.builder()
+                        .userId(row.getUserId())
+                        .nickname(row.getAuthorNickname())
+                        .avatar(row.getAuthorAvatar())
+                        .build())
+                .content(content)
+                .htmlContent(html)
+                .contentFormat(format)
+                .isSecret(row.getIsSecret())
+                .status(row.getStatus())
+                .editedAt(row.getEditedAt())
+                .isOwn(Objects.equals(viewer, row.getUserId()))
+                .createTime(row.getCreateTime())
+                .updateTime(row.getUpdateTime())
+                .location(row.getLocation())
+                .userAgentOs(row.getUserAgentOs())
+                .userAgentBrowser(row.getUserAgentBrowser())
+                .replyCount(row.getReplyCount())
+                .replyTarget(row.getParentId() == null ? null : DiscussionReplyTargetVO.builder()
+                        .nickname(row.getReplyToNickname())
+                        .content(row.getReplyToContent())
+                        .build())
+                .replyable(row.getReplyable() == null ? row.getStatus() == 1 : row.getReplyable())
+                .siteAuthor(row.isSiteAuthor())
+                .siteAdmin(row.isSiteAdmin())
+                .build();
     }
 
     /**
@@ -663,14 +705,14 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         var sorted = BatchUtils.sorted(items);
         Set<Long> selected = new HashSet<>();
         for (var item : items) {
-            selected.add(IdUtils.parse(item.id()));
+            selected.add(IdUtils.parse(item.getId()));
         }
         Map<Long, MessageRow> rows = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             List<BlogMessage> path = lockAdmin(id, "review");
             MessageRow row = required(messages.scoped(id, null));
-            RevisionUtils.check(revision(row), item.revision());
+            RevisionUtils.check(revision(row), item.getRevision());
             if (status == 1) {
                 for (BlogMessage parent : path.subList(0, path.size() - 1)) {
                     if (parent.getStatus() != 1 && !selected.contains(parent.getMessageId())) {
@@ -684,7 +726,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         // 2. 全部校验通过后再依次更新状态、登记审核通过通知并收集新版本。
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             MessageRow row = rows.get(id);
             boolean approved = row.getStatus() != 1 && status == 1;
             if (row.getStatus() != status) {

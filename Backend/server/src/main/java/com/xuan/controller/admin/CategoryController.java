@@ -138,7 +138,7 @@ public class CategoryController {
      */
     private ResponseEntity<Result<BlogCategory>> profileResponse(CategoryProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.category()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getCategory()));
     }
 }

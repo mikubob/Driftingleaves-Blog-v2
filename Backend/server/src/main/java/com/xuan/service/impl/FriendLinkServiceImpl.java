@@ -75,9 +75,15 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "links", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<LinkPublicVO> publicLinks(PageQueryDTO query) {
-        return PageResult.from(links.publicLinkPage(new Page<>(query.page(), query.pageSize()))
-                .convert(row -> new LinkPublicVO(row.getLinkId(), row.getLinkName(), row.getUrl(),
-                        row.getAvatar(), row.getDescription(), row.getSortOrder())));
+        return PageResult.from(links.publicLinkPage(new Page<>(query.getPage(), query.getPageSize()))
+                .convert(row -> LinkPublicVO.builder()
+                        .linkId(row.getLinkId())
+                        .linkName(row.getLinkName())
+                        .url(row.getUrl())
+                        .avatar(row.getAvatar())
+                        .description(row.getDescription())
+                        .sortOrder(row.getSortOrder())
+                        .build()));
     }
 
     /**
@@ -144,8 +150,8 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<AdminLinkVO> listLinks(LinkQueryDTO query) {
         requireAdmin("query");
-        Long applicantId = IdUtils.parse(query.applicantId());
-        return PageResult.from(links.adminLinkPage(new Page<>(query.page(), query.pageSize()), query, applicantId));
+        Long applicantId = IdUtils.parse(query.getApplicantId());
+        return PageResult.from(links.adminLinkPage(new Page<>(query.getPage(), query.getPageSize()), query, applicantId));
     }
 
     /**
@@ -326,13 +332,13 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         lockWriteAccounts("delete", null);
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             LinkApplicationRow row = lockLink(id, "delete");
             checkRevision(row, revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             links.deleteById(id);
         }
     }
@@ -348,8 +354,8 @@ public class FriendLinkServiceImpl extends ServiceImpl<FriendLinkMapper, BlogFri
         lockWriteAccounts("update", null);
         List<LinkApplicationRow> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            LinkApplicationRow row = lockLink(IdUtils.parse(item.id()), "update");
-            checkRevision(row, item.revision());
+            LinkApplicationRow row = lockLink(IdUtils.parse(item.getId()), "update");
+            checkRevision(row, item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();

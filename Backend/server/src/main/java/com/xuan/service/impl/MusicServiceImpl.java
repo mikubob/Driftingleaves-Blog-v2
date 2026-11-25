@@ -65,10 +65,18 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "music", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<MusicPublicVO> publicItems(DisplayQueryDTO query) {
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
-                .convert(row -> new MusicPublicVO(row.getMusicId(), row.getTitle(), row.getArtist(),
-                        row.getDurationSeconds(), row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(),
-                        row.getLyricType(), row.getSortOrder())));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, true)
+                .convert(row -> MusicPublicVO.builder()
+                        .musicId(row.getMusicId())
+                        .title(row.getTitle())
+                        .artist(row.getArtist())
+                        .durationSeconds(row.getDurationSeconds())
+                        .coverUrl(row.getCoverUrl())
+                        .audioUrl(row.getAudioUrl())
+                        .lyricUrl(row.getLyricUrl())
+                        .lyricType(row.getLyricType())
+                        .sortOrder(row.getSortOrder())
+                        .build()));
     }
 
     /**
@@ -78,7 +86,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogMusic> listItems(DisplayQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, false));
     }
 
     /**
@@ -128,7 +136,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         BlogMusic row = items.lockById(id);
         requireAdmin("update");
         requireItem(row);
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         validateFiles(request.getCoverUrl(), request.getAudioUrl(), request.getLyricUrl(), request.getLyricType());
         requireAdmin("update");
         assign(row, request);
@@ -260,13 +268,13 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogMusic row = lock(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             this.items.deleteById(id);
         }
     }
@@ -285,7 +293,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         if (status == 1) {
             var fileIds = new TreeSet<Long>();
             for (BatchItemDTO item : BatchUtils.sorted(items)) {
-                BlogMusic row = requireItem(this.items.selectById(IdUtils.parse(item.id())));
+                BlogMusic row = requireItem(this.items.selectById(IdUtils.parse(item.getId())));
                 for (String url : Arrays.asList(row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl())) {
                     Long fileId = resources.fileId(url);
                     if (fileId != null) {
@@ -301,8 +309,8 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
         // 2. 按 ID 升序锁定全部音乐记录，校验版本并在启用时复核文件引用有效性。
         List<BlogMusic> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            BlogMusic row = lock(IdUtils.parse(item.id()), "update");
-            RevisionUtils.check(profile(row).revision(), item.revision());
+            BlogMusic row = lock(IdUtils.parse(item.getId()), "update");
+            RevisionUtils.check(profile(row).getRevision(), item.getRevision());
             if (status == 1) {
                 validateFiles(row.getCoverUrl(), row.getAudioUrl(), row.getLyricUrl(), row.getLyricType());
                 requireAdmin("update");
@@ -317,7 +325,7 @@ public class MusicServiceImpl extends ServiceImpl<MusicMapper, BlogMusic> implem
                 this.items.updateStatus(row.getMusicId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getMusicId(), profile(row).revision());
+            versions.put(row.getMusicId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

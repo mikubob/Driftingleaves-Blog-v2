@@ -51,7 +51,7 @@ public class UserController {
     @SaCheckPermission("sys:user:query")
     public Result<PageResult<UserAdminVO>> list(@Valid @ModelAttribute AdminUserQueryDTO query) {
         log.info("分页查询用户列表: {}", query);
-        Long roleId = IdUtils.parse(query.roleId());
+        Long roleId = IdUtils.parse(query.getRoleId());
         PageResult<UserAdminVO> pageResult = userService.adminList(query, roleId);
         return Result.ok(pageResult);
     }
@@ -81,7 +81,7 @@ public class UserController {
     public ResponseEntity<Result<UserAdminVO>> create(@Valid @RequestBody AdminUserCreateDTO body) {
         log.info("创建用户: username={}", body.getUsername());
         UserAdminVO user = userService.adminCreate(body);
-        URI location = URI.create("/api/v1/admin/users/" + user.userId());
+        URI location = URI.create("/api/v1/admin/users/" + user.getUserId());
         return ResponseEntity.created(location).body(Result.ok(user));
     }
 
@@ -171,7 +171,7 @@ public class UserController {
      */
     private ResponseEntity<Result<UserAdminVO>> profileResponse(AdminUserProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.user()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getUser()));
     }
 }

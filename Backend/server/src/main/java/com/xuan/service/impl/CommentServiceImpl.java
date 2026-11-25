@@ -96,7 +96,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public PageResult<CommentPublicVO> publicComments(long article, CommentPublicQueryDTO query) {
         requirePublic(article);
         Long viewer = sessions.currentToken() == null ? null : requireMember(null);
-        Long parent = IdUtils.parse(query.parentId());
+        Long parent = IdUtils.parse(query.getParentId());
         // 本人待审内容不能进入共享缓存，匿名查询仍复用公开缓存。
         if (viewer != null) {
             return readPublicComments(article, query, viewer);
@@ -121,7 +121,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
      */
     private PageResult<CommentPublicVO> readPublicComments(long article, CommentPublicQueryDTO query, Long viewer) {
         // 1. 加载文章评论节点，计算当前读者可见集合与可回复集合。
-        Long parent = IdUtils.parse(query.parentId());
+        Long parent = IdUtils.parse(query.getParentId());
         List<CommentNode> nodes = articles.commentNodes(article);
         Set<Long> visible = CommentVisibilityPolicy.visible(nodes, viewer);
         Set<Long> replyable = viewer == null ? visible : CommentVisibilityPolicy.visible(nodes);
@@ -163,8 +163,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         if (parent == null) {
             visibleIds = visibleIds.reversed();
         }
-        int from = Math.min(visibleIds.size(), (query.page() - 1) * query.pageSize());
-        List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.pageSize()));
+        int from = Math.min(visibleIds.size(), (query.getPage() - 1) * query.getPageSize());
+        List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.getPageSize()));
 
         // 4. 仅针对当前页 ID 查询正文和用户信息，拼装分页结果返回。
         List<CommentPublicVO> records = new ArrayList<>();
@@ -176,8 +176,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 records.add(value);
             }
         }
-        return new PageResult<>(query.page(), query.pageSize(), Integer.toString(visibleIds.size()),
-                Long.toString((visibleIds.size() + (long) query.pageSize() - 1) / query.pageSize()), records);
+        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visibleIds.size()),
+                Long.toString((visibleIds.size() + (long) query.getPageSize() - 1) / query.getPageSize()), records);
     }
 
     /**
@@ -212,7 +212,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         requirePublic(article);
 
         // 2. 回复评论时先确认父评论归属当前文章再加锁。
-        Long parentId = request.parentId();
+        Long parentId = request.getParentId();
         if (parentId != null) {
             CommentRow parent = requireComment(comments.scoped(parentId, null, null, false));
             if (parent.getArticleId() != article) {
@@ -240,12 +240,13 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
 
         // 4. 组装纯文本评论与环境信息，根据审核策略和角色决定初始状态后保存。
-        BlogComment comment = new BlogComment();
-        comment.setArticleId(article);
-        comment.setUserId(actor);
-        comment.setParentId(parentId);
+        BlogComment comment = BlogComment.builder()
+                .articleId(article)
+                .userId(actor)
+                .parentId(parentId)
+                .build();
         // 纯文本原样保存，尖括号也是文字；响应没有 HTML 字段，展示端用文本节点渲染。
-        comment.setContent(request.content());
+        comment.setContent(request.getContent());
         comment.setLocation(locations.getIpLocation(ip));
         comment.setUserAgentOs(UserAgentUtils.operatingSystem(userAgent));
         comment.setUserAgentBrowser(UserAgentUtils.browser(userAgent));
@@ -265,8 +266,8 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CommentOwnVO> ownComments(CommentOwnQueryDTO query) {
         long actor = requireMember(null);
-        var result = comments.commentPage(new Page<>(query.page(), query.pageSize()),
-                IdUtils.parse(query.articleId()), actor, query.status(), LocalDateTime.now(ZoneOffset.UTC));
+        var result = comments.commentPage(new Page<>(query.getPage(), query.getPageSize()),
+                IdUtils.parse(query.getArticleId()), actor, query.getStatus(), LocalDateTime.now(ZoneOffset.UTC));
         Map<Long, List<CommentRow>> byArticle = new HashMap<>();
         for (CommentRow row : result.getRecords()) {
             byArticle.computeIfAbsent(row.getArticleId(), id -> new ArrayList<>()).add(row);
@@ -329,16 +330,16 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public PageResult<CommentAdminVO> adminComments(CommentAdminQueryDTO query) {
         Long author = requireAdmin("query");
         Long parent;
-        if ("0".equals(query.parentId())) {
+        if ("0".equals(query.getParentId())) {
             parent = 0L;
         } else {
-            parent = IdUtils.parse(query.parentId());
+            parent = IdUtils.parse(query.getParentId());
         }
         if (parent != null && parent != 0L) {
             requireComment(comments.scoped(parent, author, null, false));
         }
-        return PageResult.from(comments.adminPage(new Page<>(query.page(), query.pageSize()),
-                        IdUtils.parse(query.articleId()), IdUtils.parse(query.userId()), query.status(), author, parent)
+        return PageResult.from(comments.adminPage(new Page<>(query.getPage(), query.getPageSize()),
+                        IdUtils.parse(query.getArticleId()), IdUtils.parse(query.getUserId()), query.getStatus(), author, parent)
                 .convert(this::adminView));
     }
 
@@ -361,7 +362,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         List<CommentAdminVO> records = replies.isEmpty() ? List.of()
                 : comments.publicRows(target.getArticleId(), replies, true).stream().map(this::adminView).toList();
         return new DiscussionConversationVO<>(adminView(requireComment(comments.scoped(page.rootId(), author, null, false))),
-                page.page(), query.pageSize(), page.total(), page.totalPages(), records);
+                page.page(), query.getPageSize(), page.total(), page.totalPages(), records);
     }
 
     /**
@@ -519,7 +520,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
      * 把后台评论详情与当前版本一起返回。
      */
     private CommentProfileVO profile(CommentRow row) {
-        return new CommentProfileVO(adminView(row), revision(row));
+        return CommentProfileVO.builder().comment(adminView(row)).revision(revision(row)).build();
     }
 
     /**
@@ -549,7 +550,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         value.setArticleTitle(row.getArticleTitle());
         value.setHasChildren(row.getHasChildren());
         value.setReplyTarget(row.getParentId() == null ? null
-                : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()));
+                : DiscussionReplyTargetVO.builder()
+                        .nickname(row.getReplyToNickname())
+                        .content(row.getReplyToContent())
+                        .build());
         value.setArticleAuthor(row.isArticleAuthor());
         value.setSiteAuthor(row.isSiteAuthor());
         value.setSiteAdmin(row.isSiteAdmin());
@@ -560,23 +564,27 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
      * 只返回前台评论字段及可见回复数。
      */
     private CommentPublicVO publicView(CommentRow row) {
-        CommentPublicVO value = new CommentPublicVO();
-        value.setCommentId(row.getCommentId());
-        value.setArticleId(row.getArticleId());
-        value.setParentId(row.getParentId());
-        value.setContent(row.getContent());
-        value.setLocation(row.getLocation());
-        value.setUserAgentOs(row.getUserAgentOs());
-        value.setUserAgentBrowser(row.getUserAgentBrowser());
-        value.setStatus(row.getStatus());
-        value.setCreateTime(row.getCreateTime());
-        value.setUpdateTime(row.getUpdateTime());
-        value.setAuthor(author(row));
-        value.setReplyCount(row.getReplyCount());
-        value.setSiteAuthor(row.isSiteAuthor());
-        value.setSiteAdmin(row.isSiteAdmin());
+        CommentPublicVO value = CommentPublicVO.builder()
+                .commentId(row.getCommentId())
+                .articleId(row.getArticleId())
+                .parentId(row.getParentId())
+                .content(row.getContent())
+                .location(row.getLocation())
+                .userAgentOs(row.getUserAgentOs())
+                .userAgentBrowser(row.getUserAgentBrowser())
+                .status(row.getStatus())
+                .createTime(row.getCreateTime())
+                .updateTime(row.getUpdateTime())
+                .author(author(row))
+                .replyCount(row.getReplyCount())
+                .siteAuthor(row.isSiteAuthor())
+                .siteAdmin(row.isSiteAdmin())
+                .build();
         value.setReplyTarget(row.getParentId() == null ? null
-                : new DiscussionReplyTargetVO(row.getReplyToNickname(), row.getReplyToContent()));
+                : DiscussionReplyTargetVO.builder()
+                        .nickname(row.getReplyToNickname())
+                        .content(row.getReplyToContent())
+                        .build());
         return value;
     }
 
@@ -584,8 +592,11 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
      * 返回作者的公开昵称和头像。
      */
     private Author author(CommentRow row) {
-        return new Author(row.getUserId(), row.getAuthorNickname(),
-                row.getAuthorAvatar());
+        return Author.builder()
+                .userId(row.getUserId())
+                .nickname(row.getAuthorNickname())
+                .avatar(row.getAuthorAvatar())
+                .build();
     }
 
     /**
@@ -611,17 +622,17 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @CacheEvict(cacheNames = "comments", allEntries = true)
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
-        lockBatchArticles(items.stream().map(item -> IdUtils.parse(item.id())).toList(), "review");
+        lockBatchArticles(items.stream().map(item -> IdUtils.parse(item.getId())).toList(), "review");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String expected = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String expected = item.getRevision();
             CommentRow row = lockComment(id, "review", false);
             checkRevision(row, expected);
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, review(id, status, item.revision()).revision());
+            long id = IdUtils.parse(item.getId());
+            versions.put(id, review(id, status, item.getRevision()).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

@@ -98,8 +98,8 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<FileVO> listFiles(FileQueryDTO query) {
-        Long filter = query.uploaderId() == null ? null : IdUtils.parse(query.uploaderId());
-        return PageResult.from(files.filePage(new Page<>(query.page(), query.pageSize()), query,
+        Long filter = query.getUploaderId() == null ? null : IdUtils.parse(query.getUploaderId());
+        return PageResult.from(files.filePage(new Page<>(query.getPage(), query.getPageSize()), query,
                 requireAdmin("query"), filter).convert(this::view));
     }
 
@@ -123,7 +123,7 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
     public URI uploadDisplayImage(MultipartFile file, String usage) {
         URI publicApi = publicSiteProperties.base("api");
         FileVO value = fileService.getObject().upload(file, true, usage);
-        return URI.create(publicApi + "/blog/display-images/" + value.fileId());
+        return URI.create(publicApi + "/blog/display-images/" + value.getFileId());
     }
 
     /**
@@ -236,7 +236,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
             case "image/png" -> "image.png";
             default -> "image.jpg";
         };
-        return new FileContent(name, file.getMimeType(), storage.read(file));
+        return FileContent.builder()
+                .name(name)
+                .mimeType(file.getMimeType())
+                .bytes(storage.read(file))
+                .build();
     }
 
     /**
@@ -522,9 +526,20 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
         String objectKey = row.getObjectKey();
         String storedName = objectKey.substring(objectKey.lastIndexOf('/') + 1);
         String usage = row.getUploadUsage();
-        return new FileVO(row.getFileId(), row.getUploaderId(), row.getOriginalName(), storedName, row.getMimeType(),
-                row.getSizeBytes(), row.getStorageType(), row.getCreateTime(),
-                "/api/v1/admin/files/" + row.getFileId() + "/content", storage.isPublicImage(row), usage, List.of(usage));
+        return FileVO.builder()
+                .fileId(row.getFileId())
+                .uploaderId(row.getUploaderId())
+                .originalName(row.getOriginalName())
+                .storedName(storedName)
+                .mimeType(row.getMimeType())
+                .sizeBytes(row.getSizeBytes())
+                .storageType(row.getStorageType())
+                .createTime(row.getCreateTime())
+                .previewUrl("/api/v1/admin/files/" + row.getFileId() + "/content")
+                .publicImage(storage.isPublicImage(row))
+                .usage(usage)
+                .usages(List.of(usage))
+                .build();
     }
 
     /**
@@ -541,7 +556,11 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
      * 在持锁事务里读完文件，避免返回延迟流后状态已经变化。
      */
     private FileContent content(BlogFile row) {
-        return new FileContent(row.getOriginalName(), row.getMimeType(), storage.read(row));
+        return FileContent.builder()
+                .name(row.getOriginalName())
+                .mimeType(row.getMimeType())
+                .bytes(storage.read(row))
+                .build();
     }
 
     /**
@@ -587,22 +606,47 @@ public class FileServiceImpl extends ServiceImpl<FileMapper, BlogFile> implement
                     throw stopped;
                 }
                 fileService.getObject().delete(id);
-                results.add(new BatchFileResultVO(id, 200, "OK", "成功"));
+                results.add(BatchFileResultVO.builder()
+                        .id(id)
+                        .httpStatus(200)
+                        .code("OK")
+                        .msg("成功")
+                        .build());
             } catch (BusinessException error) {
-                results.add(new BatchFileResultVO(id, error.getStatus(), error.getCode(), error.getMessage()));
+                results.add(BatchFileResultVO.builder()
+                        .id(id)
+                        .httpStatus(error.getStatus())
+                        .code(error.getCode())
+                        .msg(error.getMessage())
+                        .build());
                 if (error.getStatus() == 401 || error.getStatus() == 403) {
                     stopped = error;
                 }
             } catch (NotLoginException error) {
                 stopped = new BusinessException(401, "UNAUTHENTICATED", "请重新登录");
-                results.add(new BatchFileResultVO(id, 401, stopped.getCode(), stopped.getMessage()));
+                results.add(BatchFileResultVO.builder()
+                        .id(id)
+                        .httpStatus(401)
+                        .code(stopped.getCode())
+                        .msg(stopped.getMessage())
+                        .build());
             } catch (DataAccessException | TransactionException error) {
-                results.add(new BatchFileResultVO(id, 503, "SERVICE_UNAVAILABLE", "文件服务暂不可用"));
+                results.add(BatchFileResultVO.builder()
+                        .id(id)
+                        .httpStatus(503)
+                        .code("SERVICE_UNAVAILABLE")
+                        .msg("文件服务暂不可用")
+                        .build());
             } catch (RuntimeException error) {
-                results.add(new BatchFileResultVO(id, 500, "INTERNAL_ERROR", "文件清理失败"));
+                results.add(BatchFileResultVO.builder()
+                        .id(id)
+                        .httpStatus(500)
+                        .code("INTERNAL_ERROR")
+                        .msg("文件清理失败")
+                        .build());
             }
         }
-        return new BatchFileResultsVO(results);
+        return BatchFileResultsVO.builder().results(results).build();
     }
 
 }

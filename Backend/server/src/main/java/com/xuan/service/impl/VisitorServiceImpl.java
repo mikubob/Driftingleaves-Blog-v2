@@ -61,7 +61,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<VisitorVO> listVisitors(VisitorQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(visitors.visitorPage(new Page<>(query.page(), query.pageSize()), query));
+        return PageResult.from(visitors.visitorPage(new Page<>(query.getPage(), query.getPageSize()), query));
     }
 
     /**
@@ -76,7 +76,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             throw new BusinessException(404, "NOT_FOUND", "访客统计不存在");
         }
         return new ResourceVersion<>(row, restrictionRevision(
-                row.isBlocked(), row.blockedUntil(), row.blockedIpAddress(), row.ipAddress()));
+                row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(), row.getIpAddress()));
     }
 
     /**
@@ -136,8 +136,8 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogVisitor row = lock(id, "delete");
             RevisionUtils.check(restrictionRevision(row), revision);
             LocalDateTime end = row.getBlockedUntil();
@@ -146,7 +146,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             }
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             visitors.deleteById(id);
         }
     }
@@ -163,9 +163,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         List<BlogVisitor> rows = new ArrayList<>();
         LocalDateTime end = QueryTimeUtils.parse(until);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             BlogVisitor row = lock(id, "block");
-            RevisionUtils.check(restrictionRevision(row), item.revision());
+            RevisionUtils.check(restrictionRevision(row), item.getRevision());
             String ip = row.getBlockedIpAddress();
             if (ip == null) {
                 ip = IpUtils.normalize(row.getIpAddress());
@@ -201,9 +201,9 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         var sorted = BatchUtils.sorted(items);
         List<BlogVisitor> rows = new ArrayList<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             BlogVisitor row = lock(id, "unblock");
-            RevisionUtils.check(restrictionRevision(row), item.revision());
+            RevisionUtils.check(restrictionRevision(row), item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();

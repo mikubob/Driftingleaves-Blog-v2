@@ -60,10 +60,18 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "experiences", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<ExperiencePublicVO> publicItems(ExperienceQueryDTO query) {
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, true)
-                .convert(row -> new ExperiencePublicVO(row.getExperienceId(), row.getExperienceType(), row.getTitle(),
-                        row.getSubtitle(), row.getLogoUrl(), row.getStartDate(), row.getEndDate(), row.getSortOrder(),
-                        MarkdownUtils.toHtml(row.getContent()))));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, true)
+                .convert(row -> ExperiencePublicVO.builder()
+                        .experienceId(row.getExperienceId())
+                        .experienceType(row.getExperienceType())
+                        .title(row.getTitle())
+                        .subtitle(row.getSubtitle())
+                        .logoUrl(row.getLogoUrl())
+                        .startDate(row.getStartDate())
+                        .endDate(row.getEndDate())
+                        .sortOrder(row.getSortOrder())
+                        .htmlContent(MarkdownUtils.toHtml(row.getContent()))
+                        .build()));
     }
 
     /**
@@ -73,7 +81,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<CvExperience> listItems(ExperienceQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, false));
     }
 
     /**
@@ -114,7 +122,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     public ResourceVersion<CvExperience> update(long id, ExperienceWriteDTO request, String revision) {
         validate(request);
         CvExperience row = lock(id, "update");
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         assign(row, request);
         items.replace(row);
         return profile(items.selectById(id));
@@ -196,13 +204,13 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             CvExperience row = lock(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             this.items.deleteById(id);
         }
     }
@@ -217,8 +225,8 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         List<CvExperience> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            CvExperience row = lock(IdUtils.parse(item.id()), "update");
-            RevisionUtils.check(profile(row).revision(), item.revision());
+            CvExperience row = lock(IdUtils.parse(item.getId()), "update");
+            RevisionUtils.check(profile(row).getRevision(), item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
@@ -227,7 +235,7 @@ public class ExperienceServiceImpl extends ServiceImpl<ExperienceMapper, CvExper
                 this.items.updateStatus(row.getExperienceId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getExperienceId(), profile(row).revision());
+            versions.put(row.getExperienceId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

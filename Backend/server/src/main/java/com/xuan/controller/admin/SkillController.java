@@ -80,10 +80,10 @@ public class SkillController {
     public ResponseEntity<Result<CvSkill>> create(@Valid @RequestBody SkillCreateDTO request) {
         log.info("新增技能: {}", request);
         ResourceVersion<CvSkill> result = skillService.create(request);
-        URI location = URI.create("/api/v1/admin/cv/skills/" + result.value().getSkillId());
+        URI location = URI.create("/api/v1/admin/cv/skills/" + result.getValue().getSkillId());
         return ResponseEntity.created(location)
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 
     /**
@@ -140,7 +140,7 @@ public class SkillController {
      */
     private ResponseEntity<Result<CvSkill>> versionResponse(ResourceVersion<CvSkill> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

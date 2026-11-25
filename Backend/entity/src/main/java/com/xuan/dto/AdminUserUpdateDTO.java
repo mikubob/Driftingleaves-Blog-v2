@@ -5,35 +5,59 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 修改资料要填全，可空字段也不能漏；用户名、密码和角色不在这里修改。
  */
-@Getter
-public class AdminUserUpdateDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class AdminUserUpdateDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 昵称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String nickname;
 
+    // 电子邮箱
     @Email
     @TextLength(max = 254)
     private String email;
 
+    // 头像URL
     @TextLength(max = 2048)
     private String avatar;
 
+    // 个人简介
     @TextLength(max = 500)
     private String intro;
 
+    // 是否传入邮箱
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean emailPresent;
 
+    // 是否传入头像
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean avatarPresent;
 
+    // 是否传入个人简介
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean introPresent;
 
     public void setNickname(String value) {

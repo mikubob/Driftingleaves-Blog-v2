@@ -107,8 +107,8 @@ public class MessageController {
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:message:moderate")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        log.info("批量删除留言: count={}", body.ids().size());
-        messageService.deleteBatch(body.ids());
+        log.info("批量删除留言: count={}", body.getIds().size());
+        messageService.deleteBatch(body.getIds());
         return Result.ok(null);
     }
 
@@ -138,7 +138,7 @@ public class MessageController {
      */
     private ResponseEntity<Result<MessagePrivateVO>> versionResponse(ResourceVersion<MessagePrivateVO> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

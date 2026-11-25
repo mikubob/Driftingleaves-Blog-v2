@@ -56,7 +56,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "tags", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<TagPublicDetailVO> publicTags(PageQueryDTO query) {
-        return PageResult.from(tags.publicPage(new Page<>(query.page(), query.pageSize()),
+        return PageResult.from(tags.publicPage(new Page<>(query.getPage(), query.getPageSize()),
                 LocalDateTime.now(ZoneOffset.UTC)));
     }
 
@@ -81,7 +81,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogTag> listTags(TagQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(tags.tagPage(new Page<>(query.page(), query.pageSize()), query));
+        return PageResult.from(tags.tagPage(new Page<>(query.getPage(), query.getPageSize()), query));
     }
 
     /**
@@ -115,9 +115,10 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     public BlogTag create(TagWriteDTO request) {
         users.lockById(sessions.currentUserId());
         requireAdmin("create");
-        BlogTag row = new BlogTag();
-        row.setTagName(request.getTagName());
-        row.setSlug(request.getSlug());
+        BlogTag row = BlogTag.builder()
+                .tagName(request.getTagName())
+                .slug(request.getSlug())
+                .build();
         tags.insert(row);
         return tags.selectById(row.getTagId());
     }
@@ -184,7 +185,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
      * 在标签锁内检查单个带引号的版本，不能用通配符跳过检查。
      */
     private void checkRevision(BlogTag row, String revision) {
-        RevisionUtils.check(profile(row).revision(), revision, "标签已修改，请重新获取");
+        RevisionUtils.check(profile(row).getRevision(), revision, "标签已修改，请重新获取");
     }
 
     /**
@@ -192,7 +193,7 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
      */
     private TagProfileVO profile(BlogTag row) {
         String value = json.writeValueAsString(List.of(row.getTagId(), row.getTagName(), row.getSlug()));
-        return new TagProfileVO(row, "\"" + TokenUtils.digest(value) + "\"");
+        return TagProfileVO.builder().tag(row).revision("\"" + TokenUtils.digest(value) + "\"").build();
     }
 
     /**
@@ -216,13 +217,13 @@ public class TagServiceImpl extends ServiceImpl<TagMapper, BlogTag> implements I
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             BlogTag row = lockTag(id, "delete");
             checkRevision(row, revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             tags.deleteById(id);
         }
     }

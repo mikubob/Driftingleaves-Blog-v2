@@ -85,7 +85,7 @@ public class MyCommentController {
      */
     private ResponseEntity<Result<CommentOwnVO>> versionResponse(ResourceVersion<CommentOwnVO> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

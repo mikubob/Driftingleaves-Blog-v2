@@ -174,11 +174,22 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * 直接从数据库分页查询公开文章，评论数由列表入口按页补充。
      */
     private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
-        YearMonth month = query.month() == null ? null : YearMonth.parse(query.month());
-        ArticleFilter filter = new ArticleFilter(true, null, query.keyword(), IdUtils.parse(query.categoryId()),
-                IdUtils.parse(query.tagId()), IdUtils.parse(query.authorId()), null, null, 0,
-                month == null ? null : month.atDay(1).atStartOfDay(), upper(month), now());
-        return PageResult.from(articles.articlePage(new Page<>(query.page(), query.pageSize()), filter)
+        YearMonth month = query.getMonth() == null ? null : YearMonth.parse(query.getMonth());
+        ArticleFilter filter = ArticleFilter.builder()
+                .publicOnly(true)
+                .scopeAuthor(null)
+                .keyword(query.getKeyword())
+                .categoryId(IdUtils.parse(query.getCategoryId()))
+                .tagId(IdUtils.parse(query.getTagId()))
+                .authorId(IdUtils.parse(query.getAuthorId()))
+                .status(null)
+                .visibility(null)
+                .trash(0)
+                .from(month == null ? null : month.atDay(1).atStartOfDay())
+                .until(upper(month))
+                .now(now())
+                .build();
+        return PageResult.from(articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter)
                 .convert(row -> publicView(row, new ArticlePublicVO())));
     }
 
@@ -189,7 +200,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "authors", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public PageResult<AuthorPublicVO> publicAuthors(PageQueryDTO query) {
-        return PageResult.from(articles.authorPage(new Page<>(query.page(), query.pageSize()), now()));
+        return PageResult.from(articles.authorPage(new Page<>(query.getPage(), query.getPageSize()), now()));
     }
 
     /**
@@ -214,11 +225,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     public PageResult<LikedArticleVO> likedArticles(PageQueryDTO query) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
-        return PageResult.from(articles.likedPage(new Page<>(query.page(), query.pageSize()), actor, now())
+        return PageResult.from(articles.likedPage(new Page<>(query.getPage(), query.getPageSize()), actor, now())
                 .convert(row -> {
                     ArticlePublicVO value = publicView(row, new ArticlePublicVO());
                     value.setCommentCount(commentCount(row.getArticleId()));
-                    return new LikedArticleVO(row.getLikedAt(), value);
+                    return LikedArticleVO.builder().likedAt(row.getLikedAt()).article(value).build();
                 }));
     }
 
@@ -297,10 +308,21 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<ArticleAdminVO> adminArticles(AdminArticleQueryDTO query) {
         Long scope = requireAdmin("query");
-        ArticleFilter filter = new ArticleFilter(false, scope, query.keyword(), IdUtils.parse(query.categoryId()),
-                IdUtils.parse(query.tagId()), IdUtils.parse(query.authorId()), query.status(), query.visibility(),
-                query.trash(), null, null, now());
-        return PageResult.from(articles.articlePage(new Page<>(query.page(), query.pageSize()), filter)
+        ArticleFilter filter = ArticleFilter.builder()
+                .publicOnly(false)
+                .scopeAuthor(scope)
+                .keyword(query.getKeyword())
+                .categoryId(IdUtils.parse(query.getCategoryId()))
+                .tagId(IdUtils.parse(query.getTagId()))
+                .authorId(IdUtils.parse(query.getAuthorId()))
+                .status(query.getStatus())
+                .visibility(query.getVisibility())
+                .trash(query.getTrash())
+                .from(null)
+                .until(null)
+                .now(now())
+                .build();
+        return PageResult.from(articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter)
                 .convert(row -> adminView(row, new ArticleAdminVO())));
     }
 
@@ -351,10 +373,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         requireAdmin("create");
 
         // 3. 以当前用户创建草稿，正文、标签和成功审计在同一事务提交。
-        BlogArticle article = new BlogArticle();
-        article.setAuthorId(sessions.currentUserId());
-        article.setStatus(0);
-        article.setViewCount(BigInteger.ZERO);
+        BlogArticle article = BlogArticle.builder()
+                .authorId(sessions.currentUserId())
+                .status(0)
+                .viewCount(BigInteger.ZERO)
+                .build();
         apply(article, request, references.coverUrl());
         articles.insert(article);
         saveBody(article.getArticleId(), request, references.html());
@@ -544,10 +567,17 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         LocalDateTime at = now();
         YearMonth month = "month".equals(period) ? YearMonth.from(at) : null;
         return articles.rankings(month == null ? null : month.atDay(1).atStartOfDay(), upper(month), at,
-                "like".equals(metric), limit).stream().map(row -> new HotArticleVO(row.getArticleId(), row.getTitle(),
-                row.getSlug(), row.getSummary(), row.getCoverUrl(), row.getViewCount(), row.getLikeCount(),
-                "like".equals(metric) ? BigInteger.valueOf(row.getLikeCount()) : row.getViewCount(),
-                row.getPublishTime())).toList();
+                "like".equals(metric), limit).stream().map(row -> HotArticleVO.builder()
+                        .articleId(row.getArticleId())
+                        .title(row.getTitle())
+                        .slug(row.getSlug())
+                        .summary(row.getSummary())
+                        .coverUrl(row.getCoverUrl())
+                        .viewCount(row.getViewCount())
+                        .likeCount(row.getLikeCount())
+                        .hotValue("like".equals(metric) ? BigInteger.valueOf(row.getLikeCount()) : row.getViewCount())
+                        .publishTime(row.getPublishTime())
+                        .build()).toList();
     }
 
     /**
@@ -758,7 +788,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setTagIds(value.getTags().stream().map(BlogTag::getTagId).toList());
         value.setMarkdownContent(markdown);
         resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
-        return new ArticleProfileVO(value, revision(row, markdown, value.getTagIds()));
+        return ArticleProfileVO.builder()
+                .article(value)
+                .revision(revision(row, markdown, value.getTagIds()))
+                .build();
     }
 
     /**
@@ -798,11 +831,19 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     private <T extends ArticlePublicVO> T publicView(ArticleRow row, T value) {
         value.setArticleId(row.getArticleId());
-        value.setAuthor(new ArticlePublicVO.Author(row.getAuthorId(), row.getAuthorNickname(), row.getAuthorAvatar()));
+        value.setAuthor(ArticlePublicVO.Author.builder()
+                .userId(row.getAuthorId())
+                .nickname(row.getAuthorNickname())
+                .avatar(row.getAuthorAvatar())
+                .build());
         BlogCategory category = row.getCategoryId() == null ? null : articles.category(row.getCategoryId());
-        value.setCategory(category == null || category.getStatus() != 1 ? null : new ArticlePublicVO.Category(
-                category.getCategoryId(), category.getCategoryName(), category.getSlug(), category.getDescription(),
-                category.getSortOrder()));
+        value.setCategory(category == null || category.getStatus() != 1 ? null : ArticlePublicVO.Category.builder()
+                .categoryId(category.getCategoryId())
+                .categoryName(category.getCategoryName())
+                .slug(category.getSlug())
+                .description(category.getDescription())
+                .sortOrder(category.getSortOrder())
+                .build());
         value.setTitle(row.getTitle());
         value.setSlug(row.getSlug());
         value.setSummary(row.getSummary());
@@ -817,7 +858,11 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
         value.setTags(articles.tags(row.getArticleId()).stream()
-                .map(tag -> new ArticlePublicVO.Tag(tag.getTagId(), tag.getTagName(), tag.getSlug())).toList());
+                .map(tag -> ArticlePublicVO.Tag.builder()
+                        .tagId(tag.getTagId())
+                        .tagName(tag.getTagName())
+                        .slug(tag.getSlug())
+                        .build()).toList());
         return value;
     }
 
@@ -831,7 +876,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     private <T extends ArticleAdminVO> T adminView(ArticleRow row, T value) {
         value.setArticleId(row.getArticleId());
         value.setAuthorId(row.getAuthorId());
-        value.setAuthor(new ArticleAdminVO.Author(row.getAuthorId(), row.getAuthorNickname()));
+        value.setAuthor(ArticleAdminVO.Author.builder()
+                .userId(row.getAuthorId())
+                .nickname(row.getAuthorNickname())
+                .build());
         value.setCategory(row.getCategoryId() == null ? null : articles.category(row.getCategoryId()));
         value.setTitle(row.getTitle());
         value.setSlug(row.getSlug());
@@ -916,14 +964,14 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "publish");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            LockedArticle locked = lockArticle(id, "publish", item.revision(), Set.of());
+            long id = IdUtils.parse(item.getId());
+            LockedArticle locked = lockArticle(id, "publish", item.getRevision(), Set.of());
             validateStatusChange(id, status, locked);
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, changeStatus(id, status, item.revision()).revision());
+            long id = IdUtils.parse(item.getId());
+            versions.put(id, changeStatus(id, status, item.getRevision()).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
@@ -952,13 +1000,13 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "delete");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             lockArticle(id, "delete", revision, Set.of());
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            recycle(id, item.revision());
+            long id = IdUtils.parse(item.getId());
+            recycle(id, item.getRevision());
         }
     }
 
@@ -986,8 +1034,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "restore");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
             if (article.getDeletedAt() == null) {
                 throw new BusinessException(409, "STATE_CONFLICT", "文章不在回收站");
@@ -995,8 +1043,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
         Map<Long, String> versions = new HashMap<>();
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            versions.put(id, restore(id, item.revision()).revision());
+            long id = IdUtils.parse(item.getId());
+            versions.put(id, restore(id, item.getRevision()).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
@@ -1025,16 +1073,16 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "purge");
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
             if (article.getDeletedAt() == null) {
                 throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
             }
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            purge(id, item.revision());
+            long id = IdUtils.parse(item.getId());
+            purge(id, item.getRevision());
         }
     }
 
@@ -1045,7 +1093,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         users.lockById(sessions.currentUserId());
         Set<Long> files = new TreeSet<>();
         for (var item : items) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             ArticleRow row = requireArticle(articles.scoped(id, requireAdmin(operation), false));
             files.addAll(resources.inspect(id, content(id).getMarkdownContent(), row.getCoverUrl()).fileIds());
         }

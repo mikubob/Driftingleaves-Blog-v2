@@ -224,7 +224,7 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
             for (Member member : List.copyOf(members.values())) {
                 try {
                     requireAlive(member, now);
-                    if (member.binding != null && member.binding.userId() != null && !member.checking
+                    if (member.binding != null && member.binding.getUserId() != null && !member.checking
                             && now - member.checkedAt >= 25_000) {
                         member.checking = true;
                         executor.execute(() -> checkIdentity(member));
@@ -278,8 +278,8 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
         try {
             String value = tickets.read(ticket);
             binding = json.readValue(value, OnlineBinding.class);
-            if (!binding.origin().equals(member.session.getAttributes().get("onlineOrigin"))
-                    || !binding.siteCode().equals(member.session.getAttributes().get("onlineSite"))) {
+            if (!binding.getOrigin().equals(member.session.getAttributes().get("onlineOrigin"))
+                    || !binding.getSiteCode().equals(member.session.getAttributes().get("onlineSite"))) {
                 throw OnlineTicketStore.invalid();
             }
             identities.requireActive(binding);
@@ -396,10 +396,10 @@ public class OnlineWebSocketHandler extends TextWebSocketHandler {
             if (binding == null) {
                 continue;
             }
-            if (binding.userId() == null) {
+            if (binding.getUserId() == null) {
                 guests.add(binding.browserKey());
             } else {
-                users.add(binding.userId());
+                users.add(binding.getUserId());
                 loggedBrowsers.add(binding.browserKey());
             }
         }

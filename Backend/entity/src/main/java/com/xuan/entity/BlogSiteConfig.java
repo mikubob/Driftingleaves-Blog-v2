@@ -4,44 +4,45 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
  * 这里只存站点展示和业务开关，不能存数据库、邮件或对象存储密码。
  */
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @TableName("blog_site_config")
-public class BlogSiteConfig {
+public class BlogSiteConfig implements Serializable {
 
-    /**
-     * 唯一配置键，如site、comment。
-     */
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 唯一配置键，如site、comment
     @TableId(value = "config_key", type = IdType.INPUT)
     private String configKey;
 
-    /**
-     * 配置先按原始 JSON 文本保存，怎么解析交给应用。
-     */
+    // 配置先按原始 JSON 文本保存，怎么解析交给应用
     @TableField("config_value")
     private String configValue;
 
-    /**
-     * 配置项用途说明。
-     */
+    // 配置项用途说明
     @TableField("description")
     private String description;
 
-    /**
-     * 只有明确标成 1 的配置才能返回前台。
-     */
+    // 只有明确标成 1 的配置才能返回前台
     @TableField("is_public")
     private Integer isPublic;
 
-    /**
-     * 修改记录时数据库自动更新时间，应用不用赋值。
-     */
+    // 修改记录时数据库自动更新时间，应用不用赋值
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

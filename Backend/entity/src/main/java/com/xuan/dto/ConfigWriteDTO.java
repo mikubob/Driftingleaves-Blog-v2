@@ -6,31 +6,46 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.util.Map;
 
 /**
  * 配置完整替换，内部对象由配置键的固定字段规则校验，不开放任意系统参数。
  */
-@Getter
-public class ConfigWriteDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class ConfigWriteDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 配置值
     @NotNull
-    @Setter
     private Map<String, Object> configValue;
 
+    // 描述
     @TextLength(max = 255)
     private String description;
 
+    // 是否公开 0-否 1-是
     @NotNull
     @Min(0)
     @Max(1)
-    @Setter
     private Integer isPublic;
 
+    // 是否传入描述
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean descriptionPresent;
 
     public void setDescription(String value) {

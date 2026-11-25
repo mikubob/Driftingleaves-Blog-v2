@@ -5,32 +5,50 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 修改分类要把资料填全，description 可以清空但不能漏传，展示状态单独批量修改。
  */
-@Getter
-public class CategoryUpdateDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class CategoryUpdateDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 分类名称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String categoryName;
 
+    // URL别名
     @NotNull
     @Pattern(regexp = "[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", message = "只能使用字母、数字及分隔词语的单个连字符，不能包含空格或连续连字符")
     @TextLength(max = 100)
     private String slug;
 
+    // 描述
     @TextLength(max = 255)
     private String description;
 
+    // 排序权重
     @NotNull
-    @Setter
     private Integer sortOrder;
 
+    // 是否传入描述
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean descriptionPresent;
 
     public void setCategoryName(String value) {

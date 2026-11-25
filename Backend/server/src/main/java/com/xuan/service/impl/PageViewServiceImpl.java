@@ -46,15 +46,15 @@ public class PageViewServiceImpl extends ServiceImpl<PageViewMapper, BlogPageVie
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<BlogPageView> listViews(PageViewQueryDTO query) {
         requireAdmin("query");
-        LocalDateTime begin = QueryTimeUtils.parse(query.begin());
-        LocalDateTime end = QueryTimeUtils.parse(query.end());
+        LocalDateTime begin = QueryTimeUtils.parse(query.getBegin());
+        LocalDateTime end = QueryTimeUtils.parse(query.getEnd());
         QueryTimeUtils.requireRange(begin, end);
-        if (query.pagePath() != null && !query.pagePath().equals(SitePathUtils.path(query.pagePath()))) {
+        if (query.getPagePath() != null && !query.getPagePath().equals(SitePathUtils.path(query.getPagePath()))) {
             throw new BusinessException(400, "VALIDATION_ERROR", "查询路径须为不含参数的规范路径");
         }
         return PageResult.from(
-                views.viewPage(new Page<>(query.page(), query.pageSize()), query, IdUtils.parse(query.visitorId()),
-                        IdUtils.parse(query.userId()), IdUtils.parse(query.articleId()), begin, end));
+                views.viewPage(new Page<>(query.getPage(), query.getPageSize()), query, IdUtils.parse(query.getVisitorId()),
+                        IdUtils.parse(query.getUserId()), IdUtils.parse(query.getArticleId()), begin, end));
     }
 
     /**

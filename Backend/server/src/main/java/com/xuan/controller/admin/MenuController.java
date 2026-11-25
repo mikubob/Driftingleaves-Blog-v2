@@ -78,7 +78,7 @@ public class MenuController {
     public ResponseEntity<Result<MenuVO>> create(@Valid @RequestBody MenuCreateDTO body) {
         log.info("新增菜单: menuCode={}", body.getMenuCode());
         MenuVO menu = menuService.create(body);
-        URI location = URI.create("/api/v1/admin/menus/" + menu.menuId());
+        URI location = URI.create("/api/v1/admin/menus/" + menu.getMenuId());
         return ResponseEntity.created(location).body(Result.ok(menu));
     }
 
@@ -136,7 +136,7 @@ public class MenuController {
      */
     private ResponseEntity<Result<MenuVO>> profileResponse(MenuProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.menu()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getMenu()));
     }
 }

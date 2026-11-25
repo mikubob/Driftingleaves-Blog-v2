@@ -61,7 +61,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<PermissionVO> listPermissions(PermissionQueryDTO query) {
         requireAdmin("sys:permission:query");
-        return PageResult.from(permissions.permissionPage(new Page<>(query.page(), query.pageSize()), query)
+        return PageResult.from(permissions.permissionPage(new Page<>(query.getPage(), query.getPageSize()), query)
                 .convert(this::view));
     }
 
@@ -89,12 +89,13 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     @OperationLog(type = "create", target = "sys:permission", permission = "sys:permission:create")
     public PermissionVO create(PermissionCreateDTO request) {
         lockUsers(null, "sys:permission:create");
-        SysPermission permission = new SysPermission();
-        permission.setPermissionCode(request.getPermissionCode());
-        permission.setPermissionName(request.getPermissionName());
-        permission.setModule(request.getModule());
-        permission.setDescription(request.getDescription());
-        permission.setStatus(request.getStatus());
+        SysPermission permission = SysPermission.builder()
+                .permissionCode(request.getPermissionCode())
+                .permissionName(request.getPermissionName())
+                .module(request.getModule())
+                .description(request.getDescription())
+                .status(request.getStatus())
+                .build();
         permissions.insert(permission);
         return view(permissions.selectById(permission.getPermissionId()));
     }
@@ -191,7 +192,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      * @param revision 客户端详情版本，拒绝通配符和多个版本
      */
     private void checkRevision(SysPermission permission, String revision) {
-        RevisionUtils.check(profile(permission).revision(), revision, "权限已修改，请重新获取");
+        RevisionUtils.check(profile(permission).getRevision(), revision, "权限已修改，请重新获取");
     }
 
     /**
@@ -202,9 +203,12 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      */
     private PermissionProfileVO profile(SysPermission permission) {
         PermissionVO value = view(permission);
-        String canonical = json.writeValueAsString(Arrays.asList(value.permissionId(), value.permissionCode(),
-                value.permissionName(), value.module(), value.description(), value.status()));
-        return new PermissionProfileVO(value, "\"" + TokenUtils.digest(canonical) + "\"");
+        String canonical = json.writeValueAsString(Arrays.asList(value.getPermissionId(), value.getPermissionCode(),
+                value.getPermissionName(), value.getModule(), value.getDescription(), value.getStatus()));
+        return PermissionProfileVO.builder()
+                .permission(value)
+                .revision("\"" + TokenUtils.digest(canonical) + "\"")
+                .build();
     }
 
     /**
@@ -214,10 +218,16 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
      * @return 对外字段及数据库维护的 UTC 审计时间
      */
     private PermissionVO view(SysPermission permission) {
-        return new PermissionVO(permission.getPermissionId(), permission.getPermissionCode(),
-                permission.getPermissionName(),
-                permission.getModule(), permission.getDescription(), permission.getStatus(),
-                permission.getCreateTime(), permission.getUpdateTime());
+        return PermissionVO.builder()
+                .permissionId(permission.getPermissionId())
+                .permissionCode(permission.getPermissionCode())
+                .permissionName(permission.getPermissionName())
+                .module(permission.getModule())
+                .description(permission.getDescription())
+                .status(permission.getStatus())
+                .createTime(permission.getCreateTime())
+                .updateTime(permission.getUpdateTime())
+                .build();
     }
 
     /**
@@ -235,7 +245,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         var sorted = BatchUtils.sorted(items);
         Set<Long> affected = new TreeSet<>();
         for (var item : sorted) {
-            affected.addAll(permissions.userIds(IdUtils.parse(item.id())));
+            affected.addAll(permissions.userIds(IdUtils.parse(item.getId())));
         }
         Set<Long> lockedUsers = new TreeSet<>(affected);
         lockedUsers.add(sessions.currentUserId());
@@ -245,8 +255,8 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
         // 2. 逐条锁定权限，复核版本、内置权限保护与菜单引用。
         for (var item : sorted) {
-            long permissionId = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long permissionId = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             SysPermission permission = permissions.lockById(permissionId);
             requireAdmin("sys:permission:delete");
             permission = requirePermission(permission);
@@ -268,7 +278,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
 
         // 3. 批量删除权限，校验仍存在有效管理员后撤销受影响用户会话。
         for (var item : sorted) {
-            permissions.deleteById(IdUtils.parse(item.id()));
+            permissions.deleteById(IdUtils.parse(item.getId()));
         }
         if (users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
@@ -293,7 +303,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         Set<Long> lockedUsers = new TreeSet<>();
         lockedUsers.add(sessions.currentUserId());
         for (BatchItemDTO item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             List<Long> userIds = permissions.userIds(id);
             related.put(id, userIds);
             lockedUsers.addAll(userIds);
@@ -303,10 +313,10 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         }
         List<SysPermission> rows = new ArrayList<>();
         for (BatchItemDTO item : sorted) {
-            SysPermission row = permissions.lockById(IdUtils.parse(item.id()));
+            SysPermission row = permissions.lockById(IdUtils.parse(item.getId()));
             requireAdmin("sys:permission:update");
             row = requirePermission(row);
-            checkRevision(row, item.revision());
+            checkRevision(row, item.getRevision());
             rows.add(row);
         }
 
@@ -322,7 +332,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
                 revoked.addAll(related.get(id));
                 protect |= AuthorizationProvider.ADMIN_PERMISSIONS.contains(row.getPermissionCode());
             }
-            versions.put(id, profile(row).revision());
+            versions.put(id, profile(row).getRevision());
         }
         if (protect && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");

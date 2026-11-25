@@ -200,8 +200,13 @@ public class SubscriptionNotifier {
             throw new IllegalStateException("订阅邮件轮次缺失");
         }
         String ticket = tickets.unsubscribeTicket(json.writeValueAsString(
-                new SubscriptionUnsubscribe(row.getSubscriptionId(), row.getEmail(), row.getVerifiedAt(),
-                        row.getSubscribeTime(), round)));
+                SubscriptionUnsubscribe.builder()
+                        .subscriptionId(row.getSubscriptionId())
+                        .email(row.getEmail())
+                        .verifiedAt(row.getVerifiedAt())
+                        .subscribeTime(row.getSubscribeTime())
+                        .round(round)
+                        .build()));
         String unsubscribeUrl = properties.getUnsubscribeUrl() + "#unsubscribeTicket=" + ticket;
         mail.send(row.getEmail(), subject, description + "\n" + detail + "\n" + url + "\n退订：" + unsubscribeUrl,
                 EmailTemplateUtils.notification(subject + "通知", description, detail, buttonText, url, unsubscribeUrl));

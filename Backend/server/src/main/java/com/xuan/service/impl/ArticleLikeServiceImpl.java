@@ -49,7 +49,7 @@ public class ArticleLikeServiceImpl implements IArticleLikeService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public LikeStateVO like(long article) {
         long actor = lockArticle(article);
-        if (!likes.state(article, actor).liked()) {
+        if (!likes.state(article, actor).isLiked()) {
             likes.add(article, actor);
         }
         return likes.state(article, actor);

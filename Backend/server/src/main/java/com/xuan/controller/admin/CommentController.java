@@ -105,8 +105,8 @@ public class CommentController {
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:comment:moderate")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        log.info("批量删除评论: count={}", body.ids().size());
-        commentService.moderateBatch(body.ids());
+        log.info("批量删除评论: count={}", body.getIds().size());
+        commentService.moderateBatch(body.getIds());
         return Result.ok(null);
     }
 
@@ -118,7 +118,7 @@ public class CommentController {
      */
     private ResponseEntity<Result<CommentAdminVO>> profileResponse(CommentProfileVO value) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, value.revision())
-                .body(Result.ok(value.comment()));
+                .header(HttpConstants.HEADER_X_REVISION, value.getRevision())
+                .body(Result.ok(value.getComment()));
     }
 }

@@ -5,26 +5,45 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+import java.io.Serial;
+import java.io.Serializable;
 
 /**
  * 角色资料要填全，状态单独批量修改，编码不能改，可空的说明也要传。
  */
-@Getter
-public class RoleUpdateDTO {
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class RoleUpdateDTO implements Serializable {
 
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 角色名称
     @NotNull
     @TextLength(min = 1, max = 64)
     private String roleName;
 
+    // 描述
     @TextLength(max = 255)
     private String description;
 
+    // 数据范围 ALL-全部 SELF-本人
     @NotNull
     @Pattern(regexp = "ALL|SELF", message = "请选择全部数据或本人数据")
     private String dataScope;
 
+    // 是否传入描述
     @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean descriptionPresent;
 
     public void setRoleName(String value) {

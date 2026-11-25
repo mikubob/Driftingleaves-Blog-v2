@@ -80,10 +80,10 @@ public class ExperienceController {
     public ResponseEntity<Result<CvExperience>> create(@Valid @RequestBody ExperienceCreateDTO request) {
         log.info("新增经历: {}", request);
         ResourceVersion<CvExperience> result = experienceService.create(request);
-        URI location = URI.create("/api/v1/admin/cv/experiences/" + result.value().getExperienceId());
+        URI location = URI.create("/api/v1/admin/cv/experiences/" + result.getValue().getExperienceId());
         return ResponseEntity.created(location)
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 
     /**
@@ -140,7 +140,7 @@ public class ExperienceController {
      */
     private ResponseEntity<Result<CvExperience>> versionResponse(ResourceVersion<CvExperience> result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.value()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getValue()));
     }
 }

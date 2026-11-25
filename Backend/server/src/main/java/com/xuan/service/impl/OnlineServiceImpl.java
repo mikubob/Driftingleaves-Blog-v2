@@ -49,7 +49,7 @@ public class OnlineServiceImpl implements IOnlineService {
     @Override
     public OnlineTicketVO issueForSite(String expectedSiteCode, OnlineTicketCreateDTO request, String origin,
             HttpServletRequest httpRequest) {
-        if (!expectedSiteCode.equals(request.siteCode())) {
+        if (!expectedSiteCode.equals(request.getSiteCode())) {
             throw new BusinessException(400, "VALIDATION_ERROR", "站点必须与接口所属端一致");
         }
         String clientIp = IpUtils.clientIp(httpRequest, auth.getTrustedProxies());
@@ -62,10 +62,10 @@ public class OnlineServiceImpl implements IOnlineService {
     @Override
     public OnlineTicketVO issue(OnlineTicketCreateDTO request, String origin, String ip) {
         // 1. 校验页面路径与所属站点来源是否匹配。
-        if (request.pagePath().contains("?") || request.pagePath().contains("#")) {
+        if (request.getPagePath().contains("?") || request.getPagePath().contains("#")) {
             throw new BusinessException(400, "VALIDATION_ERROR", "在线路径不能包含查询参数或片段");
         }
-        sites.requireSite(request.siteCode(), origin, SitePathUtils.path(request.pagePath()));
+        sites.requireSite(request.getSiteCode(), origin, SitePathUtils.path(request.getPagePath()));
 
         // 2. 已登录时校验当前会话并记录 Token 摘要与剩余有效期。
         String token = sessions.currentToken();
@@ -84,11 +84,20 @@ public class OnlineServiceImpl implements IOnlineService {
         }
 
         // 3. 按 IP 与浏览器维度限流后签发 30 秒有效的一次性票据。
-        OnlineBinding binding = new OnlineBinding(request.siteCode(), origin, request.fingerprint(),
-                userId, tokenHash, expiresAt);
+        OnlineBinding binding = OnlineBinding.builder()
+                .siteCode(request.getSiteCode())
+                .origin(origin)
+                .fingerprint(request.getFingerprint())
+                .userId(userId)
+                .tokenHash(tokenHash)
+                .expiresAt(expiresAt)
+                .build();
         String prefix = auth.getRedisPrefix() + "rate:online:ticket:";
         limiter.hit(List.of(prefix + "ip:" + TokenUtils.digest(ip),
                 prefix + "browser:" + TokenUtils.digest(binding.browserKey())), 60, List.of(120, 30));
-        return new OnlineTicketVO(tickets.issue(json.writeValueAsString(binding)), 30);
+        return OnlineTicketVO.builder()
+                .ticket(tickets.issue(json.writeValueAsString(binding)))
+                .expiresIn(30)
+                .build();
     }
 }

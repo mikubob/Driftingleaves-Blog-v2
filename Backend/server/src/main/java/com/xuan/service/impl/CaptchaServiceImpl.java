@@ -33,7 +33,11 @@ public class CaptchaServiceImpl implements ICaptchaService {
         var captcha = CaptchaUtils.create();
         String image = captcha.getImageBase64Data();
         String captchaId = captchaStore.issue(captcha.getCode());
-        return new CaptchaVO(captchaId, image, CaptchaStore.EXPIRES_IN);
+        return CaptchaVO.builder()
+                .captchaId(captchaId)
+                .imageBase64(image)
+                .expiresIn(CaptchaStore.EXPIRES_IN)
+                .build();
     }
 
     /**
@@ -69,6 +73,10 @@ public class CaptchaServiceImpl implements ICaptchaService {
 
         String question = left + " " + operator + " " + right + " = ?";
         String captchaId = captchaStore.issueArithmetic(answer);
-        return new ArithmeticCaptchaVO(captchaId, question, CaptchaStore.EXPIRES_IN);
+        return ArithmeticCaptchaVO.builder()
+                .captchaId(captchaId)
+                .question(question)
+                .expiresIn(CaptchaStore.EXPIRES_IN)
+                .build();
     }
 }

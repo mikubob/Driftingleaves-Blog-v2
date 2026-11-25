@@ -130,19 +130,20 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         visitors.visit(visitor);
 
         // 4. 同一事务保存一次浏览明细，不增加文章累计阅读，避免两个入口重复计数。
-        BlogPageView row = new BlogPageView();
-        row.setVisitorId(visitor.getVisitorId());
-        row.setUserId(actor);
-        row.setArticleId(request.getArticleId());
-        row.setSiteCode(request.getSiteCode());
-        row.setPagePath(path);
-        row.setPageTitle(request.getPageTitle());
-        row.setReferer(referer);
-        row.setIpAddress(address);
-        row.setUserAgent(agent);
-        row.setViewTime(at);
+        BlogPageView row = BlogPageView.builder()
+                .visitorId(visitor.getVisitorId())
+                .userId(actor)
+                .articleId(request.getArticleId())
+                .siteCode(request.getSiteCode())
+                .pagePath(path)
+                .pageTitle(request.getPageTitle())
+                .referer(referer)
+                .ipAddress(address)
+                .userAgent(agent)
+                .viewTime(at)
+                .build();
         views.insert(row);
-        return new TrackingResultVO(true);
+        return TrackingResultVO.builder().recorded(true).build();
     }
 
     /**

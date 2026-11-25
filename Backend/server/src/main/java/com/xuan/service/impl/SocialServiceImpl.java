@@ -58,7 +58,13 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "social", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
     public List<SocialPublicVO> publicItems() {
-        return items.publicItems().stream().map(row -> new SocialPublicVO(row.getSocialId(), row.getName(), row.getIcon(), row.getUrl(), row.getSortOrder())).toList();
+        return items.publicItems().stream().map(row -> SocialPublicVO.builder()
+                .socialId(row.getSocialId())
+                .name(row.getName())
+                .icon(row.getIcon())
+                .url(row.getUrl())
+                .sortOrder(row.getSortOrder())
+                .build()).toList();
     }
 
     /**
@@ -68,7 +74,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<HomeSocialLink> listItems(DisplayQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(items.resourcePage(new Page<>(query.page(), query.pageSize()), query, false));
+        return PageResult.from(items.resourcePage(new Page<>(query.getPage(), query.getPageSize()), query, false));
     }
 
     /**
@@ -109,7 +115,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     public ResourceVersion<HomeSocialLink> update(long id, SocialWriteDTO request, String revision) {
         validate(request);
         HomeSocialLink row = lock(id, "update");
-        RevisionUtils.check(profile(row).revision(), revision);
+        RevisionUtils.check(profile(row).getRevision(), revision);
         assign(row, request);
         items.replace(row);
         return profile(items.selectById(id));
@@ -188,13 +194,13 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long id = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             HomeSocialLink row = lock(id, "delete");
-            RevisionUtils.check(profile(row).revision(), revision);
+            RevisionUtils.check(profile(row).getRevision(), revision);
         }
         for (var item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             this.items.deleteById(id);
         }
     }
@@ -209,8 +215,8 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         List<HomeSocialLink> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            HomeSocialLink row = lock(IdUtils.parse(item.id()), "update");
-            RevisionUtils.check(profile(row).revision(), item.revision());
+            HomeSocialLink row = lock(IdUtils.parse(item.getId()), "update");
+            RevisionUtils.check(profile(row).getRevision(), item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
@@ -219,7 +225,7 @@ public class SocialServiceImpl extends ServiceImpl<SocialMapper, HomeSocialLink>
                 this.items.updateStatus(row.getSocialId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getSocialId(), profile(row).revision());
+            versions.put(row.getSocialId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

@@ -66,7 +66,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<RoleVO> listRoles(RoleQueryDTO query) {
         requireAdmin("sys:role:query");
-        return PageResult.from(roles.rolePage(new Page<>(query.page(), query.pageSize()), query).convert(this::view));
+        return PageResult.from(roles.rolePage(new Page<>(query.getPage(), query.getPageSize()), query).convert(this::view));
     }
 
     /**
@@ -93,12 +93,13 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     @OperationLog(type = "create", target = "sys:role", permission = "sys:role:create")
     public RoleVO create(RoleCreateDTO request) {
         lockUsers(null, "sys:role:create");
-        SysRole role = new SysRole();
-        role.setRoleCode(request.getRoleCode());
-        role.setRoleName(request.getRoleName());
-        role.setDescription(request.getDescription());
-        role.setDataScope(request.getDataScope());
-        role.setStatus(request.getStatus());
+        SysRole role = SysRole.builder()
+                .roleCode(request.getRoleCode())
+                .roleName(request.getRoleName())
+                .description(request.getDescription())
+                .dataScope(request.getDataScope())
+                .status(request.getStatus())
+                .build();
         roles.insert(role);
         return view(roles.selectById(role.getRoleId()));
     }
@@ -154,11 +155,11 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         requireAdmin("sys:role:grant");
         role = requireRole(role);
         checkRevision(role, revision);
-        List<Long> permissions = request.permissionIds().stream().sorted().toList();
+        List<Long> permissions = request.getPermissionIds().stream().sorted().toList();
         if (CollUtil.isNotEmpty(permissions) && roles.lockEnabledPermissions(permissions).size() != permissions.size()) {
             throw new BusinessException(400, "VALIDATION_ERROR", "permissionIds须全部存在且启用");
         }
-        List<Long> menus = completeMenus(request.menuIds(), new HashSet<>(permissions));
+        List<Long> menus = completeMenus(request.getMenuIds(), new HashSet<>(permissions));
         // 权限行锁也可能等待，拿齐锁后再确认原 Token 和本次授权权限。
         requireAdmin("sys:role:grant");
 
@@ -296,7 +297,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      * @param revision 客户端原样携带的单个带引号版本
      */
     private void checkRevision(SysRole role, String revision) {
-        RevisionUtils.check(profile(role).revision(), revision, "角色已修改，请重新获取");
+        RevisionUtils.check(profile(role).getRevision(), revision, "角色已修改，请重新获取");
     }
 
     /**
@@ -307,9 +308,12 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      */
     private RoleProfileVO profile(SysRole role) {
         RoleVO value = view(role);
-        String canonical = json.writeValueAsString(Arrays.asList(value.roleId(), value.roleCode(), value.roleName(),
-                value.description(), value.dataScope(), value.status(), value.permissionIds(), value.menuIds()));
-        return new RoleProfileVO(value, "\"" + TokenUtils.digest(canonical) + "\"");
+        String canonical = json.writeValueAsString(Arrays.asList(value.getRoleId(), value.getRoleCode(), value.getRoleName(),
+                value.getDescription(), value.getDataScope(), value.getStatus(), value.getPermissionIds(), value.getMenuIds()));
+        return RoleProfileVO.builder()
+                .role(value)
+                .revision("\"" + TokenUtils.digest(canonical) + "\"")
+                .build();
     }
 
     /**
@@ -319,9 +323,18 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
      * @return 对外约定的角色字段
      */
     private RoleVO view(SysRole role) {
-        return new RoleVO(role.getRoleId(), role.getRoleCode(), role.getRoleName(), role.getDescription(),
-                role.getDataScope(), role.getStatus(), role.getCreateTime(), role.getUpdateTime(),
-                roles.permissionIds(role.getRoleId()), roles.menuIds(role.getRoleId()));
+        return RoleVO.builder()
+                .roleId(role.getRoleId())
+                .roleCode(role.getRoleCode())
+                .roleName(role.getRoleName())
+                .description(role.getDescription())
+                .dataScope(role.getDataScope())
+                .status(role.getStatus())
+                .createTime(role.getCreateTime())
+                .updateTime(role.getUpdateTime())
+                .permissionIds(roles.permissionIds(role.getRoleId()))
+                .menuIds(roles.menuIds(role.getRoleId()))
+                .build();
     }
 
     /**
@@ -339,7 +352,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         var sorted = BatchUtils.sorted(items);
         Set<Long> affected = new TreeSet<>();
         for (var item : sorted) {
-            affected.addAll(roles.userIds(IdUtils.parse(item.id())));
+            affected.addAll(roles.userIds(IdUtils.parse(item.getId())));
         }
         Set<Long> lockedUsers = new TreeSet<>(affected);
         lockedUsers.add(sessions.currentUserId());
@@ -349,8 +362,8 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
         // 2. 逐条锁定目标角色，复核版本并禁止删除内置角色。
         for (var item : sorted) {
-            long roleId = IdUtils.parse(item.id());
-            String revision = item.revision();
+            long roleId = IdUtils.parse(item.getId());
+            String revision = item.getRevision();
             SysRole role = roles.lockById(roleId);
             requireAdmin("sys:role:delete");
             role = requireRole(role);
@@ -362,7 +375,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
 
         // 3. 批量删除角色，校验有效管理员数量后撤销受影响用户会话。
         for (var item : sorted) {
-            roles.deleteById(IdUtils.parse(item.id()));
+            roles.deleteById(IdUtils.parse(item.getId()));
         }
         if (users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");
@@ -388,7 +401,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         Set<Long> lockedUsers = new TreeSet<>();
         lockedUsers.add(sessions.currentUserId());
         for (BatchItemDTO item : sorted) {
-            long id = IdUtils.parse(item.id());
+            long id = IdUtils.parse(item.getId());
             List<Long> userIds = roles.userIds(id);
             related.put(id, userIds);
             lockedUsers.addAll(userIds);
@@ -398,10 +411,10 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         }
         List<SysRole> rows = new ArrayList<>();
         for (BatchItemDTO item : sorted) {
-            SysRole row = roles.lockById(IdUtils.parse(item.id()));
+            SysRole row = roles.lockById(IdUtils.parse(item.getId()));
             requireAdmin("sys:role:update");
             row = requireRole(row);
-            checkRevision(row, item.revision());
+            checkRevision(row, item.getRevision());
             rows.add(row);
         }
 
@@ -417,7 +430,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
                 changed.add(id);
                 revoked.addAll(related.get(id));
             }
-            versions.put(id, profile(row).revision());
+            versions.put(id, profile(row).getRevision());
         }
         if (changed.contains(1L) && users.effectiveAdminCount(AuthorizationProvider.ADMIN_PERMISSIONS) == 0) {
             throw new BusinessException(409, "LAST_ADMIN", "必须保留至少一个有效管理员");

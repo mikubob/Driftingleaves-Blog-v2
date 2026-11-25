@@ -68,8 +68,8 @@ public class OperationLogController {
     @PostMapping("/batch-delete")
     @SaCheckPermission("sys:log:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        log.info("批量删除操作日志: count={}", body.ids().size());
-        operationLogService.deleteBatch(body.ids());
+        log.info("批量删除操作日志: count={}", body.getIds().size());
+        operationLogService.deleteBatch(body.getIds());
         return Result.ok(null);
     }
 }

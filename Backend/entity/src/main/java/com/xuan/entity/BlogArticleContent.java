@@ -4,38 +4,41 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
+import lombok.NoArgsConstructor;
 
+import java.io.Serial;
+import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
  * 正文单独存一张表，列表查询就不用读取大段内容。
  */
 @Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
 @TableName("blog_article_content")
-public class BlogArticleContent {
+public class BlogArticleContent implements Serializable {
 
-    /**
-     * 文章ID，同时作为主键及关联blog_article.article_id的外键。
-     */
+    @Serial
+    private static final long serialVersionUID = 1L;
+
+    // 文章ID，同时作为主键及关联blog_article.article_id的外键
     @TableId(value = "article_id", type = IdType.INPUT)
     private Long articleId;
 
-    /**
-     * Markdown格式的文章正文。
-     */
+    // Markdown格式的文章正文
     @TableField("markdown_content")
     private String markdownContent;
 
-    /**
-     * HTML 可以留作渲染缓存，但输出前仍要清理不安全内容。
-     */
+    // HTML 可以留作渲染缓存，但输出前仍要清理不安全内容
     @TableField("html_content")
     private String htmlContent;
 
-    /**
-     * 修改记录时数据库自动更新时间，应用不用赋值。
-     */
+    // 修改记录时数据库自动更新时间，应用不用赋值
     @TableField("update_time")
     private LocalDateTime updateTime;
 }

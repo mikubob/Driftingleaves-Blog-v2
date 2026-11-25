@@ -80,7 +80,7 @@ public class PermissionController {
     public ResponseEntity<Result<PermissionVO>> create(@Valid @RequestBody PermissionCreateDTO body) {
         log.info("新增权限: permissionCode={}", body.getPermissionCode());
         PermissionVO permission = permissionService.create(body);
-        URI location = URI.create("/api/v1/admin/permissions/" + permission.permissionId());
+        URI location = URI.create("/api/v1/admin/permissions/" + permission.getPermissionId());
         return ResponseEntity.created(location).body(Result.ok(permission));
     }
 
@@ -138,7 +138,7 @@ public class PermissionController {
      */
     private ResponseEntity<Result<PermissionVO>> profileResponse(PermissionProfileVO result) {
         return ResponseEntity.ok()
-                .header(HttpConstants.HEADER_X_REVISION, result.revision())
-                .body(Result.ok(result.permission()));
+                .header(HttpConstants.HEADER_X_REVISION, result.getRevision())
+                .body(Result.ok(result.getPermission()));
     }
 }

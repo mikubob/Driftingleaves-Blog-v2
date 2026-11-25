@@ -51,8 +51,8 @@ public class PageViewController {
     @PostMapping("/batch-delete")
     @SaCheckPermission("blog:view:delete")
     public Result<Void> delete(@Valid @RequestBody BatchIdsDTO body) {
-        log.info("批量删除浏览记录: count={}", body.ids().size());
-        pageViewService.deleteBatch(body.ids());
+        log.info("批量删除浏览记录: count={}", body.getIds().size());
+        pageViewService.deleteBatch(body.getIds());
         return Result.ok(null);
     }
 }

@@ -20,7 +20,7 @@ public final class BatchUtils {
      * 按id数值升序排列批量目标，输入格式由接口校验，排序后id仍为字符串。
      */
     public static List<BatchItemDTO> sorted(List<BatchItemDTO> items) {
-        return items.stream().sorted(Comparator.comparingLong(item -> IdUtils.parse(item.id()))).toList();
+        return items.stream().sorted(Comparator.comparingLong(item -> IdUtils.parse(item.getId()))).toList();
     }
 
     /**
@@ -34,9 +34,11 @@ public final class BatchUtils {
      * 按原选择顺序返回每条记录的新版本，不附带详情。
      */
     public static BatchVersionsVO versions(List<BatchItemDTO> items, Map<Long, String> versions) {
-        return new BatchVersionsVO(items.stream().map(item -> {
-            long id = IdUtils.parse(item.id());
-            return new BatchVersionVO(id, versions.get(id));
-        }).toList());
+        return BatchVersionsVO.builder()
+                .items(items.stream().map(item -> {
+            long id = IdUtils.parse(item.getId());
+            return BatchVersionVO.builder().id(id).revision(versions.get(id)).build();
+        }).toList())
+                .build();
     }
 }

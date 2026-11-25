@@ -74,7 +74,7 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public LoginSession login(LoginDTO body, WebSession side, HttpServletRequest request) {
         // 1. 先检查失败次数是否超限，再校验图形验证码。
-        authRateLimiter.checkLogin(request, body.username());
+        authRateLimiter.checkLogin(request, body.getUsername());
         verifyCaptcha(request);
 
         // 2. 校验凭据并签发会话，仅凭据错误才计入密码输错次数。
@@ -82,7 +82,7 @@ public class AuthServiceImpl implements IAuthService {
             return userService.login(body, side.timeoutSeconds());
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode())) {
-                authRateLimiter.loginFailed(request, body.username());
+                authRateLimiter.loginFailed(request, body.getUsername());
             }
             throw exception;
         }
@@ -96,15 +96,15 @@ public class AuthServiceImpl implements IAuthService {
      */
     @Override
     public void sendAdminEmailCode(AdminEmailCodeDTO body, HttpServletRequest request) {
-        authRateLimiter.checkLogin(request, body.email());
+        authRateLimiter.checkLogin(request, body.getEmail());
         verifyCaptcha(request);
-        authRateLimiter.email(request, body.email());
+        authRateLimiter.email(request, body.getEmail());
 
         try {
             userService.sendAdminEmailCode(body);
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode())) {
-                authRateLimiter.loginFailed(request, body.email());
+                authRateLimiter.loginFailed(request, body.getEmail());
             }
             throw exception;
         }
@@ -119,7 +119,7 @@ public class AuthServiceImpl implements IAuthService {
     @Override
     public void sendBlogEmailCode(EmailCodeDTO body, HttpServletRequest request) {
         verifyCaptcha(request);
-        authRateLimiter.email(request, body.email());
+        authRateLimiter.email(request, body.getEmail());
         userService.sendEmailCode(body);
     }
 
@@ -133,14 +133,14 @@ public class AuthServiceImpl implements IAuthService {
      */
     @Override
     public LoginSession emailLogin(EmailLoginDTO body, WebSession side, HttpServletRequest request) {
-        authRateLimiter.checkLogin(request, body.email());
+        authRateLimiter.checkLogin(request, body.getEmail());
         verifyCaptcha(request);
 
         try {
             return userService.loginEmail(body, side.timeoutSeconds());
         } catch (BusinessException exception) {
             if ("AUTH_FAILED".equals(exception.getCode()) || "EMAIL_CODE_INVALID".equals(exception.getCode())) {
-                authRateLimiter.loginFailed(request, body.email());
+                authRateLimiter.loginFailed(request, body.getEmail());
             }
             throw exception;
         }
@@ -165,7 +165,7 @@ public class AuthServiceImpl implements IAuthService {
         List<OAuthProviderClient.Provider> enabledProviders = oauthProviderClient.providers(side.site());
         List<ProviderVO> result = new ArrayList<>(enabledProviders.size());
         for (OAuthProviderClient.Provider provider : enabledProviders) {
-            result.add(new ProviderVO(provider.source(), provider.displayName()));
+            result.add(ProviderVO.builder().source(provider.source()).displayName(provider.displayName()).build());
         }
         return result;
     }
@@ -184,7 +184,7 @@ public class AuthServiceImpl implements IAuthService {
     public OAuthAuthorizeSession authorize(WebSession side, String source, OAuthAuthorizeDTO body,
             HttpServletRequest request, String browser) {
         // 1. 绑定操作需要核对后台认证和页面预期账号。
-        if (body.operation() == OAuthAuthorizeDTO.Operation.BIND) {
+        if (body.getOperation() == OAuthAuthorizeDTO.Operation.BIND) {
             if (side == WebSession.ADMIN) {
                 sessionManager.requireAdminAuthentication();
             }
@@ -197,14 +197,14 @@ public class AuthServiceImpl implements IAuthService {
                 : TokenUtils.random();
 
         // 3. 按登录或绑定操作分别限流，再生成第三方授权地址。
-        if (body.operation() == OAuthAuthorizeDTO.Operation.LOGIN) {
+        if (body.getOperation() == OAuthAuthorizeDTO.Operation.LOGIN) {
             authRateLimiter.oauthLogin(request, browserId);
         } else {
             authRateLimiter.oauth(request, browserId);
         }
 
-        OAuthAuthorizeVO authorizeVO = oauthService.authorize(side, source, body.operation(), browserId);
-        return new OAuthAuthorizeSession(authorizeVO, browserId);
+        OAuthAuthorizeVO authorizeVO = oauthService.authorize(side, source, body.getOperation(), browserId);
+        return OAuthAuthorizeSession.builder().authorize(authorizeVO).browserId(browserId).build();
     }
 
     /**
@@ -236,7 +236,7 @@ public class AuthServiceImpl implements IAuthService {
     public Object exchange(WebSession side, OAuthExchangeDTO body, HttpServletRequest request, String browser) {
         authRateLimiter.oauth(request, browser);
         String expectedUserId = request.getHeader(WebSession.EXPECTED_USER);
-        return oauthService.exchange(side, body.ticket(), browser, expectedUserId);
+        return oauthService.exchange(side, body.getTicket(), browser, expectedUserId);
     }
 
     /**

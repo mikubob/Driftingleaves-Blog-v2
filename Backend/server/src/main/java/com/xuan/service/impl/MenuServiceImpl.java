@@ -109,20 +109,21 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     public MenuVO create(MenuCreateDTO request) {
         Map<Long, SysMenu> nodes = lockStructure(null);
         requireAdmin("sys:menu:create");
-        SysMenu menu = new SysMenu();
-        menu.setParentId(request.getParentId());
-        menu.setMenuCode(request.getMenuCode());
-        menu.setMenuName(request.getMenuName());
-        menu.setMenuType(request.getMenuType());
-        menu.setRouteName(request.getRouteName());
-        menu.setPath(request.getPath());
-        menu.setComponent(request.getComponent());
-        menu.setIcon(request.getIcon());
-        menu.setPermissionId(request.getPermissionId());
-        menu.setSortOrder(request.getSortOrder());
-        menu.setIsVisible(request.getIsVisible());
-        menu.setKeepAlive(request.getKeepAlive());
-        menu.setStatus(request.getStatus());
+        SysMenu menu = SysMenu.builder()
+                .parentId(request.getParentId())
+                .menuCode(request.getMenuCode())
+                .menuName(request.getMenuName())
+                .menuType(request.getMenuType())
+                .routeName(request.getRouteName())
+                .path(request.getPath())
+                .component(request.getComponent())
+                .icon(request.getIcon())
+                .permissionId(request.getPermissionId())
+                .sortOrder(request.getSortOrder())
+                .isVisible(request.getIsVisible())
+                .keepAlive(request.getKeepAlive())
+                .status(request.getStatus())
+                .build();
         validateFields(menu);
         validateChain(menu, nodes);
         menus.insert(menu);
@@ -329,11 +330,26 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
     private List<MenuNodeVO> build(Long parentId, Map<Long, List<MenuGrant>> children) {
         List<MenuNodeVO> result = new ArrayList<>();
         for (MenuGrant node : children.getOrDefault(parentId, List.of())) {
-            result.add(new MenuNodeVO(node.getMenuId(), node.getParentId(), node.getMenuCode(), node.getMenuName(),
-                    node.getMenuType(), node.getRouteName(), node.getPath(), node.getComponent(), node.getIcon(),
-                    node.getPermissionId(), node.getSortOrder(), node.getIsVisible(), node.getKeepAlive(),
-                    node.getStatus(), node.getCreateTime(), node.getUpdateTime(), node.getPermissionCode(),
-                    build(node.getMenuId(), children)));
+            result.add(MenuNodeVO.builder()
+                    .menuId(node.getMenuId())
+                    .parentId(node.getParentId())
+                    .menuCode(node.getMenuCode())
+                    .menuName(node.getMenuName())
+                    .menuType(node.getMenuType())
+                    .routeName(node.getRouteName())
+                    .path(node.getPath())
+                    .component(node.getComponent())
+                    .icon(node.getIcon())
+                    .permissionId(node.getPermissionId())
+                    .sortOrder(node.getSortOrder())
+                    .isVisible(node.getIsVisible())
+                    .keepAlive(node.getKeepAlive())
+                    .status(node.getStatus())
+                    .createTime(node.getCreateTime())
+                    .updateTime(node.getUpdateTime())
+                    .permissionCode(node.getPermissionCode())
+                    .children(build(node.getMenuId(), children))
+                    .build());
         }
         return result;
     }
@@ -358,7 +374,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      * @param revision 客户端原样传递的详情版本
      */
     private void checkRevision(SysMenu menu, String revision) {
-        RevisionUtils.check(profile(menu).revision(), revision, "菜单已修改，请重新获取");
+        RevisionUtils.check(profile(menu).getRevision(), revision, "菜单已修改，请重新获取");
     }
 
     /**
@@ -369,10 +385,13 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      */
     private MenuProfileVO profile(SysMenu menu) {
         MenuVO value = view(menu);
-        String canonical = json.writeValueAsString(Arrays.asList(value.menuId(), value.parentId(), value.menuCode(),
-                value.menuName(), value.menuType(), value.routeName(), value.path(), value.component(), value.icon(),
-                value.permissionId(), value.sortOrder(), value.isVisible(), value.keepAlive(), value.status()));
-        return new MenuProfileVO(value, "\"" + TokenUtils.digest(canonical) + "\"");
+        String canonical = json.writeValueAsString(Arrays.asList(value.getMenuId(), value.getParentId(), value.getMenuCode(),
+                value.getMenuName(), value.getMenuType(), value.getRouteName(), value.getPath(), value.getComponent(), value.getIcon(),
+                value.getPermissionId(), value.getSortOrder(), value.getIsVisible(), value.getKeepAlive(), value.getStatus()));
+        return MenuProfileVO.builder()
+                .menu(value)
+                .revision("\"" + TokenUtils.digest(canonical) + "\"")
+                .build();
     }
 
     /**
@@ -382,11 +401,24 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
      * @return 菜单资料和数据库维护的 UTC 审计时间
      */
     private MenuVO view(SysMenu menu) {
-        return new MenuVO(menu.getMenuId(), menu.getParentId(), menu.getMenuCode(), menu.getMenuName(),
-                menu.getMenuType(),
-                menu.getRouteName(), menu.getPath(), menu.getComponent(), menu.getIcon(), menu.getPermissionId(),
-                menu.getSortOrder(), menu.getIsVisible(), menu.getKeepAlive(), menu.getStatus(),
-                menu.getCreateTime(), menu.getUpdateTime());
+        return MenuVO.builder()
+                .menuId(menu.getMenuId())
+                .parentId(menu.getParentId())
+                .menuCode(menu.getMenuCode())
+                .menuName(menu.getMenuName())
+                .menuType(menu.getMenuType())
+                .routeName(menu.getRouteName())
+                .path(menu.getPath())
+                .component(menu.getComponent())
+                .icon(menu.getIcon())
+                .permissionId(menu.getPermissionId())
+                .sortOrder(menu.getSortOrder())
+                .isVisible(menu.getIsVisible())
+                .keepAlive(menu.getKeepAlive())
+                .status(menu.getStatus())
+                .createTime(menu.getCreateTime())
+                .updateTime(menu.getUpdateTime())
+                .build();
     }
 
     /**
@@ -402,7 +434,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         }
         requireAdmin("sys:menu:delete");
         var sorted = BatchUtils.sorted(items);
-        List<Long> ids = sorted.stream().map(item -> IdUtils.parse(item.id())).toList();
+        List<Long> ids = sorted.stream().map(item -> IdUtils.parse(item.getId())).toList();
         Set<Long> affected = new TreeSet<>(menus.userIds(ids));
         affected.add(sessions.currentUserId());
         for (long id : affected) {
@@ -413,11 +445,11 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         Map<Long, SysMenu> nodes = new LinkedHashMap<>();
         menus.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));
         for (var item : sorted) {
-            long menuId = IdUtils.parse(item.id());
+            long menuId = IdUtils.parse(item.getId());
             SysMenu menu = menus.lockById(menuId);
             requireAdmin("sys:menu:delete");
             menu = requireMenu(menu);
-            checkRevision(menu, item.revision());
+            checkRevision(menu, item.getRevision());
             if (nodes.values().stream().anyMatch(node -> Long.valueOf(menuId).equals(node.getParentId()))) {
                 throw new BusinessException(409, "RESOURCE_IN_USE", "菜单仍有子节点");
             }
@@ -445,7 +477,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         menus.allMenus().forEach(node -> nodes.put(node.getMenuId(), node));
         Set<Long> branchIds = new TreeSet<>();
         for (BatchItemDTO item : items) {
-            branchIds.addAll(descendants(IdUtils.parse(item.id()), nodes));
+            branchIds.addAll(descendants(IdUtils.parse(item.getId()), nodes));
         }
         Set<Long> affected = new TreeSet<>(menus.userIds(List.copyOf(branchIds)));
         affected.add(sessions.currentUserId());
@@ -456,10 +488,10 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
         // 2. 按 ID 升序锁定全部目标菜单并校验版本。
         List<SysMenu> rows = new ArrayList<>();
         for (BatchItemDTO item : BatchUtils.sorted(items)) {
-            SysMenu row = menus.lockById(IdUtils.parse(item.id()));
+            SysMenu row = menus.lockById(IdUtils.parse(item.getId()));
             requireAdmin("sys:menu:update");
             row = requireMenu(row);
-            checkRevision(row, item.revision());
+            checkRevision(row, item.getRevision());
             rows.add(row);
         }
 
@@ -470,7 +502,7 @@ public class MenuServiceImpl extends ServiceImpl<MenuMapper, SysMenu> implements
                 menus.updateStatus(row.getMenuId(), status);
                 row.setStatus(status);
             }
-            versions.put(row.getMenuId(), profile(row).revision());
+            versions.put(row.getMenuId(), profile(row).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
