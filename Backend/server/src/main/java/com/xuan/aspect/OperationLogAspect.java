@@ -12,7 +12,7 @@ import com.xuan.dto.CategoryUpdateDTO;
 import com.xuan.dto.ConfigWriteDTO;
 import com.xuan.dto.ExperienceCreateDTO;
 import com.xuan.dto.ExperienceWriteDTO;
-import com.xuan.dto.HomeProfileWriteDTO;
+import com.xuan.dto.SiteOwnerProfileWriteDTO;
 import com.xuan.dto.LinkCreateDTO;
 import com.xuan.dto.LinkWriteDTO;
 import com.xuan.dto.MenuCreateDTO;
@@ -37,7 +37,7 @@ import com.xuan.entity.BlogMusic;
 import com.xuan.entity.BlogTag;
 import com.xuan.entity.CvExperience;
 import com.xuan.entity.CvSkill;
-import com.xuan.entity.HomeProfile;
+import com.xuan.entity.SiteOwnerProfile;
 import com.xuan.entity.HomeSocialLink;
 import com.xuan.entity.SysOperationLog;
 import com.xuan.exception.BusinessException;
@@ -90,7 +90,7 @@ public class OperationLogAspect {
     private static final Set<String> SAFE_ERRORS = Set.of("VALIDATION_ERROR", "UNAUTHENTICATED", "FORBIDDEN",
             "ACCOUNT_DISABLED", "NOT_FOUND", "STATE_CONFLICT", "UNIQUE_CONFLICT", "PRECONDITION_REQUIRED",
             "REVISION_CONFLICT", "REAUTH_REQUIRED", "SERVICE_UNAVAILABLE", "LAST_ADMIN", "RESOURCE_IN_USE",
-            "PAYLOAD_TOO_LARGE");
+            "PAYLOAD_TOO_LARGE", "EMAIL_CODE_INVALID");
     // 明确列出业务字段，新增 DTO 或字段时需要同步登记，不能自动把凭据带进日志。
     private static final Map<Class<?>, Set<String>> DATA_FIELDS = Map.ofEntries(
             Map.entry(AdminUserCreateDTO.class, Set.of("username", "nickname", "email", "avatar", "intro", "status")),
@@ -113,7 +113,7 @@ public class OperationLogAspect {
             Map.entry(LinkCreateDTO.class, Set.of("linkName", "url", "avatar", "description", "sortOrder", "status")),
             Map.entry(LinkWriteDTO.class, Set.of("linkName", "url", "avatar", "description", "sortOrder")),
             Map.entry(ConfigWriteDTO.class, Set.of("configValue", "description", "isPublic")),
-            Map.entry(HomeProfileWriteDTO.class, Set.of("userId", "nickname", "tagline", "description", "avatar",
+            Map.entry(SiteOwnerProfileWriteDTO.class, Set.of("nickname", "tagline", "description", "avatar",
                     "website", "publicEmail", "githubUrl", "location")),
             Map.entry(SocialCreateDTO.class, Set.of("name", "icon", "url", "sortOrder", "status")),
             Map.entry(SocialWriteDTO.class, Set.of("name", "icon", "url", "sortOrder")),
@@ -285,7 +285,7 @@ public class OperationLogAspect {
             case BlogFriendLink link -> link.getLinkId();
             case FileVO file -> file.getFileId();
             case MessagePrivateVO row -> row.getMessageId();
-            case HomeProfile row -> row.getProfileId();
+            case SiteOwnerProfile row -> row.getProfileId();
             case HomeSocialLink row -> row.getSocialId();
             case CvExperience row -> row.getExperienceId();
             case CvSkill row -> row.getSkillId();

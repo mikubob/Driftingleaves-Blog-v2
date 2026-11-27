@@ -4,6 +4,7 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Getter;
@@ -32,6 +33,10 @@ public class AdminUserUpdateDTO implements Serializable {
     @Email
     @TextLength(max = 254)
     private String email;
+
+    // 新邮箱验证码
+    @Pattern(regexp = "[0-9]{6}", message = "须为6位数字，请填写新邮箱中的验证码")
+    private String emailCode;
 
     // 头像URL
     @TextLength(max = 2048)
@@ -76,7 +81,7 @@ public class AdminUserUpdateDTO implements Serializable {
     }
 
     /**
-     * 检查邮箱、头像和简介是否都已提交，显式传空可清除原值。
+     * 检查邮箱、头像和简介是否都已提交。
      */
     @AssertTrue(message = "邮箱、头像或简介未完整提交，请重新打开用户编辑窗口后重试。")
     public boolean isCompleteReplace() {

@@ -1,4 +1,5 @@
 <script setup>
+import AccountEmailField from '../components/AccountEmailField.vue'
 import DisplayImageField from '../components/DisplayImageField.vue'
 import UserDetail from '../components/UserDetail.vue'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -75,6 +76,7 @@ const uploading = ref(false)
 const id = ref('')
 const revision = ref('')
 const initialStatus = ref(1)
+const initialEmail = ref('')
 const roles = ref([])
 const roleIds = ref([])
 const form = reactive({
@@ -82,6 +84,7 @@ const form = reactive({
   password: '',
   nickname: '',
   email: '',
+  emailCode: '',
   avatar: '',
   intro: '',
   status: 1,
@@ -89,6 +92,7 @@ const form = reactive({
 
 async function edit(row) {
   form.password = ''
+  form.emailCode = ''
   try {
     id.value = row?.userId || ''
     if (row) {
@@ -96,6 +100,7 @@ async function edit(row) {
       revision.value = result.revision
       const user = result.data
       initialStatus.value = user.status
+      initialEmail.value = user.email || ''
       Object.assign(form, {
         username: user.username,
         nickname: user.nickname,
@@ -106,6 +111,7 @@ async function edit(row) {
       })
     } else {
       initialStatus.value = 1
+      initialEmail.value = ''
       Object.assign(form, {
         username: '',
         password: '',
@@ -142,6 +148,8 @@ async function save() {
       body.status = form.status
       body.username = form.username
       body.password = form.password
+    } else if (form.emailCode) {
+      body.emailCode = form.emailCode
     }
     const saved = await request(id.value ? `/admin/users/${id.value}` : '/admin/users', {
       method: id.value ? 'PUT' : 'POST',
@@ -151,6 +159,9 @@ async function save() {
     if (saved?.revision) {
       revision.value = saved.revision
     }
+    initialEmail.value = saved.data.email || ''
+    form.email = initialEmail.value
+    form.emailCode = ''
     if (id.value && form.status !== initialStatus.value) {
       await syncRowStatus(
         '/admin/users',
@@ -457,8 +468,17 @@ function switchStatus(status) {
           昵称
           <el-input v-model="form.nickname" required maxlength="64" />
         </label>
-        <label>
-          联系邮箱
+        <AccountEmailField
+          v-if="id"
+          :key="id"
+          v-model="form.email"
+          v-model:code="form.emailCode"
+          :current-email="initialEmail"
+          :code-path="`/admin/users/${id}/email-change-code`"
+          :disabled="saving"
+        />
+        <label v-else>
+          绑定邮箱
           <el-input v-model="form.email" type="email" maxlength="254" />
         </label>
         <DisplayImageField

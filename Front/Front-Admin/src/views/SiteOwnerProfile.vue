@@ -1,20 +1,17 @@
 <script setup>
 import DisplayImageField from '../components/DisplayImageField.vue'
 import { onMounted, reactive, ref } from 'vue'
-import { ElButton, ElCard, ElInput, ElMessage, ElOption, ElSelect } from 'element-plus'
+import { ElButton, ElCard, ElInput, ElMessage } from 'element-plus'
 import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/card/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
-import 'element-plus/es/components/option/style/css'
-import 'element-plus/es/components/select/style/css'
-import { getOptions, request } from '../api.js'
+import { request } from '../api.js'
 import { can } from '../session.js'
 import { nullable } from '../form.js'
 import RequestError from '../components/RequestError.vue'
 
 const form = reactive({
-  userId: '',
   nickname: '',
   tagline: '',
   description: '',
@@ -24,7 +21,6 @@ const form = reactive({
   githubUrl: '',
   location: '',
 })
-const users = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const uploading = ref(false)
@@ -40,7 +36,6 @@ async function load() {
     if (result.data) {
       const data = result.data
       Object.assign(form, {
-        userId: data.userId,
         nickname: data.nickname,
         tagline: data.tagline,
         description: data.description || '',
@@ -50,9 +45,6 @@ async function load() {
         githubUrl: data.githubUrl || '',
         location: data.location || '',
       })
-    }
-    if (can('sys:user:query')) {
-      users.value = await getOptions('/admin/users', { status: 1 })
     }
   } catch (failure) {
     error.value = failure.message
@@ -71,7 +63,6 @@ async function save() {
       method: 'PUT',
       revision: revision.value,
       body: {
-        userId: form.userId,
         nickname: form.nickname,
         tagline: form.tagline,
         description: nullable(form.description),
@@ -83,7 +74,7 @@ async function save() {
       },
     })
     revision.value = result.revision
-    ElMessage.success('主页资料已保存')
+    ElMessage.success('站长资料已保存')
   } catch (failure) {
     ElMessage.error(failure.message)
   } finally {
@@ -97,31 +88,15 @@ onMounted(load)
   <section v-loading="loading">
     <div class="page-header">
       <div>
-        <h1>主页资料</h1>
+        <h1>站长资料</h1>
       </div>
     </div>
     <RequestError :message="error" @retry="load" />
     <el-card v-if="!error" shadow="never">
       <form class="edit-form" @submit.prevent="save">
         <div class="form-section-heading">
-          <h2>公开展示</h2>
-          <p class="muted-text">此处的信息会公开显示，请主动选择需要展示的内容。</p>
+          <p class="muted-text">填写的资料将公开显示在首页、博客侧栏和简历页。</p>
         </div>
-        <label v-if="can('sys:user:query')">
-          站点主人账号
-          <el-select v-model="form.userId" filterable placeholder="请选择启用的本站账号">
-            <el-option
-              v-for="user in users"
-              :key="user.userId"
-              :label="`${user.nickname} · ${user.username}`"
-              :value="user.userId"
-            />
-          </el-select>
-        </label>
-        <label v-else>
-          站点主人用户 ID
-          <el-input v-model="form.userId" required pattern="[1-9][0-9]{0,18}" />
-        </label>
         <div class="form-row">
           <label>
             公开昵称
@@ -141,7 +116,7 @@ onMounted(load)
           v-model="form.avatar"
           v-model:uploading="uploading"
           label="公开头像"
-          :disabled="saving || !can('home:profile:update', true)"
+          :disabled="saving || !can('site:ownerProfile:update', true)"
         />
         <div class="form-row">
           <label>
@@ -165,13 +140,13 @@ onMounted(load)
         </div>
         <div>
           <el-button
-            v-if="can('home:profile:update', true)"
+            v-if="can('site:ownerProfile:update', true)"
             type="primary"
             native-type="submit"
             :loading="saving"
             :disabled="uploading"
           >
-            保存公开资料
+            保存站长资料
           </el-button>
         </div>
       </form>

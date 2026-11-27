@@ -645,7 +645,8 @@ X-Revision: "<current-revision>"
 | --- | --- | --- | --- |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `nickname` | string | 否 | 提供时不可为 null，1..64 字符 |
-| `email` | string&#124;null | 否 | 合法邮箱，≤254 字符，唯一；null 清空 |
+| `email` | string&#124;null | 否 | 合法邮箱，≤254 字符，唯一；已绑定时不能清空 |
+| `emailCode` | string | 更换或首次绑定时必填 | 新邮箱收到的六位验证码 |
 | `avatar` | string&#124;null | 否 | 外部 http(s) URL ≤2048 字符；null 清空 |
 | `intro` | string&#124;null | 否 | 纯文本 ≤500 字符；null 清空；四项至少提供一项 |
 
@@ -659,7 +660,7 @@ X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"nickname":"新落叶","email":null,"avatar":null,"intro":null}
+{"nickname":"新落叶","email":"new@example.test","emailCode":"012345","avatar":null,"intro":null}
 ```
 
 #### 响应参数
@@ -679,14 +680,20 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "userId": "12", "username": "leaf", "nickname": "新落叶", "email": null, "avatar": null, "intro": null,
+    "userId": "12", "username": "leaf", "nickname": "新落叶", "email": "new@example.test", "avatar": null, "intro": null,
     "status": 1
   },
   "errors": []
 }
 ```
 
-至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
+昵称、邮箱、头像、简介至少提交一项，缺失的字段保持原值。头像和简介可传 null 清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
+
+<a id="blog-email-change-code"></a>
+
+#### 发送本人换绑验证码
+
+登录后调用 `POST /api/v1/blog/me/email-change-code`，提交 `{"email":"new@example.test"}`。返回 `Result<null>` 时邮件已提交发送。将新邮箱收到的六位数字作为 `emailCode` 提交资料。验证码五分钟有效，每次校验后即失效。发送限流返回 429，验证码缺失、错误或过期时提交资料返回 `400/EMAIL_CODE_INVALID`。
 
 ---
 
@@ -1626,7 +1633,7 @@ GET /api/v1/blog/authors?page=1&pageSize=10
 
 <a id="api-155"></a>
 
-### 2.4.2 查询作者公开主页资料
+### 2.4.2 查询作者公开资料
 
 #### 基本信息
 
@@ -2452,7 +2459,7 @@ Content-Type: application/json
 
 订阅页面的邮箱只读，固定显示当前登录账号邮箱，不能在订阅表单中修改。服务端锁定当前用户后读取并规范化 `sys_user.email`，请求邮箱不一致返回400/VALIDATION_ERROR，账号未设置邮箱返回409/STATE_CONFLICT，均不修改订阅或发信；需要先在个人资料中设置账号邮箱。实际保存和发信地址由服务端账号资料决定，不能通过篡改请求订阅其他邮箱。
 
-账号邮箱更换或清空时，同一事务内停用旧订阅、清除旧邮箱验证并释放订阅邮箱占用。用户须用当前账号邮箱重新申请并收信确认。首次申请及重新申请写status=0、verifiedAt/subscribeTime/unsubscribeTime=null。同一已激活邮箱幂等，不重复发信。待验证邮箱重试会重发确认邮件，限流返回429。确认票据24小时有效，绑定用户、subscriptionId、当前email及本次申请版本。SMTP/Redis失败503，已提交待验证记录可保留，通过重发恢复；不返回已激活成功。待验证或已订阅记录的邮箱唯一冲突返回409，不挪用其他用户订阅。
+账号邮箱更换时，同一事务内停用旧订阅、清除旧邮箱验证并释放订阅邮箱占用。用户须用当前账号邮箱重新申请并收信确认。首次申请及重新申请写status=0、verifiedAt/subscribeTime/unsubscribeTime=null。同一已激活邮箱幂等，不重复发信。待验证邮箱重试会重发确认邮件，限流返回429。确认票据24小时有效，绑定用户、subscriptionId、当前email及本次申请版本。SMTP/Redis失败503，已提交待验证记录可保留，通过重发恢复；不返回已激活成功。待验证或已订阅记录的邮箱唯一冲突返回409，不挪用其他用户订阅。
 
 ---
 
@@ -2708,18 +2715,18 @@ GET /api/v1/blog/configs
 
 <a id="blog-group-13"></a>
 
-## 2.13 主人资料与社交链接
+## 2.13 站长资料与社交链接
 
 <a id="blog-api-88"></a>
 
-### 2.13.1 查询站点主人公开资料
+### 2.13.1 查询站长公开资料
 
 #### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/blog/profile` |
-| 接口描述 | 查询站点主人公开资料 |
+| 接口描述 | 查询站长公开资料 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开 |
 
@@ -2735,7 +2742,7 @@ GET /api/v1/blog/profile
 
 #### 响应参数
 
-`data`：[HomeProfilePublic](API.md#response-homeprofilepublic)，未配置/无记录时可为 null。
+`data`：[SiteOwnerProfilePublic](API.md#response-homeprofilepublic)，未配置/无记录时可为 null。
 
 #### 响应示例
 

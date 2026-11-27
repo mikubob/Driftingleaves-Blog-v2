@@ -1,5 +1,8 @@
-package com.xuan.vo;
+package com.xuan.entity;
 
+import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -7,18 +10,24 @@ import lombok.NoArgsConstructor;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.time.LocalDateTime;
 
 /**
- * 公开主人资料不含用户ID、登录邮箱或管理时间。
+ * 保存全站共用的站长公开资料，固定记录ID为1。
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class HomeProfilePublicVO implements Serializable {
+@TableName("site_owner_profile")
+public class SiteOwnerProfile implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
+
+    // 站长资料ID
+    @TableId(type = IdType.INPUT)
+    private Long profileId;
 
     // 昵称
     private String nickname;
@@ -43,4 +52,10 @@ public class HomeProfilePublicVO implements Serializable {
 
     // 属地信息
     private String location;
+
+    // 创建时间
+    private LocalDateTime createTime;
+
+    // 更新时间
+    private LocalDateTime updateTime;
 }

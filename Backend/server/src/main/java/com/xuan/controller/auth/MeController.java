@@ -2,6 +2,7 @@ package com.xuan.controller.auth;
 
 import com.xuan.annotation.RateLimit;
 import com.xuan.constant.HttpConstants;
+import com.xuan.dto.EmailChangeCodeDTO;
 import com.xuan.dto.PasswordClearDTO;
 import com.xuan.dto.PasswordSetDTO;
 import com.xuan.dto.ProfilePatchDTO;
@@ -12,6 +13,7 @@ import com.xuan.vo.MeVO;
 import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.UserProfileVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -64,6 +67,13 @@ public class MeController {
         log.info("修改当前用户资料");
         UserProfileVO profile = userService.patch(body, revision);
         return profileResponse(profile);
+    }
+
+    /** 向本人要绑定的新邮箱发送验证码。 */
+    @PostMapping("/email-change-code")
+    public Result<Void> emailChangeCode(@Valid @RequestBody EmailChangeCodeDTO body, HttpServletRequest request) {
+        userService.sendEmailChangeCode(body.email(), request);
+        return Result.ok(null);
     }
 
     /**

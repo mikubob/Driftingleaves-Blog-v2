@@ -143,7 +143,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </template>
           <template v-else>
             <h1>{{ displayName }}</h1>
-            <p class="empty-state" role="status">主页资料暂未配置。</p>
+            <p class="empty-state" role="status">站长资料暂未配置。</p>
           </template>
         </section>
 

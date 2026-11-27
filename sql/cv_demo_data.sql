@@ -5,21 +5,14 @@ USE driftingleaves;
 SET NAMES utf8mb4;
 START TRANSACTION;
 
--- 公开资料需要关联账号，该账号没有密码、OAuth 绑定或角色，不能用于登录。
-INSERT INTO sys_user (username, password_hash, nickname, intro, status)
-SELECT 'cv_demo_owner', NULL, '简历演示账号', '仅用于关联虚构简历展示资料。', 1
-WHERE NOT EXISTS (SELECT 1 FROM sys_user WHERE username = 'cv_demo_owner');
-
-INSERT INTO home_profile (
-  profile_id, user_id, nickname, tagline, description,
+INSERT INTO site_owner_profile (
+  profile_id, nickname, tagline, description,
   avatar, website, public_email, github_url, location
 )
-SELECT 1, user_id, '落叶 · 演示简历', '全栈开发工程师 · Java / Vue',
+SELECT 1, '落叶 · 演示简历', '全栈开发工程师 · Java / Vue',
   '这是一份用于页面展示的虚构简历。专注于后端服务与前端交互，喜欢把复杂问题整理成清晰、可靠的产品体验。请将以下示例替换为自己的真实资料。',
   NULL, 'https://example.com', 'demo@example.com', 'https://github.com', '中国 · 杭州（演示）'
-FROM sys_user
-WHERE username = 'cv_demo_owner'
-  AND NOT EXISTS (SELECT 1 FROM home_profile WHERE profile_id = 1);
+WHERE NOT EXISTS (SELECT 1 FROM site_owner_profile WHERE profile_id = 1);
 
 INSERT INTO home_social_link (name, icon, url, sort_order, status)
 SELECT demo.name, demo.icon, demo.url, demo.sort_order, 1

@@ -2,21 +2,20 @@ package com.xuan.service.impl;
 
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
-import com.xuan.dto.HomeProfileWriteDTO;
-import com.xuan.entity.HomeProfile;
-import com.xuan.entity.SysUser;
+import com.xuan.dto.SiteOwnerProfileWriteDTO;
+import com.xuan.entity.SiteOwnerProfile;
 import com.xuan.exception.BusinessException;
-import com.xuan.mapper.HomeProfileMapper;
+import com.xuan.mapper.SiteOwnerProfileMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ResourceVersion;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.security.AuthorizationProvider;
-import com.xuan.service.IHomeProfileService;
+import com.xuan.service.ISiteOwnerProfileService;
 import com.xuan.service.IUserService;
 import com.xuan.session.SessionManager;
 import com.xuan.utils.RevisionUtils;
 import com.xuan.utils.TokenUtils;
-import com.xuan.vo.HomeProfilePublicVO;
+import com.xuan.vo.SiteOwnerProfilePublicVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -26,17 +25,15 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
-import java.util.Set;
-import java.util.TreeSet;
 
 /**
  * 展示联系信息独立维护，不能从登录邮箱自动补全。
  */
 @Service
 @RequiredArgsConstructor
-public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeProfile> implements IHomeProfileService {
+public class SiteOwnerProfileServiceImpl extends ServiceImpl<SiteOwnerProfileMapper, SiteOwnerProfile> implements ISiteOwnerProfileService {
 
-    private final HomeProfileMapper profiles;
+    private final SiteOwnerProfileMapper profiles;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
@@ -44,14 +41,14 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     private final JsonMapper json;
 
     /**
-     * 查询站点主人公开资料。
+     * 查询站长公开资料。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     @Cacheable(cacheNames = "home", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", unless = "#result == null")
-    public HomeProfilePublicVO publicProfile() {
-        HomeProfile row = profiles.selectById(1L);
-        return row == null ? null : HomeProfilePublicVO.builder()
+    public SiteOwnerProfilePublicVO publicProfile() {
+        SiteOwnerProfile row = profiles.selectById(1L);
+        return row == null ? null : SiteOwnerProfilePublicVO.builder()
                 .nickname(row.getNickname())
                 .tagline(row.getTagline())
                 .description(row.getDescription())
@@ -64,23 +61,23 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
     }
 
     /**
-     * 查询站点主人资料及版本。
+     * 查询站长资料及版本。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
-    public ResourceVersion<HomeProfile> detail() {
+    public ResourceVersion<SiteOwnerProfile> detail() {
         requireAdmin("query");
         return profile(profiles.selectById(1L));
     }
 
     /**
-     * 设置或更新站点主人资料。
+     * 设置或更新站长资料。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @OperationLog(type = "update", target = "home:profile", permission = "home:profile:update")
+    @OperationLog(type = "update", target = "home:profile", permission = "site:ownerProfile:update")
     @CacheEvict(cacheNames = "home", allEntries = true)
-    public ResourceVersion<HomeProfile> replace(HomeProfileWriteDTO request, String revision) {
+    public ResourceVersion<SiteOwnerProfile> replace(SiteOwnerProfileWriteDTO request, String revision) {
         // 1. 校验展示链接格式，并锁定管理保护检查点以串行首次初始化。
         if (!UrlPolicy.valid(request.getAvatar()) || !UrlPolicy.valid(request.getWebsite()) || !UrlPolicy.valid(
                 request.getGithubUrl())) {
@@ -91,32 +88,19 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         }
         requireAdmin("update");
 
-        // 2. 按 ID 升序锁定操作者和所选站点主人，再锁定主页资料并复核权限与版本。
-        Set<Long> ids = new TreeSet<>();
-        ids.add(sessions.currentUserId());
-        ids.add(request.getUserId());
-        SysUser owner = null;
-        for (long id : ids) {
-            SysUser user = users.lockById(id);
-            requireAdmin("update");
-            if (id == request.getUserId()) {
-                owner = user;
-            }
-        }
-        HomeProfile row = profiles.lockProfile();
+        // 2. 锁定操作者和站长资料，等待锁后复核权限，再检查版本。
+        users.lockById(sessions.currentUserId());
+        requireAdmin("update");
+        SiteOwnerProfile row = profiles.lockProfile();
         requireAdmin("update");
         RevisionUtils.check(profile(row).getRevision(), revision);
-        if (owner == null || owner.getStatus() != 1) {
-            throw new BusinessException(400, "VALIDATION_ERROR", "站点主人须为启用账号");
-        }
 
         // 3. 首次保存执行插入，已有记录执行完整替换，返回最新资料与版本。
         boolean create = row == null;
         if (create) {
-            row = new HomeProfile();
+            row = new SiteOwnerProfile();
             row.setProfileId(1L);
         }
-        row.setUserId(request.getUserId());
         row.setNickname(request.getNickname());
         row.setTagline(request.getTagline());
         row.setDescription(request.getDescription());
@@ -140,16 +124,16 @@ public class HomeProfileServiceImpl extends ServiceImpl<HomeProfileMapper, HomeP
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
         authorization.requireScope(actor, "admin:access");
-        if (!"ALL".equals(authorization.requireScope(actor, "home:profile:" + operation))) {
+        if (!"ALL".equals(authorization.requireScope(actor, "site:ownerProfile:" + operation))) {
             throw new BusinessException(403, "FORBIDDEN", "当前账号没有管理全部记录的权限，请联系管理员授权。");
         }
     }
 
     /**
-     * 计算站点主人资料版本，未设置时也有版本，不包含数据库时间或账号资料。
+     * 计算站长资料版本，未设置时也有版本，不包含数据库时间或账号资料。
      */
-    private ResourceVersion<HomeProfile> profile(HomeProfile row) {
-        Object value = row == null ? null : Arrays.asList(row.getUserId(), row.getNickname(), row.getTagline(),
+    private ResourceVersion<SiteOwnerProfile> profile(SiteOwnerProfile row) {
+        Object value = row == null ? null : Arrays.asList(row.getNickname(), row.getTagline(),
                 row.getDescription(), row.getAvatar(), row.getWebsite(), row.getPublicEmail(), row.getGithubUrl(),
                 row.getLocation());
         return new ResourceVersion<>(row, "\"" + TokenUtils.digest(json.writeValueAsString(value)) + "\"");

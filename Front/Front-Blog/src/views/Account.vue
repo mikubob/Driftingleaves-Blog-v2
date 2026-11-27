@@ -16,12 +16,13 @@ import RollingNumber from '../components/RollingNumber.vue'
 import SafeHtml from '../components/SafeHtml.vue'
 
 const router = useRouter()
-const form = reactive({ nickname: '', email: '', avatar: '', intro: '' })
+const form = reactive({ nickname: '', email: '', emailCode: '', avatar: '', intro: '' })
 const password = reactive({ current: '', next: '' })
 const tab = ref('liked-articles')
 const statusFilter = ref(null)
 const page = ref(1)
 const busy = ref(false)
+const sendingEmailCode = ref(false)
 const deleting = shallowRef(null)
 const editOpen = ref(false)
 const passwordOpen = ref(false)
@@ -37,6 +38,9 @@ const TAB_INDEX = { 'liked-articles': 0, comments: 1, messages: 2 }
 const profileAvatar = computed(() => me.data?.data?.avatar || session.user?.avatar || '')
 const profileNickname = computed(() => me.data?.data?.nickname || session.user?.nickname || '')
 const profileInitial = computed(() => [...profileNickname.value][0] || 'U')
+const normalizedEmail = computed(() => form.email.trim().toLowerCase())
+const needsEmailCode = computed(() => normalizedEmail.value !== ''
+  && normalizedEmail.value !== (me.data?.data?.email || '').toLowerCase())
 
 async function signOut() {
   try {
@@ -56,6 +60,7 @@ const me = useResource(() => session.user?.userId, async (signal) => {
   Object.assign(form, {
     nickname: result.data.nickname,
     email: result.data.email || '',
+    emailCode: '',
     avatar: result.data.avatar || '',
     intro: result.data.intro || '',
   })
@@ -142,6 +147,7 @@ async function openEditSheet() {
     Object.assign(form, {
       nickname: me.data.data.nickname,
       email: me.data.data.email || '',
+      emailCode: '',
       avatar: me.data.data.avatar || '',
       intro: me.data.data.intro || '',
     })
@@ -170,8 +176,35 @@ function onKeydown(event) {
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
+/** 向当前填写的新邮箱发送换绑验证码。 */
+async function sendEmailChangeCode() {
+  if (busy.value || sendingEmailCode.value || !needsEmailCode.value) {
+    return
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail.value)) {
+    ElMessage.error('请输入有效的新邮箱。')
+    return
+  }
+  sendingEmailCode.value = true
+  try {
+    await request('/blog/me/email-change-code', {
+      method: 'POST',
+      body: { email: normalizedEmail.value },
+    })
+    form.emailCode = ''
+    ElMessage.success('验证码已发送到新邮箱。')
+  } catch (failure) {
+    ElMessage.error(failure.message)
+  } finally {
+    sendingEmailCode.value = false
+  }
+}
+
 /** 提交个人资料修改并保留并发版本校验。 */
 async function saveProfile() {
+  if (busy.value || sendingEmailCode.value) {
+    return
+  }
   if (!me.data?.revision) {
     ElMessage.warning('资料尚未加载完成，请稍后重试。')
     return
@@ -187,6 +220,7 @@ async function saveProfile() {
       method: 'PATCH', revision: me.data.revision,
       body: {
         nickname: form.nickname.trim(), email: form.email.trim() || null,
+        emailCode: needsEmailCode.value ? form.emailCode : undefined,
         avatar: form.avatar || null, intro: form.intro || null,
       },
     })
@@ -612,17 +646,41 @@ function messageTarget(item) {
           <button type="button" class="sheet-close" aria-label="关闭" @click="closeSheets">✕</button>
         </div>
         <form @submit.prevent="saveProfile">
-          <fieldset :disabled="busy">
+          <fieldset :disabled="busy || sendingEmailCode">
             <div class="form-grid">
               <div>
                 <label for="profile-nickname">昵称</label>
                 <input id="profile-nickname" ref="editFirstInput" v-model="form.nickname" maxlength="64" required />
               </div>
               <div>
-                <label for="profile-email">联系邮箱</label>
-                <input id="profile-email" v-model="form.email" type="email" maxlength="254" />
+                <label for="profile-email">绑定邮箱</label>
+                <input
+                  id="profile-email"
+                  v-model.trim="form.email"
+                  type="email"
+                  maxlength="254"
+                  :required="Boolean(me.data?.data?.email)"
+                  @input="form.emailCode = ''"
+                />
               </div>
             </div>
+            <template v-if="needsEmailCode">
+              <label for="profile-email-code">新邮箱验证码</label>
+              <div class="form-grid">
+                <input
+                  id="profile-email-code"
+                  v-model="form.emailCode"
+                  inputmode="numeric"
+                  autocomplete="one-time-code"
+                  maxlength="6"
+                  pattern="[0-9]{6}"
+                  required
+                />
+                <button type="button" @click="sendEmailChangeCode">
+                  {{ sendingEmailCode ? '正在发送…' : '发送验证码到新邮箱' }}
+                </button>
+              </div>
+            </template>
             <label for="profile-avatar">头像 URL</label>
             <input
               id="profile-avatar"

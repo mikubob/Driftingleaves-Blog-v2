@@ -3,6 +3,7 @@ package com.xuan.dto;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.Getter;
@@ -30,6 +31,10 @@ public class ProfilePatchDTO implements Serializable {
     @Email
     @TextLength(max = 254)
     private String email;
+
+    // 新邮箱验证码
+    @Pattern(regexp = "[0-9]{6}", message = "须为6位数字，请填写新邮箱中的验证码")
+    private String emailCode;
 
     // 头像URL
     @TextLength(max = 2048)

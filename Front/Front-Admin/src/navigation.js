@@ -96,10 +96,10 @@ export const pageRegistry = {
   },
   'home/profile/index': {
     icon: 'home',
-    title: '主页资料',
-    permission: 'home:profile:query',
+    title: '站长资料',
+    permission: 'site:ownerProfile:query',
     all: true,
-    load: () => import('./views/HomeProfile.vue'),
+    load: () => import('./views/SiteOwnerProfile.vue'),
   },
   'home/social/index': {
     icon: 'share',

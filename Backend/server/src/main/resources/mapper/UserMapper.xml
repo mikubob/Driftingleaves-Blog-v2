@@ -92,12 +92,11 @@
         WHERE user_id = #{user.userId}
     </update>
 
-    <!-- 检查用户是否存在文章、评论、文件、主人资料或留言内容引用 -->
+    <!-- 检查用户是否被文章、评论、文件或留言引用 -->
     <select id="hasContentReferences" resultType="boolean">
         SELECT EXISTS (SELECT 1 FROM blog_article WHERE author_id = #{userId})
             OR EXISTS (SELECT 1 FROM blog_comment WHERE user_id = #{userId})
             OR EXISTS (SELECT 1 FROM blog_file WHERE uploader_id = #{userId})
-            OR EXISTS (SELECT 1 FROM home_profile WHERE user_id = #{userId})
             OR EXISTS (SELECT 1 FROM blog_message WHERE user_id = #{userId})
     </select>
 

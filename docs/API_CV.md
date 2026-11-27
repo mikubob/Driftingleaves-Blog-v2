@@ -62,18 +62,18 @@ GET /api/v1/cv/configs
 
 <a id="cv-group-2"></a>
 
-## 4.2 主人资料与社交链接
+## 4.2 站长资料与社交链接
 
 <a id="cv-api-88"></a>
 
-### 4.2.1 查询站点主人公开资料
+### 4.2.1 查询站长公开资料
 
 #### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/cv/profile` |
-| 接口描述 | 查询站点主人公开资料 |
+| 接口描述 | 查询站长公开资料 |
 | Content-Type | 无请求体 |
 | 访问要求 | 公开 |
 
@@ -89,7 +89,7 @@ GET /api/v1/cv/profile
 
 #### 响应参数
 
-`data`：[HomeProfilePublic](API.md#response-homeprofilepublic)，未配置/无记录时可为 null。
+`data`：[SiteOwnerProfilePublic](API.md#response-homeprofilepublic)，未配置/无记录时可为 null。
 
 #### 响应示例
 

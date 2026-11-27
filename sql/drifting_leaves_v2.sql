@@ -315,10 +315,9 @@ CREATE TABLE blog_site_config (
   CONSTRAINT ck_config_public CHECK (is_public IN (0, 1))
 ) ENGINE=InnoDB COMMENT='站点展示与业务开关；不保存数据库/邮件/对象存储密码';
 
--- 三、主页与简历。展示资料独立于登录资料，公开邮箱不直接读取sys_user.email。
-CREATE TABLE home_profile (
+-- 三、站长资料、社交链接与简历。站长公开邮箱单独维护。
+CREATE TABLE site_owner_profile (
   profile_id BIGINT NOT NULL DEFAULT 1 COMMENT '单站展示资料固定为1，不按登录用户切换',
-  user_id BIGINT NOT NULL COMMENT '站点主人账号，不影响公开资料的独立编辑',
   nickname VARCHAR(64) NOT NULL COMMENT '公开展示昵称',
   tagline VARCHAR(100) NOT NULL DEFAULT '' COMMENT '个人标签或一句话介绍',
   description VARCHAR(500) DEFAULT NULL COMMENT '公开个人简介',
@@ -330,10 +329,9 @@ CREATE TABLE home_profile (
   create_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
   PRIMARY KEY (profile_id),
-  CONSTRAINT fk_profile_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT ck_profile_singleton CHECK (profile_id = 1),
   CONSTRAINT ck_profile_nickname CHECK (CHAR_LENGTH(TRIM(nickname)) > 0)
-) ENGINE=InnoDB COMMENT='主页、博客侧栏与简历共用的站点主人展示资料';
+) ENGINE=InnoDB COMMENT='首页、博客侧栏和简历共用的站长公开资料';
 
 CREATE TABLE home_social_link (
   social_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '社交链接ID',
@@ -599,8 +597,8 @@ INSERT INTO sys_permission (permission_id, permission_code, permission_name, mod
   (111, 'sys:permission:create', '创建权限', 'sys'),
   (112, 'sys:permission:update', '编辑及启停权限', 'sys'),
   (113, 'sys:permission:delete', '删除权限', 'sys'),
-  (120, 'home:profile:query', '查询主页资料', 'home'),
-  (121, 'home:profile:update', '设置主页资料', 'home'),
+  (120, 'site:ownerProfile:query', '查询站长资料', 'site'),
+  (121, 'site:ownerProfile:update', '设置站长资料', 'site'),
   (130, 'home:social:query', '查询社交链接', 'home'),
   (131, 'home:social:create', '创建社交链接', 'home'),
   (132, 'home:social:update', '编辑社交链接', 'home'),
@@ -650,7 +648,7 @@ INSERT INTO sys_role_permission (role_id, permission_id)
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route_name, path, component, icon, permission_id, sort_order) VALUES
   (100, NULL, 'content', '内容管理', 'D', 'Content', '/content', 'Layout', 'document', NULL, 10),
   (200, NULL, 'system', '系统管理', 'D', 'System', '/system', 'Layout', 'setting', NULL, 20),
-  (300, NULL, 'home', '主页管理', 'D', 'Home', '/home', 'Layout', 'home', NULL, 30),
+  (300, NULL, 'home', '站长信息', 'D', 'Home', '/home', 'Layout', 'home', NULL, 30),
   (400, NULL, 'cv', '简历管理', 'D', 'Cv', '/cv', 'Layout', 'document', NULL, 40),
   (500, NULL, 'statistics', '访问统计', 'D', 'Statistics', '/statistics', 'Layout', 'chart', NULL, 50);
 INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route_name, path, component, icon, permission_id, sort_order) VALUES
@@ -669,7 +667,7 @@ INSERT INTO sys_menu (menu_id, parent_id, menu_code, menu_name, menu_type, route
   (240, 200, 'permission', '权限管理', 'M', 'Permission', '/system/permissions', 'system/permission/index', 'key', 110, 40),
   (250, 200, 'config', '站点配置', 'M', 'SiteConfig', '/system/config', 'system/config/index', 'setting', 70, 50),
   (260, 200, 'operationLog', '操作日志', 'M', 'OperationLog', '/system/logs', 'system/log/index', 'document', 220, 60),
-  (310, 300, 'homeProfile', '主页资料', 'M', 'HomeProfile', '/home/profile', 'home/profile/index', 'user', 120, 10),
+  (310, 300, 'homeProfile', '站长资料', 'M', 'HomeProfile', '/home/profile', 'home/profile/index', 'user', 120, 10),
   (320, 300, 'socialLink', '社交链接', 'M', 'SocialLink', '/home/social-links', 'home/social/index', 'link', 130, 20),
   (410, 400, 'experience', '简历经历', 'M', 'Experience', '/cv/experiences', 'cv/experience/index', 'document', 140, 10),
   (420, 400, 'skill', '简历技能', 'M', 'Skill', '/cv/skills', 'cv/skill/index', 'tag', 150, 20),

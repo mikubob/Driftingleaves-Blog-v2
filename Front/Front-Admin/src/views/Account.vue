@@ -1,4 +1,5 @@
 <script setup>
+import AccountEmailField from '../components/AccountEmailField.vue'
 import DisplayImageField from '../components/DisplayImageField.vue'
 import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElButton, ElCard, ElEmpty, ElInput, ElMessage, ElMessageBox } from 'element-plus'
@@ -21,7 +22,7 @@ const revision = ref('')
 const bindings = ref([])
 const providers = ref([])
 const bindingBusy = ref(false)
-const form = reactive({ nickname: '', email: '', avatar: '', intro: '' })
+const form = reactive({ nickname: '', email: '', emailCode: '', avatar: '', intro: '' })
 const password = reactive({ currentPassword: '', newPassword: '', confirmPassword: '' })
 let popup = null
 let popupTimer
@@ -40,6 +41,7 @@ async function load() {
     Object.assign(form, {
       nickname: me.data.nickname,
       email: me.data.email || '',
+      emailCode: '',
       avatar: me.data.avatar || '',
       intro: me.data.intro || '',
     })
@@ -64,12 +66,15 @@ async function saveProfile() {
       body: {
         nickname: form.nickname,
         email: nullable(form.email),
+        emailCode: form.emailCode || undefined,
         avatar: nullable(form.avatar),
         intro: nullable(form.intro),
       },
     })
     session.user = result.data
     revision.value = result.revision
+    form.email = result.data.email || ''
+    form.emailCode = ''
     ElMessage.success('个人资料已保存')
   } catch (failure) {
     ElMessage.error(failure.message)
@@ -241,11 +246,13 @@ onBeforeUnmount(() => {
             昵称
             <el-input v-model="form.nickname" required maxlength="64" />
           </label>
-          <label>
-            联系邮箱
-            <el-input v-model="form.email" type="email" maxlength="254" />
-            <small class="muted-text">仅作联系资料，不代表已经验证的订阅邮箱。</small>
-          </label>
+          <AccountEmailField
+            v-model="form.email"
+            v-model:code="form.emailCode"
+            :current-email="session.user?.email || ''"
+            code-path="/admin/me/email-change-code"
+            :disabled="saving"
+          />
           <DisplayImageField
             usage="AVATAR"
             v-model="form.avatar"

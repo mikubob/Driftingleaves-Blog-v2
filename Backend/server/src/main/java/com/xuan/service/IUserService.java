@@ -25,6 +25,7 @@ import com.xuan.vo.MenuNodeVO;
 import com.xuan.vo.OAuthBindingVO;
 import com.xuan.vo.UserAdminVO;
 import com.xuan.vo.UserProfileVO;
+import jakarta.servlet.http.HttpServletRequest;
 
 import java.util.List;
 
@@ -52,6 +53,9 @@ public interface IUserService extends IService<SysUser> {
      * 根据id更新用户资料，先拿保护锁和用户锁，再重新检查身份、权限和版本；状态单独批量修改。
      */
     AdminUserProfileVO adminUpdate(long userId, AdminUserUpdateDTO request, String revision);
+
+    /** 根据id向目标用户要绑定的新邮箱发送验证码。 */
+    void sendAdminEmailChangeCode(long userId, String email, HttpServletRequest request);
 
     /**
      * 根据id更新用户角色，在同一个保护锁事务中完整替换为启用的角色；保留最后一个有效管理员，提交前撤销该用户的全部会话。
@@ -102,6 +106,9 @@ public interface IUserService extends IService<SysUser> {
      * 修改当前用户资料，加锁并检查版本，只更新允许修改的字段，没传的字段保持不变。
      */
     UserProfileVO patch(ProfilePatchDTO request, String revision);
+
+    /** 向当前用户要绑定的新邮箱发送验证码。 */
+    void sendEmailChangeCode(String email, HttpServletRequest request);
 
     /**
      * 设置或修改当前用户密码，先检查最近认证，已有密码时还要检查旧密码，提交前撤销全部会话。

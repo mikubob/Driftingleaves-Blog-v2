@@ -604,7 +604,8 @@ X-Revision: "<current-revision>"
 | --- | --- | --- | --- |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `nickname` | string | 否 | 提供时不可为 null，1..64 字符 |
-| `email` | string&#124;null | 否 | 合法邮箱，≤254 字符，唯一；null 清空 |
+| `email` | string&#124;null | 否 | 合法邮箱，≤254 字符，唯一；已绑定时不能清空 |
+| `emailCode` | string | 更换或首次绑定时必填 | 新邮箱收到的六位验证码 |
 | `avatar` | string&#124;null | 否 | 外部 http(s) URL ≤2048 字符；null 清空 |
 | `intro` | string&#124;null | 否 | 纯文本 ≤500 字符；null 清空；四项至少提供一项 |
 
@@ -618,7 +619,7 @@ X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"nickname":"新落叶","email":null,"avatar":null,"intro":null}
+{"nickname":"新落叶","email":"new@example.test","emailCode":"012345","avatar":null,"intro":null}
 ```
 
 #### 响应参数
@@ -638,14 +639,20 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "userId": "12", "username": "leaf", "nickname": "新落叶", "email": null, "avatar": null, "intro": null,
+    "userId": "12", "username": "leaf", "nickname": "新落叶", "email": "new@example.test", "avatar": null, "intro": null,
     "status": 1
   },
   "errors": []
 }
 ```
 
-至少一项；缺失保持，null 清空可空字段，可空字符串去首尾空白后为空也清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](API_BLOG.md#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
+昵称、邮箱、头像、简介至少提交一项，缺失的字段保持原值。头像和简介可传 null 清空。username、status、角色、权限不可改。头像接受公开 HTTP(S) 图片地址，包括[公开展示图片](API_BLOG.md#display-image-content)。附件 API 路径及其等价绝对 URL（含路径编码、归一化后的形式）会被拒绝。
+
+<a id="admin-email-change-code"></a>
+
+#### 发送本人换绑验证码
+
+登录后调用 `POST /api/v1/admin/me/email-change-code`，提交 `{"email":"new@example.test"}`。返回 `Result<null>` 时邮件已提交发送。将新邮箱收到的六位数字作为 `emailCode` 提交资料。验证码五分钟有效，每次校验后即失效。发送限流返回 429，验证码缺失、错误或过期时提交资料返回 `400/EMAIL_CODE_INVALID`。
 
 ---
 
@@ -1305,7 +1312,7 @@ X-Revision: "<current-revision>"
 
 `roleIds` 与 `roles` 都按角色 ID 升序返回，包含已分配但禁用的角色；未分配角色时均为 `[]`。`roles[]` 仅含 `roleId`、`roleCode`、`roleName`、`status`（0 禁用、1 启用），供用户管理详情展示，不要求额外的 `sys:role:query`，也不能据此判断当前有效权限。列表、创建和更新用户响应同步增加 `roles`，原有字段保留。
 
-详情返回与本人资料共用的 X-Revision；版本仍只由原有用户业务字段和完整 roleIds 生成。角色名称和启用状态、密码、登录信息及审计时间不参与该版本。不返回密码哈希、第三方身份凭据或会话 Token。联系邮箱不代表已完成邮箱验证。
+详情返回与本人资料共用的 X-Revision；版本仍只由原有用户业务字段和完整 roleIds 生成。角色名称和启用状态、密码、登录信息及审计时间不参与该版本。不返回密码哈希、第三方身份凭据或会话 Token。
 
 #### 错误响应
 
@@ -1408,7 +1415,8 @@ Location: /api/v1/admin/users/12
 | `userId` | ID | 是 | Path；十进制正整数 ID 字符串 |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
 | `nickname` | string | 是 | 1..64 字符 |
-| `email` | string&#124;null | 是，可 null | 合法邮箱，≤254 字符，唯一 |
+| `email` | string&#124;null | 是 | 合法邮箱，≤254 字符，唯一；仅当前未绑定时可传 null |
+| `emailCode` | string | 更换或首次绑定时必填 | 新邮箱收到的六位验证码 |
 | `avatar` | string&#124;null | 是，可 null | 仅外部 http(s) URL |
 | `intro` | string&#124;null | 是，可 null | ≤500 字符 |
 
@@ -1422,7 +1430,7 @@ X-Expected-User-Id: 12
 If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
-{"nickname":"落叶","email":null,"avatar":null,"intro":null}
+{"nickname":"落叶","email":"new@example.test","emailCode":"012345","avatar":null,"intro":null}
 ```
 
 #### 响应参数
@@ -1442,7 +1450,7 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "userId": "12", "username": "leaf", "nickname": "落叶", "email": null, "avatar": null, "intro": null,
+    "userId": "12", "username": "leaf", "nickname": "落叶", "email": "new@example.test", "avatar": null, "intro": null,
     "status": 1
   },
   "errors": []
@@ -1450,6 +1458,12 @@ X-Revision: "<current-revision>"
 ```
 
 本接口修改昵称、邮箱、头像和简介。创建时可指定初始状态，已有用户可在用户列表的操作列点击「启用」或「禁用」。单条操作复用[启用/禁用用户接口](#batch-user-enable)，在 items 中提交一项。
+
+<a id="admin-user-email-change-code"></a>
+
+#### 发送目标用户换绑验证码
+
+持有 `sys:user:update` 权限的操作者调用 `POST /api/v1/admin/users/{userId}/email-change-code`，提交 `{"email":"new@example.test"}`，成功返回 `Result<null>`。发送和校验使用与本人入口相同的有效期、限流与错误规则，验证码绑定操作者、目标用户和新邮箱。
 
 ---
 
@@ -4171,20 +4185,20 @@ Cache-Control: no-store
 
 <a id="admin-group-14"></a>
 
-## 1.14 主人资料与社交链接
+## 1.14 站长资料与社交链接
 
 <a id="api-89"></a>
 
-### 1.14.1 查询后台主页资料
+### 1.14.1 查询后台站长资料
 
 #### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `GET /api/v1/admin/home/profile` |
-| 接口描述 | 查询后台主页资料 |
+| 接口描述 | 查询后台站长资料 |
 | Content-Type | 无请求体 |
-| 访问要求 | 后台：`home:profile:query`（ALL） |
+| 访问要求 | 后台：`site:ownerProfile:query`（ALL） |
 | 并发校验 | 返回 X-Revision |
 
 #### 请求参数
@@ -4200,7 +4214,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 
 #### 响应参数
 
-`data`：[HomeProfile](#response-homeprofile)，未配置/无记录时可为 null。
+`data`：[SiteOwnerProfile](#response-homeprofile)，未配置/无记录时可为 null。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -4215,7 +4229,7 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "profileId": "1", "userId": "12", "nickname": "落叶", "tagline": "记录与分享", "description": null,
+    "profileId": "1", "nickname": "落叶", "tagline": "记录与分享", "description": null,
     "avatar": null
   },
   "errors": []
@@ -4228,16 +4242,16 @@ X-Revision: "<current-revision>"
 
 <a id="api-90"></a>
 
-### 1.14.2 设置主页资料
+### 1.14.2 设置站长资料
 
 #### 基本信息
 
 | 项目 | 说明 |
 | --- | --- |
 | 接口路径 | `PUT /api/v1/admin/home/profile` |
-| 接口描述 | 设置主页资料 |
+| 接口描述 | 设置站长资料 |
 | Content-Type | application/json |
-| 访问要求 | 后台：`home:profile:update`（ALL） |
+| 访问要求 | 后台：`site:ownerProfile:update`（ALL） |
 | 并发校验 | 必填 If-Revision |
 
 #### 请求参数
@@ -4245,7 +4259,6 @@ X-Revision: "<current-revision>"
 | 参数名 | 类型 | 必填 | 说明 |
 | --- | --- | --- | --- |
 | `If-Revision` | string | 是 | Header；原样携带详情 X-Revision |
-| `userId` | ID | 是 | 站点主人账号；必须存在且启用，仅后台管理者可选择 |
 | `nickname` | S(64) | 是 | 公开昵称 |
 | `tagline` | S0(100) | 是 | 个人标签或一句话介绍 |
 | `description` | S(500)? | 是，可null | 公开简介，null清空 |
@@ -4266,14 +4279,14 @@ If-Revision: "<revision-from-detail>"
 Content-Type: application/json
 
 {
-  "userId": "12", "nickname": "落叶", "tagline": "记录与分享", "description": null, "avatar": null,
+  "nickname": "落叶", "tagline": "记录与分享", "description": null, "avatar": null,
   "website": "https://example.test", "publicEmail": null, "githubUrl": null, "location": null
 }
 ```
 
 #### 响应参数
 
-`data`：[HomeProfile](#response-homeprofile)。
+`data`：[SiteOwnerProfile](#response-homeprofile)。
 
 | 响应头 | 类型 | 说明 |
 | --- | --- | --- |
@@ -4288,14 +4301,14 @@ X-Revision: "<current-revision>"
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "profileId": "1", "userId": "12", "nickname": "落叶", "tagline": "记录与分享", "description": null,
+    "profileId": "1", "nickname": "落叶", "tagline": "记录与分享", "description": null,
     "avatar": null
   },
   "errors": []
 }
 ```
 
-固定profileId=1。展示资料与登录资料独立，只有publicEmail可公开；禁止从sys_user.email自动补全。头像和URL遵守公开资源约束。首次设置也通过本PUT，先GET取得空资源版本；同事务检查所选用户、创建或完整替换，始终200。
+固定profileId=1。展示资料与登录资料独立，只有publicEmail可公开；禁止从sys_user.email自动补全。头像和URL遵守公开资源约束。首次设置也通过本PUT，先GET取得空资源版本；在同一事务内检查版本，并创建或完整替换资料，始终200。
 
 ---
 
@@ -5942,8 +5955,8 @@ Cookie: __Host-dl-admin-session=<opaque>
     "page": 1, "pageSize": 10, "total": "1", "totalPages": "1",
     "records": [
       {
-        "logId": "701", "userId": "12", "operationType": "update", "operationTarget": "home_profile",
-        "targetId": "1", "permissionCode": "home:profile:update"
+        "logId": "701", "userId": "12", "operationType": "update", "operationTarget": "home:profile",
+        "targetId": "1", "permissionCode": "site:ownerProfile:update"
       }
     ]
   },
@@ -5991,8 +6004,8 @@ Cookie: __Host-dl-admin-session=<opaque>
 {
   "code": "OK", "msg": "成功",
   "data": {
-    "logId": "701", "userId": "12", "operationType": "update", "operationTarget": "home_profile",
-    "targetId": "1", "permissionCode": "home:profile:update"
+    "logId": "701", "userId": "12", "operationType": "update", "operationTarget": "home:profile",
+    "targetId": "1", "permissionCode": "site:ownerProfile:update"
   },
   "errors": []
 }
@@ -6300,7 +6313,7 @@ Content-Type: application/json
 | 业务权限 | `home:social:delete`（ALL） |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted` |
 
-继承[既有业务规则](API_CONTRACT.md#model-12-9)，提交后清理各公开端共享的社交链接缓存；不修改主人账号或主人资料，不删除外部图标。
+继承[既有业务规则](API_CONTRACT.md#model-12-9)，提交后清理各公开端共享的社交链接缓存；不修改站长资料，不删除外部图标。
 
 <a id="api-102"></a>
 
@@ -6520,7 +6533,7 @@ Content-Type: application/json
 | 业务权限 | `sys:user:delete`；全局资源 |
 | 请求 → 响应 | `BatchRevisionRequest` → `BatchDeleted`；HTTP 200，data=null |
 
-物理删除用户；一个用户也提交只有一项的 items，不另设单条删除入口。先锁固定管理员保护行，再按数值升序锁操作者及全部目标，复核权限、存在性及每项版本后才能写入。任一目标仍被文章（含回收站）、评论、上传文件、主页资料或留言引用，返回 `409/RESOURCE_IN_USE`，整批保留；须先按各模块规则处理引用，不能以删除用户为由自动删除内容。删除后的整批结果必须保留最后有效管理员，否则 `409/LAST_ADMIN`。
+物理删除用户；一个用户也提交只有一项的 items，不另设单条删除入口。先锁固定管理员保护行，再按数值升序锁操作者及全部目标，复核权限、存在性及每项版本后才能写入。任一目标仍被文章（含回收站）、评论、上传文件或留言引用，返回 `409/RESOURCE_IN_USE`，整批保留；须先按各模块规则处理引用，不能以删除用户为由自动删除内容。删除后的整批结果必须保留最后有效管理员，否则 `409/LAST_ADMIN`。
 
 数据库按既有外键级联清理角色关联、OAuth 绑定、点赞及邮件订阅；浏览记录和操作日志保留，userId 置 null。删除前持有用户锁，提交前撤销所有目标会话；撤销或成功审计失败则数据库整批回滚，已撤销会话不恢复。审计记录所选 ID 和数量，不记录密码、Token、OAuth 身份。删除成功清理统计缓存；文章点赞计数沿用明细实时统计规则。
 
@@ -6721,7 +6734,7 @@ Content-Type: application/json
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
-| `email` | string&#124;null | 未验证联系邮箱，可 null |
+| `email` | string&#124;null | 当前账号绑定的邮箱，可 null |
 | `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -6743,7 +6756,7 @@ Content-Type: application/json
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
-| `email` | string&#124;null | 未验证联系邮箱，可 null |
+| `email` | string&#124;null | 当前账号绑定的邮箱，可 null |
 | `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -7038,7 +7051,7 @@ Content-Type: application/json
 | `ARTICLE_COVER` | 文章封面 |
 | `ARTICLE_IMAGE` | 文章正文配图 |
 | `MUSIC_COVER` | 音乐封面 |
-| `AVATAR` | 用户或站点主人头像 |
+| `AVATAR` | 用户或站长头像 |
 | `LINK_AVATAR` | 友链头像 |
 | `EXPERIENCE_LOGO` | 经历标志 |
 | `ICON` | 社交链接或技能图标 |
@@ -7053,12 +7066,11 @@ Content-Type: application/json
 
 <a id="response-homeprofile"></a>
 
-### 12.34 HomeProfile
+### 12.34 SiteOwnerProfile
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `profileId` | ID | 固定为1 |
-| `userId` | ID | 站点主人账号；必须存在且启用，仅后台管理者可选择 |
 | `nickname` | S(64) | 公开昵称 |
 | `tagline` | S0(100) | 个人标签或一句话介绍 |
 | `description` | S(500)? | 公开简介，null清空 |

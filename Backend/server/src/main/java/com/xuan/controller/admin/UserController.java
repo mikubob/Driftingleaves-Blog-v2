@@ -6,6 +6,7 @@ import com.xuan.dto.AdminUserCreateDTO;
 import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.dto.AdminUserUpdateDTO;
 import com.xuan.dto.BatchRevisionDTO;
+import com.xuan.dto.EmailChangeCodeDTO;
 import com.xuan.dto.UserRolesDTO;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
@@ -14,6 +15,7 @@ import com.xuan.utils.IdUtils;
 import com.xuan.vo.AdminUserProfileVO;
 import com.xuan.vo.BatchVersionsVO;
 import com.xuan.vo.UserAdminVO;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -68,6 +70,15 @@ public class UserController {
         log.info("根据 ID 查询用户详情: userId={}", userId);
         AdminUserProfileVO profile = userService.adminDetail(IdUtils.parse(userId));
         return profileResponse(profile);
+    }
+
+    /** 根据id向目标用户要绑定的新邮箱发送验证码。 */
+    @PostMapping("/{userId}/email-change-code")
+    @SaCheckPermission("sys:user:update")
+    public Result<Void> emailChangeCode(@PathVariable String userId,
+            @Valid @RequestBody EmailChangeCodeDTO body, HttpServletRequest request) {
+        userService.sendAdminEmailChangeCode(IdUtils.parse(userId), body.email(), request);
+        return Result.ok(null);
     }
 
     /**

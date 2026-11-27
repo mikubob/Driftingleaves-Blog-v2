@@ -31,6 +31,7 @@ import com.xuan.mapper.UserMapper;
 import com.xuan.model.LoginSession;
 import com.xuan.policy.UrlPolicy;
 import com.xuan.properties.AuthProperties;
+import com.xuan.ratelimit.AuthRateLimiter;
 import com.xuan.result.PageResult;
 import com.xuan.result.Result;
 import com.xuan.security.AuthorizationProvider;
@@ -52,6 +53,7 @@ import com.xuan.vo.SessionVO;
 import com.xuan.vo.UserAdminVO;
 import com.xuan.vo.UserProfileVO;
 import com.xuan.vo.UserRoleVO;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
@@ -94,6 +96,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final JsonMapper json;
     private final Clock clock;
     private final EmailCodeStore emailCodes;
+    private final AuthRateLimiter authRateLimiter;
     private final AuthProperties auth;
     private final IpLocationResolver locations;
 
@@ -185,10 +188,10 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         SysUser user = lockAdminTarget(userId, "sys:user:update");
         checkRevision(user, revision);
         UrlPolicy.requireValid(request.getAvatar());
+        updateVerifiedEmail(user, request.getEmail(), request.getEmailCode());
 
         // 2. 只替换资料，保留当前状态，用户名、密码和已有角色关联都不改。
         user.setNickname(request.getNickname());
-        user.setEmail(request.getEmail());
         user.setAvatar(request.getAvatar());
         user.setIntro(request.getIntro());
         try {
@@ -199,6 +202,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
 
         retireSubscriptionForEmailChange(user);
         return adminProfile(users.selectById(userId));
+    }
+
+    /** 核对后台权限后向目标用户要绑定的新邮箱发送验证码。 */
+    @Override
+    public void sendAdminEmailChangeCode(long userId, String email, HttpServletRequest request) {
+        requireAdmin("sys:user:update");
+        if (users.selectById(userId) == null) {
+            throw new BusinessException(404, "NOT_FOUND", "用户不存在");
+        }
+        authRateLimiter.email(request, email);
+        emailCodes.send(email, emailChangePurpose(userId));
     }
 
     /**
@@ -297,7 +311,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         Map<Long, SysUser> targets = lockAdminTargets(items, "sys:user:delete");
         for (long userId : targets.keySet()) {
             if (users.hasContentReferences(userId)) {
-                throw new BusinessException(409, "RESOURCE_IN_USE", "用户仍被文章、评论、文件、主页资料或留言引用");
+                throw new BusinessException(409, "RESOURCE_IN_USE", "用户仍被文章、评论、文件或留言引用");
             }
         }
         for (long userId : targets.keySet()) {
@@ -587,8 +601,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         return profile(lockCurrent());
     }
 
+    /** 向当前用户要绑定的新邮箱发送验证码。 */
+    @Override
+    public void sendEmailChangeCode(String email, HttpServletRequest request) {
+        long userId = requireCurrent();
+        authRateLimiter.email(request, email);
+        emailCodes.send(email, emailChangePurpose(userId));
+    }
+
     /**
-     * 本人行锁内核对整体版本，只改允许的资料字段；没传保持、null 清空可空字段，保存失败整笔回滚。
+     * 本人行锁内核对整体版本，只改传入的资料字段，绑定新邮箱前先验证验证码。
      *
      * @param request 已完成入口校验并保留字段出现性的 PATCH 请求
      * @param revision 原样携带的带引号 If-Revision，缺失时返回 428
@@ -612,12 +634,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         // 2. 分清没传、格式不对和版本过期，不能悄悄覆盖别人的资料修改。
         checkRevision(user, revision);
 
-        // 3. 只改客户端实际传来的允许字段，没传保持，null 只清空可空字段。
+        // 3. 只改客户端传来的字段，头像和简介可清空。
         if (request.hasNickname()) {
             user.setNickname(request.getNickname());
-        }
-        if (request.hasEmail()) {
-            user.setEmail(request.getEmail());
         }
         if (request.hasAvatar()) {
             UrlPolicy.requireValid(request.getAvatar());
@@ -625,6 +644,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         }
         if (request.hasIntro()) {
             user.setIntro(request.getIntro());
+        }
+        if (request.hasEmail()) {
+            updateVerifiedEmail(user, request.getEmail(), request.getEmailCode());
         }
 
         // 4. 保存后回查数据库时间，并按新资料返回整体版本。
@@ -637,6 +659,31 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             retireSubscriptionForEmailChange(user);
         }
         return profile(users.selectById(user.getUserId()));
+    }
+
+    /** 验证新邮箱后再更新绑定，邮箱不变时保留原值。 */
+    private void updateVerifiedEmail(SysUser user, String email, String code) {
+        String currentEmail = user.getEmail();
+        if (email == null) {
+            if (currentEmail != null) {
+                throw new BusinessException(400, "VALIDATION_ERROR", "请填写要绑定的新邮箱");
+            }
+            return;
+        }
+        String newEmail = email.toLowerCase(Locale.ROOT);
+        if (currentEmail != null && currentEmail.toLowerCase(Locale.ROOT).equals(newEmail)) {
+            return;
+        }
+        if (code == null) {
+            throw new BusinessException(400, "EMAIL_CODE_INVALID", "请填写新邮箱中的验证码");
+        }
+        emailCodes.verify(newEmail, emailChangePurpose(user.getUserId()), code);
+        user.setEmail(newEmail);
+    }
+
+    /** 换绑验证码按操作者和目标用户隔离。 */
+    private String emailChangePurpose(long userId) {
+        return EmailCodeStore.EMAIL_CHANGE + sessions.currentUserId() + ":" + userId;
     }
 
     /** 在保存邮箱的事务内停用旧邮箱订阅。 */

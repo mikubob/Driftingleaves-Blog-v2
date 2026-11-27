@@ -118,9 +118,11 @@
 
 两个端的邮箱登录与发送登录验证码接口在限流和图形验证码校验通过后，邮箱未绑定本站账号时返回 `401/AUTH_FAILED`，提示“该邮箱未注册”。博客注册用途仍向新邮箱发送验证码。
 
-所有发送用途和端共享每邮箱每 60 秒一次、每可信 IP 每 60 秒五次的限额，超限 429 并带 Retry-After。发送接口在图形验证码通过后计数；后台发送还检查账号登录失败次数。两端账密和邮箱登录，以及后台发送邮箱验证码，共用每 IP 每分钟 30 次的入口预算。邮箱登录的邮件验证码错误计入登录失败预算，图形验证码错误不计入。
+所有发送用途和端共享每邮箱每 60 秒一次、每可信 IP 每 60 秒五次的限额，超限 429 并带 Retry-After。公开发送接口在图形验证码通过后计数，后台登录验证码发送还检查账号登录失败次数。两端账密和邮箱登录，以及后台发送登录验证码，共用每 IP 每分钟 30 次的入口预算。邮箱登录的邮件验证码错误计入登录失败预算，图形验证码错误不计入。
 
 账号邮箱沿用 `sys_user.email` 唯一约束，不新增表或自动改写历史用户。邮箱验证码登录每次证明当前邮箱所有权，不把已有联系邮箱或订阅邮箱当作注册验证结果。账密方式要求已设置本站密码；邮箱方式要求已有可收信的账号邮箱。至少有一种可用即可登录后台，不要求同时配置两者，禁止重建业务库补齐资料。
+
+已有账号更换或首次绑定邮箱时，先通过本人或后台用户管理的换绑验证码接口向新邮箱发信，再携带 `emailCode` 保存资料。换绑接口要求登录，发送频率与注册、登录验证码共用限额。详细路由见[接口索引](API_INDEX.md)。
 
 <a id="captcha"></a>
 
@@ -187,6 +189,7 @@ GET /api/v1/blog/auth/captcha
 | `GET /{admin,blog}/auth/captcha`、`GET /blog/auth/math-captcha` | 三个入口共用60秒30次/可信IP | 已实现，生成图片或题目前限流 |
 | 两端账密登录、邮箱登录及后台发送邮箱验证码 | 共用默认 60 秒 10 次的失败窗口，按可信 IP 和 IP + 归一化用户名或邮箱分别累计 | 凭据错误计入，邮箱登录的邮件验证码错误也计入。阈值可部署配置 |
 | 两端账密登录、邮箱登录及后台发送邮箱验证码 | 共用 60 秒 30 次/可信 IP 的入口窗口 | 在图形验证码与凭据检查前计数，独立于失败窗口 |
+| 注册、登录及换绑验证码发送 | 共用每邮箱 60 秒 1 次、每可信 IP 60 秒 5 次 | 公开入口通过图形验证码后计数，换绑入口通过身份和权限检查后计数 |
 | `POST /{admin,blog}/auth/register` | 60秒5次；IP、存在的浏览器标识；无标识按IP | 已实现，可部署配置 |
 | `POST /{admin,blog}/auth/oauth/{source}/authorize`（LOGIN） | 60秒3次，IP、浏览器标识分别计数；两端和各平台共享额度 | 仅发起登录计次；绑定、回调和兑换不占用此额度 |
 | `POST /{admin,blog}/auth/oauth/{source}/authorize`（BIND）、`POST /{admin,blog}/auth/oauth/exchange` | 共用60秒20次；IP、浏览器标识；无标识按IP | 已实现，可部署配置 |
@@ -311,7 +314,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 | `POST /admin/links`；`PUT /admin/links/batch-status`；`PUT /admin/links/{linkId}`；`POST /admin/links/batch-delete`；`DELETE /blog/me/link-application/{linkId}` | 整个公开友链域，含所有分页与排序；审核拒绝/隐藏/删除后下一次公开查询不能继续显示旧友链 |
 | `PUT /admin/configs/site` | 公开site配置、RSS及地图；从公开改为不公开也必须删旧缓存，RSS继续按原规则检查必需公开配置 |
 | `PUT /admin/configs/comment`、`PUT /admin/configs/message` | 不建立或清理不存在的策略缓存；继续原配置行锁与锁内实时读取，新开关/审核策略立即用于后续写请求 |
-| `PUT /admin/home/profile` | 整个主页公开资料域；不与sys_user作者资料混为同一业务 |
+| `PUT /admin/home/profile` | 整个站长公开资料域；不与sys_user作者资料混为同一业务 |
 | `POST /admin/home/social-links`；`PUT /admin/home/social-links/batch-status`；`PUT/DELETE /admin/home/social-links/{socialId}` | 整个公开社交链接域，含显示、隐藏、排序及空列表 |
 | `POST /admin/cv/experiences`；`PUT /admin/cv/experiences/batch-status`；`PUT/DELETE /admin/cv/experiences/{experienceId}` | 整个公开经历域，含全部类型和分页；改变type时旧类型与新类型都必须失效 |
 | `POST /admin/cv/skills`；`PUT /admin/cv/skills/batch-status`；`PUT/DELETE /admin/cv/skills/{skillId}` | 整个公开技能域，含实际筛选及分页；更新/隐藏/排序/删除均清理 |
@@ -363,9 +366,9 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 
 <a id="group-15"></a>
 
-### 15. 主页展示与在线简历
+### 15. 站长资料、社交链接与在线简历
 
-主页、博客侧栏与简历共用站点主人资料；公开接口仅返回展示字段。后台操作要求对应权限的 ALL 范围，不因站点主人身份自动赋权。
+主页、博客侧栏与简历共用站长资料，公开接口仅返回展示字段。后台操作要求对应权限的 ALL 范围。
 
 <a id="group-16"></a>
 
@@ -426,7 +429,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `username` | string | 登录名 |
 | `nickname` | string | 展示昵称 |
-| `email` | string&#124;null | 未验证联系邮箱，可 null |
+| `email` | string&#124;null | 当前账号绑定的邮箱，可 null |
 | `avatar` | string&#124;null | 公开头像 URL，可 null |
 | `intro` | string&#124;null | 个人简介，可 null |
 | `status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -448,7 +451,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `user.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `user.username` | string | 登录名 |
 | `user.nickname` | string | 展示昵称 |
-| `user.email` | string&#124;null | 未验证联系邮箱，可 null |
+| `user.email` | string&#124;null | 当前账号绑定的邮箱，可 null |
 | `user.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `user.intro` | string&#124;null | 个人简介，可 null |
 | `user.status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -488,7 +491,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 | `session.user.userId` | ID | 本站用户 ID；响应为十进制字符串 |
 | `session.user.username` | string | 登录名 |
 | `session.user.nickname` | string | 展示昵称 |
-| `session.user.email` | string&#124;null | 未验证联系邮箱，可 null |
+| `session.user.email` | string&#124;null | 当前账号绑定的邮箱，可 null |
 | `session.user.avatar` | string&#124;null | 公开头像 URL，可 null |
 | `session.user.intro` | string&#124;null | 个人简介，可 null |
 | `session.user.status` | integer | 当前状态，枚举见对应模型与业务规则 |
@@ -581,7 +584,7 @@ Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点
 
 <a id="response-homeprofilepublic"></a>
 
-### 12.33 HomeProfilePublic
+### 12.33 SiteOwnerProfilePublic
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
@@ -734,7 +737,7 @@ Admin/Blog 的 `/auth/captcha` 共用此响应；不返回答案或会话。
 
 <a id="user-unique-conflict"></a>
 
-用户名（账号）和邮箱分别保持全库唯一，按数据库 `utf8mb4_0900_ai_ci` 排序规则判断，不区分大小写。注册、后台新建用户、Admin/Blog 本人资料修改及后台修改用户资料共用以下冲突响应；修改邮箱时排除目标用户本人，邮箱传 null 仍可清空。
+用户名（账号）和邮箱分别保持全库唯一，按数据库 `utf8mb4_0900_ai_ci` 排序规则判断，不区分大小写。注册、后台新建用户、Admin/Blog 本人资料修改及后台修改用户资料共用以下冲突响应。修改邮箱时排除目标用户本人，已有绑定只可通过新邮箱验证码更换。
 
 | 重复情况 | HTTP / code | `msg` | `errors` 中的字段 |
 | --- | --- | --- | --- |

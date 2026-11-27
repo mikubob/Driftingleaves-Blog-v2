@@ -37,6 +37,7 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | --- | --- |
 | [查询本人资料](API_ADMIN.md#admin-api-8) | `GET /api/v1/admin/me` |
 | [修改本人资料](API_ADMIN.md#admin-api-9) | `PATCH /api/v1/admin/me/profile` |
+| [发送本人换绑验证码](API_ADMIN.md#admin-email-change-code) | `POST /api/v1/admin/me/email-change-code` |
 | [设置或修改本站密码](API_ADMIN.md#admin-api-10) | `PUT /api/v1/admin/me/password` |
 | [清除本站密码](API_ADMIN.md#admin-api-11) | `DELETE /api/v1/admin/me/password` |
 | [查询本人有效角色与权限](API_ADMIN.md#admin-api-12) | `GET /api/v1/admin/me/capabilities` |
@@ -63,6 +64,7 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | [查询用户详情](API_ADMIN.md#api-17) | `GET /api/v1/admin/users/{userId}` |
 | [创建用户](API_ADMIN.md#api-18) | `POST /api/v1/admin/users` |
 | [修改用户资料](API_ADMIN.md#api-19) | `PUT /api/v1/admin/users/{userId}` |
+| [发送目标用户换绑验证码](API_ADMIN.md#admin-user-email-change-code) | `POST /api/v1/admin/users/{userId}/email-change-code` |
 | [分配用户角色](API_ADMIN.md#api-20) | `PUT /api/v1/admin/users/{userId}/roles` |
 | [批量启用用户](API_ADMIN.md#batch-user-enable) | `PUT /api/v1/admin/users/batch-enable` |
 | [批量禁用用户](API_ADMIN.md#batch-user-disable) | `PUT /api/v1/admin/users/batch-disable` |
@@ -174,12 +176,12 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | [预览后台原文件](API_ADMIN.md#api-83) | `GET /api/v1/admin/files/{fileId}/content` |
 | [批量删除文件](API_ADMIN.md#batch-file-delete) | `POST /api/v1/admin/files/batch-delete` |
 
-### 1.14 主人资料与社交链接
+### 1.14 站长资料与社交链接
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
-| [查询后台主页资料](API_ADMIN.md#api-89) | `GET /api/v1/admin/home/profile` |
-| [设置主页资料](API_ADMIN.md#api-90) | `PUT /api/v1/admin/home/profile` |
+| [查询后台站长资料](API_ADMIN.md#api-89) | `GET /api/v1/admin/home/profile` |
+| [设置站长资料](API_ADMIN.md#api-90) | `PUT /api/v1/admin/home/profile` |
 | [查询后台社交链接](API_ADMIN.md#api-92) | `GET /api/v1/admin/home/social-links` |
 | [查询社交链接详情](API_ADMIN.md#api-93) | `GET /api/v1/admin/home/social-links/{socialId}` |
 | [创建社交链接](API_ADMIN.md#api-94) | `POST /api/v1/admin/home/social-links` |
@@ -295,6 +297,7 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | --- | --- |
 | [查询本人资料](API_BLOG.md#api-8) | `GET /api/v1/blog/me` |
 | [修改本人资料](API_BLOG.md#api-9) | `PATCH /api/v1/blog/me/profile` |
+| [发送本人换绑验证码](API_BLOG.md#blog-email-change-code) | `POST /api/v1/blog/me/email-change-code` |
 | [设置或修改本站密码](API_BLOG.md#api-10) | `PUT /api/v1/blog/me/password` |
 | [清除本站密码](API_BLOG.md#api-11) | `DELETE /api/v1/blog/me/password` |
 | [查询本人有效角色与权限](API_BLOG.md#api-12) | `GET /api/v1/blog/me/capabilities` |
@@ -323,7 +326,7 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | 接口 | 方法与完整路径 |
 | --- | --- |
 | [分页查询公开作者](API_BLOG.md#api-154) | `GET /api/v1/blog/authors` |
-| [查询作者公开主页资料](API_BLOG.md#api-155) | `GET /api/v1/blog/authors/{userId}` |
+| [查询作者公开资料](API_BLOG.md#api-155) | `GET /api/v1/blog/authors/{userId}` |
 
 ### 2.5 分类与标签
 
@@ -387,11 +390,11 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | --- | --- |
 | [查询公开站点配置](API_BLOG.md#api-76) | `GET /api/v1/blog/configs` |
 
-### 2.13 主人资料与社交链接
+### 2.13 站长资料与社交链接
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
-| [查询站点主人公开资料](API_BLOG.md#blog-api-88) | `GET /api/v1/blog/profile` |
+| [查询站长公开资料](API_BLOG.md#blog-api-88) | `GET /api/v1/blog/profile` |
 | [查询公开社交链接](API_BLOG.md#blog-api-91) | `GET /api/v1/blog/social-links` |
 
 ### 2.14 背景音乐
@@ -455,11 +458,11 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | --- | --- |
 | [查询公开站点配置](API_HOME.md#home-api-76) | `GET /api/v1/home/configs` |
 
-### 3.2 主人资料与社交链接
+### 3.2 站长资料与社交链接
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
-| [查询站点主人公开资料](API_HOME.md#api-88) | `GET /api/v1/home/profile` |
+| [查询站长公开资料](API_HOME.md#api-88) | `GET /api/v1/home/profile` |
 | [查询公开社交链接](API_HOME.md#api-91) | `GET /api/v1/home/social-links` |
 
 ### 3.3 浏览统计采集
@@ -485,11 +488,11 @@ Admin 和 Blog 共用认证实现，调用按端使用各自的认证与本人�
 | --- | --- |
 | [查询公开站点配置](API_CV.md#cv-api-76) | `GET /api/v1/cv/configs` |
 
-### 4.2 主人资料与社交链接
+### 4.2 站长资料与社交链接
 
 | 接口 | 方法与完整路径 |
 | --- | --- |
-| [查询站点主人公开资料](API_CV.md#cv-api-88) | `GET /api/v1/cv/profile` |
+| [查询站长公开资料](API_CV.md#cv-api-88) | `GET /api/v1/cv/profile` |
 | [查询公开社交链接](API_CV.md#cv-api-91) | `GET /api/v1/cv/social-links` |
 
 ### 4.3 简历经历与技能

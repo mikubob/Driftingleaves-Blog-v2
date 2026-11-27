@@ -1,20 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="com.xuan.mapper.HomeProfileMapper">
+<mapper namespace="com.xuan.mapper.SiteOwnerProfileMapper">
 
-    <!-- 加行锁查询站点主人资料 -->
-    <select id="lockProfile" resultType="com.xuan.entity.HomeProfile">
+    <!-- 加行锁查询站长资料 -->
+    <select id="lockProfile" resultType="com.xuan.entity.SiteOwnerProfile">
         SELECT *
-        FROM home_profile
+        FROM site_owner_profile
         WHERE profile_id = 1
         FOR UPDATE
     </select>
 
-    <!-- 完整替换站点主人资料，显式写入可空字段以支持清空 -->
+    <!-- 完整替换站长资料，显式写入可空字段以支持清空 -->
     <update id="replace">
-        UPDATE home_profile
-        SET user_id = #{row.userId},
-            nickname = #{row.nickname},
+        UPDATE site_owner_profile
+        SET nickname = #{row.nickname},
             tagline = #{row.tagline},
             description = #{row.description},
             avatar = #{row.avatar},

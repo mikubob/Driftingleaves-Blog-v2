@@ -152,7 +152,7 @@ Sa-Token 只管理本站登录与权限校验，JustAuth 只获取经平台验�
 | 同文件：toggleTop | articleList、articleDetail | 排序字段变化也会影响列表与详情；V2置顶通过既有文章PUT更新，沿用文章清理清单，不新增置顶接口 |
 | `service/article/impl/ArticleCategoryServiceImpl.java`：addCategory、updateCategory、batchDelete | articleCategories、articleList、blogReport | 字典写入清自己及依赖业务；V2还要清嵌入分类资料的详情、旧/新slug与隐藏分类筛选 |
 | `service/article/impl/ArticleTagServiceImpl.java`：addTag、updateTag、batchDelete | articleTags、blogReport | 标签写入不能仅清标签域；V2额外覆盖文章列表/详情中的当前标签及级联关联变化 |
-| `service/profile/impl/PersonalInfoServiceImpl.java`：updatePersonalInfo | personalInfo | 清整个主页资料域，不能只清某一种返回模型 |
+| `service/profile/impl/PersonalInfoServiceImpl.java`：updatePersonalInfo | personalInfo | 清整个站长资料域，不能只清某一种返回模型 |
 | `service/profile/impl/SocialMediaServiceImpl.java`：addSocialMedia、updateSocialMedia、batchDelete | socialMedia | 新增/修改/删除均清理整个链接域，覆盖visible及所有读取变体；V2只缓存公开变体 |
 | `service/profile/impl/ExperienceServiceImpl.java`：addExperience、updateExperience、batchDelete | experiences | 按类型读缓存时，类型变化必须同时影响旧、新类型；采用整个经历域失效防漏删 |
 | `service/profile/impl/SkillServiceImpl.java`：addSkill、updateSkill、batchDelete | skills | 技能增删改清整个技能域，涵盖公开展示结果 |
@@ -349,7 +349,8 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | Login | 前后台账密登录：username:S(64)、password:string 均必填；密码同长度/字节边界 |
 | EmailLogin | 前后台邮箱登录：email、六位 emailCode 均必填，分别消费 LOGIN / ADMIN_LOGIN 用途验证码；后台还检查 admin:access |
 | AdminEmailCode | 仅必填 email，检查账号当前邮箱、启用状态和 admin:access 后发送后台验证码 |
-| ProfilePatch | nickname?:S(64)（若给不能 null）；email?:S(254)?（格式校验、空串转 null、唯一）；avatar?:URL?；intro?:S(500)?；至少一个字段。这里 `?` 在字段名表示可省略 |
+| EmailChangeCode | email 必填，合法邮箱且 ≤254 字符；去首尾空白并转小写 |
+| ProfilePatch | nickname?:S(64)（若给不能 null）；email?:S(254)?（合法邮箱、唯一，已绑定时不能清空）；emailCode?:六位数字字符串（更换或首次绑定时必填）；avatar?:URL?；intro?:S(500)?；至少提供昵称、邮箱、头像或简介中的一项。这里 `?` 在字段名表示可省略 |
 | Me | userId:ID、username:string、nickname:string、email:string?、avatar:URL?、intro:string?、status:0或1、hasPassword:boolean、lastLoginTime:Time?、createTime:Time、updateTime:Time |
 | OAuthBinding | source:S(32)、createTime:Time；只返回平台和绑定时间，不返回 uuid、oauthId、平台 Token |
 | PasswordSet | newPassword:string 必填（同注册约束）；currentPassword:string 仅已有密码时必填，否则必须省略 |
@@ -360,9 +361,11 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | OAuthAuthorize | 请求仅operation:LOGIN或BIND；响应authorizationUrl:string、expiresIn:number（state有效秒数），平台/回跳地址由服务端配置 |
 | OAuthExchange | 仅ticket:string必填，43位ASCII `[A-Za-z0-9_-]{43}`；结果使用下述OAuthResult联合响应 |
 
-注册必须提供 email 和 REGISTER 用途的 emailCode，不收 avatar/roleIds/status；服务端固定启用并分配 member，仅返回 Me，不自动登录。邮箱验证码仅证明当次邮箱所有权，个人资料和后台写入的联系邮箱不因此成为已验证邮箱，不用于自动合并账号。系统不得返回 passwordHash/password_hash/salt，包括管理员接口。
+注册必须提供 email 和 REGISTER 用途的 emailCode，不收 avatar/roleIds/status；服务端固定启用并分配 member，仅返回 Me，不自动登录。系统不得返回 passwordHash/password_hash/salt，包括管理员接口。
 
-用户名（账号）和邮箱分别保持全库唯一，按数据库排序规则判断；数据库唯一键拒绝写入后，一次检查两个字段，修改时排除目标本人。注册和后台新建账号的 409/UNIQUE_CONFLICT 必须区分“用户名已被使用”“邮箱已被使用”“用户名和邮箱均已被使用”，即使两个字段分别被不同账号占用也返回两项。errors 只包含对应的 username/email 及中文说明，不包含占用账号或原始输入；本人和后台修改邮箱沿用相同格式，邮箱 null 仍可清空。写入失败整笔回滚，注册已消费的邮件验证码不恢复；前端直接展示 msg，不重复追加 errors，完整示例见[账号唯一冲突](API.md#user-unique-conflict)。
+本人和后台更新资料时，首次绑定或更换邮箱必须提交发送到新邮箱的六位验证码。换绑验证码按操作者、目标账号和新邮箱隔离，五分钟有效，每次校验即消费。缺失、错误、过期或已消费的验证码返回 400/EMAIL_CODE_INVALID。缺失验证码不消费已发送的验证码。邮箱大小写不影响是否为同一地址，仅修改其他资料无须验证码。账号邮箱验证仅用于本次绑定，订阅仍需单独确认。
+
+用户名（账号）和邮箱分别保持全库唯一，按数据库排序规则判断；数据库唯一键拒绝写入后，一次检查两个字段，修改时排除目标本人。注册和后台新建账号的 409/UNIQUE_CONFLICT 必须区分“用户名已被使用”“邮箱已被使用”“用户名和邮箱均已被使用”，即使两个字段分别被不同账号占用也返回两项。errors 只包含对应的 username/email 及中文说明，不包含占用账号或原始输入；本人和后台修改邮箱沿用相同格式。写入失败整笔回滚，已消费的邮件验证码不恢复；前端直接展示 msg，不重复追加 errors，完整示例见[账号唯一冲突](API.md#user-unique-conflict)。
 
 `OAuthResult` 为联合响应：LOGIN 只有 operation/session，BIND 只有 operation/binding。OAuth 票据和第三方 access_token 不得当成本站登录凭据。
 
@@ -373,7 +376,7 @@ HTTP 200 和外层 code=OK 只表示返回本批结果，不能代表每个文�
 | 模型 | 完整字段与约束 |
 | --- | --- |
 | UserCreate | username、password、nickname 必填，同 Register；其余可选 email:string?、avatar:URL?、intro:string?（约束同 ProfilePatch）、status:0或1（默认1）；不接收 roleIds |
-| UserUpdate | nickname:S(64)、email:string?、avatar:URL?、intro:S(500)? 均必填；username/密码/status不可改，状态仅走批量启用/禁用 |
+| UserUpdate | nickname:S(64)、email:string?、avatar:URL?、intro:S(500)? 均必填；emailCode 在更换或首次绑定时必填，规则同 ProfilePatch；username/密码/status不可改，状态仅走批量启用/禁用 |
 | UserAdmin | Me 全部字段 + roleIds:ID[]（包含已分配但禁用的角色）+ lastLoginIp:string?、lastLoginLocation:string?（最近成功登录的完整 IP 和省市，仅后台用户管理返回，历史可空）；不含 OAuth uuid 或 Token |
 | UserBatch | 启用、禁用、删除均复用 BatchRevisionRequest；各项使用用户详情版本。启停为 sys:user:update，删除为新增固定权限 sys:user:delete，不扩大 ADMIN_PERMISSIONS；内置 admin 显式授予，其他角色须另行授权 |
 | UserRoles | roleIds:ID[] 必填，0..100 个、不重复、角色必须存在且启用；[] 清空；只能经此专用接口分配 |
@@ -557,17 +560,17 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 
 <a id="model-12-9"></a>
 
-### 12.9 主页与简历模型
+### 12.9 站长资料、社交链接与简历模型
 
-实施状态：第15章21个入口已使用真实HomeProfile/Social/Experience/Skill服务及Mapper/XML；公开资料与账号资料分离，后台逐操作检查ALL。主页首次设置使用既有管理保护锁串行空资源版本，再升序锁操作者/所选主人、固定资料行。图标键沿用已有菜单键并增加文档示例github，其他图标使用公开 HTTP(S) 图片地址。
+实施状态：第15章21个入口已使用真实SiteOwnerProfile/Social/Experience/Skill服务及Mapper/XML；公开资料与账号资料分离，后台逐操作检查ALL。站长资料首次设置使用既有管理保护锁串行空资源版本，再依次锁定操作者和固定资料行。图标键沿用已有菜单键并增加文档示例github，其他图标使用公开 HTTP(S) 图片地址。
 
 新增Write/Create/Edit模型均为明确的字段白名单；本章写接口要求表中字段完整出现，可空字段用null清空。响应中的createTime/updateTime由数据库维护，不接收客户端值。Date使用合法YYYY-MM-DD，1000..9999年，与Time区分。
 
 | 模型 | 完整字段与约束 |
 | --- | --- |
-| `HomeProfileWrite` | `userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
-| `HomeProfile` | `profileId`:ID（固定为1）；`userId`:ID（站点主人账号；必须存在且启用，仅后台管理者可选择）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
-| `HomeProfilePublic` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
+| `SiteOwnerProfileWrite` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
+| `SiteOwnerProfile` | `profileId`:ID（固定为1）；`nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
+| `SiteOwnerProfilePublic` | `nickname`:S(64)（公开昵称）；`tagline`:S0(100)（个人标签或一句话介绍）；`description`:S(500)?（公开简介，null清空）；`avatar`:URL?（公开头像，HTTP(S) 图片地址）；`website`:URL?（个人网站）；`publicEmail`:string&#124;null（≤254，合法联系邮箱；明确自愿公开，不自动读取登录邮箱）；`githubUrl`:URL?（GitHub主页）；`location`:S(100)?（自愿公开的所在地） |
 | `SocialWrite` | `name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；POST还须提供初始status（0隐藏/1展示），PUT不接收status |
 | `Social` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `SocialPublic` | `socialId`:ID（社交链接ID）；`name`:S(64)（社交平台或链接名称）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或前端注册图标键，禁止任意HTML）；`url`:URL（外部HTTP(S)目标链接，邮箱链接可使用经过校验的mailto:邮箱）；`sortOrder`:int32（越小越靠前） |
@@ -578,7 +581,7 @@ blog_file没有公开标志或文章外键，不能仅凭fileId认为可匿名�
 | `Skill` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或注册图标键）；`sortOrder`:int32（越小越靠前）；`status`:integer（0隐藏 1展示）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `SkillPublic` | `skillId`:ID（技能ID）；`name`:S(64)（技能名称）；`description`:S(500)?（技能描述）；`icon`:string&#124;null（≤2048；公开 HTTP(S) 图片地址或注册图标键）；`sortOrder`:int32（越小越靠前） |
 
-主页固定profileId=1，userId只供后台选择本站主人；公开响应没有userId或登录邮箱。未设置资料时公开/后台GET返回data=null，后台GET仍提供空资源X-Revision，PUT以该版本首次创建。社交、经历、技能为全站资源，需要ALL管理权限，不根据站点主人ID自动获得修改权。社交url是通用URL规则的明确例外：允许mailto:后接单一合法邮箱，拒绝额外参数、控制字符；其他展示 URL 使用绝对 HTTP(S) 地址。
+站长资料固定profileId=1，公开联系邮箱单独维护。未设置资料时公开/后台GET返回data=null，后台GET仍提供空资源X-Revision，PUT以该版本首次创建。站长资料、社交、经历和技能均为全站资源，需要对应的ALL管理权限。社交url是通用URL规则的明确例外：允许mailto:后接单一合法邮箱，拒绝额外参数、控制字符；其他展示 URL 使用绝对 HTTP(S) 地址。
 
 <a id="message-rules"></a>
 
@@ -652,7 +655,7 @@ lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/jso
 
 status为0待验证、1已订阅、2已退订。每用户一条，待验证和已订阅记录独占规范化邮箱。退订释放邮箱占用并保留原地址，普通退订可保留验证记录。重新申请进入待验证时清空verifiedAt/subscribeTime/unsubscribeTime；激活必须有当前邮箱验证时间和订阅时间，unsubscribeTime=null。昵称读取用户公开资料，不复制旧nickname列。任何请求都不能写userId/verifiedAt/审计时间，后台状态接口也不能更换邮箱或跳过验证。
 
-本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。本人或管理员更换或清空账号邮箱时，在保存账号的事务内将旧订阅置为已退订并清除验证时间，原邮箱停止投递。新邮箱须重新申请并确认。确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
+本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。本人或管理员更换账号邮箱时，在保存账号的事务内将旧订阅置为已退订并清除验证时间，原邮箱停止投递。新邮箱须重新申请并确认。确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
 
 确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，通过同源博客 API 提交 JSON 票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
 
@@ -825,7 +828,7 @@ X-Revision生成和检查需覆盖正文、tag关系、user角色、role权限�
 | blog_friend_link | 后台维护与公开展示 |
 | blog_file | 上传、元数据、原文件与文章上下文读取、删除补偿 |
 | blog_site_config | site/comment/message 白名单对象；公开接口只返回允许公开项 |
-| home_profile / home_social_link | 第15章公开展示与后台维护，展示邮箱不来自登录资料 |
+| site_owner_profile / home_social_link | 第15章公开展示与后台维护，展示邮箱不来自登录资料 |
 | cv_experience / cv_skill | 第15章简历经历和技能，隐藏/展示与物理删除 |
 | blog_message | 第16章逐层公开/本人/后台查询、回复、审核和分支删除 |
 | blog_music | 第17章公开播放列表与后台元数据维护 |

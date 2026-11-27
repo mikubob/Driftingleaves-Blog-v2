@@ -20,14 +20,10 @@ import java.util.Set;
  */
 @Data
 @NoArgsConstructor
-public class HomeProfileWriteDTO implements Serializable {
+public class SiteOwnerProfileWriteDTO implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
-
-    // 用户ID
-    @NotNull
-    private Long userId;
 
     // 昵称
     @NotNull
@@ -67,11 +63,6 @@ public class HomeProfileWriteDTO implements Serializable {
     @Getter(AccessLevel.NONE)
     @Setter(AccessLevel.NONE)
     private final Set<String> present = new HashSet<>();
-
-    public void setUserId(Long value) {
-        present.add("userId");
-        userId = value;
-    }
 
     public void setNickname(String value) {
         present.add("nickname");
@@ -118,6 +109,6 @@ public class HomeProfileWriteDTO implements Serializable {
      */
     @AssertTrue(message = "表单内容未完整提交，请重新打开编辑窗口后重试。")
     public boolean isComplete() {
-        return present.size() == 9;
+        return present.size() == 8;
     }
 }

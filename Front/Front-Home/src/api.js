@@ -98,7 +98,7 @@ async function request(path, options = {}) {
   return result.data
 }
 
-/** 获取站点主人公开资料；null 表示尚未配置，邮箱仅取 publicEmail。 */
+/** 获取站长公开资料；null 表示尚未配置，邮箱仅取 publicEmail。 */
 export async function getProfile(signal) {
   const data = await request('/home/profile', { signal })
   assertResponse(data === null || matchesFields(data, {

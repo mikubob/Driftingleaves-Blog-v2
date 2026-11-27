@@ -25,6 +25,7 @@ public class EmailCodeStore {
     public static final String REGISTER = "register";
     public static final String LOGIN = "login";
     public static final String ADMIN_LOGIN = "admin-login";
+    public static final String EMAIL_CHANGE = "email-change:";
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final DefaultRedisScript<String> CONSUME = new DefaultRedisScript<>("""
             local code = redis.call('GET', KEYS[1])
@@ -47,10 +48,15 @@ public class EmailCodeStore {
                 case REGISTER -> "注册账号";
                 case LOGIN -> "邮箱登录";
                 case ADMIN_LOGIN -> "后台登录";
-                default -> throw new IllegalArgumentException("未知邮件验证码用途");
+                default -> {
+                    if (purpose.startsWith(EMAIL_CHANGE)) {
+                        yield "更换账号邮箱";
+                    }
+                    throw new IllegalArgumentException("未知邮件验证码用途");
+                }
             };
             mail.send(email, "Drifting Leaves - " + action + "验证码",
-                    "您正在" + action + "，验证码：" + code + "。五分钟内有效，请勿向他人透露。若非本人操作，请忽略。后台验证码仅用于后台登录。",
+                    "您正在" + action + "，验证码：" + code + "。五分钟内仅用于本次操作，请勿向他人透露。若非本人操作，请忽略。",
                     EmailTemplateUtils.verificationCode(action, code));
         } catch (RuntimeException exception) {
             redis.delete(key);

@@ -26,7 +26,7 @@ public final class EmailTemplateUtils {
                     </div>
                     <p style="margin:16px 0 0;color:#888;font-size:13px;">有效期 5 分钟，请及时使用</p>
                 </div>
-                <p style="margin:24px 0 0;color:#888;font-size:13px;">请勿向他人透露验证码。若非本人操作，请忽略。后台验证码仅用于后台登录。</p>
+                <p style="margin:24px 0 0;color:#888;font-size:13px;">验证码仅用于本次操作，请勿向他人透露。若非本人操作，请忽略。</p>
                 """.formatted(EscapeUtil.escapeHtml4(action), EscapeUtil.escapeHtml4(code));
         return layout("邮箱验证 · " + action, content);
     }

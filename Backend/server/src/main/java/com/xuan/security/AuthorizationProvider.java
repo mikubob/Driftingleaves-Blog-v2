@@ -66,8 +66,8 @@ public class AuthorizationProvider implements StpInterface {
      */
     public static final Set<String> EXTENDED_PERMISSIONS = Set.of(
             "sys:user:delete",
-            "home:profile:query",
-            "home:profile:update",
+            "site:ownerProfile:query",
+            "site:ownerProfile:update",
             "home:social:query",
             "home:social:create",
             "home:social:update",
