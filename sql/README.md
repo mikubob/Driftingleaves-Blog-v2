@@ -26,11 +26,8 @@ ALTER TABLE blog_visitor
 
 - [demo_data.sql](demo_data.sql)：V2 通用演示数据，含文章、评论/留言回复链、属地与设备、访客与浏览统计、友链、隐藏音乐、订阅和虚构日志；只补充缺失的演示记录，不覆盖已有数据。数量、初始化要求、导入方法和验证见 [DEMO_DATA.md](DEMO_DATA.md)。
 - [drifting_leaves_v2.sql](drifting_leaves_v2.sql)：29 张表、基础角色、指定的初始管理员、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
-- [friend_link_application.sql](friend_link_application.sql)：已有 V2 数据库在部署新版后端前执行一次，增加申请人和每日额度。已有友链及其展示状态照常保留。
-- [friend_link_source.sql](friend_link_source.sql)：已有 V2 数据库具备申请人字段后、部署新版后端前执行一次。保有申请人关联的历史记录回填为 `APPLICATION`，其余记为 `UNKNOWN`，保留原展示状态和更新时间。新库直接使用初始化基线。
 - [cv_demo_data.sql](cv_demo_data.sql)：已有 V2 表结构上的虚构简历演示数据，目标库为 `driftingleaves`，补充个人资料、社交链接、教育、工作、项目经历和技能；可重复执行，跳过已有个人资料、相同 URL 的社交链接、同类型同标题的经历及同名技能，不覆盖这些记录。
 
-- [rss_subscription_email_release.sql](rss_subscription_email_release.sql)：停止已有 V2 后端后，在目标库执行一次，再部署新版。退订记录释放邮箱唯一键，账号已换邮箱的历史订阅停止投递并清除旧邮箱验证。新库直接使用初始化基线。
 在 MySQL 客户端执行（路径可按实际位置修改）：
 
 ```sql

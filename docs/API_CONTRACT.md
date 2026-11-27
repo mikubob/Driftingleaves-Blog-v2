@@ -522,7 +522,7 @@ categoryName/tagName 各自按库排序规则唯一；slug 各自区分大小写
 
 博客提交和后台绑定共用 `applicant_id` 及其唯一约束。博客提交的账号取自会话，后台创建和编辑可设置绑定账号。本人查询和撤回以当前绑定为准，每个账号最多一条。解绑、改绑或删除友链释放原账号的申请名额，保留当日已用次数。账号删除后清空绑定，友链记录保留。详见[本人申请](API_BLOG.md#link-application-get)和[后台批量删除](API_ADMIN.md#batch-link-delete)。
 
-创建友链时由服务端固定来源，博客提交为 `APPLICATION`，后台创建为 `ADMIN`。来源独立于申请归属和状态，删除账号后仍保留。[已有库迁移](../sql/friend_link_source.sql)将仍保留申请关联的记录回填为 `APPLICATION`，其余历史记录使用 `UNKNOWN`。
+创建友链时由服务端固定来源，博客提交为 `APPLICATION`，后台创建为 `ADMIN`。来源独立于申请归属和状态，删除账号后仍保留。来源无法确认的历史记录使用 `UNKNOWN`。
 
 后台绑定与博客提交在同一个目标账号锁下检查名额。绑定不会扣减每日提交次数。版本包含当前绑定的账号 ID，来源和昵称不参与计算。查询和写入规则见[后台友链接口](API_ADMIN.md#admin-link-source)。
 
