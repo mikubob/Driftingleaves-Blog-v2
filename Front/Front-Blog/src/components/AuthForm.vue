@@ -8,6 +8,7 @@ import { acceptSession } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 import CaptchaField from '../shared/CaptchaField.vue'
+import { useEmailCodeCooldown } from '../shared/useEmailCodeCooldown.js'
 /** 选择第三方登录方式，弹窗模式保留当前页面。 */
 const props = defineProps({ popup: Boolean })
 const register = ref(false)
@@ -21,6 +22,7 @@ const formMode = computed(() => {
 const form = reactive({ username: '', password: '', nickname: '', email: '', emailCode: '' })
 const captcha = ref(null)
 const busy = ref(false)
+const { secondsLeft, startCooldown } = useEmailCodeCooldown()
 
 /** 切换登录或注册模式。 */
 function switchRegister(next) {
@@ -128,19 +130,27 @@ async function submit() {
 
 /** 发送会消费图形验证码；收到邮件后使用新图片提交注册或登录。 */
 async function sendEmailCode() {
+  if (busy.value || secondsLeft.value || !captcha.value?.ready) {
+    return
+  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
     ElMessage.error('请输入有效邮箱。')
     return
   }
   busy.value = true
-  form.emailCode = ''
   try {
     await request('/blog/auth/email-code', {
       method: 'POST', body: { email: form.email.trim(), purpose: register.value ? 'REGISTER' : 'LOGIN' },
       captcha: captcha.value.getValue(),
+      rateLimitInForm: true,
     })
+    startCooldown()
+    form.emailCode = ''
     ElMessage.success('验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。')
   } catch (failure) {
+    if (failure.status === 429) {
+      startCooldown(failure.retryAfter)
+    }
     ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
@@ -284,12 +294,12 @@ async function authorize(provider) {
           <div class="auth-collapsible-inner">
             <button
               type="button"
-              class="auth-send-code"
+              class="auth-send-code primary"
               :tabindex="register || emailLogin ? 0 : -1"
-              :disabled="busy || !captcha?.ready"
+              :disabled="busy || !captcha?.ready || secondsLeft > 0"
               @click="sendEmailCode"
             >
-              发送邮箱验证码
+              {{ secondsLeft ? `${secondsLeft} 秒后重发` : '发送邮箱验证码' }}
             </button>
           </div>
         </div>

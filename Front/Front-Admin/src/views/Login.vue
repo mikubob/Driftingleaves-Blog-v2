@@ -10,6 +10,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { request } from '../api.js'
 import CaptchaField from '../shared/CaptchaField.vue'
+import { useEmailCodeCooldown } from '../shared/useEmailCodeCooldown.js'
 import { acceptSession } from '../session.js'
 import { firstPage, registerMenuRoutes } from '../router.js'
 import { validatePassword } from '../form.js'
@@ -21,6 +22,7 @@ const emailLogin = ref(false)
 const captcha = ref(null)
 const busy = ref(false)
 const providers = ref([])
+const { secondsLeft, startCooldown } = useEmailCodeCooldown()
 
 onMounted(async () => {
   try {
@@ -95,7 +97,7 @@ async function login() {
 
 /** 发送邮箱登录验证码，发送成功后仍需填写新图形验证码完成登录。 */
 async function sendEmailCode() {
-  if (busy.value) {
+  if (busy.value || secondsLeft.value || !captcha.value?.ready) {
     return
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()) || form.email.trim().length > 254) {
@@ -103,15 +105,20 @@ async function sendEmailCode() {
     return
   }
   busy.value = true
-  form.emailCode = ''
   try {
     await request('/admin/auth/email-code', {
       method: 'POST',
       body: { email: form.email.trim() },
       captcha: captcha.value.getValue(),
+      rateLimitInForm: true,
     })
+    startCooldown()
+    form.emailCode = ''
     ElMessage.success('验证码已发送，五分钟内有效。请填写邮件验证码和新图片中的数字；再次发送需等待一分钟。')
   } catch (failure) {
+    if (failure.status === 429) {
+      startCooldown(failure.retryAfter)
+    }
     ElMessage.error(failure.message)
   } finally {
     captcha.value?.refresh()
@@ -173,7 +180,14 @@ async function sendEmailCode() {
               autocomplete="one-time-code" maxlength="6" placeholder="邮件中的六位数字" :disabled="busy" />
           </template>
           <CaptchaField ref="captcha" :request="request" endpoint="/admin/auth/captcha" :disabled="busy" />
-          <el-button v-if="emailLogin" :disabled="busy || !captcha?.ready" @click="sendEmailCode">发送邮箱验证码</el-button>
+          <el-button
+            v-if="emailLogin"
+            type="primary"
+            :disabled="busy || !captcha?.ready || secondsLeft > 0"
+            @click="sendEmailCode"
+          >
+            {{ secondsLeft ? `${secondsLeft} 秒后重发` : '发送邮箱验证码' }}
+          </el-button>
           <el-button
             class="login-submit"
             type="primary"

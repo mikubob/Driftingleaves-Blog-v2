@@ -243,7 +243,9 @@ class ApiError extends Error {
 }
 
 /** 发送博客请求，统一读取 Result 响应、处理登录失效和 Retry-After 等待提示，不自动重试写请求。 */
-export async function request(path, { body, revision, captcha, expectedUserId = sessionUserId(), ...options } = {}) {
+export async function request(path, {
+  body, revision, captcha, expectedUserId = sessionUserId(), rateLimitInForm = false, ...options
+} = {}) {
   const headers = new Headers({ Accept: 'application/json' })
   setCaptchaHeaders(headers, captcha)
   if (expectedUserId) {
@@ -284,7 +286,7 @@ export async function request(path, { body, revision, captcha, expectedUserId = 
       ? `${prefix}，请等待 ${seconds} 秒后重试。`
       : `${prefix}，请稍后重试。`, 429, 'RATE_LIMITED')
     error.retryAfter = Number(seconds) || 60
-    throw reportRequestFailure(error, path)
+    throw rateLimitInForm ? error : reportRequestFailure(error, path)
   }
   let result
   try {

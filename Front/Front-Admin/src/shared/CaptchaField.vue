@@ -28,7 +28,10 @@ async function refresh() {
   loading.value = true
   controller = new AbortController()
   try {
-    const { data } = await props.request(props.endpoint, { signal: controller.signal })
+    const { data } = await props.request(props.endpoint, {
+      signal: controller.signal,
+      rateLimitInForm: !props.arithmetic,
+    })
     challenge.value = data
   } catch (failure) {
     if (failure.name !== 'AbortError') {

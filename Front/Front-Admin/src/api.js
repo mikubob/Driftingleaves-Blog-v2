@@ -66,7 +66,9 @@ function validateNumbers(value, key = '') {
 }
 
 /** 发送后台请求，统一处理登录状态、Result 响应、版本和限流提示；失败后不自动重试。 */
-export async function request(path, { body, revision, captcha, expectedUserId = sessionUserId(), blob = false, ...options } = {}) {
+export async function request(path, {
+  body, revision, captcha, expectedUserId = sessionUserId(), blob = false, rateLimitInForm = false, ...options
+} = {}) {
   const headers = new Headers({ Accept: blob ? '*/*' : 'application/json' })
   setCaptchaHeaders(headers, captcha)
   if (expectedUserId) {
@@ -104,7 +106,9 @@ export async function request(path, { body, revision, captcha, expectedUserId = 
     const message = /^\d+$/.test(seconds || '')
       ? `请求过于频繁，请等待 ${seconds} 秒后重试。`
       : '请求过于频繁，请稍后重试。'
-    throw reportRequestFailure(new ApiError(message, 429, 'RATE_LIMITED'), path)
+    const error = new ApiError(message, 429, 'RATE_LIMITED')
+    error.retryAfter = Number(seconds) || 60
+    throw rateLimitInForm ? error : reportRequestFailure(error, path)
   }
   if (blob && response.ok) {
     const file = await response.blob()

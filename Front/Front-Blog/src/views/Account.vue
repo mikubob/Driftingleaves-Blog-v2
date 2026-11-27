@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus'
 import 'element-plus/es/components/message/style/css'
 import { getPage, isWebUrl, request } from '../api.js'
 import { validatePassword } from '../shared/form.js'
+import { useEmailCodeCooldown } from '../shared/useEmailCodeCooldown.js'
 import { can, logout, session, sessionRevoked } from '../session.js'
 import { useResource } from '../composables/useResource.js'
 import { articlePath, formatDate, formatDateTime } from '../format.js'
@@ -23,6 +24,7 @@ const statusFilter = ref(null)
 const page = ref(1)
 const busy = ref(false)
 const sendingEmailCode = ref(false)
+const { secondsLeft, startCooldown } = useEmailCodeCooldown()
 const deleting = shallowRef(null)
 const editOpen = ref(false)
 const passwordOpen = ref(false)
@@ -41,6 +43,12 @@ const profileInitial = computed(() => [...profileNickname.value][0] || 'U')
 const normalizedEmail = computed(() => form.email.trim().toLowerCase())
 const needsEmailCode = computed(() => normalizedEmail.value !== ''
   && normalizedEmail.value !== (me.data?.data?.email || '').toLowerCase())
+const emailCodeButtonLabel = computed(() => {
+  if (secondsLeft.value) {
+    return `${secondsLeft.value} 秒后重发`
+  }
+  return sendingEmailCode.value ? '正在发送…' : '发送验证码到新邮箱'
+})
 
 async function signOut() {
   try {
@@ -178,7 +186,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 
 /** 向当前填写的新邮箱发送换绑验证码。 */
 async function sendEmailChangeCode() {
-  if (busy.value || sendingEmailCode.value || !needsEmailCode.value) {
+  if (busy.value || sendingEmailCode.value || secondsLeft.value || !needsEmailCode.value) {
     return
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail.value)) {
@@ -190,10 +198,15 @@ async function sendEmailChangeCode() {
     await request('/blog/me/email-change-code', {
       method: 'POST',
       body: { email: normalizedEmail.value },
+      rateLimitInForm: true,
     })
+    startCooldown()
     form.emailCode = ''
     ElMessage.success('验证码已发送到新邮箱。')
   } catch (failure) {
+    if (failure.status === 429) {
+      startCooldown(failure.retryAfter)
+    }
     ElMessage.error(failure.message)
   } finally {
     sendingEmailCode.value = false
@@ -664,10 +677,11 @@ function messageTarget(item) {
                 />
               </div>
             </div>
-            <template v-if="needsEmailCode">
-              <label for="profile-email-code">新邮箱验证码</label>
+            <template v-if="needsEmailCode || secondsLeft">
+              <label v-if="needsEmailCode" for="profile-email-code">新邮箱验证码</label>
               <div class="form-grid">
                 <input
+                  v-if="needsEmailCode"
                   id="profile-email-code"
                   v-model="form.emailCode"
                   inputmode="numeric"
@@ -676,8 +690,13 @@ function messageTarget(item) {
                   pattern="[0-9]{6}"
                   required
                 />
-                <button type="button" @click="sendEmailChangeCode">
-                  {{ sendingEmailCode ? '正在发送…' : '发送验证码到新邮箱' }}
+                <button
+                  type="button"
+                  class="primary"
+                  :disabled="!needsEmailCode || secondsLeft > 0"
+                  @click="sendEmailChangeCode"
+                >
+                  {{ emailCodeButtonLabel }}
                 </button>
               </div>
             </template>

@@ -5,6 +5,7 @@ import 'element-plus/es/components/button/style/css'
 import 'element-plus/es/components/input/style/css'
 import 'element-plus/es/components/message/style/css'
 import { request } from '../api.js'
+import { useEmailCodeCooldown } from '../shared/useEmailCodeCooldown.js'
 
 const props = defineProps({
   currentEmail: { type: String, default: '' },
@@ -14,13 +15,14 @@ const props = defineProps({
 const email = defineModel({ type: String, required: true })
 const code = defineModel('code', { type: String, required: true })
 const sending = ref(false)
+const { secondsLeft, startCooldown } = useEmailCodeCooldown()
 const normalizedEmail = computed(() => email.value.trim().toLowerCase())
 const needsCode = computed(() => normalizedEmail.value !== ''
   && normalizedEmail.value !== props.currentEmail.toLowerCase())
 
 /** 向当前填写的新邮箱发送换绑验证码。 */
 async function sendCode() {
-  if (sending.value || !needsCode.value) {
+  if (props.disabled || sending.value || secondsLeft.value || !needsCode.value) {
     return
   }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail.value)) {
@@ -29,10 +31,18 @@ async function sendCode() {
   }
   sending.value = true
   try {
-    await request(props.codePath, { method: 'POST', body: { email: normalizedEmail.value } })
+    await request(props.codePath, {
+      method: 'POST',
+      body: { email: normalizedEmail.value },
+      rateLimitInForm: true,
+    })
+    startCooldown()
     code.value = ''
     ElMessage.success('验证码已发送到新邮箱。')
   } catch (failure) {
+    if (failure.status === 429) {
+      startCooldown(failure.retryAfter)
+    }
     ElMessage.error(failure.message)
   } finally {
     sending.value = false
@@ -52,21 +62,26 @@ async function sendCode() {
       @update:model-value="code = ''"
     />
   </label>
-  <template v-if="needsCode">
-    <label>
-      新邮箱验证码
-      <el-input
-        v-model="code"
-        inputmode="numeric"
-        autocomplete="one-time-code"
-        maxlength="6"
-        pattern="[0-9]{6}"
-        required
-        :disabled="disabled"
-      />
-    </label>
-    <el-button native-type="button" :loading="sending" :disabled="disabled" @click="sendCode">
-      发送验证码到新邮箱
-    </el-button>
-  </template>
+  <label v-if="needsCode">
+    新邮箱验证码
+    <el-input
+      v-model="code"
+      inputmode="numeric"
+      autocomplete="one-time-code"
+      maxlength="6"
+      pattern="[0-9]{6}"
+      required
+      :disabled="disabled"
+    />
+  </label>
+  <el-button
+    v-if="needsCode || secondsLeft"
+    type="primary"
+    native-type="button"
+    :loading="sending"
+    :disabled="disabled || !needsCode || secondsLeft > 0"
+    @click="sendCode"
+  >
+    {{ secondsLeft ? `${secondsLeft} 秒后重发` : '发送验证码到新邮箱' }}
+  </el-button>
 </template>
