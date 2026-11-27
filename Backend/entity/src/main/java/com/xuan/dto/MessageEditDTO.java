@@ -6,8 +6,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,9 +20,7 @@ import java.util.Set;
  * 提交后台留言回复，只接收正文、格式和回复通知设置。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class MessageEditDTO implements Serializable {
 
     @Serial

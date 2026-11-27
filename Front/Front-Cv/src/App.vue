@@ -1,7 +1,7 @@
 <script setup>
 import { createOnlineConnection } from './shared/online.mjs'
-import { apiRoot, getOnlineTicket, getProfile, getSocialLinks, getExperiences, getSkills } from './api.js'
-import { getFingerprint } from './tracking.js'
+import { apiRoot, getOnlineTicket, getProfile, getSocialLinks, getExperiences, getSkills, recordPageView } from './api.js'
+import { createPageView, getFingerprint } from './tracking.js'
 import RequestFailure from './shared/RequestFailure.vue'
 import { setRequestFailureHandler } from './shared/requestFailure.mjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
@@ -76,11 +76,27 @@ function printResume() {
   window.print()
 }
 
-onMounted(() => {
+onMounted(async () => {
   applyTheme(colorScheme.matches)
   colorScheme.addEventListener('change', followSystemTheme)
-  for (const name of Object.keys(loaders)) {
-    loadResource(name)
+  await Promise.all(Object.keys(loaders).map(loadResource))
+  if (controller.signal.aborted) {
+    return
+  }
+
+  // 采集失败不阻塞简历阅读；手动重试区块加载不会重复写入浏览记录。
+  try {
+    const payload = createPageView(
+      getFingerprint(),
+      window.location.pathname,
+      document.title,
+      document.referrer,
+    )
+    await recordPageView(payload, controller.signal)
+  } catch (error) {
+    if (error.name !== 'AbortError') {
+      console.warn('简历浏览统计未完成：', error.message)
+    }
   }
 })
 
@@ -122,10 +138,10 @@ onBeforeUnmount(() => setRequestFailureHandler())
               <a :href="`mailto:${encodeURIComponent(resources.profile.data.publicEmail)}`"><CvIcon name="mail" />{{ resources.profile.data.publicEmail }}</a>
             </li>
             <li v-if="resources.profile.data.githubUrl">
-              <a :href="resources.profile.data.githubUrl" target="_blank" rel="noopener noreferrer"><CvIcon name="github" />GitHub</a>
+              <a :href="resources.profile.data.githubUrl" target="_blank" rel="noopener"><CvIcon name="github" />GitHub</a>
             </li>
             <li v-if="resources.profile.data.website">
-              <a :href="resources.profile.data.website" target="_blank" rel="noopener noreferrer"><CvIcon name="globe" />个人网站</a>
+              <a :href="resources.profile.data.website" target="_blank" rel="noopener"><CvIcon name="globe" />个人网站</a>
             </li>
           </ul>
         </template>
@@ -143,7 +159,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
         <ul v-if="resources.socials.data.length" class="contact-list social-list" aria-label="社交链接">
           <li v-for="(social, index) in resources.socials.data" :key="social.socialId"
             :style="{ '--reveal-index': Math.min(index, 10) }">
-            <a :href="social.url" target="_blank" rel="noopener noreferrer">
+            <a :href="social.url" target="_blank" rel="noopener">
               <img v-if="isImageIcon(social.icon)" :src="social.icon" alt="" />
               <CvIcon v-else :name="social.icon || 'link'" />{{ social.name }}
             </a>

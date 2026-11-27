@@ -168,4 +168,20 @@
         LIMIT #{limit}
     </select>
 
+    <!-- 按来源域名统计指定时间段内的访问量与访客数，无来源归为空串（直接访问） -->
+    <select id="referers" resultType="com.xuan.vo.RefererMetricVO">
+        SELECT
+            CASE
+                WHEN v.referer IS NULL OR v.referer = '' THEN ''
+                ELSE SUBSTRING_INDEX(SUBSTRING_INDEX(v.referer, '://', -1), '/', 1)
+            END AS source,
+            CAST(COUNT(*) AS CHAR) AS page_view_count,
+            CAST(COUNT(DISTINCT v.visitor_id) AS CHAR) AS visitor_count
+        FROM blog_page_view v
+        WHERE <include refid="viewsRange"/>
+        GROUP BY source
+        ORDER BY COUNT(*) DESC, source ASC
+        LIMIT #{limit}
+    </select>
+
 </mapper>

@@ -7,8 +7,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,9 +19,7 @@ import java.io.Serializable;
  * 创建菜单只收这些字段，父节点要明确传入；按钮默认隐藏，其余按菜单约定取默认值。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class MenuCreateDTO implements Serializable {
 
     @Serial
@@ -68,7 +64,6 @@ public class MenuCreateDTO implements Serializable {
 
     // 排序权重
     @NotNull
-    @Builder.Default
     private Integer sortOrder = 0;
 
     // 是否显示 0-隐藏 1-显示
@@ -80,14 +75,12 @@ public class MenuCreateDTO implements Serializable {
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer keepAlive = 0;
 
     // 状态
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer status = 1;
 
     // 是否传入父级ID

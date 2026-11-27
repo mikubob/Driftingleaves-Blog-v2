@@ -5,8 +5,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,9 +17,7 @@ import java.io.Serializable;
  * 修改权限要填全，编码不能改，可空的说明也要传。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class PermissionUpdateDTO implements Serializable {
 
     @Serial

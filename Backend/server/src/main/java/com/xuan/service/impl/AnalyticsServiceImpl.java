@@ -105,15 +105,20 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
             throw invalid();
         }
 
-        // 3. 锁住统计标识后检查封禁；完整 IP 和地域仅供有权限的管理端查看。
+        // 3. 锁住统计标识后检查封禁；已到期的限时封禁顺带清理，旧记录只限制采集，新封禁已在请求入口按 IP 检查。
         LocalDateTime at = now();
         visitors.ensure(request.getFingerprint(), at);
         BlogVisitor visitor = visitors.lockFingerprint(request.getFingerprint());
         current();
-        // 旧记录只限制采集，新封禁已在请求入口按 IP 检查。
-        if (visitor.getBlockedIpAddress() == null && visitor.getIsBlocked() == 1
-                && (visitor.getBlockedUntil() == null || visitor.getBlockedUntil()
-                .isAfter(now()))) {
+        if (Integer.valueOf(1).equals(visitor.getIsBlocked())
+                && visitor.getBlockedUntil() != null
+                && !visitor.getBlockedUntil().isAfter(at)) {
+            visitor.setIsBlocked(0);
+            visitor.setBlockedUntil(null);
+            visitor.setBlockedIpAddress(null);
+            visitors.restriction(visitor);
+        } else if (visitor.getBlockedIpAddress() == null && Integer.valueOf(1).equals(visitor.getIsBlocked())
+                && (visitor.getBlockedUntil() == null || visitor.getBlockedUntil().isAfter(at))) {
             throw new BusinessException(403, "VISITOR_BLOCKED", "此统计标识暂不接收采集");
         }
         IpLocationResolver.GeoInfo geo = locations.getGeoInfo(ip);

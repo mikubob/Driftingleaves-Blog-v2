@@ -12,6 +12,7 @@ import com.xuan.vo.AdminStatisticsVO;
 import com.xuan.vo.ArticleViewMetricVO;
 import com.xuan.vo.ProvinceMetricVO;
 import com.xuan.vo.PublicStatisticsVO;
+import com.xuan.vo.RefererMetricVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
 import jakarta.servlet.http.HttpServletRequest;
@@ -141,6 +142,18 @@ public class StatisticsServiceImpl implements IStatisticsService {
         Range range = range(query);
         limitReport();
         return statistics.articles(range.lower(), range.upper(), query.getLimit());
+    }
+
+    /**
+     * 查询指定日期内的访问来源域名排行。
+     */
+    @Override
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    public List<RefererMetricVO> referers(StatisticsQueryDTO query) {
+        requireAdmin();
+        Range range = range(query);
+        limitReport();
+        return statistics.referers(range.lower(), range.upper(), query.getSiteCode(), query.getLimit());
     }
 
     /**

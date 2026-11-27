@@ -3,8 +3,6 @@ package com.xuan.dto;
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -15,9 +13,7 @@ import java.io.Serializable;
  * 新建和修改标签都只收名称、slug，两个字段都要填。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class TagWriteDTO implements Serializable {
 
     @Serial

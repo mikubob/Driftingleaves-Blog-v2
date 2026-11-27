@@ -5,8 +5,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,9 +15,7 @@ import java.io.Serializable;
  * 新建分类时只收这些字段，没填排序和状态就用默认值。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class CategoryCreateDTO implements Serializable {
 
     @Serial
@@ -42,14 +38,12 @@ public class CategoryCreateDTO implements Serializable {
 
     // 排序权重
     @NotNull
-    @Builder.Default
     private Integer sortOrder = 0;
 
     // 状态
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer status = 1;
 
     public void setCategoryName(String value) {

@@ -7,6 +7,7 @@ import com.xuan.service.IStatisticsService;
 import com.xuan.vo.AdminStatisticsVO;
 import com.xuan.vo.ArticleViewMetricVO;
 import com.xuan.vo.ProvinceMetricVO;
+import com.xuan.vo.RefererMetricVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
 import jakarta.validation.Valid;
@@ -94,5 +95,18 @@ public class StatisticsController {
         log.info("查询文章访问排行: {}", query);
         List<ArticleViewMetricVO> articles = statisticsService.articles(query);
         return Result.ok(articles);
+    }
+
+    /**
+     * 查询访问来源域名排行
+     *
+     * @param query 日期、站点及条数查询参数
+     * @return 访问来源排行列表
+     */
+    @GetMapping("/referers")
+    public Result<List<RefererMetricVO>> referers(@Valid @ModelAttribute StatisticsQueryDTO query) {
+        log.info("查询访问来源排行: {}", query);
+        List<RefererMetricVO> referers = statisticsService.referers(query);
+        return Result.ok(referers);
     }
 }

@@ -5,8 +5,6 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -18,9 +16,7 @@ import java.util.Locale;
  * 邮箱登录仍须通过图形验证码，邮件中的六位数字保留前导零。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class EmailLoginDTO implements Serializable {
 
     @Serial

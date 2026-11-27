@@ -57,9 +57,9 @@ function canDelete(row) {
   return !row.blockedIpAddress || !isBlocked(row)
 }
 
-/** 已有封禁时沿用原地址，否则使用最近访问的 IP。 */
+/** 存在生效中的封禁时沿用原封禁地址，否则使用最近访问的 IP。 */
 function blockTarget(row) {
-  return row.blockedIpAddress || row.ipAddress
+  return (isBlocked(row) && row.blockedIpAddress) || row.ipAddress
 }
 
 async function view(row, block = false) {
@@ -168,6 +168,8 @@ const batchActions = computed(() => {
       type: 'success',
       path: 'batch-unblock',
       method: 'PUT',
+      accept: isBlocked,
+      invalidMessage: '所选记录中包含未封禁或已过期的访客。',
       matchDetail: (row, latest) => row.blockedIpAddress === latest.blockedIpAddress,
       warning: '解除所选记录的封禁。同 IP 的其他封禁仍然有效。',
     })
@@ -198,7 +200,7 @@ const batchActions = computed(() => {
         v-for="tab in [
           { value: '', label: '全部访客' },
           { value: 0, label: '正常访客' },
-          { value: 1, label: '已标记封禁' },
+          { value: 1, label: '已封禁' },
         ]"
         :key="String(tab.value)"
         :class="{ active: filters.isBlocked === tab.value }"
@@ -286,7 +288,7 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column label="封禁到期" width="180" align="center">
           <template #default="{ row }">
-            <span v-if="row.isBlocked !== 1">—</span>
+            <span v-if="!isBlocked(row)">—</span>
             <span v-else-if="row.blockedUntil">{{ formatTime(row.blockedUntil) }}</span>
             <span v-else>永久</span>
           </template>
@@ -299,7 +301,7 @@ const batchActions = computed(() => {
             </el-button>
             <el-button
               type="success"
-              v-if="can('blog:visitor:unblock', true) && row.isBlocked"
+              v-if="can('blog:visitor:unblock', true) && isBlocked(row)"
               link
               @click="action(row, 'unblock')"
             >
@@ -326,7 +328,7 @@ const batchActions = computed(() => {
         <el-descriptions-item label="访客 ID">{{ detail.visitorId }}</el-descriptions-item>
         <el-descriptions-item label="统计标识">{{ detail.fingerprint }}</el-descriptions-item>
         <el-descriptions-item label="IP 地址">{{ detail.ipAddress || '—' }}</el-descriptions-item>
-        <el-descriptions-item v-if="detail.blockedIpAddress" label="封禁 IP">
+        <el-descriptions-item v-if="isBlocked(detail) && detail.blockedIpAddress" label="封禁 IP">
           {{ detail.blockedIpAddress }}
         </el-descriptions-item>
         <el-descriptions-item label="地域">
@@ -342,7 +344,7 @@ const batchActions = computed(() => {
         </el-descriptions-item>
         <el-descriptions-item label="封禁结束">
           {{
-            detail.isBlocked
+            isBlocked(detail)
               ? detail.blockedUntil
                 ? formatTime(detail.blockedUntil)
                 : '永久'

@@ -130,10 +130,10 @@ onBeforeUnmount(() => setRequestFailureHandler())
               <HomeIcon name="location" />{{ profile.location }}
             </p>
             <div v-if="profile.website || profile.githubUrl || profile.publicEmail" class="contacts" aria-label="公开联系方式">
-              <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener noreferrer">
+              <a v-if="profile.website" :href="profile.website" target="_blank" rel="noopener">
                 <HomeIcon name="globe" />个人网站
               </a>
-              <a v-if="profile.githubUrl" :href="profile.githubUrl" target="_blank" rel="noopener noreferrer">
+              <a v-if="profile.githubUrl" :href="profile.githubUrl" target="_blank" rel="noopener">
                 <HomeIcon name="github" />GitHub
               </a>
               <a v-if="profile.publicEmail" :href="`mailto:${encodeURIComponent(profile.publicEmail)}`">
@@ -160,7 +160,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
           </div>
           <nav v-else-if="resources.socials.data.length" class="links" aria-label="站点与社交导航">
             <a v-for="(item, index) in resources.socials.data" :key="item.socialId"
-              class="link" :href="item.url" target="_blank" rel="noopener noreferrer"
+              class="link" :href="item.url" target="_blank" rel="noopener"
               :style="{ '--link-index': Math.min(index, 10) }">
               <img v-if="/^https?:\/\//i.test(item.icon || '') && !failedIcons.has(item.icon)"
                 class="social-icon" :src="item.icon" alt="" loading="lazy" referrerpolicy="no-referrer"

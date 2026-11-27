@@ -20,7 +20,7 @@ import { formatCount, ratio } from '../format.js'
 import RequestError from '../components/RequestError.vue'
 import TrendChart from '../components/TrendChart.vue'
 import ReportChart from '../components/ReportChart.vue'
-import { makeArticleOption, makeProvinceOption } from '../chartOptions.js'
+import { makeArticleOption, makeProvinceOption, makeRefererOption } from '../chartOptions.js'
 import AdminIcon from '../components/AdminIcon.vue'
 import RollingNumber from '../components/RollingNumber.vue'
 
@@ -32,8 +32,10 @@ const views = ref([])
 const visitors = ref([])
 const provinces = ref([])
 const articles = ref([])
+const referers = ref([])
 const articleOption = computed(() => makeArticleOption(articles.value))
 const provinceOption = computed(() => makeProvinceOption(provinces.value))
+const refererOption = computed(() => makeRefererOption(referers.value))
 const loading = ref(false)
 const error = ref('')
 // 各图表卡片独立维护“图表 / 数据表”视图状态，保持卡片高度固定不互相拉伸。
@@ -42,6 +44,7 @@ const tableView = reactive({
   visitors: false,
   articles: false,
   provinces: false,
+  referers: false,
 })
 let controller
 const cards = [
@@ -77,12 +80,14 @@ async function load() {
     const query = queryString(filters)
     // 文章排行没有 siteCode 参数，不能透传总览的全部筛选。
     const articleQuery = queryString({ begin: filters.begin, end: filters.end, limit: 10 })
+    const refererQuery = queryString({ ...filters, limit: 10 })
     const results = await Promise.all([
       request(`/admin/statistics/overview${query}`, { signal: current.signal }),
       request(`/admin/statistics/page-views${query}`, { signal: current.signal }),
       request(`/admin/statistics/visitors${query}`, { signal: current.signal }),
       request(`/admin/statistics/provinces${query}`, { signal: current.signal }),
       request(`/admin/statistics/articles${articleQuery}`, { signal: current.signal }),
+      request(`/admin/statistics/referers${refererQuery}`, { signal: current.signal }),
     ])
     if (!results[0].data || !results.slice(1).every((result) => Array.isArray(result.data))) {
       throw new Error('统计数据加载异常，请刷新页面后重试。')
@@ -92,6 +97,7 @@ async function load() {
     visitors.value = results[2].data
     provinces.value = results[3].data
     articles.value = results[4].data
+    referers.value = results[5].data
   } catch (failure) {
     if (failure.name !== 'AbortError') {
       error.value = failure.message
@@ -317,6 +323,47 @@ onBeforeUnmount(() => controller?.abort())
             </Transition>
           </template>
           <el-empty v-else description="暂无地域数据" :image-size="70" />
+        </el-card>
+      </div>
+      <div class="charts-grid">
+        <el-card shadow="never">
+          <div class="card-heading">
+            <h2>访问来源排行</h2>
+            <div v-if="referers.length" class="card-heading-actions">
+              <button
+                type="button"
+                class="chart-view-toggle"
+                :aria-pressed="tableView.referers"
+                @click="toggleTableView('referers')"
+              >
+                {{ tableView.referers ? '返回图表' : '查看数据' }}
+              </button>
+            </div>
+          </div>
+          <template v-if="referers.length">
+            <Transition name="chart-swap" mode="out-in">
+              <ReportChart
+                v-if="!tableView.referers"
+                :option="refererOption"
+                label="访问来源排行柱状图"
+              />
+              <div v-else class="chart-table-pane">
+                <el-table :data="referers">
+                  <el-table-column type="index" label="#" width="50" />
+                  <el-table-column label="来源域名" min-width="180" show-overflow-tooltip>
+                    <template #default="{ row }">{{ row.source || '直接访问' }}</template>
+                  </el-table-column>
+                  <el-table-column label="浏览量" width="100" align="center">
+                    <template #default="{ row }">{{ formatCount(row.pageViewCount) }}</template>
+                  </el-table-column>
+                  <el-table-column label="访客数" width="100" align="center">
+                    <template #default="{ row }">{{ formatCount(row.visitorCount) }}</template>
+                  </el-table-column>
+                </el-table>
+              </div>
+            </Transition>
+          </template>
+          <el-empty v-else description="暂无来源数据" :image-size="70" />
         </el-card>
       </div>
     </div>

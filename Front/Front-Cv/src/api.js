@@ -183,6 +183,17 @@ export function getSkills(signal) {
   return getAllPages('/cv/skills', skillFields, signal)
 }
 
+/** 上报简历页面浏览记录，统计失败不影响简历展示。 */
+export async function recordPageView(payload, signal) {
+  const data = await request('/cv/analytics/page-views', signal, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  assertResponse(matchesFields(data, { recorded: (value) => typeof value === 'boolean' }))
+  return data
+}
+
 /** 公开站点匿名参与，不恢复其他站点的登录身份。 */
 export async function getOnlineTicket(body, signal) {
   return validateOnlineTicket(await request('/cv/analytics/online/tickets', signal, {

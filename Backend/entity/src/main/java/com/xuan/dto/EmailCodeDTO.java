@@ -4,8 +4,6 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,9 +15,7 @@ import java.util.Locale;
  * 邮箱验证码只按服务端允许的用途发送，不能跨用途登录或注册。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class EmailCodeDTO implements Serializable {
 
     @Serial

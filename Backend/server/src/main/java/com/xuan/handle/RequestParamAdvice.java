@@ -112,6 +112,7 @@ public class RequestParamAdvice {
             Map.entry("GET /admin/statistics/visitors", Set.of("begin", "end", "siteCode")),
             Map.entry("GET /admin/statistics/provinces", Set.of("begin", "end", "siteCode")),
             Map.entry("GET /admin/statistics/articles", Set.of("begin", "end", "limit")),
+            Map.entry("GET /admin/statistics/referers", Set.of("begin", "end", "siteCode", "limit")),
             Map.entry("GET /admin/operation-logs", Set.of("page", "pageSize", "userId", "targetId",
                     "operationType", "operationTarget", "result", "begin", "end"))
     );

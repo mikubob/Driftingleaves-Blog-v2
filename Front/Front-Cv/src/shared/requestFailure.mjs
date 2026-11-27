@@ -5,10 +5,10 @@ export function setRequestFailureHandler(handler = () => {}) {
   onFailure = handler
 }
 
-/** 报告简历请求错误，普通在线统计失败在当前页面处理，IP 封禁显示异常页。 */
+/** 报告简历请求错误，普通统计失败在当前页面处理，IP 封禁显示异常页。 */
 export function reportRequestFailure(error, path) {
   const route = path.split('?')[0]
-  if (error.code === 'ACCESS_BLOCKED' || route !== '/cv/analytics/online/tickets') {
+  if (error.code === 'ACCESS_BLOCKED' || !/^\/cv\/analytics\/(page-views|online\/tickets)$/.test(route)) {
     onFailure(error)
   }
   return error

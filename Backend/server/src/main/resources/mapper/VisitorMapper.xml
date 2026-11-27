@@ -98,8 +98,12 @@
             <if test="query.city != null">
                 AND city = #{query.city}
             </if>
-            <if test="query.isBlocked != null">
-                AND is_blocked = #{query.isBlocked}
+            <if test="query.isBlocked != null and query.isBlocked == 1">
+                AND is_blocked = 1
+                AND (blocked_until IS NULL OR blocked_until &gt; #{now})
+            </if>
+            <if test="query.isBlocked != null and query.isBlocked == 0">
+                AND (is_blocked = 0 OR (blocked_until IS NOT NULL AND blocked_until &lt;= #{now}))
             </if>
         </where>
         ORDER BY last_visit_time DESC, visitor_id DESC

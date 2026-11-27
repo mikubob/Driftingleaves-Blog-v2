@@ -100,11 +100,6 @@
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-redis-template</artifactId>
         </dependency>
-        <!-- 平台客户端运行时需要 JustAuth，用于第三方身份解析。 -->
-        <dependency>
-            <groupId>me.zhyd.oauth</groupId>
-            <artifactId>JustAuth</artifactId>
-        </dependency>
         <!-- 这里只用 BCrypt 等密码编码能力，本站鉴权仍由 Sa-Token 处理。 -->
         <dependency>
             <groupId>org.springframework.security</groupId>

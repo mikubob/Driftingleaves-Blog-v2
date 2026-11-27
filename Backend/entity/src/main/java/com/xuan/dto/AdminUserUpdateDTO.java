@@ -5,8 +5,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,9 +17,7 @@ import java.io.Serializable;
  * 修改资料要填全，可空字段也不能漏；用户名、密码和角色不在这里修改。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class AdminUserUpdateDTO implements Serializable {
 
     @Serial

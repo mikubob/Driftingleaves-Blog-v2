@@ -5,8 +5,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,9 +15,7 @@ import java.io.Serializable;
  * 新建权限默认启用，不会自动授予任何角色。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class PermissionCreateDTO implements Serializable {
 
     @Serial
@@ -49,7 +45,6 @@ public class PermissionCreateDTO implements Serializable {
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer status = 1;
 
     public void setPermissionCode(String value) {

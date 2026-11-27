@@ -5450,7 +5450,7 @@ X-Revision: "<current-revision>"
 | `country` | S(64) | 否 | 精确匹配 |
 | `province` | S(64) | 否 | 精确匹配 |
 | `city` | S(64) | 否 | 精确匹配 |
-| `isBlocked` | integer | 否 | 可选0/1，对持久化标记筛选 |
+| `isBlocked` | integer | 否 | 可选0/1，按当前时刻是否处于生效中的封禁筛选 |
 
 #### 请求示例
 
@@ -5483,7 +5483,7 @@ Cookie: __Host-dl-admin-session=<opaque>
 }
 ```
 
-需ALL；lastVisitTime DESC,visitorId DESC。仅后台返回统计标识、IP与UA，不公开原始访客清单。`totalViews` 为该访客在所有站点当前保留的浏览明细条数，以十进制字符串返回，无明细为 `"0"`；删除明细后减少，不是独立维护的历史累计值。列表按 IP、国家、省份、城市、浏览次数、状态、首次访问、最近访问和封禁到期展示，保留详情与管理操作；状态根据 isBlocked 和 blockedUntil 判断，过期恢复正常，原封禁到期时间仍可查看。
+需ALL；lastVisitTime DESC,visitorId DESC。仅后台返回统计标识、IP与UA，不公开原始访客清单。`totalViews` 为该访客在所有站点当前保留的浏览明细条数，以十进制字符串返回，无明细为 `"0"`；删除明细后减少，不是独立维护的历史累计值。列表按 IP、国家、省份、城市、浏览次数、状态、首次访问、最近访问和封禁到期展示，保留详情与管理操作；限时封禁到期后按正常状态返回（`isBlocked=0`、`blockedUntil=null`、`blockedIpAddress=null`），访客再次访问时同步清理数据库中的过期封禁字段。
 
 ---
 
@@ -5847,6 +5847,47 @@ Cookie: __Host-dl-admin-session=<opaque>
 ```
 
 需ALL；只统计blog站点且articleId非NULL的明细，排除已回收文章；允许含当前草稿/私密文章的历史访问记录，仅后台可见。pageViewCount DESC,articleId DESC。该排行表示区间浏览明细，区别于[博客端累计热度榜](API_BLOG.md#api-87)。
+
+---
+
+### 1.20.6 查询访问来源排行
+
+#### 基本信息
+
+| 项目 | 说明 |
+| --- | --- |
+| 接口路径 | `GET /api/v1/admin/statistics/referers` |
+| 接口描述 | 按来源域名查询访问排行 |
+| Content-Type | 无请求体 |
+| 访问要求 | 后台：`blog:statistics:query`（ALL） |
+
+#### 请求参数
+
+| 参数名 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `begin` | date | 否 | 可选；与end同时出现；UTC日期含下界 |
+| `end` | date | 否 | 可选；UTC日期含当日，最多367天，end不得早于begin |
+| `siteCode` | string | 否 | 可选：`home` / `blog` / `cv` |
+| `limit` | integer | 否 | 默认10，1..100 |
+
+#### 响应示例
+
+```json
+{
+  "code": "OK", "msg": "成功",
+  "data": [
+    {
+      "source": "driftingleaves.xyz", "pageViewCount": "12", "visitorCount": "8"
+    },
+    {
+      "source": "", "pageViewCount": "5", "visitorCount": "4"
+    }
+  ],
+  "errors": []
+}
+```
+
+需ALL；按来源域名聚合统计指定时间段与站点范围内的浏览量与独立访客数，无来源记录归入 `source=""`（前端展示为「直接访问」）；按 `pageViewCount DESC, source ASC` 排序。
 
 ---
 

@@ -4,6 +4,7 @@ import com.xuan.vo.AdminStatisticsVO;
 import com.xuan.vo.ArticleViewMetricVO;
 import com.xuan.vo.ProvinceMetricVO;
 import com.xuan.vo.PublicStatisticsVO;
+import com.xuan.vo.RefererMetricVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
 import org.apache.ibatis.annotations.Mapper;
@@ -90,5 +91,19 @@ public interface StatisticsMapper {
      */
     List<ArticleViewMetricVO> articles(@Param("begin") LocalDateTime begin,
             @Param("end") LocalDateTime end,
+            @Param("limit") int limit);
+
+    /**
+     * 按来源域名统计指定时间段内的访问排行
+     *
+     * @param begin 开始时间（UTC）
+     * @param end 结束时间（UTC）
+     * @param site 站点编码，可为空
+     * @param limit 返回条数上限
+     * @return 来源访问排行列表
+     */
+    List<RefererMetricVO> referers(@Param("begin") LocalDateTime begin,
+            @Param("end") LocalDateTime end,
+            @Param("site") String site,
             @Param("limit") int limit);
 }

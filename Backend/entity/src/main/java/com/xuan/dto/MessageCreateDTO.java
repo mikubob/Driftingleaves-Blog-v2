@@ -6,8 +6,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,9 +20,7 @@ import java.util.Set;
  * 只收声明字段，私密性和父关系不能通过编辑改写。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class MessageCreateDTO implements Serializable {
 
     @Serial

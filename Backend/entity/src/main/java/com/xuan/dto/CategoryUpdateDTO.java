@@ -5,8 +5,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -19,9 +17,7 @@ import java.io.Serializable;
  * 修改分类要把资料填全，description 可以清空但不能漏传，展示状态单独批量修改。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class CategoryUpdateDTO implements Serializable {
 
     @Serial

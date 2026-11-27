@@ -7,8 +7,6 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -23,9 +21,7 @@ import java.util.Set;
  * 修改菜单要填全，可空字段也不能漏；menuCode 不能在这里改。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class MenuUpdateDTO implements Serializable {
 
     @Serial

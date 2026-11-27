@@ -5,6 +5,7 @@ import com.xuan.vo.AdminStatisticsVO;
 import com.xuan.vo.ArticleViewMetricVO;
 import com.xuan.vo.ProvinceMetricVO;
 import com.xuan.vo.PublicStatisticsVO;
+import com.xuan.vo.RefererMetricVO;
 import com.xuan.vo.ViewTrendVO;
 import com.xuan.vo.VisitorTrendVO;
 
@@ -44,4 +45,9 @@ public interface IStatisticsService {
      * 查询 blog 站点在指定时间段内的文章访问排行，按该时间段的访问量排名，不使用文章累计热度。
      */
     List<ArticleViewMetricVO> articles(StatisticsQueryDTO query);
+
+    /**
+     * 查询指定时间段内的访问来源域名排行。
+     */
+    List<RefererMetricVO> referers(StatisticsQueryDTO query);
 }

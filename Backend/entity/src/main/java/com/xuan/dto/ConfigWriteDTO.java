@@ -6,8 +6,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,9 +19,7 @@ import java.util.Map;
  * 配置完整替换，内部对象由配置键的固定字段规则校验，不开放任意系统参数。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class ConfigWriteDTO implements Serializable {
 
     @Serial

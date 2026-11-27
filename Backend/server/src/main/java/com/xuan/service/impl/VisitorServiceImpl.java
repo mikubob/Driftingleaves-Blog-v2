@@ -55,17 +55,22 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     private final Clock clock;
 
     /**
-     * 分页查询访客。
+     * 分页查询访客，并按当前 UTC 时刻整理已过期的封禁展示字段。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<VisitorVO> listVisitors(VisitorQueryDTO query) {
         requireAdmin("query");
-        return PageResult.from(visitors.visitorPage(new Page<>(query.getPage(), query.getPageSize()), query));
+        LocalDateTime at = now();
+        var result = visitors.visitorPage(new Page<>(query.getPage(), query.getPageSize()), query, at);
+        for (VisitorVO row : result.getRecords()) {
+            normalizeRestriction(row, at);
+        }
+        return PageResult.from(result);
     }
 
     /**
-     * 根据id查询访客详情及版本。
+     * 根据id查询访客详情及版本，已过期的封禁按正常状态返回。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -75,8 +80,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         if (row == null) {
             throw new BusinessException(404, "NOT_FOUND", "访客统计不存在");
         }
+        LocalDateTime at = now();
+        normalizeRestriction(row, at);
         return new ResourceVersion<>(row, restrictionRevision(
-                row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(), row.getIpAddress()));
+                row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(), row.getIpAddress(), at));
     }
 
     /**
@@ -90,18 +97,41 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         return required(row);
     }
 
-    private String restrictionRevision(BlogVisitor row) {
-        return restrictionRevision(row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(),
-                row.getIpAddress());
+    /**
+     * 判断封禁在指定时刻是否仍生效。
+     */
+    private boolean isRestrictionActive(Integer isBlocked, LocalDateTime blockedUntil, LocalDateTime at) {
+        return Integer.valueOf(1).equals(isBlocked) && (blockedUntil == null || blockedUntil.isAfter(at));
     }
 
     /**
-     * 将封禁目标计入版本，防止访客换网后封错地址。
+     * 限时封禁到期后按未封禁整理展示字段，避免列表和详情残留旧到期时间。
      */
-    private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil, String blockedIp, String lastIp) {
-        String targetIp = blockedIp == null ? lastIp : blockedIp;
+    private void normalizeRestriction(VisitorVO row, LocalDateTime at) {
+        if (!isRestrictionActive(row.getIsBlocked(), row.getBlockedUntil(), at)) {
+            row.setIsBlocked(0);
+            row.setBlockedUntil(null);
+            row.setBlockedIpAddress(null);
+        }
+    }
+
+    private String restrictionRevision(BlogVisitor row, LocalDateTime at) {
+        return restrictionRevision(row.getIsBlocked(), row.getBlockedUntil(), row.getBlockedIpAddress(),
+                row.getIpAddress(), at);
+    }
+
+    /**
+     * 将生效中的封禁状态和目标 IP 计入版本，防止访客换网或到期后误操作。
+     */
+    private String restrictionRevision(Integer isBlocked, LocalDateTime blockedUntil, String blockedIp,
+            String lastIp, LocalDateTime at) {
+        boolean active = isRestrictionActive(isBlocked, blockedUntil, at);
+        Integer effectiveBlocked = active ? 1 : 0;
+        LocalDateTime effectiveUntil = active ? blockedUntil : null;
+        String effectiveBlockedIp = active ? blockedIp : null;
+        String targetIp = effectiveBlockedIp == null ? lastIp : effectiveBlockedIp;
         return "\"" + TokenUtils.digest(json.writeValueAsString(
-                Arrays.asList(isBlocked, blockedUntil, blockedIp, targetIp))) + "\"";
+                Arrays.asList(effectiveBlocked, effectiveUntil, effectiveBlockedIp, targetIp))) + "\"";
     }
 
     /**
@@ -135,13 +165,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     @CacheEvict(cacheNames = "statistics", allEntries = true)
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
+        LocalDateTime at = now();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             String revision = item.getRevision();
             BlogVisitor row = lock(id, "delete");
-            RevisionUtils.check(restrictionRevision(row), revision);
-            LocalDateTime end = row.getBlockedUntil();
-            if (row.getBlockedIpAddress() != null && (end == null || end.isAfter(now()))) {
+            RevisionUtils.check(restrictionRevision(row, at), revision);
+            if (row.getBlockedIpAddress() != null && isRestrictionActive(row.getIsBlocked(), row.getBlockedUntil(), at)) {
                 throw new BusinessException(409, "RESOURCE_IN_USE", "请先解除该记录的 IP 封禁再删除");
             }
         }
@@ -162,11 +192,14 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         var sorted = BatchUtils.sorted(items);
         List<BlogVisitor> rows = new ArrayList<>();
         LocalDateTime end = QueryTimeUtils.parse(until);
+        LocalDateTime at = now();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             BlogVisitor row = lock(id, "block");
-            RevisionUtils.check(restrictionRevision(row), item.getRevision());
-            String ip = row.getBlockedIpAddress();
+            RevisionUtils.check(restrictionRevision(row, at), item.getRevision());
+            String ip = isRestrictionActive(row.getIsBlocked(), row.getBlockedUntil(), at)
+                    ? row.getBlockedIpAddress()
+                    : null;
             if (ip == null) {
                 ip = IpUtils.normalize(row.getIpAddress());
             }
@@ -180,13 +213,13 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         }
 
         // 2. 校验封禁截止时间，全部通过后统一落库并返回新版本。
-        if (end != null && !end.isAfter(now())) {
+        if (end != null && !end.isAfter(at)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
         }
         Map<Long, String> versions = new HashMap<>();
         for (BlogVisitor row : rows) {
             visitors.restriction(row);
-            versions.put(row.getVisitorId(), restrictionRevision(visitors.selectById(row.getVisitorId())));
+            versions.put(row.getVisitorId(), restrictionRevision(visitors.selectById(row.getVisitorId()), at));
         }
         return BatchUtils.versions(items, versions);
     }
@@ -200,21 +233,22 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     public BatchVersionsVO unblockBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         List<BlogVisitor> rows = new ArrayList<>();
+        LocalDateTime at = now();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             BlogVisitor row = lock(id, "unblock");
-            RevisionUtils.check(restrictionRevision(row), item.getRevision());
+            RevisionUtils.check(restrictionRevision(row, at), item.getRevision());
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
         for (BlogVisitor row : rows) {
-            if (row.getIsBlocked() == 1) {
+            if (Integer.valueOf(1).equals(row.getIsBlocked())) {
                 row.setIsBlocked(0);
                 row.setBlockedUntil(null);
                 row.setBlockedIpAddress(null);
                 visitors.restriction(row);
             }
-            versions.put(row.getVisitorId(), restrictionRevision(row));
+            versions.put(row.getVisitorId(), restrictionRevision(row, at));
         }
         return BatchUtils.versions(items, versions);
     }

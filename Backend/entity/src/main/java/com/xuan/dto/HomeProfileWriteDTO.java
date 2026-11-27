@@ -5,8 +5,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -21,9 +19,7 @@ import java.util.Set;
  * 首次设置与完整替换均须提供全部字段，联系邮箱由管理员明确公开。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class HomeProfileWriteDTO implements Serializable {
 
     @Serial

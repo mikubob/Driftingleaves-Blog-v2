@@ -5,8 +5,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -17,9 +15,7 @@ import java.io.Serializable;
  * 新建角色默认启用、范围为 SELF，权限要另外配置。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class RoleCreateDTO implements Serializable {
 
     @Serial
@@ -42,14 +38,12 @@ public class RoleCreateDTO implements Serializable {
     // 数据范围 ALL-全部 SELF-本人
     @NotNull
     @Pattern(regexp = "ALL|SELF", message = "请选择全部数据或本人数据")
-    @Builder.Default
     private String dataScope = "SELF";
 
     // 状态
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer status = 1;
 
     public void setRoleCode(String value) {

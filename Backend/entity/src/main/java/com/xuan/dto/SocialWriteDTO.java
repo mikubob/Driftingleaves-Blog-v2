@@ -4,7 +4,6 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,7 +21,6 @@ import java.util.Set;
 @Data
 @SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
 public class SocialWriteDTO implements Serializable {
 
     @Serial

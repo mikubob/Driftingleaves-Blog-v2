@@ -2,7 +2,6 @@ package com.xuan.dto;
 
 import jakarta.validation.constraints.AssertTrue;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -18,7 +17,6 @@ import java.io.Serial;
 @Data
 @SuperBuilder
 @NoArgsConstructor
-@AllArgsConstructor
 @EqualsAndHashCode(callSuper = true)
 public class BatchBlockDTO extends BatchRevisionDTO {
 
@@ -29,7 +27,8 @@ public class BatchBlockDTO extends BatchRevisionDTO {
     private String blockedUntil;
 
     // 是否显式传入字段
-    @Getter(lombok.AccessLevel.NONE)
+    @Getter(AccessLevel.NONE)
+    @Setter(AccessLevel.NONE)
     private boolean supplied;
 
     /**

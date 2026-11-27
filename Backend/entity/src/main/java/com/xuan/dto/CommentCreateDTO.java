@@ -2,8 +2,6 @@ package com.xuan.dto;
 
 import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.NotBlank;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -14,9 +12,7 @@ import java.io.Serializable;
  * 评论按纯文本保存，文章取路径、作者取会话，不能让请求覆盖审核状态。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class CommentCreateDTO implements Serializable {
 
     @Serial

@@ -5,8 +5,6 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -22,9 +20,7 @@ import java.util.Set;
  * 通过 setter 记录字段是否出现，可空字段也必须显式提交，不能只看值是否为 null。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class PageViewCreateDTO implements Serializable {
 
     @Serial

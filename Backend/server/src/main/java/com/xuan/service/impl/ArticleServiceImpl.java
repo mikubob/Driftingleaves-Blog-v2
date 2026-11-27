@@ -158,8 +158,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      */
     @Override
     @Caching(cacheable = {
-            @Cacheable(cacheNames = "articles", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() == null && #query.page() <= 10 && #query.pageSize() <= 20"),
-            @Cacheable(cacheNames = "search", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword() != null && #query.page() <= 3 && #query.pageSize() <= 20")
+            @Cacheable(cacheNames = "articles", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword == null && #query.page <= 10 && #query.pageSize <= 20"),
+            @Cacheable(cacheNames = "search", key = "@publicCacheKeyGenerator.key(#root.methodName, #root.args)", condition = "#query.keyword != null && #query.page <= 3 && #query.pageSize <= 20")
     })
     public PageResult<ArticlePublicVO> cachedPublicArticles(ArticleQueryDTO query) {
         PageResult<ArticlePublicVO> page = loadPublicArticles(query);

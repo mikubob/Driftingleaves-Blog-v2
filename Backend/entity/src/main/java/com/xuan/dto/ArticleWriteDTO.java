@@ -9,8 +9,6 @@ import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import jakarta.validation.groups.Default;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -26,9 +24,7 @@ import java.util.Set;
  * 创建文章可以用默认值，完整修改时所有字段都要填；Markdown 原文不去空白。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class ArticleWriteDTO implements Serializable {
 
     @Serial
@@ -55,7 +51,6 @@ public class ArticleWriteDTO implements Serializable {
     // 摘要
     @NotNull
     @TextLength(max = 500)
-    @Builder.Default
     private String summary = "";
 
     // 分类ID
@@ -69,7 +64,6 @@ public class ArticleWriteDTO implements Serializable {
     @NotNull
     @Min(1)
     @Max(3)
-    @Builder.Default
     private Integer articleType = 1;
 
     // 原文链接
@@ -80,21 +74,18 @@ public class ArticleWriteDTO implements Serializable {
     @NotNull
     @Min(1)
     @Max(2)
-    @Builder.Default
     private Integer visibility = 1;
 
     // 是否置顶 0-否 1-是
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer isTop = 0;
 
     // 是否允许评论 0-否 1-是
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer allowComment = 1;
 
     // Markdown正文内容
@@ -104,7 +95,6 @@ public class ArticleWriteDTO implements Serializable {
     // 标签ID列表
     @NotNull
     @Size(max = 20)
-    @Builder.Default
     private List<@NotNull Long> tagIds = List.of();
 
     @Getter(AccessLevel.NONE)

@@ -3,8 +3,6 @@ package com.xuan.dto;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -16,9 +14,7 @@ import java.util.Locale;
  * 向账号当前邮箱发送后台登录验证码，不要求用户名和密码。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class AdminEmailCodeDTO implements Serializable {
 
     @Serial

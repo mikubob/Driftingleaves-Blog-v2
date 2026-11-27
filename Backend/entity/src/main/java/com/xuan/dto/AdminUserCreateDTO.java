@@ -7,8 +7,6 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -19,9 +17,7 @@ import java.io.Serializable;
  * 后台创建用户只收这些字段，默认启用，角色要走单独的分配接口。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class AdminUserCreateDTO implements Serializable {
 
     @Serial
@@ -59,7 +55,6 @@ public class AdminUserCreateDTO implements Serializable {
     @NotNull
     @Min(0)
     @Max(1)
-    @Builder.Default
     private Integer status = 1;
 
     public void setUsername(String value) {

@@ -67,13 +67,16 @@ public interface VisitorMapper extends BaseMapper<BlogVisitor> {
     boolean hasActiveIpBlock(@Param("ip") String ip, @Param("now") LocalDateTime now);
 
     /**
-     * 分页查询访客列表及浏览次数统计
+     * 分页查询访客列表及浏览次数统计，封禁筛选按当前时刻是否生效判断。
      *
      * @param page 分页参数
      * @param query 查询条件
+     * @param now 当前 UTC 时间
      * @return 访客分页结果
      */
-    IPage<VisitorVO> visitorPage(IPage<VisitorVO> page, @Param("query") VisitorQueryDTO query);
+    IPage<VisitorVO> visitorPage(IPage<VisitorVO> page,
+            @Param("query") VisitorQueryDTO query,
+            @Param("now") LocalDateTime now);
 
     /**
      * 根据访客 ID 查询访客详情及浏览次数统计

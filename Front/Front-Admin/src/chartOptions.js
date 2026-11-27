@@ -124,3 +124,32 @@ export function makeProvinceOption(rows) {
     ],
   }
 }
+
+/** 按来源域名展示访问排行，无来源项显示为直接访问。 */
+export function makeRefererOption(rows) {
+  return {
+    tooltip: {
+      ...tooltip,
+      trigger: 'axis',
+      axisPointer: { type: 'shadow' },
+    },
+    grid: { left: 12, right: 20, top: 16, bottom: 12, containLabel: true },
+    xAxis: valueAxis,
+    yAxis: {
+      type: 'category',
+      inverse: true,
+      data: rows.map((row) => row.source || '直接访问'),
+      axisLabel: { color: '#606266', fontSize: 12, width: 130, overflow: 'truncate' },
+      axisLine: { lineStyle: { color: '#e4e7ed' } },
+    },
+    series: [
+      {
+        name: '浏览量',
+        type: 'bar',
+        data: rows.map((row) => ({ value: row.pageViewCount })),
+        barMaxWidth: 20,
+        itemStyle: { color: '#0891b2', borderRadius: [0, 4, 4, 0] },
+      },
+    ],
+  }
+}

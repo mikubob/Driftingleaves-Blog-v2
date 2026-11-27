@@ -325,7 +325,7 @@ onUnmounted(() => {
                 :is="item.href ? 'a' : RouterLink"
                 v-for="item in exploreLinks"
                 :key="item.label"
-                v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
+                v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener' } : { to: item.to }"
                 class="header-popover-item"
                 @click="openPopover = ''"
               >
@@ -560,7 +560,7 @@ onUnmounted(() => {
             :is="item.href ? 'a' : RouterLink"
             v-for="item in group.links"
             :key="item.label"
-            v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
+            v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener' } : { to: item.to }"
             class="drawer-link"
             @click="mobileNavVisible = false"
           >

@@ -4,8 +4,6 @@ import com.xuan.validation.TextLength;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Data;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -18,9 +16,7 @@ import java.io.Serializable;
  * setter 记下字段有没有出现，才能分清没传、传 null 和传空串。
  */
 @Data
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class ProfilePatchDTO implements Serializable {
 
     @Serial
