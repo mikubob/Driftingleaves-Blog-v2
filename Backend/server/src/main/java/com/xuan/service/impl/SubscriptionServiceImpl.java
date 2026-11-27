@@ -242,9 +242,6 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     private ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
         BlogRssSubscription row = lockAdmin(id, "update");
         RevisionUtils.check(profile(row).getRevision(), revision);
-        if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
-            throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
-        }
         if (row.getStatus() != status) {
             if (status == 2) {
                 cancel(row);
@@ -257,6 +254,16 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             }
         }
         return profile(subscriptions.selectById(id));
+    }
+
+    /** 后台只能启用当前账号仍在使用且已验证的邮箱。 */
+    private void requireVerifiedCurrentEmail(BlogRssSubscription row) {
+        var user = users.selectById(row.getUserId());
+        String email = user.getEmail();
+        if (row.getVerifiedAt() == null || user.getStatus() != 1 || email == null
+                || !row.getEmail().equals(email.strip().toLowerCase(Locale.ROOT))) {
+            throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
+        }
     }
 
     /**
@@ -417,8 +424,8 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             String revision = item.getRevision();
             BlogRssSubscription row = lockAdmin(id, "update");
             RevisionUtils.check(profile(row).getRevision(), revision);
-            if (status == 1 && (row.getVerifiedAt() == null || users.selectById(row.getUserId()).getStatus() != 1)) {
-                throw new BusinessException(409, "STATE_CONFLICT", "当前邮箱尚未验证或用户已停用");
+            if (status == 1) {
+                requireVerifiedCurrentEmail(row);
             }
         }
         Map<Long, String> versions = new HashMap<>();

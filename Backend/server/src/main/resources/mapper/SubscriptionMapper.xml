@@ -37,6 +37,17 @@
           AND user_id = #{row.userId}
     </update>
 
+    <!-- 邮箱变更后停止投递并清除旧邮箱验证，保留历史退订时间。 -->
+    <update id="retireForEmailChange">
+        UPDATE blog_rss_subscription
+        SET status = 2,
+            verified_at = NULL,
+            unsubscribe_time = COALESCE(unsubscribe_time, UTC_TIMESTAMP(3))
+        WHERE user_id = #{user}
+          AND NOT (CAST(email AS BINARY) &lt;=&gt; CAST(#{email,jdbcType=VARCHAR} AS BINARY))
+          AND (status &lt;&gt; 2 OR verified_at IS NOT NULL)
+    </update>
+
     <!-- 分页查询后台邮件订阅列表 -->
     <select id="subscriptionPage" resultType="com.xuan.entity.BlogRssSubscription">
         SELECT *
@@ -60,6 +71,7 @@
         SELECT s.*
         FROM blog_rss_subscription s
         JOIN sys_user u ON u.user_id = s.user_id AND u.status = 1
+          AND s.email = LOWER(TRIM(u.email))
         WHERE s.status = 1
           AND s.verified_at IS NOT NULL
           AND s.subscription_id &gt; #{after}
@@ -72,6 +84,7 @@
         SELECT s.*
         FROM blog_rss_subscription s
         JOIN sys_user u ON u.user_id = s.user_id AND u.status = 1
+          AND s.email = LOWER(TRIM(u.email))
         WHERE s.user_id = #{user}
           AND s.status = 1
           AND s.verified_at IS NOT NULL

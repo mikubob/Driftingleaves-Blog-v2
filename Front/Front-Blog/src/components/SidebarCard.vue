@@ -28,7 +28,7 @@ const runDays = computed(() => {
   const start = blogStore.site.startDate
   return start ? Math.max(0, Math.floor((Date.now() - new Date(start).getTime()) / 86400000)) : null
 })
-watch(() => session.user?.userId, () => {
+watch([() => session.user?.userId, rssEmail], () => {
   subscription.value = null
   showRssModal.value = false
 })
@@ -37,10 +37,15 @@ async function openRssModal() {
     router.push({ path: '/login', query: { redirect: route.fullPath } })
     return
   }
+  const userId = session.user.userId
+  const requestedEmail = rssEmail.value
   showRssModal.value = true
   rssSubmitting.value = true
   try {
-    subscription.value = (await request('/blog/me/rss-subscription')).data
+    const { data } = await request('/blog/me/rss-subscription')
+    if (session.user?.userId === userId && rssEmail.value === requestedEmail) {
+      subscription.value = data
+    }
   } catch (error) {
     ElMessage.error(error.message)
   } finally {
@@ -55,11 +60,17 @@ async function handleRssSubscribe() {
     ElMessage.warning('请先在个人资料中设置账号邮箱')
     return
   }
+  const userId = session.user?.userId
+  const requestedEmail = rssEmail.value
   rssSubmitting.value = true
   try {
-    subscription.value = (await request('/blog/me/rss-subscription', {
-      method: 'PUT', body: { email: rssEmail.value },
-    })).data
+    const { data } = await request('/blog/me/rss-subscription', {
+      method: 'PUT', body: { email: requestedEmail },
+    })
+    if (session.user?.userId !== userId || rssEmail.value !== requestedEmail) {
+      return
+    }
+    subscription.value = data
     ElMessage.success(subscription.value.status === 1 ? '当前邮箱已订阅' : '确认邮件已发送，请查收邮件完成邮箱验证')
   } catch (error) {
     ElMessage.error(error.message)
@@ -243,6 +254,7 @@ function goTag(slug) {
       :append-to-body="true"
     >
       <p v-if="subscription?.status === 0" role="status">等待邮箱验证，请查收邮件；可重新提交以重发确认邮件。</p>
+      <p v-if="rssEmail && subscription?.status === 2 && subscription.email !== rssEmail" role="status">邮箱已更换，请重新订阅。</p>
       <p v-if="!can('blog:rss:subscribe')">当前账号没有邮件订阅权限。</p>
       <!-- 已订阅，查看状态 -->
       <div v-if="isSubscribed" class="rss-status">

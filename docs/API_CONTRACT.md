@@ -650,9 +650,9 @@ lyricUrl与lyricType必须同时为null或同时非null，类型只允许lrc/jso
 | `Subscription` | `subscriptionId`:ID（订阅ID）；`email`:string（订阅邮箱，≤254；服务端trim并转小写）；`status`:integer（0待验证 1已订阅 2已退订）；`verifiedAt`:Time&#124;null（当前邮箱验证成功时间）；`subscribeTime`:Time&#124;null（最近激活时间）；`unsubscribeTime`:Time&#124;null（最近退订时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 | `SubscriptionAdmin` | `userId`:ID（所属本站用户）；`subscriptionId`:ID（订阅ID）；`email`:string（订阅邮箱，≤254；服务端trim并转小写）；`status`:integer（0待验证 1已订阅 2已退订）；`verifiedAt`:Time&#124;null（当前邮箱验证成功时间）；`subscribeTime`:Time&#124;null（最近激活时间）；`unsubscribeTime`:Time&#124;null（最近退订时间）；`createTime`:Time（创建时间，UTC）；`updateTime`:Time（最后更新时间，UTC） |
 
-status为0待验证、1已订阅、2已退订。每用户一条、每规范化邮箱一条，昵称读取用户公开资料，不复制旧nickname列。待验证或换邮箱时verifiedAt/subscribeTime/unsubscribeTime清空；激活必须有当前邮箱验证时间和订阅时间，unsubscribeTime=null；退订写时间但可保留原验证记录。任何请求都不能写userId/verifiedAt/审计时间，后台状态接口也不能更换邮箱或跳过验证。
+status为0待验证、1已订阅、2已退订。每用户一条，待验证和已订阅记录独占规范化邮箱。退订释放邮箱占用并保留原地址，普通退订可保留验证记录。重新申请进入待验证时清空verifiedAt/subscribeTime/unsubscribeTime；激活必须有当前邮箱验证时间和订阅时间，unsubscribeTime=null。昵称读取用户公开资料，不复制旧nickname列。任何请求都不能写userId/verifiedAt/审计时间，后台状态接口也不能更换邮箱或跳过验证。
 
-本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。账号邮箱变更后需重新申请并确认，历史订阅不自动迁移；确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
+本人申请接口的email必填，仅允许当前登录用户的账号邮箱。前端固定只读展示 `sys_user.email`；服务端锁定用户后读取账号邮箱并trim转小写，请求邮箱同样规范化后不一致返回400/VALIDATION_ERROR，账号邮箱为空返回409/STATE_CONFLICT，均不写订阅或发信。保存及发信使用服务端账号邮箱，不能用请求改成其他地址。本人或管理员更换或清空账号邮箱时，在保存账号的事务内将旧订阅置为已退订并清除验证时间，原邮箱停止投递。新邮箱须重新申请并确认。确认票据时还须核对当前账号邮箱，已变化的旧邮箱票据返回400/SUBSCRIPTION_TICKET_INVALID。账号邮箱不等于订阅已确认，仍保留独立的邮件确认、重发与退订机制。
 
 确认链接使用固定前端完成页 `#confirmTicket=<opaque>`，前端读fragment后立即清除，通过同源博客 API 提交 JSON 票据。票据24小时有效，Redis中只绑定本次申请的用户、订阅ID、邮箱与申请版本。申请版本是Redis生成的随机标识，按用户保存当前有效值，重发时原子替换，不能仅靠毫秒updateTime区分申请；过期、复用、版本或身份不符统一400/SUBSCRIPTION_TICKET_INVALID，不泄露具体原因。锁用户及订阅后原子消费票据，再提交数据库；数据库失败时需要重新申请，不用额外表伪造跨Redis/MySQL事务。申请/重发按账号与可信IP限流，SMTP或Redis失败503，待验证数据可保留，不能回复已激活。申请/重发共用每用户+可信IP每60秒5次限流，创建留言为每用户+可信IP每60秒10次。相同已激活邮箱的PUT不再发确认邮件。
 
@@ -801,7 +801,7 @@ keyword按标题、摘要和Markdown原文字面包含；仅传keyword时关联�
 | 上传/删除 | 按[文件与附件](API.md#group-11)顺序与补偿；存储非数据库事务资源，不使用虚构的分布式事务 |
 | 主页/社交/简历/音乐 | ALL范围与指定权限；可变资源按详情X-Revision锁定后完整替换，时间由数据库维护 |
 | 留言 | message配置锁→祖先链→目标；锁后校验父链可见性/私密性/版本；新增、回复、审核与分支删除规则见12.10 |
-| 邮件订阅 | 用户锁→订阅锁；邮箱/用户唯一约束，确认票据与状态匹配；Redis消费和MySQL无共同事务，失败边界见12.12 |
+| 邮件订阅 | 用户锁→订阅锁；每用户一条，邮箱只在待验证或已订阅时唯一；发送通知持有用户锁并核对当前订阅；Redis消费和MySQL无共同事务，失败边界见12.12 |
 | 访问采集 | 同事务写访客及一次浏览明细；已登录userId从服务端确认；不修改文章累计view_count |
 | 操作日志 | 成功日志随业务数据库事务提交；失败日志在回滚后单独记录，不将敏感请求体落库 |
 

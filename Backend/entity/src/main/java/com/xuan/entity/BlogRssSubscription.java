@@ -13,7 +13,7 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 一个本站用户和一个规范化邮箱各只能有一条订阅，验证状态不从用户资料推断。
+ * 每个用户保留一条订阅，待验证或已订阅记录独占邮箱。
  */
 @Data
 @Builder

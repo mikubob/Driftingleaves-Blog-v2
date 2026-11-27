@@ -47,6 +47,9 @@ public interface SubscriptionMapper extends BaseMapper<BlogRssSubscription> {
      */
     int replace(@Param("row") BlogRssSubscription row);
 
+    /** 停用与当前账号邮箱不一致的订阅，调用方须先锁住用户。 */
+    int retireForEmailChange(@Param("user") long user, @Param("email") String email);
+
     /**
      * 分页查询后台订阅列表
      *

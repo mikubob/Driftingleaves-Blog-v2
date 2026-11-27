@@ -452,7 +452,7 @@ CREATE TABLE blog_rss_subscription (
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
   PRIMARY KEY (subscription_id),
   UNIQUE KEY uk_rss_user (user_id),
-  UNIQUE KEY uk_rss_email (email),
+  UNIQUE KEY uk_rss_email ((CASE WHEN status IN (0, 1) THEN email END)),
   KEY idx_rss_delivery (status, subscription_id),
   CONSTRAINT fk_rss_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE CASCADE,
   CONSTRAINT ck_rss_status CHECK (status IN (0, 1, 2)),

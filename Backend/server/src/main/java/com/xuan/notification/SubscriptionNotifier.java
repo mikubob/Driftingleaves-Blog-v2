@@ -5,6 +5,7 @@ import com.xuan.entity.BlogRssSubscription;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.MessageMapper;
 import com.xuan.mapper.SubscriptionMapper;
+import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.model.MessageRow;
 import com.xuan.model.SubscriptionUnsubscribe;
@@ -15,8 +16,11 @@ import com.xuan.store.SubscriptionTicketStore;
 import com.xuan.utils.EmailTemplateUtils;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.time.Clock;
@@ -35,6 +39,7 @@ import java.util.concurrent.Semaphore;
 public class SubscriptionNotifier {
 
     private final SubscriptionMapper subscriptions;
+    private final UserMapper users;
     private final ArticleMapper articles;
     private final MessageMapper messages;
     private final SubscriptionTicketStore tickets;
@@ -45,14 +50,17 @@ public class SubscriptionNotifier {
     private final Clock clock;
     private final ExecutorService executor;
     private final Semaphore deliveries;
+    private final TransactionTemplate deliveryTransaction;
 
     /**
      * 初始化邮件通知，使用专用线程池，不传递请求线程、Token 或会话信息。
      */
-    public SubscriptionNotifier(SubscriptionMapper subscriptions, ArticleMapper articles, MessageMapper messages,
-            SubscriptionTicketStore tickets, MailClient mail, MailProperties properties, PublicSiteProperties sites,
-            JsonMapper json, Clock clock, @Qualifier("mailExecutor") ExecutorService executor) {
+    public SubscriptionNotifier(SubscriptionMapper subscriptions, UserMapper users, ArticleMapper articles,
+            MessageMapper messages, SubscriptionTicketStore tickets, MailClient mail, MailProperties properties,
+            PublicSiteProperties sites, JsonMapper json, Clock clock, PlatformTransactionManager transactions,
+            @Qualifier("mailExecutor") ExecutorService executor) {
         this.subscriptions = subscriptions;
+        this.users = users;
         this.articles = articles;
         this.messages = messages;
         this.tickets = tickets;
@@ -63,6 +71,8 @@ public class SubscriptionNotifier {
         this.clock = clock;
         this.executor = executor;
         this.deliveries = new Semaphore(properties.getNotificationConcurrency());
+        this.deliveryTransaction = new TransactionTemplate(transactions);
+        this.deliveryTransaction.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
     /**
@@ -137,13 +147,8 @@ public class SubscriptionNotifier {
         if (row == null) {
             return;
         }
-        BlogRssSubscription current = subscriptions.confirmed(candidate.getUserId());
-        if (current == null || !current.getSubscriptionId().equals(candidate.getSubscriptionId())
-                || !Objects.equals(current.getEmail(), candidate.getEmail())
-                || !Objects.equals(current.getSubscribeTime(), candidate.getSubscribeTime())) {
-            return;
-        }
-        send(current, "新文章发布", "您订阅的博客有新文章发布了：", row.getTitle(), "阅读全文 →",
+        deliverToCurrentSubscription(candidate.getUserId(), candidate, "新文章发布", "您订阅的博客有新文章发布了：",
+                row.getTitle(), "阅读全文 →",
                 sites.articleUrl(row.getSlug()));
     }
 
@@ -183,11 +188,26 @@ public class SubscriptionNotifier {
         if (!MessageVisibilityPolicy.visible(id, MessageVisibilityPolicy.index(messages.nodes()), parent.getUserId())) {
             return;
         }
-        BlogRssSubscription current = subscriptions.confirmed(parent.getUserId());
-        if (current != null) {
-            send(current, "留言收到新回复", "你的留言收到新回复，请登录查看：", "登录后查看留言回复", "查看回复 →",
-                    sites.base("blog") + "/messages");
-        }
+        deliverToCurrentSubscription(parent.getUserId(), null, "留言收到新回复", "你的留言收到新回复，请登录查看：",
+                "登录后查看留言回复", "查看回复 →", sites.base("blog") + "/messages");
+    }
+
+    /** 锁住收件用户并复查订阅，直到 SMTP 接收，避免账号已换邮箱后才开始发送。 */
+    private void deliverToCurrentSubscription(long userId, BlogRssSubscription candidate, String subject,
+            String description, String detail, String buttonText, String url) {
+        deliveryTransaction.executeWithoutResult(status -> {
+            users.lockById(userId);
+            BlogRssSubscription current = subscriptions.confirmed(userId);
+            if (current == null) {
+                return;
+            }
+            if (candidate != null && (!current.getSubscriptionId().equals(candidate.getSubscriptionId())
+                    || !Objects.equals(current.getEmail(), candidate.getEmail())
+                    || !Objects.equals(current.getSubscribeTime(), candidate.getSubscribeTime()))) {
+                return;
+            }
+            send(current, subject, description, detail, buttonText, url);
+        });
     }
 
     /**

@@ -26,6 +26,7 @@ import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.AuthorizationMapper;
 import com.xuan.mapper.OAuthBindingMapper;
+import com.xuan.mapper.SubscriptionMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.LoginSession;
 import com.xuan.policy.UrlPolicy;
@@ -69,6 +70,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -82,6 +84,7 @@ import java.util.stream.LongStream;
 public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements IUserService {
 
     private final UserMapper users;
+    private final SubscriptionMapper subscriptions;
     private final OAuthBindingMapper oauth;
     private final AuthorizationMapper authorization;
     private final AuthorizationProvider permissions;
@@ -194,6 +197,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             throw identityConflict(user, exception);
         }
 
+        retireSubscriptionForEmailChange(user);
         return adminProfile(users.selectById(userId));
     }
 
@@ -629,7 +633,19 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         } catch (DuplicateKeyException exception) {
             throw identityConflict(user, exception);
         }
+        if (request.hasEmail()) {
+            retireSubscriptionForEmailChange(user);
+        }
         return profile(users.selectById(user.getUserId()));
+    }
+
+    /** 在保存邮箱的事务内停用旧邮箱订阅。 */
+    private void retireSubscriptionForEmailChange(SysUser user) {
+        String email = user.getEmail();
+        if (email != null) {
+            email = email.strip().toLowerCase(Locale.ROOT);
+        }
+        subscriptions.retireForEmailChange(user.getUserId(), email);
     }
 
     /**

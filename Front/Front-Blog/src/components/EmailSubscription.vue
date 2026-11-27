@@ -8,7 +8,7 @@ import { useResource } from '../composables/useResource.js'
 import ResourceState from './ResourceState.vue'
 const email = computed(() => session.user?.email?.trim().toLowerCase() || '')
 const busy = ref(false)
-const subscription = useResource(() => session.user?.userId, async (signal) => {
+const subscription = useResource([() => session.user?.userId, email], async (signal) => {
   if (!session.user) {
     return null
   }
@@ -23,12 +23,17 @@ const submitLabel = computed(() => {
 })
 
 async function update(cancel = false) {
+  const userId = session.user?.userId
+  const requestedEmail = email.value
   busy.value = true
   try {
     const { data } = await request('/blog/me/rss-subscription', {
       method: cancel ? 'DELETE' : 'PUT',
-      body: cancel ? undefined : { email: email.value.trim().toLowerCase() },
+      body: cancel ? undefined : { email: requestedEmail },
     })
+    if (session.user?.userId !== userId || email.value !== requestedEmail) {
+      return
+    }
     subscription.data = data
     if (cancel) {
       ElMessage.success('已取消邮件订阅。')
@@ -41,7 +46,9 @@ async function update(cancel = false) {
       await subscription.reload()
     }
   } catch (failure) {
-    ElMessage.error(failure.message)
+    if (session.user?.userId === userId && email.value === requestedEmail) {
+      ElMessage.error(failure.message)
+    }
   } finally {
     busy.value = false
   }
@@ -94,6 +101,9 @@ async function update(cancel = false) {
             </button>
           </div>
         </div>
+        <p v-if="email && subscription.data?.status === 2 && subscription.data.email !== email" class="muted" role="status">
+          邮箱已更换，请重新订阅。
+        </p>
         <p v-if="!can('blog:rss:subscribe') && !can('blog:rss:unsubscribe')" class="muted">
           当前账号没有管理邮件订阅的权限。
         </p>
