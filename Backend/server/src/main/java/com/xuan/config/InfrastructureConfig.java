@@ -23,6 +23,14 @@ import java.util.List;
 @EnableTransactionManagement(order = 100)
 public class InfrastructureConfig {
 
+    private static final DefaultRedisScript<Long> SET_KEEP_TTL = new DefaultRedisScript<>("""
+            local ttl = redis.call('PTTL', KEYS[1])
+            if ttl == -2 then return 0 end
+            redis.call('SET', KEYS[1], ARGV[1])
+            if ttl >= 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
+            return 1
+            """, Long.class);
+
     /**
      * 配置 Redis 会话存储，复用官方 DAO 并添加本站前缀，避免与其他应用混用。
      */
@@ -37,13 +45,7 @@ public class InfrastructureConfig {
             @Override
             public void setStringAndKeepTTL(String finalKey, String value) {
                 // 一次 Lua 里读旧 TTL 并设置新值，键已经过期就不能更新复活。
-                stringRedisTemplate.execute(new DefaultRedisScript<>("""
-                        local ttl = redis.call('PTTL', KEYS[1])
-                        if ttl == -2 then return 0 end
-                        redis.call('SET', KEYS[1], ARGV[1])
-                        if ttl >= 0 then redis.call('PEXPIRE', KEYS[1], ttl) end
-                        return 1
-                        """, Long.class), List.of(finalKey), value);
+                stringRedisTemplate.execute(SET_KEEP_TTL, List.of(finalKey), value);
             }
 
             /**

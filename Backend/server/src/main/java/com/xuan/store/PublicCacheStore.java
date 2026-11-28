@@ -116,11 +116,16 @@ public class PublicCacheStore {
         try {
             List<?> result = redis.execute(READ, List.of(prefix + "generation", writersKey(domain)),
                     UUID.randomUUID().toString(), prefix, query, nowMillis());
-            if (result == null || result.get(0).toString().isEmpty() ||
-                    !result.get(0).toString().equals(frame.generations().get("start:" + domain))) {
+            if (result == null || result.get(0).toString().isEmpty()) {
                 return null;
             }
-            frame.generations().put(slot, result.get(0).toString());
+            String gen = result.get(0).toString();
+            // 普通 @Cacheable 首次读取在同一次 READ 中直接记下起始版本；@PublicCacheRead 已预先登记时须校验版本未变。
+            String started = frame.generations().putIfAbsent("start:" + domain, gen);
+            if (started != null && !gen.equals(started)) {
+                return null;
+            }
+            frame.generations().put(slot, gen);
             String data = result.get(1).toString();
             return data.isEmpty() ? null : serializer.deserialize(data.getBytes(StandardCharsets.UTF_8));
         } catch (RuntimeException unavailableOrIncompatible) {

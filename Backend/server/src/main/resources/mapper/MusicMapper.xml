@@ -56,6 +56,16 @@
         )
     </select>
 
+    <!-- 检查是否存在启用状态的公开曲目引用指定文件地址 -->
+    <select id="hasPublicFileReference" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM blog_music
+            WHERE status = 1
+              AND (cover_url = #{url} OR audio_url = #{url} OR lyric_url = #{url})
+        )
+    </select>
+
     <!-- 加行锁查询一条引用指定文件地址的公开曲目 -->
     <select id="lockPublicFileReference" resultType="com.xuan.entity.BlogMusic">
         SELECT *

@@ -20,11 +20,19 @@ public class RedisRateLimiter {
     private static final DefaultRedisScript<Long> HIT = new DefaultRedisScript<>("""
             local ttl = 0
             for i, key in ipairs(KEYS) do
+                local current = tonumber(redis.call('GET', key) or '0')
+                if current >= tonumber(ARGV[i + 1]) then
+                    ttl = math.max(ttl, redis.call('TTL', key), 1)
+                end
+            end
+            if ttl > 0 then
+                return ttl
+            end
+            for _, key in ipairs(KEYS) do
                 local n = redis.call('INCR', key)
                 if n == 1 then redis.call('EXPIRE', key, ARGV[1]) end
-                if n > tonumber(ARGV[i + 1]) then ttl = math.max(ttl, redis.call('TTL', key), 1) end
             end
-            return ttl
+            return 0
             """, Long.class);
     private static final DefaultRedisScript<Long> CHECK = new DefaultRedisScript<>("""
             local ttl = 0

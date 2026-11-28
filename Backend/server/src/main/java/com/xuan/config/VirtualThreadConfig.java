@@ -19,7 +19,8 @@ public class VirtualThreadConfig {
      */
     @Bean(name = "auditExecutor", destroyMethod = "close", defaultCandidate = false)
     public ExecutorService auditExecutor() {
-        return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("audit-", 0).factory());
+        return Executors.newThreadPerTaskExecutor(Thread.ofVirtual()
+                .name("audit-", 0).inheritInheritableThreadLocals(false).factory());
     }
 
     /**

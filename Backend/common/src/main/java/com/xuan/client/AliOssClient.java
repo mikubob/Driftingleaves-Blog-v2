@@ -36,7 +36,7 @@ public class AliOssClient {
     }
 
     /**
-     * 上传文件到 OSS，文件类型、归属和数据库失败后的清理由业务层负责。
+     * 上传字节数组到 OSS，委托流式上传接口完成，文件类型、归属和数据库失败后的清理由业务层负责。
      *
      * @param bytes 非空且已按类型限长的文件内容
      * @param extension 已与内容识别一致的受支持扩展名，不使用原文件名
@@ -44,18 +44,34 @@ public class AliOssClient {
      * @return 专属前缀/分类目录/随机文件名，只有确认上传成功才返回
      */
     public String upload(byte[] bytes, String extension, boolean publicImage) {
-        if (bytes == null || bytes.length == 0 || bytes.length > FileUtils.maxBytes(extension)) {
+        if (bytes == null) {
+            throw new BusinessException(400, "VALIDATION_ERROR", "无法上传此文件，请确认文件非空且格式受支持；图片限10 MiB、音频限60 MiB、歌词限1 MiB。");
+        }
+        return upload(new ByteArrayInputStream(bytes), bytes.length, extension, publicImage);
+    }
+
+    /**
+     * 流式上传文件到 OSS，不将大文件整包载入堆内存；调用方负责关闭输入流。
+     *
+     * @param input 待上传的文件输入流
+     * @param contentLength 已确认的非空字节长度，须不超过对应类型上限
+     * @param extension 已与内容识别一致的受支持扩展名，不使用原文件名
+     * @param publicImage 是否通过公开图片接口读取，OSS 对象仍设为私有
+     * @return 专属前缀/分类目录/随机文件名，只有确认上传成功才返回
+     */
+    public String upload(InputStream input, long contentLength, String extension, boolean publicImage) {
+        if (input == null || contentLength <= 0 || contentLength > FileUtils.maxBytes(extension)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "无法上传此文件，请确认文件非空且格式受支持；图片限10 MiB、音频限60 MiB、歌词限1 MiB。");
         }
         String category = publicImage ? FileUtils.PUBLIC_IMAGE_CATEGORY : FileUtils.getFileCategory(extension);
         String key = prefix + category + "/" + TokenUtils.random() + "." + extension;
         ObjectMetadata metadata = new ObjectMetadata();
-        metadata.setContentLength(bytes.length);
+        metadata.setContentLength(contentLength);
         metadata.setContentType(FileUtils.mimeType(extension));
         // 新对象一律设为私有，避免继承公开读取设置；不改 Bucket 或已有对象的 ACL。
         metadata.setObjectAcl(CannedAccessControlList.Private);
         try {
-            oss.putObject(new PutObjectRequest(bucket, key, new ByteArrayInputStream(bytes), metadata));
+            oss.putObject(new PutObjectRequest(bucket, key, input, metadata));
             return key;
         } catch (OSSException | ClientException exception) {
             logWriteFailure("OSS 上传失败", exception);

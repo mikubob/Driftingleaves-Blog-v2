@@ -31,17 +31,31 @@ public final class ImageCompressUtils {
         double scale = longest > properties.getMaxDimension()
                 ? (double) properties.getMaxDimension() / longest : 1.0;
 
-        float quality = (float) properties.getQuality();
-        byte[] result = encode(image, scale, outputFormat, quality);
+        float initialQuality = (float) properties.getQuality();
+        byte[] result = encode(image, scale, outputFormat, initialQuality);
         boolean supportsLossy = "webp".equals(outputFormat) || "jpeg".equals(outputFormat);
-        int attempts = 0;
-        while (supportsLossy && result.length > targetBytes && quality > 0.3f && attempts < 10) {
-            quality = Math.max(0.3f, quality - 0.05f);
-            byte[] candidate = encode(image, scale, outputFormat, quality);
-            if (candidate.length < result.length) {
-                result = candidate;
+        if (supportsLossy && result.length > targetBytes && initialQuality > 0.3f) {
+            // 先试最低质量 0.3；若最低质量仍超限则直接取较小结果，否则在 [0.3, initialQuality] 二分查找最高可用质量。
+            float low = 0.3f;
+            float high = initialQuality;
+            byte[] lowest = encode(image, scale, outputFormat, low);
+            if (lowest.length > targetBytes) {
+                if (lowest.length < result.length) {
+                    result = lowest;
+                }
+            } else {
+                result = lowest;
+                for (int step = 0; step < 5 && (high - low) >= 0.04f; step++) {
+                    float mid = (low + high) / 2.0f;
+                    byte[] candidate = encode(image, scale, outputFormat, mid);
+                    if (candidate.length <= targetBytes) {
+                        result = candidate;
+                        low = mid;
+                    } else {
+                        high = mid;
+                    }
+                }
             }
-            attempts++;
         }
 
         // 只有输入本来就是目标格式且未超边长、转码后反而更大时，才保留原字节。

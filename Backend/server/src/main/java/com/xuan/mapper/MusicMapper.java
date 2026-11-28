@@ -50,6 +50,14 @@ public interface MusicMapper extends BaseMapper<BlogMusic> {
     boolean hasFileReference(@Param("url") String url);
 
     /**
+     * 检查是否存在启用状态的公开曲目引用指定文件地址，用于公开附件只读鉴权。
+     *
+     * @param url 文件访问地址
+     * @return 是否被公开曲目引用
+     */
+    boolean hasPublicFileReference(@Param("url") String url);
+
+    /**
      * 加行锁查询一条引用指定文件地址的公开曲目
      *
      * @param url 文件访问地址

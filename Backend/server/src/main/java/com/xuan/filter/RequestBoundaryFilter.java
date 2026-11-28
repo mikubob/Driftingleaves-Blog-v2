@@ -2,6 +2,7 @@ package com.xuan.filter;
 
 import com.xuan.constant.ErrorCode;
 import com.xuan.constant.HttpConstants;
+import com.xuan.exception.BusinessException;
 import com.xuan.result.Result;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ReadListener;
@@ -18,7 +19,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -35,7 +35,7 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
     private final JsonMapper json;
 
     /**
-     * 检查请求体大小并设置响应头，再把已读取的内容交给 MVC。
+     * 预检 Content-Length 并包装有界输入流，避免在鉴权与限流前将超大 JSON 整包读入内存。
      */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -51,66 +51,133 @@ public class RequestBoundaryFilter extends OncePerRequestFilter {
             return;
         }
 
-        // 3. 最多多读一个字节来判断超限，不能把无限大的请求体整个读进内存。
-        byte[] body = request.getInputStream().readNBytes(HttpConstants.MAX_JSON_BODY_BYTES + 1);
-        if (body.length > HttpConstants.MAX_JSON_BODY_BYTES) {
-            response.setStatus(413);
-            response.setContentType(HttpConstants.APPLICATION_JSON_UTF8);
-            response.getWriter()
-                    .write(json.writeValueAsString(Result.error(ErrorCode.PAYLOAD_TOO_LARGE, "JSON请求体超过8MiB")));
+        // 3. 声明长度已超过 8 MiB 时直接返回 413，不读取请求体。
+        if (request.getContentLengthLong() > HttpConstants.MAX_JSON_BODY_BYTES) {
+            writePayloadTooLarge(response);
             return;
         }
 
-        // 4. 检查过的字节还要交回 MVC，不能因为这里读过就让业务收到空请求体。
-        chain.doFilter(new HttpServletRequestWrapper(request) {
-            /**
-             * 返回已检查大小的请求体输入流。
-             */
-            @Override
-            public ServletInputStream getInputStream() {
-                ByteArrayInputStream input = new ByteArrayInputStream(body);
-                return new ServletInputStream() {
-                    /**
-                     * 读取下一个请求体字节。
-                     */
-                    @Override
-                    public int read() {
-                        return input.read();
-                    }
+        // 4. 分块传输或未准确声明长度的请求，使用有界流式包装按需读取并限制总字节数。
+        chain.doFilter(new BoundedJsonRequestWrapper(request), response);
+    }
 
-                    /**
-                     * 判断请求体是否已读完。
-                     */
-                    @Override
-                    public boolean isFinished() {
-                        return input.available() == 0;
-                    }
+    /**
+     * 返回 413 JSON 响应。
+     */
+    private void writePayloadTooLarge(HttpServletResponse response) throws IOException {
+        response.setStatus(413);
+        response.setContentType(HttpConstants.APPLICATION_JSON_UTF8);
+        response.getWriter()
+                .write(json.writeValueAsString(Result.error(ErrorCode.PAYLOAD_TOO_LARGE, "JSON请求体超过8MiB")));
+    }
 
-                    /**
-                     * 内存中的请求体可以立即读取。
-                     */
-                    @Override
-                    public boolean isReady() {
-                        return true;
-                    }
+    /**
+     * 限制单次 JSON 请求读取总字节数的请求包装器。
+     */
+    private static final class BoundedJsonRequestWrapper extends HttpServletRequestWrapper {
 
-                    /**
-                     * 拒绝异步读取，同步 MVC 请求体不支持读取监听。
-                     */
-                    @Override
-                    public void setReadListener(ReadListener listener) {
-                        throw new UnsupportedOperationException("同步MVC请求体不支持异步读取");
-                    }
-                };
+        private ServletInputStream boundedStream;
+
+        private BoundedJsonRequestWrapper(HttpServletRequest request) {
+            super(request);
+        }
+
+        /**
+         * 返回带 8 MiB 上限的流式输入流，避免整包缓存到堆内存。
+         */
+        @Override
+        public ServletInputStream getInputStream() throws IOException {
+            if (boundedStream == null) {
+                boundedStream = new BoundedServletInputStream(super.getInputStream(), HttpConstants.MAX_JSON_BODY_BYTES);
             }
+            return boundedStream;
+        }
 
-            /**
-             * 以 UTF-8 文本读取已检查的请求体。
-             */
-            @Override
-            public BufferedReader getReader() {
-                return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        /**
+         * 以 UTF-8 文本读取受限的请求体。
+         */
+        @Override
+        public BufferedReader getReader() throws IOException {
+            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        }
+    }
+
+    /**
+     * 委托到底层流的有界 ServletInputStream，支持批量数组读取，超限时抛出 413 业务异常。
+     */
+    private static final class BoundedServletInputStream extends ServletInputStream {
+
+        private final ServletInputStream delegate;
+        private final long maxBytes;
+        private long totalRead;
+
+        private BoundedServletInputStream(ServletInputStream delegate, long maxBytes) {
+            this.delegate = delegate;
+            this.maxBytes = maxBytes;
+        }
+
+        /**
+         * 读取单字节并累计计数。
+         */
+        @Override
+        public int read() throws IOException {
+            int value = delegate.read();
+            if (value != -1) {
+                count(1);
             }
-        }, response);
+            return value;
+        }
+
+        /**
+         * 委托底层流执行数组批量读取，避免退化为逐字节调用。
+         */
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (length == 0) {
+                return 0;
+            }
+            long remaining = maxBytes - totalRead;
+            // 最多多探测 1 字节即可确认超限，防止单次大数组读取过多数据。
+            int allowed = (int) Math.min(length, remaining + 1);
+            int read = delegate.read(buffer, offset, allowed);
+            if (read > 0) {
+                count(read);
+            }
+            return read;
+        }
+
+        /**
+         * 累计已读字节，超过上限立即抛出 413 异常。
+         */
+        private void count(int read) {
+            totalRead += read;
+            if (totalRead > maxBytes) {
+                throw new BusinessException(413, ErrorCode.PAYLOAD_TOO_LARGE, "JSON请求体超过8MiB");
+            }
+        }
+
+        /**
+         * 委托底层流判断是否读完。
+         */
+        @Override
+        public boolean isFinished() {
+            return delegate.isFinished();
+        }
+
+        /**
+         * 委托底层流判断是否可读。
+         */
+        @Override
+        public boolean isReady() {
+            return delegate.isReady();
+        }
+
+        /**
+         * 委托底层流注册异步读取监听。
+         */
+        @Override
+        public void setReadListener(ReadListener listener) {
+            delegate.setReadListener(listener);
+        }
     }
 }

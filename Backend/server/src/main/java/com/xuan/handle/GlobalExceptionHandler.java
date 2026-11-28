@@ -131,6 +131,9 @@ public class GlobalExceptionHandler {
         }
         if (exception instanceof HttpMessageNotReadableException) {
             for (Throwable cause = exception.getCause(); cause != null; cause = cause.getCause()) {
+                if (cause instanceof BusinessException business) {
+                    return business(business);
+                }
                 if (cause instanceof UnrecognizedPropertyException) {
                     return error(400, ErrorCode.VALIDATION_ERROR, "提交内容包含当前不支持的项目，请刷新页面后重新填写。");
                 }

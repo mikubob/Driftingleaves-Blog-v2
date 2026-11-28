@@ -22,6 +22,7 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * 按注解限制请求频率，在 MVC 权限检查后执行，已有认证限流的接口不重复计数。
@@ -31,6 +32,10 @@ import java.util.List;
 @Order(50)
 @RequiredArgsConstructor
 public class RateLimitAspect {
+
+    private static final Pattern PUBLIC_ARTICLE_FILE = Pattern.compile("/blog/articles/[^/]+/files/[^/]+/content");
+    private static final Pattern PUBLIC_ARTICLE_DETAIL = Pattern.compile("/blog/articles/[^/]+");
+    private static final Pattern RULE_NAME = Pattern.compile("[a-zA-Z0-9:._-]{1,100}");
 
     private final RedisRateLimiter limiter;
     private final AuthProperties properties;
@@ -71,14 +76,14 @@ public class RateLimitAspect {
 
         // 3. 按公开路径匹配基础读、搜索、详情、XML 与附件的梯度限流规则。
         String path = request.getServletPath();
-        if (path.matches("/blog/articles/[^/]+/files/[^/]+/content")) {
+        if (PUBLIC_ARTICLE_FILE.matcher(path).matches()) {
             hitIp("public-file", 120, request);
         } else if (path.startsWith("/blog/") || path.startsWith("/home/") || path.startsWith("/cv/")) {
             hitIp("public-get", 120, request);
             if ("/blog/articles".equals(path) && request.getParameter("keyword") != null) {
                 hitIp("public-search", 10, request);
             }
-            if (path.matches("/blog/articles/[^/]+")) {
+            if (PUBLIC_ARTICLE_DETAIL.matcher(path).matches()) {
                 hitIp("public-detail", 60, request);
             }
             if (path.equals("/blog/rss.xml") || path.equals("/blog/sitemap.xml")) {
@@ -102,7 +107,7 @@ public class RateLimitAspect {
      */
     @Around("@annotation(rule)")
     public Object around(ProceedingJoinPoint point, RateLimit rule) throws Throwable {
-        if (!rule.value().matches("[a-zA-Z0-9:._-]{1,100}") || rule.limit() < 1 || rule.windowSeconds() < 1) {
+        if (!RULE_NAME.matcher(rule.value()).matches() || rule.limit() < 1 || rule.windowSeconds() < 1) {
             throw new IllegalStateException("限流注解配置无效");
         }
         ServletRequestAttributes attributes =

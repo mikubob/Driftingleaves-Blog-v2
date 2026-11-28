@@ -32,6 +32,16 @@ public final class MarkdownUtils {
             Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern WHITESPACE = Pattern.compile("\\s", Pattern.UNICODE_CHARACTER_CLASS);
     private static final Pattern WORD = Pattern.compile("\\p{IsHan}|[A-Za-z0-9]+");
+    private static final Safelist ALLOWED = Safelist.relaxed()
+            .removeProtocols("a", "href", "ftp")
+            .addProtocols("a", "href", "#")
+            .addTags("input")
+            .addAttributes("input", "checked")
+            .addEnforcedAttribute("input", "type", "checkbox")
+            .addEnforcedAttribute("input", "disabled", "disabled")
+            .addAttributes("code", "class")
+            .addEnforcedAttribute("a", "rel", "nofollow noopener noreferrer")
+            .preserveRelativeLinks(true);
 
     private MarkdownUtils() {
     }
@@ -60,18 +70,8 @@ public final class MarkdownUtils {
         if (StrUtil.nullToEmpty(html).isBlank()) {
             return "";
         }
-        Safelist allowed = Safelist.relaxed()
-                .removeProtocols("a", "href", "ftp")
-                .addProtocols("a", "href", "#")
-                .addTags("input")
-                .addAttributes("input", "checked")
-                .addEnforcedAttribute("input", "type", "checkbox")
-                .addEnforcedAttribute("input", "disabled", "disabled")
-                .addAttributes("code", "class")
-                .addEnforcedAttribute("a", "rel", "nofollow noopener noreferrer")
-                .preserveRelativeLinks(true);
         // 检查相对地址需要一个 base，最后仍返回原相对地址，不把这个占位地址带出去。
-        String clean = Jsoup.clean(html, "https://markdown.invalid/", allowed);
+        String clean = Jsoup.clean(html, "https://markdown.invalid/", ALLOWED);
         Document document = Jsoup.parseBodyFragment(clean);
         Set<String> used = new HashSet<>();
         for (Element heading : document.select("h1, h2, h3, h4, h5, h6")) {

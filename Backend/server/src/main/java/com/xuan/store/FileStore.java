@@ -3,6 +3,7 @@ package com.xuan.store;
 import com.xuan.client.AliOssClient;
 import com.xuan.entity.BlogFile;
 import com.xuan.exception.BusinessException;
+import com.xuan.model.FileContent;
 import com.xuan.properties.AliOssProperties;
 import com.xuan.properties.FileProperties;
 import com.xuan.utils.FileUtils;
@@ -72,13 +73,14 @@ public class FileStore {
      * 保存已校验的文件，按类型分目录，使用服务端随机文件名，不使用展示名称作为路径。
      */
     public void store(Path temporary, String extension, BlogFile file, boolean publicImage) {
-        // 1. 启用 OSS 时直接上传至私有 Bucket，不返回云端直链。
+        // 1. 启用 OSS 时直接流式上传至私有 Bucket，不把大文件读入堆内存，不返回云端直链。
         AliOssClient client = oss.getIfAvailable();
         if (client != null) {
             file.setStorageType("oss");
             file.setBucket(ossProperties.getBucket());
-            try {
-                file.setObjectKey(client.upload(Files.readAllBytes(temporary), extension, publicImage));
+            try (InputStream input = Files.newInputStream(temporary)) {
+                long size = Files.size(temporary);
+                file.setObjectKey(client.upload(input, size, extension, publicImage));
             } catch (IOException exception) {
                 throw unavailable();
             }
@@ -108,24 +110,48 @@ public class FileStore {
     }
 
     /**
-     * 读取文件内容，必须在业务锁内调用并限制大小，关闭流后返回；文件缺失或大小变化时返回 503。
+     * 打开文件流描述，不把文件内容整包读入堆内存；文件缺失、超限或大小变化时返回 503。
+     *
+     * @param file 数据库中的文件元数据
+     * @param displayName 对外响应展示的文件名
+     * @return 本地路径或待写出层关闭的远端输入流描述
      */
-    public byte[] read(BlogFile file) {
+    public FileContent open(BlogFile file, String displayName) {
         String key = file.getObjectKey();
         String extension = key == null ? "" : key.substring(key.lastIndexOf('.') + 1);
         int limit = FileUtils.maxBytes(extension);
-        if (file.getSizeBytes().signum() <= 0 || file.getSizeBytes().compareTo(BigInteger.valueOf(limit)) > 0
+        if (file.getSizeBytes() == null || file.getSizeBytes().signum() <= 0
+                || file.getSizeBytes().compareTo(BigInteger.valueOf(limit)) > 0
                 || !file.getMimeType().equals(FileUtils.mimeType(extension))) {
             throw unavailable();
         }
-        try (InputStream input = "oss".equals(file.getStorageType())
-                ? ossClient(file).open(file.getObjectKey()) : Files.newInputStream(localTarget(file))) {
-            byte[] bytes = input.readNBytes(limit + 1);
-            if (!file.getSizeBytes().equals(BigInteger.valueOf(bytes.length))) {
+        long sizeBytes = file.getSizeBytes().longValueExact();
+        if ("oss".equals(file.getStorageType())) {
+            try {
+                InputStream input = ossClient(file).open(file.getObjectKey());
+                return FileContent.builder()
+                        .name(displayName)
+                        .mimeType(file.getMimeType())
+                        .sizeBytes(sizeBytes)
+                        .stream(input)
+                        .build();
+            } catch (BusinessException exception) {
                 throw unavailable();
             }
-            return bytes;
-        } catch (IOException | BusinessException exception) {
+        }
+        try {
+            Path target = localTarget(file);
+            if (!Files.isRegularFile(target) || !Files.isReadable(target)
+                    || Files.size(target) != sizeBytes) {
+                throw unavailable();
+            }
+            return FileContent.builder()
+                    .name(displayName)
+                    .mimeType(file.getMimeType())
+                    .sizeBytes(sizeBytes)
+                    .localPath(target)
+                    .build();
+        } catch (IOException exception) {
             throw unavailable();
         }
     }

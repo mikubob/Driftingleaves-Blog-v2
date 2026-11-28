@@ -78,7 +78,8 @@ public class MailConfig {
      */
     @Bean(name = "mailExecutor", destroyMethod = "close", defaultCandidate = false)
     public ExecutorService mailExecutor() {
-        return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("mail-", 0).factory());
+        return Executors.newThreadPerTaskExecutor(Thread.ofVirtual()
+                .name("mail-", 0).inheritInheritableThreadLocals(false).factory());
     }
 
     /**

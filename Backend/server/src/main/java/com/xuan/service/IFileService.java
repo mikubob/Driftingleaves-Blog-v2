@@ -33,6 +33,15 @@ public interface IFileService extends IService<BlogFile> {
     FileVO upload(MultipartFile file, boolean publicImage, String usage);
 
     /**
+     * 在短写事务内复核上传权限、落库文件元数据并记录操作日志，供 upload 通过代理调用。
+     *
+     * @param file 上传文件（用于记录脱敏审计元数据）
+     * @param row 已写入存储的文件元数据
+     * @return 保存后的文件响应视图
+     */
+    FileVO commitUpload(MultipartFile file, BlogFile row);
+
+    /**
      * 上传公开展示图片并返回可直接访问的展示地址。
      *
      * @param file 上传图片文件

@@ -6,11 +6,15 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * 客户端 IP 工具，从右向左排除可信代理，只解析地址，不查询主机名。
  */
 public final class IpUtils {
+
+    private static final Pattern IPV6_CHARS = Pattern.compile("[0-9a-fA-F:.]+");
+    private static final Pattern IPV4_PART = Pattern.compile("0|[1-9][0-9]{0,2}");
 
     private IpUtils() {
     }
@@ -57,11 +61,12 @@ public final class IpUtils {
             return null;
         }
         if (value.contains(":")) {
-            if (!value.matches("[0-9a-fA-F:.]+")) {
+            if (!IPV6_CHARS.matcher(value).matches()) {
                 return null;
             }
             try {
-                return InetAddress.getByName(value).getHostAddress();
+                // 使用方括号强制按 IPv6 字面量解析，解析失败直接抛异常，绝不回退到 DNS 名称解析。
+                return InetAddress.getByName("[" + value + "]").getHostAddress();
             } catch (UnknownHostException exception) {
                 return null;
             }
@@ -71,7 +76,7 @@ public final class IpUtils {
             return null;
         }
         for (String part : parts) {
-            if (!part.matches("0|[1-9][0-9]{0,2}") || Integer.parseInt(part) > 255) {
+            if (!IPV4_PART.matcher(part).matches() || Integer.parseInt(part) > 255) {
                 return null;
             }
         }

@@ -4,6 +4,9 @@ import com.xuan.exception.BusinessException;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -20,6 +23,8 @@ public final class UrlPolicy {
     private static final Pattern EMAIL = Pattern.compile(
             "[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\\.[A-Za-z0-9]" +
                     "(?:[A-Za-z0-9-]*[A-Za-z0-9])?)+");
+    private static final Pattern ATTACHMENT_API_PATH = Pattern.compile(
+            "/api/v1/(blog|admin)/(articles/[^/]+/|music/)?files(?:[/;].*)?");
 
     private UrlPolicy() {
     }
@@ -62,12 +67,28 @@ public final class UrlPolicy {
         }
         try {
             URI uri = new URI(value);
-            // 展示字段不能用附件 API；先解码和整理路径，换成等价绝对地址也要拒绝。
-            String path = new URI(null, null, uri.getPath(), null).normalize().getPath();
-            return ("http".equalsIgnoreCase(uri.getScheme()) || "https".equalsIgnoreCase(uri.getScheme()))
-                    && uri.getHost() != null && uri.getRawUserInfo() == null
-                    && !path.matches("/api/v1/(blog|admin)/(articles/[^/]+/)?files(/.*)?");
-        } catch (URISyntaxException exception) {
+            if ((!"http".equalsIgnoreCase(uri.getScheme()) && !"https".equalsIgnoreCase(uri.getScheme()))
+                    || uri.getHost() == null || uri.getRawUserInfo() != null) {
+                return false;
+            }
+            // 与 FileUrlPolicy 对齐路径规范化：迭代解码、反斜杠归一、路径折叠并忽略大小写与矩阵参数，阻止附件接口伪装成公开地址。
+            String rawPath = uri.getRawPath();
+            if (rawPath == null || rawPath.isEmpty()) {
+                return true;
+            }
+            String decoded = rawPath;
+            String previous;
+            do {
+                previous = decoded;
+                decoded = URLDecoder.decode(decoded.replace("+", "%2B"), StandardCharsets.UTF_8);
+            } while (!decoded.equals(previous) && decoded.contains("%"));
+            String slashNormalized = decoded.replace('\\', '/');
+            String normalized = URI.create("/" + slashNormalized.replaceFirst("^/+", "")).normalize().getPath();
+            String lowerNormalized = normalized.toLowerCase(Locale.ROOT);
+            String lowerOriginal = slashNormalized.toLowerCase(Locale.ROOT);
+            return !ATTACHMENT_API_PATH.matcher(lowerNormalized).matches()
+                    && !ATTACHMENT_API_PATH.matcher(lowerOriginal).matches();
+        } catch (URISyntaxException | IllegalArgumentException exception) {
             return false;
         }
     }

@@ -11,7 +11,6 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.aop.support.AopUtils;
 import org.springframework.cache.annotation.CacheEvict;
-import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
@@ -60,26 +59,15 @@ public class PublicCacheAspect {
             }
         }
 
-        // 2. 打开当前层缓存上下文（同时为 JSON 反序列化提供方法返回类型），仅对公开缓存域记录起始版本。
+        // 2. 打开当前层缓存上下文（同时为 JSON 反序列化提供方法返回类型），仅对提前查库的 @PublicCacheRead 预登记起始版本。
         PublicCacheContext.open(method.getGenericReturnType(), evictions);
         try {
-            Set<String> reads = new LinkedHashSet<>();
-            var read = method.getAnnotation(Cacheable.class);
-            if (read != null && isPublicManager(read.cacheManager())) {
-                reads.addAll(Arrays.asList(read.cacheNames()));
-            }
-            if (multiple != null) {
-                for (var rule : multiple.cacheable()) {
-                    if (isPublicManager(rule.cacheManager())) {
-                        reads.addAll(Arrays.asList(rule.cacheNames()));
-                    }
-                }
-            }
             PublicCacheRead entry = method.getAnnotation(PublicCacheRead.class);
             if (entry != null) {
-                reads.addAll(Arrays.asList(entry.value()));
+                for (String domain : entry.value()) {
+                    store.beginRead(domain);
+                }
             }
-            reads.forEach(store::beginRead);
             return point.proceed();
         } finally {
             // 3. 无论成功或异常都关闭当前层上下文，避免线程复用串扰。

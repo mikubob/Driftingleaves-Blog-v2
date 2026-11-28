@@ -7,6 +7,7 @@ import com.xuan.mapper.MessageMapper;
 import com.xuan.mapper.SubscriptionMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
+import com.xuan.model.MessageNode;
 import com.xuan.model.MessageRow;
 import com.xuan.model.SubscriptionUnsubscribe;
 import com.xuan.policy.MessageVisibilityPolicy;
@@ -26,7 +27,9 @@ import tools.jackson.databind.json.JsonMapper;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -185,29 +188,70 @@ public class SubscriptionNotifier {
                 .equals(reply.getUserId())) {
             return;
         }
-        if (!MessageVisibilityPolicy.visible(id, MessageVisibilityPolicy.index(messages.nodes()), parent.getUserId())) {
+        // 只沿回复的祖先链逐级查询节点做可见性校验，不再全表加载 blog_message。
+        Map<Long, MessageNode> ancestors = loadAncestorChain(reply, parent);
+        if (!MessageVisibilityPolicy.visible(id, ancestors, parent.getUserId())) {
             return;
         }
         deliverToCurrentSubscription(parent.getUserId(), null, "留言收到新回复", "你的留言收到新回复，请登录查看：",
                 "登录后查看留言回复", "查看回复 →", sites.base("blog") + "/messages");
     }
 
-    /** 锁住收件用户并复查订阅，直到 SMTP 接收，避免账号已换邮箱后才开始发送。 */
+    /**
+     * 沿回复及其父留言向上加载祖先节点，遇到缺失或循环时停止，供可见性策略校验。
+     */
+    private Map<Long, MessageNode> loadAncestorChain(MessageRow reply, MessageRow parent) {
+        Map<Long, MessageNode> chain = new HashMap<>();
+        chain.put(reply.getMessageId(), toNode(reply));
+        chain.put(parent.getMessageId(), toNode(parent));
+        Long nextId = parent.getParentId();
+        while (nextId != null && !chain.containsKey(nextId)) {
+            MessageRow ancestor = messages.scoped(nextId, null);
+            if (ancestor == null) {
+                break;
+            }
+            chain.put(ancestor.getMessageId(), toNode(ancestor));
+            nextId = ancestor.getParentId();
+        }
+        return chain;
+    }
+
+    /**
+     * 将留言记录投影为可见性校验所需的最小节点信息。
+     */
+    private static MessageNode toNode(MessageRow row) {
+        return MessageNode.builder()
+                .messageId(row.getMessageId())
+                .userId(row.getUserId())
+                .parentId(row.getParentId())
+                .status(row.getStatus())
+                .isSecret(row.getIsSecret())
+                .createTime(row.getCreateTime())
+                .build();
+    }
+
+    /**
+     * 短事务内锁住收件用户并复查最新已确认订阅，释放锁和数据库连接后再在事务外执行 SMTP 发送。
+     */
     private void deliverToCurrentSubscription(long userId, BlogRssSubscription candidate, String subject,
             String description, String detail, String buttonText, String url) {
-        deliveryTransaction.executeWithoutResult(status -> {
+        BlogRssSubscription current = deliveryTransaction.execute(status -> {
             users.lockById(userId);
-            BlogRssSubscription current = subscriptions.confirmed(userId);
-            if (current == null) {
-                return;
+            BlogRssSubscription row = subscriptions.confirmed(userId);
+            if (row == null) {
+                return null;
             }
-            if (candidate != null && (!current.getSubscriptionId().equals(candidate.getSubscriptionId())
-                    || !Objects.equals(current.getEmail(), candidate.getEmail())
-                    || !Objects.equals(current.getSubscribeTime(), candidate.getSubscribeTime()))) {
-                return;
+            if (candidate != null && (!row.getSubscriptionId().equals(candidate.getSubscriptionId())
+                    || !Objects.equals(row.getEmail(), candidate.getEmail())
+                    || !Objects.equals(row.getSubscribeTime(), candidate.getSubscribeTime()))) {
+                return null;
             }
-            send(current, subject, description, detail, buttonText, url);
+            return row;
         });
+        if (current == null) {
+            return;
+        }
+        send(current, subject, description, detail, buttonText, url);
     }
 
     /**

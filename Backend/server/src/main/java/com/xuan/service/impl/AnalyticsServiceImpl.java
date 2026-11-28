@@ -7,7 +7,6 @@ import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.PageViewMapper;
-import com.xuan.mapper.UserMapper;
 import com.xuan.mapper.VisitorMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.properties.AuthProperties;
@@ -43,7 +42,6 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
     private final VisitorMapper visitors;
     private final PageViewMapper views;
     private final ArticleMapper articles;
-    private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
     private final IpLocationResolver locations;
@@ -83,19 +81,14 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         String referer = SitePathUtils.referer(request.getReferer());
         Long actor = current();
         limiter.analytics(ip, request.getFingerprint(), actor);
-        if (actor != null) {
-            users.lockById(actor);
-            current();
-        }
 
-        // 2. 文章详情路径即使没传关联 ID 也要核验 PUBLIC，避免记录私密或不存在的文章，并统一落库解析出的文章 ID。
+        // 2. 文章详情路径即使没传关联 ID 也要核验 PUBLIC，不加文章行锁，并统一落库解析出的文章 ID。
         Long articleId = null;
         String prefix = "blog".equals(request.getSiteCode()) ? sites.base("blog").getPath() + "/articles/" : "";
         if ("blog".equals(request.getSiteCode()) && path.startsWith(prefix)) {
             String slug = path.substring(prefix.length());
-            ArticleRow article = articles.publicBySlug(slug, now(), true);
-            current();
-            if (article == null || articles.publicById(article.getArticleId(), now()) == null) {
+            ArticleRow article = articles.publicBySlug(slug, now(), false);
+            if (article == null) {
                 throw new BusinessException(404, "NOT_FOUND", "文章不存在");
             }
             if (!path.equals(sites.base("blog").getPath() + "/articles/" + article.getSlug())

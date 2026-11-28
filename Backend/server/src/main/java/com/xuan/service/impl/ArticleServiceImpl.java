@@ -234,7 +234,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 查询公开文章详情，锁住文章后读取正文、上下篇和阅读信息，全部成功后再增加一次阅读量。
+     * 查询公开文章详情，先只读检查公开状态、正文和互动数据，全部成功后再原子累加一次阅读量，不长时间持有行锁。
      *
      * @param slug 已校验的大小写敏感slug
      * @return 安全公开详情；任何正文或数据库失败回滚计数，不以Token放宽PUBLIC
@@ -244,19 +244,13 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @PublicCacheRead("articleDetail")
     public ArticlePublicDetailVO publicDetail(String slug) {
         LocalDateTime at = now();
-        ArticleRow row = requireArticle(articles.publicBySlug(slug, at, true));
-        articles.lockCurrentTags(row.getArticleId());
-        if (row.getCategoryId() != null) {
-            articles.lockCategory(row.getCategoryId());
-        }
-        row = requireArticle(articles.publicBySlug(slug, at, false));
-        // 先锁定文章并确认公开状态，再读正文、关联和互动；查推荐不会增加阅读量。
+        ArticleRow row = requireArticle(articles.publicBySlug(slug, at, false));
+        // 先读取正文、校验附件并查询关联和互动，最后原子累加阅读量，避免并发阅读被行锁串行化。
         String markdown = content(row.getArticleId()).getMarkdownContent();
         resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown);
         ArticlePublicDetailVO value = BeanUtil.copyProperties(cached, ArticlePublicDetailVO.class);
         value.setMarkdownContent(markdown);
-        value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
         value.setCommentCount(commentCount(row.getArticleId()));
         articles.incrementViews(row.getArticleId());
