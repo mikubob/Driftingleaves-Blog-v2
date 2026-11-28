@@ -57,12 +57,12 @@ export function useMarkdownPreferences(role) {
   return role === 'author' ? authorTheme : readerTheme
 }
 
-/** 清理 Markdown 渲染结果，并管理需要鉴权的图片临时地址。 */
-export function useMarkdownRendering(source, mapUrl, loadImage) {
+/** 清理 Markdown 渲染结果，并按路径复用需要鉴权的图片临时地址。 */
+export function useMarkdownRendering(source, mapUrl, loadImage, resetKey = null) {
   const renderer = ref(null)
   const error = ref('')
+  // 按后端路径缓存每张私密图片的加载状态与 ObjectURL，避免编辑正文时反复重新拉取。
   const images = new Map()
-  let controller = new AbortController()
   const usedHeadings = new Set()
 
   function headingId({ text, index }) {
@@ -72,21 +72,38 @@ export function useMarkdownRendering(source, mapUrl, loadImage) {
     return uniqueHeadingId(text, usedHeadings)
   }
 
+  /** 释放单个图片缓存项的请求与临时地址。 */
+  function releaseImage(entry) {
+    entry.controller.abort()
+    if (entry.url) {
+      URL.revokeObjectURL(entry.url)
+    }
+  }
+
+  /** 回收全部已缓存的图片请求与临时地址。 */
   function cleanup() {
-    controller.abort()
-    for (const url of images.values()) {
-      if (url) {
-        URL.revokeObjectURL(url)
-      }
+    for (const entry of images.values()) {
+      releaseImage(entry)
     }
     images.clear()
   }
 
-  watch(source, () => {
-    cleanup()
-    controller = new AbortController()
+  watch(source, (value) => {
     error.value = ''
+    if (!value) {
+      cleanup()
+    }
   }, { flush: 'sync' })
+  if (resetKey) {
+    watch(resetKey, () => {
+      cleanup()
+      error.value = ''
+      // 例如新建草稿保存后 id 变更但正文未变，需触发重渲染以重建私密图片临时地址。
+      if (source.value) {
+        nextTick(() => renderer.value?.rerender())
+      }
+    }, { flush: 'sync' })
+  }
   onBeforeUnmount(cleanup)
 
   function sanitize(html) {
@@ -96,6 +113,7 @@ export function useMarkdownRendering(source, mapUrl, loadImage) {
     for (const heading of document.querySelectorAll('h1,h2,h3,h4,h5,h6')) {
       heading.id = uniqueHeadingId(heading.textContent, used)
     }
+    const referenced = new Set()
     for (const element of document.querySelectorAll('img[src], a[href]')) {
       const attribute = element.tagName === 'A' ? 'href' : 'src'
       const value = mapUrl(element.getAttribute(attribute))
@@ -108,26 +126,37 @@ export function useMarkdownRendering(source, mapUrl, loadImage) {
         element.setAttribute('src', value)
         continue
       }
+      referenced.add(value)
       // 清理函数同步返回，私密图片拿到 Blob 后才允许浏览器加载。
       element.removeAttribute('src')
-      if (images.get(value)) {
-        element.src = images.get(value)
-      } else if (!images.has(value)) {
-        images.set(value, null)
-        const current = controller
-        loadImage(value, current.signal).then(async url => {
-          if (current.signal.aborted) {
+      const cached = images.get(value)
+      const canRetryFailed = cached?.failedAt && Date.now() - cached.failedAt > 5000
+      if (cached?.url) {
+        element.src = cached.url
+      } else if (!cached || canRetryFailed) {
+        const entry = { controller: new AbortController(), url: null, failedAt: 0 }
+        images.set(value, entry)
+        loadImage(value, entry.controller.signal).then(async url => {
+          if (entry.controller.signal.aborted || images.get(value) !== entry) {
             URL.revokeObjectURL(url)
             return
           }
-          images.set(value, url)
+          entry.url = url
           await nextTick()
           renderer.value?.rerender()
         }).catch(failure => {
-          if (!current.signal.aborted) {
+          if (!entry.controller.signal.aborted && images.get(value) === entry) {
+            entry.failedAt = Date.now()
             error.value = failure.message
           }
         })
+      }
+    }
+    // 仅回收本次渲染已不再引用的图片，保留仍在正文中的图片缓存。
+    for (const [key, entry] of images.entries()) {
+      if (!referenced.has(key)) {
+        releaseImage(entry)
+        images.delete(key)
       }
     }
     return document.body.innerHTML

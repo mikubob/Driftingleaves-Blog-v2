@@ -36,6 +36,10 @@
         pointer-events: none;
       }
 
+      #app:not(:empty) + .boot-loader * {
+        animation: none;
+      }
+
       .boot-loader-ring {
         width: 34px;
         height: 34px;
@@ -70,18 +74,6 @@
       html.dark .boot-loader-ring {
         border-color: rgb(255 255 255 / 12%);
         border-top-color: currentColor;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        .boot-loader {
-          background: #181818;
-          color: #e5e5e5;
-        }
-
-        .boot-loader-ring {
-          border-color: rgb(255 255 255 / 12%);
-          border-top-color: currentColor;
-        }
       }
 
       @media print {

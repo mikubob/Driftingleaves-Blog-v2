@@ -27,7 +27,11 @@ const labels = { profile: '个人资料', socials: '社交链接', experiences: 
 const controller = new AbortController()
 const theme = reactive({ dark: false })
 const colorScheme = window.matchMedia('(prefers-color-scheme: dark)')
+const failedAvatar = ref('')
+const failedSocialIcons = reactive(new Set())
+const failedSkillIcons = reactive(new Set())
 const isImageIcon = (icon) => /^https?:/i.test(icon || '')
+const isMailto = (url) => /^mailto:/i.test(url || '')
 
 const experienceGroups = computed(() => [
   { id: 'education', title: '教育经历', icon: 'education', type: 0 },
@@ -107,6 +111,7 @@ onBeforeUnmount(() => {
 const requestFailure = ref(null)
 setRequestFailureHandler((error) => {
   requestFailure.value ??= error
+  connection.stop()
 })
 onBeforeUnmount(() => setRequestFailureHandler())
 </script>
@@ -115,7 +120,7 @@ onBeforeUnmount(() => setRequestFailureHandler())
   <RequestFailure v-if="requestFailure" :error="requestFailure" />
   <div v-else>
     <a class="skip-link no-print" href="#resume">跳至简历内容</a>
-    <div class="toolbar no-print" aria-label="简历工具">
+    <div class="toolbar no-print" role="toolbar" aria-label="简历工具">
       <button type="button" class="icon-button" :aria-label="theme.dark ? '切换浅色主题' : '切换深色主题'"
         :title="theme.dark ? '切换浅色主题' : '切换深色主题'" @click="applyTheme(!theme.dark)">
         <CvIcon :name="theme.dark ? 'sun' : 'moon'" />
@@ -124,11 +129,18 @@ onBeforeUnmount(() => setRequestFailureHandler())
         :disabled="!canPrint" @click="printResume"><CvIcon name="print" /></button>
     </div>
 
-    <main id="resume" class="cv-page">
+    <main id="resume" class="cv-page" tabindex="-1">
       <header class="hero">
         <p class="eyebrow">CURRICULUM VITAE</p>
         <template v-if="resources.profile.data">
-          <img v-if="resources.profile.data.avatar" :src="resources.profile.data.avatar" alt="个人头像" class="avatar" />
+          <img
+            v-if="resources.profile.data.avatar && failedAvatar !== resources.profile.data.avatar"
+            :src="resources.profile.data.avatar"
+            alt="个人头像"
+            class="avatar"
+            referrerpolicy="no-referrer"
+            @error="failedAvatar = resources.profile.data.avatar"
+          />
           <h1>{{ resources.profile.data.nickname }}</h1>
           <p v-if="resources.profile.data.tagline" class="tagline">{{ resources.profile.data.tagline }}</p>
           <p v-if="resources.profile.data.description" class="description">{{ resources.profile.data.description }}</p>
@@ -138,10 +150,10 @@ onBeforeUnmount(() => setRequestFailureHandler())
               <a :href="`mailto:${encodeURIComponent(resources.profile.data.publicEmail)}`"><CvIcon name="mail" />{{ resources.profile.data.publicEmail }}</a>
             </li>
             <li v-if="resources.profile.data.githubUrl">
-              <a :href="resources.profile.data.githubUrl" target="_blank" rel="noopener"><CvIcon name="github" />GitHub</a>
+              <a :href="resources.profile.data.githubUrl" target="_blank" rel="noopener noreferrer"><CvIcon name="github" />GitHub</a>
             </li>
             <li v-if="resources.profile.data.website">
-              <a :href="resources.profile.data.website" target="_blank" rel="noopener"><CvIcon name="globe" />个人网站</a>
+              <a :href="resources.profile.data.website" target="_blank" rel="noopener noreferrer"><CvIcon name="globe" />个人网站</a>
             </li>
           </ul>
         </template>
@@ -159,9 +171,19 @@ onBeforeUnmount(() => setRequestFailureHandler())
         <ul v-if="resources.socials.data.length" class="contact-list social-list" aria-label="社交链接">
           <li v-for="(social, index) in resources.socials.data" :key="social.socialId"
             :style="{ '--reveal-index': Math.min(index, 10) }">
-            <a :href="social.url" target="_blank" rel="noopener">
-              <img v-if="isImageIcon(social.icon)" :src="social.icon" alt="" />
-              <CvIcon v-else :name="social.icon || 'link'" />{{ social.name }}
+            <a
+              :href="social.url"
+              :target="isMailto(social.url) ? undefined : '_blank'"
+              :rel="isMailto(social.url) ? undefined : 'noopener noreferrer'"
+            >
+              <img
+                v-if="isImageIcon(social.icon) && !failedSocialIcons.has(social.icon)"
+                :src="social.icon"
+                alt=""
+                referrerpolicy="no-referrer"
+                @error="failedSocialIcons.add(social.icon)"
+              />
+              <CvIcon v-else :name="isImageIcon(social.icon) ? 'link' : (social.icon || 'link')" />{{ social.name }}
             </a>
           </li>
         </ul>
@@ -212,8 +234,16 @@ onBeforeUnmount(() => setRequestFailureHandler())
         <ul v-if="resources.skills.data.length" class="skill-list">
           <li v-for="(skill, index) in resources.skills.data" :key="skill.skillId" v-reveal class="skill-row"
             :style="{ '--reveal-index': Math.min(index, 6) }">
-            <img v-if="isImageIcon(skill.icon)" :src="skill.icon" alt="" class="skill-logo" loading="lazy" />
-            <div v-else-if="skill.icon" class="skill-logo skill-initial"><CvIcon :name="skill.icon" /></div>
+            <img
+              v-if="isImageIcon(skill.icon) && !failedSkillIcons.has(skill.icon)"
+              :src="skill.icon"
+              alt=""
+              class="skill-logo"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              @error="failedSkillIcons.add(skill.icon)"
+            />
+            <div v-else-if="skill.icon && !isImageIcon(skill.icon)" class="skill-logo skill-initial"><CvIcon :name="skill.icon" /></div>
             <div v-else class="skill-logo skill-initial" aria-hidden="true">{{ Array.from(skill.name)[0] }}</div>
             <div class="skill-info"><h3>{{ skill.name }}</h3><p v-if="skill.description">{{ skill.description }}</p></div>
           </li>

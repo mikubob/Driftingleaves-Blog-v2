@@ -39,7 +39,7 @@ onMounted(() => {
 watch(
   () => props.option,
   (option) => {
-    chart?.setOption(option)
+    chart?.setOption(option, true)
   },
 )
 

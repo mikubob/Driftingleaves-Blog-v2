@@ -8,7 +8,7 @@ import { useBlogStore } from '@/stores'
 import { createOnlineConnection } from '../../shared/online.mjs'
 import { apiRoot, getOnlineTicket } from '@/api.js'
 import { getFingerprint } from '@/tracking.js'
-import { clearSession, onSessionChange } from '@/session.js'
+import { clearSession, ensureSessionRestored, onSessionChange } from '@/session.js'
 import { recordPage } from '@/tracking.js'
 const route = useRoute()
 const online = ref({ status: 'connecting' })
@@ -23,28 +23,51 @@ const connection = createOnlineConnection({
   onSessionInvalid: clearSession,
 })
 const unsubscribe = onSessionChange(connection.restart)
-onMounted(connection.start)
+let mounted = true
+onMounted(async () => {
+  // 等首次会话恢复结束后再建连，避免已登录用户先匿名建连又立即重连。
+  if (route.path !== '/oauth/complete') {
+    await ensureSessionRestored()
+  }
+  if (mounted) {
+    connection.start()
+  }
+})
 onUnmounted(() => {
+  mounted = false
   unsubscribe()
   connection.stop()
 })
+const DEFAULT_DESCRIPTION = '落叶随风，记录技术、生活与每一次思考。'
 const blogStore = useBlogStore()
 const articleCover = ref('')
 const articleTitle = ref('')
 const articleMeta = ref('')
+const articleDescription = ref('')
 const showBackTop = ref(false)
-provide('setHero', { articleCover, articleTitle, articleMeta })
+provide('setHero', { articleCover, articleTitle, articleMeta, articleDescription })
 const pageTitle = computed(() => articleTitle.value || route.meta.title || '博客')
 watch(() => route.path, () => {
   articleCover.value = ''
   articleTitle.value = ''
   articleMeta.value = ''
+  articleDescription.value = ''
   if (!route.meta.sensitive && route.name !== 'article') {
     recordPage(route.path, route.meta.title || '博客')
   }
 }, { immediate: true })
 watch([pageTitle, () => blogStore.site.title], () => {
   document.title = pageTitle.value + ' - ' + (blogStore.site.title || 'DriftingLeaves')
+}, { immediate: true })
+watch([articleDescription, () => blogStore.site.description], () => {
+  const description = articleDescription.value || blogStore.site.description || DEFAULT_DESCRIPTION
+  let meta = document.querySelector('meta[name="description"]')
+  if (!meta) {
+    meta = document.createElement('meta')
+    meta.name = 'description'
+    document.head.appendChild(meta)
+  }
+  meta.setAttribute('content', description)
 }, { immediate: true })
 const onScroll = () => {
   showBackTop.value = window.scrollY > 400

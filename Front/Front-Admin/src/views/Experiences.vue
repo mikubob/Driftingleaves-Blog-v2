@@ -1,9 +1,8 @@
 <script setup>
 import DisplayImageField from '../components/DisplayImageField.vue'
 import ImagePreview from '../components/ImagePreview.vue'
-import MarkdownPreview from '../components/MarkdownPreview.vue'
 import ResourceDetail from '../components/ResourceDetail.vue'
-import { onBeforeUnmount, onDeactivated, onMounted, reactive, ref, computed } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -48,6 +47,9 @@ import BatchActions from '../components/BatchActions.vue'
 import RowStatusActions from '../components/RowStatusActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
+
+const MarkdownPreview = defineAsyncComponent(() => import('../components/MarkdownPreview.vue'))
+const textEncoder = new TextEncoder()
 
 const {
   filters, rows, page, pageSize, total, totalPages, loading, error, load, reset, changePage, changePageSize,
@@ -157,7 +159,7 @@ async function save() {
   if (saving.value || uploading.value) {
     return
   }
-  if (new TextEncoder().encode(form.content).length > 65535 || !form.content.trim()) {
+  if (textEncoder.encode(form.content).length > 65535 || !form.content.trim()) {
     ElMessage.error('经历内容不能为空，UTF-8 不能超过 65,535 字节。')
     return
   }

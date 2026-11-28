@@ -3,6 +3,17 @@
  */
 
 const INTERACTIVE_SELECTOR = '.link, .feedback button'
+const reboundHandlers = new WeakMap()
+let installed = false
+
+/** 移除目标元素上未完成的回弹结束监听。 */
+function clearReboundListener(target) {
+  const existing = reboundHandlers.get(target)
+  if (existing) {
+    target.removeEventListener('animationend', existing)
+    reboundHandlers.delete(target)
+  }
+}
 
 /**
  * 在指针按下位置生成跟手扩散波纹。
@@ -39,19 +50,28 @@ function spawnRipple(target, event) {
  */
 function triggerRebound(target) {
   if (!target.classList.contains('is-pressing')) return
+  clearReboundListener(target)
   target.classList.remove('is-pressing')
   target.classList.remove('is-rebounding')
   void target.offsetWidth
   target.classList.add('is-rebounding')
-  target.addEventListener(
-    'animationend',
-    () => target.classList.remove('is-rebounding'),
-    { once: true }
-  )
+  const onAnimationEnd = (event) => {
+    if (event.target !== target || event.animationName !== 'dl-press-rebound') {
+      return
+    }
+    target.classList.remove('is-rebounding')
+    clearReboundListener(target)
+  }
+  reboundHandlers.set(target, onAnimationEnd)
+  target.addEventListener('animationend', onAnimationEnd)
 }
 
-/** 安装主页端全局指针交互动效。 */
+/** 安装主页端全局指针交互动效（幂等）。 */
 export function installHomeMotion() {
+  if (installed) {
+    return
+  }
+  installed = true
   let activeTarget = null
 
   const cancelPress = () => {
@@ -66,6 +86,7 @@ export function installHomeMotion() {
     if (!target || target.disabled) return
 
     cancelPress()
+    clearReboundListener(target)
     activeTarget = target
     target.classList.remove('is-rebounding')
     target.classList.add('is-pressing')

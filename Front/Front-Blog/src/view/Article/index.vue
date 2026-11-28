@@ -21,13 +21,14 @@ import RollingNumber from '@/components/RollingNumber.vue'
 const route = useRoute()
 const router = useRouter()
 const themeStore = useThemeStore()
-const { articleCover, articleTitle, articleMeta } = inject('setHero')
+const { articleCover, articleTitle, articleMeta, articleDescription } = inject('setHero')
 const resource = useResource(() => route.params.slug, async (signal) => {
   const { data } = await request('/blog/articles/' + encodeURIComponent(route.params.slug), { signal })
   if (!signal.aborted) {
     articleTitle.value = data.title
     articleCover.value = data.coverUrl || ''
     articleMeta.value = formatDate(data.publishTime) + ' · ' + data.author.nickname + ' · ' + data.wordCount + ' 字 · ' + data.readingMinutes + ' 分钟'
+    articleDescription.value = data.summary || data.title
     recordPage(articlePath(data), data.title, data.articleId)
   }
   return articleView(data)

@@ -5,7 +5,7 @@ export function enhanceHtml(container, highlighter) {
     const pre = code.parentElement
     const source = code.textContent
     const language = [...code.classList].find((name) => name.startsWith('language-'))?.slice(9).toLowerCase()
-    if (language && highlighter.getLanguage(language)) {
+    if (language && highlighter?.getLanguage(language)) {
       code.innerHTML = highlighter.highlight(source, { language, ignoreIllegals: true }).value
     }
 

@@ -33,9 +33,9 @@ const rssFeedUrl = apiRoot + '/blog/rss.xml'
         rights reserved.
       </div>
       <div class="footer-links">
-        <a :href="sitemapUrl" target="_blank" rel="noopener">Sitemap</a>
+        <a :href="sitemapUrl" target="_blank" rel="noopener noreferrer">Sitemap</a>
         <span class="divider">|</span>
-        <a :href="rssFeedUrl" target="_blank" rel="noopener">RSS</a>
+        <a :href="rssFeedUrl" target="_blank" rel="noopener noreferrer">RSS</a>
       </div>
     </div>
   </footer>

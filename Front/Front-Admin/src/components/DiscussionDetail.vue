@@ -2,11 +2,12 @@
 import { ElDescriptions, ElDescriptionsItem } from 'element-plus'
 import 'element-plus/es/components/descriptions/style/css'
 import 'element-plus/es/components/descriptions-item/style/css'
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref } from 'vue'
 import { formatTime } from '../format.js'
-import SafeHtml from './SafeHtml.vue'
 import DiscussionAuthor from './DiscussionAuthor.vue'
 import StatusTag from './StatusTag.vue'
+
+const SafeHtml = defineAsyncComponent(() => import('./SafeHtml.vue'))
 
 /** 接收评论或留言详情，窄屏时将信息表改为单列。 */
 const props = defineProps({ kind: { type: String, required: true }, detail: { type: Object, required: true } })

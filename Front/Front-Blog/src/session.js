@@ -50,15 +50,34 @@ export async function acceptSession(data) {
   invalidateSessionRequests()
   notifySessionChange()
   await loadSession()
+  sessionRestored = true
 }
 
-/** 刷新后向后端核验身份和权限。 */
-export async function restoreSession() {
-  try {
-    await loadSession()
-  } catch {
-    // 未登录时继续启动，网络和服务错误由请求层报告。
+let restorePromise = null
+let sessionRestored = false
+
+/** 刷新后向后端核验身份和权限；并发调用复用同一请求。 */
+export function restoreSession() {
+  if (restorePromise) {
+    return restorePromise
   }
+  restorePromise = loadSession()
+    .catch(() => {
+      // 未登录时继续启动，网络和服务错误由请求层报告。
+    })
+    .finally(() => {
+      sessionRestored = true
+      restorePromise = null
+    })
+  return restorePromise
+}
+
+/** 在需要登录态判断的路由（如个人中心、登录页）进入前等待首次会话恢复完成。 */
+export function ensureSessionRestored() {
+  if (sessionRestored) {
+    return Promise.resolve()
+  }
+  return restoreSession()
 }
 
 /** 登录和刷新共用同一套服务端核验。 */

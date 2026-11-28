@@ -1,12 +1,10 @@
 <script setup>
 import { computed, inject, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { request, queryString } from '@/api.js'
 import { articleView } from '@/shared/presentation.js'
 import { useResource } from '@/composables/useResource.js'
-import { formatDate } from '@/format.js'
+import { articlePath, formatDate } from '@/format.js'
 import SidebarCard from '@/components/SidebarCard.vue'
-const router = useRouter()
 const { articleTitle, articleMeta } = inject('setHero')
 articleTitle.value = '热门'
 articleMeta.value = '网站流量 TOP'
@@ -19,7 +17,6 @@ const listing = useResource(() => [activeScope.value, activeMetric.value], async
 const loading = computed(() => listing.loading)
 const hotArticles = computed(() => listing.data || [])
 const fmtDate = formatDate
-const goArticle = (slug) => router.push('/articles/' + slug)
 </script>
 
 <template>
@@ -89,12 +86,12 @@ const goArticle = (slug) => router.push('/articles/' + slug)
             </div>
           </div>
           <div v-else-if="hotArticles.length" class="hot-list">
-            <div
+            <router-link
               v-for="(article, index) in hotArticles"
               :key="article.id"
+              :to="articlePath(article)"
               class="hot-item"
               :class="{ 'is-top': index < 3 }"
-              @click="goArticle(article.slug)"
             >
               <div class="item-rank" :class="`rank-${index + 1}`">
                 <span v-if="index < 3" class="rank-badge">{{ index + 1 }}</span>
@@ -137,7 +134,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
                   </span>
                 </div>
               </div>
-            </div>
+            </router-link>
           </div>
           <p v-else-if="!listing.error" class="empty">暂无热门文章</p>
         </div>
@@ -374,6 +371,8 @@ const goArticle = (slug) => router.push('/articles/' + slug)
   display: flex;
   gap: 16px;
   padding: 16px;
+  color: inherit;
+  text-decoration: none;
   background: var(--blog-card);
   border: 1px solid var(--blog-border-light);
   border-radius: 8px;

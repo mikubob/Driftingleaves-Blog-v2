@@ -92,6 +92,14 @@ async function handleRssUnsubscribe() {
   }
 }
 const goArchive = () => router.push('/archive')
+function openCatModal() {
+  showCatModal.value = true
+  void blogStore.ensureCategories().catch((error) => ElMessage.error(error.message))
+}
+function openTagModal() {
+  showTagModal.value = true
+  void blogStore.ensureTags().catch((error) => ElMessage.error(error.message))
+}
 function goCategory(slug) {
   showCatModal.value = false
   router.push('/category/' + slug)
@@ -125,8 +133,8 @@ function goTag(slug) {
           class="info-stat"
           role="button"
           tabindex="0"
-          @keydown.enter="showCatModal = true"
-          @click="showCatModal = true"
+          @keydown.enter="openCatModal"
+          @click="openCatModal"
         >
           <span class="stat-num"><RollingNumber :value="report.categoryTotalCount ?? 0" /></span>
           <span class="stat-label">分类</span>
@@ -135,8 +143,8 @@ function goTag(slug) {
           class="info-stat"
           role="button"
           tabindex="0"
-          @keydown.enter="showTagModal = true"
-          @click="showTagModal = true"
+          @keydown.enter="openTagModal"
+          @click="openTagModal"
         >
           <span class="stat-num"><RollingNumber :value="report.tagTotalCount ?? 0" /></span>
           <span class="stat-label">标签</span>
@@ -148,7 +156,7 @@ function goTag(slug) {
           v-if="info.github"
           :href="safeLink(info.github)"
           target="_blank"
-          rel="noopener"
+          rel="noopener noreferrer"
           class="social-link"
           title="GitHub"
         >
@@ -222,28 +230,42 @@ function goTag(slug) {
     <!-- ===== 分类弹窗 ===== -->
     <el-dialog v-model="showCatModal" title="所有分类" width="420px" :append-to-body="true">
       <div class="modal-list">
-        <div
-          v-for="cat in blogStore.categories"
-          :key="cat.id"
-          class="modal-item"
-          @click="goCategory(cat.slug)"
-        >
-          <i class="iconfont icon-folder" />
-          <span class="modal-name">{{ cat.name }}</span>
-          <span class="modal-count">{{ cat.articleCount }} 篇</span>
+        <div v-if="blogStore.optionalState.categories.loading" class="modal-empty" role="status">正在加载分类…</div>
+        <div v-else-if="blogStore.optionalState.categories.error" class="modal-empty" role="alert">
+          {{ blogStore.optionalState.categories.error }}
+          <button type="button" class="modal-retry" @click="openCatModal">重试</button>
         </div>
-        <div v-if="!blogStore.categories.length" class="modal-empty">暂无分类</div>
+        <template v-else>
+          <div
+            v-for="cat in blogStore.categories"
+            :key="cat.id"
+            class="modal-item"
+            @click="goCategory(cat.slug)"
+          >
+            <i class="iconfont icon-folder" />
+            <span class="modal-name">{{ cat.name }}</span>
+            <span class="modal-count">{{ cat.articleCount }} 篇</span>
+          </div>
+          <div v-if="!blogStore.categories.length" class="modal-empty">暂无分类</div>
+        </template>
       </div>
     </el-dialog>
     <!-- ===== 标签弹窗 ===== -->
     <el-dialog v-model="showTagModal" title="所有标签" width="420px" :append-to-body="true">
       <div class="modal-tag-cloud">
-        <span v-for="tag in blogStore.tags" :key="tag.id" class="modal-tag" @click="goTag(tag.slug)">
-          <i class="iconfont icon-biaoqian" />
-          {{ tag.name }}
-          <span class="tag-count" :aria-label="`${tag.articleCount} 篇文章`">{{ tag.articleCount }}</span>
-        </span>
-        <div v-if="!blogStore.tags.length" class="modal-empty">暂无标签</div>
+        <div v-if="blogStore.optionalState.tags.loading" class="modal-empty" role="status">正在加载标签…</div>
+        <div v-else-if="blogStore.optionalState.tags.error" class="modal-empty" role="alert">
+          {{ blogStore.optionalState.tags.error }}
+          <button type="button" class="modal-retry" @click="openTagModal">重试</button>
+        </div>
+        <template v-else>
+          <span v-for="tag in blogStore.tags" :key="tag.id" class="modal-tag" @click="goTag(tag.slug)">
+            <i class="iconfont icon-biaoqian" />
+            {{ tag.name }}
+            <span class="tag-count" :aria-label="`${tag.articleCount} 篇文章`">{{ tag.articleCount }}</span>
+          </span>
+          <div v-if="!blogStore.tags.length" class="modal-empty">暂无标签</div>
+        </template>
       </div>
     </el-dialog>
     <!-- ===== RSS 订阅弹窗 ===== -->
@@ -505,10 +527,21 @@ function goTag(slug) {
   color: var(--blog-text3);
 }
 .modal-empty {
+  width: 100%;
   text-align: center;
   color: var(--blog-text3);
   padding: 20px;
   font-size: 14px;
+}
+.modal-retry {
+  margin-left: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--blog-border, #e4e7ed);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--blog-text, #303133);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 .modal-tag-cloud {

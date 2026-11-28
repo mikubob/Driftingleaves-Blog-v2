@@ -52,6 +52,9 @@ let lyricController
 
 const currentTrack = computed(() => blogStore.musics[musicIndex.value] || null)
 const currentLyric = computed(() => {
+  if (!musicListVisible.value) {
+    return '♪'
+  }
   let text = '♪'
   for (const line of lyrics.value) {
     if (line.time > playbackTime.value) {
@@ -61,6 +64,12 @@ const currentLyric = computed(() => {
   }
   return text
 })
+
+function onAudioTimeUpdate(event) {
+  if (musicListVisible.value) {
+    playbackTime.value = event.target.currentTime
+  }
+}
 
 async function loadCurrentLyrics() {
   lyricController?.abort()
@@ -90,32 +99,48 @@ async function loadCurrentLyrics() {
   }
 }
 
-watch([() => currentTrack.value?.id, musicListVisible], loadCurrentLyrics)
+watch([() => currentTrack.value?.id, musicListVisible], ([, visible], [, prevVisible]) => {
+  // 仅在展开面板时同步当前播放进度，避免切歌时读到上一首歌尚未重置的 currentTime。
+  if (visible && !prevVisible && audioRef.value) {
+    playbackTime.value = audioRef.value.currentTime
+  }
+  loadCurrentLyrics()
+})
 onUnmounted(() => lyricController?.abort())
 let headerResizeObserver = null
+let headerLayoutFrame = 0
 
 const syncHeaderLayout = () => {
-  nextTick(() => {
-    const headerInnerEl = headerInnerRef.value
-    const siteTitleEl = siteTitleRef.value?.$el ?? siteTitleRef.value
-    const navDesktopEl = navDesktopRef.value
-    const headerRightEl = headerRightRef.value
-    if (!headerInnerEl || !siteTitleEl || !navDesktopEl || !headerRightEl) {
-      return
-    }
+  const headerInnerEl = headerInnerRef.value
+  const siteTitleEl = siteTitleRef.value?.$el ?? siteTitleRef.value
+  const navDesktopEl = navDesktopRef.value
+  const headerRightEl = headerRightRef.value
+  if (!headerInnerEl || !siteTitleEl || !navDesktopEl || !headerRightEl) {
+    return
+  }
 
-    const titleWidth = siteTitleEl.getBoundingClientRect().width
-    const navWidth = navDesktopEl.getBoundingClientRect().width
-    // 窄屏时桌面工具仍保留测量宽度，放宽窗口后可以恢复桌面导航。
-    const rightItems = [miniPlayerWrapRef.value, themeSwitchRef.value, accountControlRef.value].filter(Boolean)
-    const rightGap = parseFloat(getComputedStyle(headerRightEl).gap)
-    const rightWidth = rightItems.reduce((sum, item) => sum + item.getBoundingClientRect().width, 0)
-      + (rightItems.length - 1) * rightGap
-    const headerStyle = getComputedStyle(headerInnerEl)
-    const padding = 2 * parseFloat(headerStyle.getPropertyValue('--desktop-header-padding'))
-    const requiredWidth = navWidth + 2 * Math.max(titleWidth, rightWidth) + 2 * parseFloat(headerStyle.columnGap) + padding
+  const titleWidth = siteTitleEl.getBoundingClientRect().width
+  const navWidth = navDesktopEl.getBoundingClientRect().width
+  // 窄屏时桌面工具仍保留测量宽度，放宽窗口后可以恢复桌面导航。
+  const rightItems = [miniPlayerWrapRef.value, themeSwitchRef.value, accountControlRef.value].filter(Boolean)
+  const rightGap = parseFloat(getComputedStyle(headerRightEl).gap)
+  const rightWidth = rightItems.reduce((sum, item) => sum + item.getBoundingClientRect().width, 0)
+    + (rightItems.length - 1) * rightGap
+  const headerStyle = getComputedStyle(headerInnerEl)
+  const padding = 2 * parseFloat(headerStyle.getPropertyValue('--desktop-header-padding'))
+  const requiredWidth = navWidth + 2 * Math.max(titleWidth, rightWidth) + 2 * parseFloat(headerStyle.columnGap) + padding
 
-    compactNav.value = requiredWidth > headerInnerEl.clientWidth
+  compactNav.value = requiredWidth > headerInnerEl.clientWidth
+}
+
+/** 合并同帧多次尺寸变化通知，避免重复触发布局重算。 */
+const scheduleHeaderLayout = () => {
+  if (headerLayoutFrame) {
+    return
+  }
+  headerLayoutFrame = requestAnimationFrame(() => {
+    headerLayoutFrame = 0
+    syncHeaderLayout()
   })
 }
 
@@ -244,33 +269,32 @@ watch(compactNav, (compact) => {
   }
 })
 
-watch(currentTrack, () => syncHeaderLayout())
-
-const handleWindowResize = () => {
-  syncHeaderLayout()
-}
+watch(currentTrack, () => nextTick(scheduleHeaderLayout))
 
 onMounted(() => {
-  window.addEventListener('resize', handleWindowResize, { passive: true })
   document.addEventListener('pointerdown', closePopoverOnOutsideClick)
-  syncHeaderLayout()
+  scheduleHeaderLayout()
 
   if (typeof ResizeObserver !== 'undefined') {
-    headerResizeObserver = new ResizeObserver(() => {
-      syncHeaderLayout()
-    })
+    headerResizeObserver = new ResizeObserver(scheduleHeaderLayout)
     for (const target of [headerInnerRef.value, headerRightRef.value, navDesktopRef.value, siteTitleRef.value?.$el]) {
       if (target) {
         headerResizeObserver.observe(target)
       }
     }
+  } else {
+    window.addEventListener('resize', scheduleHeaderLayout, { passive: true })
   }
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
-  window.removeEventListener('resize', handleWindowResize)
+  window.removeEventListener('resize', scheduleHeaderLayout)
   document.removeEventListener('pointerdown', closePopoverOnOutsideClick)
+  if (headerLayoutFrame) {
+    cancelAnimationFrame(headerLayoutFrame)
+    headerLayoutFrame = 0
+  }
   headerResizeObserver?.disconnect()
   headerResizeObserver = null
 })
@@ -325,7 +349,7 @@ onUnmounted(() => {
                 :is="item.href ? 'a' : RouterLink"
                 v-for="item in exploreLinks"
                 :key="item.label"
-                v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener' } : { to: item.to }"
+                v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
                 class="header-popover-item"
                 @click="openPopover = ''"
               >
@@ -375,7 +399,7 @@ onUnmounted(() => {
             :src="currentTrack.musicUrl"
             preload="none"
             @ended="nextTrack"
-            @timeupdate="playbackTime = $event.target.currentTime"
+            @timeupdate="onAudioTimeUpdate"
             @play="isPlaying = true"
             @pause="isPlaying = false"
             @error="isPlaying = false"
@@ -560,7 +584,7 @@ onUnmounted(() => {
             :is="item.href ? 'a' : RouterLink"
             v-for="item in group.links"
             :key="item.label"
-            v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener' } : { to: item.to }"
+            v-bind="item.href ? { href: item.href, target: '_blank', rel: 'noopener noreferrer' } : { to: item.to }"
             class="drawer-link"
             @click="mobileNavVisible = false"
           >

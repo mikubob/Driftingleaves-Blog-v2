@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
+import { computed, defineAsyncComponent, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ElButton,
@@ -40,7 +40,8 @@ import RequestError from '../components/RequestError.vue'
 import BatchActions from '../components/BatchActions.vue'
 import StatusTag from '../components/StatusTag.vue'
 import AdminIcon from '../components/AdminIcon.vue'
-import MarkdownPreview from '../components/MarkdownPreview.vue'
+
+const MarkdownPreview = defineAsyncComponent(() => import('../components/MarkdownPreview.vue'))
 
 const route = useRoute()
 const router = useRouter()

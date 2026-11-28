@@ -68,9 +68,24 @@ function syncViewport() {
   }
 }
 
-watch(() => route.fullPath, () => {
-  mobileOpen.value = false
-})
+const cachedViews = ref([])
+
+watch(
+  () => route.fullPath,
+  () => {
+    mobileOpen.value = false
+    if (!route.meta.keepAlive) {
+      return
+    }
+    const matched = route.matched[route.matched.length - 1]
+    const component = matched?.components?.default
+    const name = component?.name || component?.__name
+    if (name && !cachedViews.value.includes(name)) {
+      cachedViews.value.push(name)
+    }
+  },
+  { immediate: true },
+)
 onMounted(() => {
   syncViewport()
   window.addEventListener('resize', syncViewport, { passive: true })
@@ -167,16 +182,12 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncViewport))
         <!-- appear 让刷新后的首屏也有淡入，而不只是切换页面时才有。 -->
         <router-view v-slot="{ Component }">
           <transition name="page-fade" mode="out-in" appear>
-            <keep-alive>
-              <component :is="Component" v-if="route.meta.keepAlive" :key="route.path" />
+            <keep-alive :include="cachedViews" :max="10">
+              <component
+                :is="Component"
+                :key="route.name === 'article-editor' ? route.name : route.path"
+              />
             </keep-alive>
-          </transition>
-          <transition name="page-fade" mode="out-in" appear>
-            <component
-              :is="Component"
-              v-if="!route.meta.keepAlive"
-              :key="route.name === 'article-editor' ? route.name : route.path"
-            />
           </transition>
         </router-view>
       </main>

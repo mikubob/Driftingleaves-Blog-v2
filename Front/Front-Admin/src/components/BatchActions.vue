@@ -1,23 +1,19 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, ref, watch } from 'vue'
 import {
   ElAlert,
   ElButton,
-  ElCheckbox,
-  ElDatePicker,
-  ElDialog,
   ElMessage,
   ElMessageBox,
 } from 'element-plus'
 import 'element-plus/es/components/alert/style/css'
 import 'element-plus/es/components/button/style/css'
-import 'element-plus/es/components/checkbox/style/css'
-import 'element-plus/es/components/date-picker/style/css'
-import 'element-plus/es/components/dialog/style/css'
 import 'element-plus/es/components/message/style/css'
 import 'element-plus/es/components/message-box/style/css'
 import { prepareBatch } from '../batch.js'
 import { request } from '../api.js'
+
+const BatchBlockDialog = defineAsyncComponent(() => import('./BatchBlockDialog.vue'))
 
 /** 根据资源、记录和操作配置显示批量操作；传入选中项时由父页面维护选中状态。 */
 const props = defineProps({
@@ -37,9 +33,8 @@ const selected = computed(() => props.selectedRows ?? tableSelection.value)
 const busy = ref(false)
 const failures = ref([])
 const blockVisible = ref(false)
+const blockMounted = ref(false)
 const blockAction = ref(null)
-const blockedUntil = ref(null)
-const permanent = ref(false)
 const blocked = computed(() => props.disabled || busy.value)
 let generation = 0
 
@@ -73,22 +68,15 @@ function selectable(row) {
 function choose(action) {
   if (action.block) {
     blockAction.value = action
-    blockedUntil.value = null
-    permanent.value = false
+    blockMounted.value = true
     blockVisible.value = true
     return
   }
   execute(action)
 }
 
-async function block() {
-  if (!permanent.value && (!(blockedUntil.value instanceof Date) || blockedUntil.value.getTime() <= Date.now())) {
-    ElMessage.warning('请选择晚于当前时间的结束时间，或明确勾选永久限制。')
-    return
-  }
-  await execute(blockAction.value, selected.value, {
-    blockedUntil: permanent.value ? null : blockedUntil.value.toISOString(),
-  })
+async function confirmBlock(extra) {
+  await execute(blockAction.value, selected.value, extra)
 }
 
 /** 批量操作前先读取所有选中记录的版本，再确认操作对象，最后只发送一次批量请求。 */
@@ -178,18 +166,14 @@ defineExpose({ select, selectable, busy, execute })
         <li v-for="item in failures" :key="item.id">文件 {{ item.id }}：{{ item.msg }}（{{ item.code }}）</li>
       </ul>
     </el-alert>
-    <el-dialog v-model="blockVisible" title="批量封禁 IP" width="460px" :close-on-click-modal="!busy">
-      <p>{{ blockAction?.warning }}</p>
-      <el-checkbox v-model="permanent" :disabled="busy">永久封禁</el-checkbox>
-      <el-date-picker
-        v-model="blockedUntil" type="datetime" placeholder="选择限制结束时间"
-        aria-label="批量限制结束时间" :disabled="permanent || busy"
-      />
-      <template #footer>
-        <el-button :disabled="busy" @click="blockVisible = false">取消</el-button>
-        <el-button type="primary" :disabled="!selected.length || disabled" :loading="busy" @click="block">继续</el-button>
-      </template>
-    </el-dialog>
+    <BatchBlockDialog
+      v-if="blockMounted"
+      v-model="blockVisible"
+      :warning="blockAction?.warning"
+      :busy="busy"
+      :disabled="!selected.length || disabled"
+      @confirm="confirmBlock"
+    />
   </div>
 </template>
 
@@ -205,5 +189,4 @@ defineExpose({ select, selectable, busy, execute })
 .batch-count { color: var(--el-text-color-regular); font-size: 13px; white-space: nowrap; }
 .batch-actions > .el-alert { margin-bottom: 16px; }
 .batch-failures { margin: 4px 0; padding-left: 18px; overflow-wrap: anywhere; }
-.el-date-editor { max-width: 100%; margin: 12px 0; }
 </style>

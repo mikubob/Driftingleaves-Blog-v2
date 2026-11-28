@@ -16,6 +16,8 @@ const props = defineProps({
   }
 })
 
+const MAX_SAFE_BIGINT = BigInt(Number.MAX_SAFE_INTEGER)
+
 const isValidCount = computed(() => {
   if (typeof props.value === 'number') return Number.isFinite(props.value)
   return typeof props.value === 'string' && /^\d+$/.test(props.value)
@@ -32,6 +34,14 @@ function stopAnimation() {
   }
 }
 
+/** 判断计数是否在安全整数范围内；超出范围时跳过数值滚动，直接保留 BIGINT 字符串精度。 */
+function isSafeCount(raw) {
+  if (typeof raw === 'number') {
+    return Number.isSafeInteger(raw)
+  }
+  return BigInt(raw) <= MAX_SAFE_BIGINT
+}
+
 watch(
   () => props.value,
   (nextRaw) => {
@@ -39,6 +49,10 @@ watch(
     if (!isValidCount.value) {
       isRolling.value = false
       displayNumber.value = 0
+      return
+    }
+    if (!isSafeCount(nextRaw)) {
+      isRolling.value = false
       return
     }
 

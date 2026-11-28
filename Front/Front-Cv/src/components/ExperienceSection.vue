@@ -1,4 +1,5 @@
 <script setup>
+import { reactive } from 'vue'
 import CvIcon from './CvIcon.vue'
 import { vReveal } from '../reveal.js'
 
@@ -9,6 +10,7 @@ defineProps({
   icon: { type: String, required: true },
   items: { type: Array, required: true },
 })
+const failedLogos = reactive(new Set())
 
 function formatDate(date) {
   if (date === null) {
@@ -26,7 +28,15 @@ function formatDate(date) {
         :style="{ '--reveal-index': Math.min(index, 6) }">
         <article class="experience-card">
           <div class="experience-heading">
-            <img v-if="item.logoUrl" :src="item.logoUrl" alt="" class="experience-logo" loading="lazy" />
+            <img
+              v-if="item.logoUrl && !failedLogos.has(item.logoUrl)"
+              :src="item.logoUrl"
+              alt=""
+              class="experience-logo"
+              loading="lazy"
+              referrerpolicy="no-referrer"
+              @error="failedLogos.add(item.logoUrl)"
+            />
             <div class="experience-info">
               <h3>{{ item.title }}</h3>
               <p v-if="item.subtitle" class="subtitle">{{ item.subtitle }}</p>

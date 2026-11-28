@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 import {
   ElAlert,
@@ -35,9 +35,48 @@ import { nullable } from '../form.js'
 import { adminArticleUrl, editorImageUrl } from '../editorPreview.mjs'
 import { previewThemes, useMarkdownPreferences, useMarkdownRendering } from '../shared/useMarkdownPreview.js'
 import RequestError from '../components/RequestError.vue'
-import MarkdownPreview from '../components/MarkdownPreview.vue'
 import EmojiPicker from '../shared/EmojiPicker.vue'
 import ImagePreview from '../components/ImagePreview.vue'
+
+const MarkdownPreview = defineAsyncComponent(() => import('../components/MarkdownPreview.vue'))
+const textEncoder = new TextEncoder()
+
+/** 生成文章表单字段快照，用于脏检查与提交，避免每次输入都序列化整篇正文。 */
+function createFormSnapshot(source) {
+  return {
+    title: source.title,
+    slug: source.slug,
+    summary: source.summary,
+    categoryId: source.categoryId,
+    coverUrl: source.coverUrl,
+    articleType: source.articleType,
+    originalUrl: source.originalUrl,
+    visibility: source.visibility,
+    isTop: source.isTop,
+    allowComment: source.allowComment,
+    markdownContent: source.markdownContent,
+    tagIds: [...source.tagIds],
+  }
+}
+
+/** 逐字段比对当前表单与已保存快照是否一致。 */
+function isSameForm(current, snapshot) {
+  return (
+    current.title === snapshot.title &&
+    current.slug === snapshot.slug &&
+    current.summary === snapshot.summary &&
+    current.categoryId === snapshot.categoryId &&
+    current.coverUrl === snapshot.coverUrl &&
+    current.articleType === snapshot.articleType &&
+    current.originalUrl === snapshot.originalUrl &&
+    current.visibility === snapshot.visibility &&
+    current.isTop === snapshot.isTop &&
+    current.allowComment === snapshot.allowComment &&
+    current.markdownContent === snapshot.markdownContent &&
+    current.tagIds.length === snapshot.tagIds.length &&
+    current.tagIds.every((tagId, index) => tagId === snapshot.tagIds[index])
+  )
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -73,15 +112,16 @@ const { renderer: mdEditor, error: imageError, sanitize, headingId, onRendered }
   computed(() => form.markdownContent),
   adminArticleUrl,
   (url, signal) => getImage(editorImageUrl(url, id.value), signal),
+  id,
 )
 watch(imageError, (message) => {
   if (message) {
     ElMessage.error(message)
   }
 })
-const saved = ref(JSON.stringify(form))
-const dirty = computed(() => JSON.stringify(form) !== saved.value)
-const markdownBytes = computed(() => new TextEncoder().encode(form.markdownContent).length)
+const saved = ref(createFormSnapshot(form))
+const dirty = computed(() => !isSameForm(form, saved.value))
+const markdownBytes = computed(() => textEncoder.encode(form.markdownContent).length)
 const editable = computed(() => {
   if (loading.value || error.value) {
     return false
@@ -116,7 +156,7 @@ function applyDetail(result) {
     markdownContent: data.markdownContent,
     tagIds: [...data.tagIds],
   })
-  saved.value = JSON.stringify(form)
+  saved.value = createFormSnapshot(form)
 }
 
 async function load() {
@@ -170,11 +210,12 @@ async function save(publish = false, { navigate = true } = {}) {
   }
 
   // 1. 只提交可编辑字段，记下提交时的内容，不覆盖请求期间的新输入。
-  const snapshot = JSON.stringify(form)
+  const snapshot = createFormSnapshot(form)
   const body = {
-    ...JSON.parse(snapshot),
-    coverUrl: nullable(form.coverUrl),
-    originalUrl: nullable(form.originalUrl),
+    ...snapshot,
+    tagIds: [...snapshot.tagIds],
+    coverUrl: nullable(snapshot.coverUrl),
+    originalUrl: nullable(snapshot.originalUrl),
   }
   saving.value = true
   try {
@@ -313,7 +354,7 @@ onBeforeRouteUpdate(async (to) => {
   revision.value = ''
   status.value = 0
   Object.assign(form, initialForm, { tagIds: [] })
-  saved.value = JSON.stringify(form)
+  saved.value = createFormSnapshot(form)
   await load()
   return true
 })
@@ -398,7 +439,6 @@ onBeforeUnmount(() => {
           no-echarts
           class="md-editor-fill"
           @on-html-changed="onRendered"
-          @on-change="form.markdownContent = $event"
           @on-upload-img="uploadImages"
         />
         <div v-if="editable" class="editor-toolbar-emoji">

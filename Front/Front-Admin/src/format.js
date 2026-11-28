@@ -1,18 +1,21 @@
+const timeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeStyle: 'short',
+})
+const countFormatter = new Intl.NumberFormat('zh-CN')
+
 /** 显示时间时转为本地时间，不把本地时间字符串写回接口。 */
 export function formatTime(value) {
   if (!value) {
     return '—'
   }
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(new Date(value))
+  return timeFormatter.format(new Date(value))
 }
 
 /** 格式化十进制计数，用 BigInt 保留精度，无有效计数时显示占位符。 */
 export function formatCount(value) {
   return typeof value === 'string' && /^\d+$/.test(value)
-    ? new Intl.NumberFormat('zh-CN').format(BigInt(value))
+    ? countFormatter.format(BigInt(value))
     : '—'
 }
 

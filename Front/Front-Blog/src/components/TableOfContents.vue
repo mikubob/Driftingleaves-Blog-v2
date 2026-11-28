@@ -22,6 +22,7 @@ let mediaQuery = null
 let mediaQueryListener = null
 let contentObserver = null
 let headingObserver = null
+let extractFrame = 0
 
 const isDark = computed(() => themeStore.isDark)
 
@@ -94,13 +95,14 @@ const extractHeadings = () => {
 
     ensureHeadingIds(el)
     const nodes = el.querySelectorAll('h1, h2, h3, h4, h5, h6')
+    const headerOffset = getHeaderOffset()
     const list = []
 
     nodes.forEach((node) => {
       const text = node.textContent.trim()
       const tocId = node.id
 
-      node.style.scrollMarginTop = `${getHeaderOffset()}px`
+      node.style.scrollMarginTop = `${headerOffset}px`
       list.push({
         id: tocId,
         text,
@@ -114,6 +116,16 @@ const extractHeadings = () => {
   })
 }
 
+const scheduleExtractHeadings = () => {
+  if (extractFrame) {
+    return
+  }
+  extractFrame = requestAnimationFrame(() => {
+    extractFrame = 0
+    extractHeadings()
+  })
+}
+
 const observeContent = () => {
   const el = document.querySelector('.article-content')
   if (!el) {
@@ -122,7 +134,7 @@ const observeContent = () => {
 
   contentObserver?.disconnect()
   contentObserver = new MutationObserver(() => {
-    extractHeadings()
+    scheduleExtractHeadings()
   })
   contentObserver.observe(el, {
     childList: true,
@@ -211,6 +223,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (extractFrame) {
+    cancelAnimationFrame(extractFrame)
+    extractFrame = 0
+  }
   contentObserver?.disconnect()
   headingObserver?.disconnect()
 
@@ -239,9 +255,15 @@ onUnmounted(() => {
             :key="h.id"
             class="toc-item"
             :class="{ active: activeId === h.id, [`level-${h.level}`]: true }"
-            @click="scrollTo(h.id)"
           >
-            <span class="toc-item-text">{{ h.text }}</span>
+            <button
+              type="button"
+              class="toc-item-btn"
+              :aria-current="activeId === h.id ? 'location' : undefined"
+              @click="scrollTo(h.id)"
+            >
+              <span class="toc-item-text">{{ h.text }}</span>
+            </button>
           </li>
         </ul>
       </div>
@@ -292,9 +314,15 @@ onUnmounted(() => {
                   active: activeId === h.id,
                   [`level-${h.level}`]: true
                 }"
-                @click="scrollTo(h.id)"
               >
-                <span class="toc-item-text">{{ h.text }}</span>
+                <button
+                  type="button"
+                  class="toc-item-btn"
+                  :aria-current="activeId === h.id ? 'location' : undefined"
+                  @click="scrollTo(h.id)"
+                >
+                  <span class="toc-item-text">{{ h.text }}</span>
+                </button>
               </li>
             </ul>
           </div>
@@ -306,15 +334,15 @@ onUnmounted(() => {
 
 <style scoped>
 .toc-wrap {
-  width: 100%;
-}
-
-.toc-card {
   --toc-accent: var(--blog-text, #303133);
   --toc-hover-bg: rgba(17, 17, 17, 0.06);
   --toc-active-bg: rgba(17, 17, 17, 0.08);
   --toc-active-text: #111111;
   --toc-active-line: #111111;
+  width: 100%;
+}
+
+.toc-card {
   background: var(--blog-card, #fff);
   border: 1px solid var(--blog-border-light, #ebeef5);
   border-radius: 10px;
@@ -412,15 +440,32 @@ onUnmounted(() => {
 
 .toc-item {
   position: relative;
-  padding: 7px 10px 7px 14px;
   border-radius: 8px;
-  cursor: pointer;
   color: var(--blog-text2, #606266);
   font-size: 13px;
   line-height: 1.55;
   transition:
     color 0.15s,
     background 0.15s;
+}
+
+.toc-item-btn {
+  display: block;
+  width: 100%;
+  padding: 7px 10px 7px 14px;
+  border: none;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.toc-item-btn:focus-visible {
+  outline: 2px solid var(--toc-accent);
+  outline-offset: -2px;
 }
 
 .toc-item::before {
@@ -458,7 +503,7 @@ onUnmounted(() => {
   background: var(--toc-active-line);
 }
 
-.toc-wrap.is-dark .toc-card {
+.toc-wrap.is-dark {
   --toc-accent: #ffffff;
   --toc-hover-bg: rgba(255, 255, 255, 0.07);
   --toc-active-bg: rgba(255, 255, 255, 0.1);
@@ -495,20 +540,20 @@ onUnmounted(() => {
   box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
 }
 
-.toc-item.level-1 {
+.toc-item.level-1 .toc-item-btn {
   padding-left: 14px;
 }
 
-.toc-item.level-2 {
+.toc-item.level-2 .toc-item-btn {
   padding-left: 28px;
 }
 
-.toc-item.level-3 {
+.toc-item.level-3 .toc-item-btn {
   padding-left: 42px;
   font-size: 12.5px;
 }
 
-.toc-item.level-4 {
+.toc-item.level-4 .toc-item-btn {
   padding-left: 56px;
   font-size: 12.5px;
 }

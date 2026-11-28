@@ -17,6 +17,23 @@ export default defineConfig(({ command, mode }) => {
         '@shared': fileURLToPath(new URL('./src/shared', import.meta.url)),
       },
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) {
+              return
+            }
+            if (id.includes('highlight.js')) {
+              return 'highlight'
+            }
+            if (id.includes('vue-router') || id.includes('pinia') || id.includes('/vue/') || id.includes('\\vue\\') || id.includes('@vue/')) {
+              return 'vue-vendor'
+            }
+          },
+        },
+      },
+    },
     server: {
       host: '127.0.0.1',
       cors: false,

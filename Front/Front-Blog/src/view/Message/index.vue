@@ -74,7 +74,7 @@ async function handleSubmit() {
           <div v-if="replyTarget" class="reply-tip">
             回复
             <strong>{{ replyTarget.nickname }}</strong>
-            <span class="cancel" @click="resetForm">&times;</span>
+            <button type="button" class="cancel" aria-label="取消回复" @click="resetForm">&times;</button>
           </div>
           <div class="textarea-wrap">
             <textarea
@@ -183,8 +183,12 @@ async function handleSubmit() {
   gap: 4px;
 }
 .cancel {
+  border: none;
+  background: none;
+  padding: 0 2px;
   cursor: pointer;
   font-size: 16px;
+  line-height: 1;
   margin-left: auto;
   color: var(--blog-text3);
 }

@@ -1,11 +1,16 @@
+const dateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+})
+const dateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+})
+
 /** 把 UTC 时间显示为本地日期，空值使用占位符。 */
 export function formatDate(value) {
   if (!value) {
     return '—'
   }
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date(value))
+  return dateFormatter.format(new Date(value))
 }
 
 /** 用文章 slug 生成详情路径，对路径中的 slug 做编码。 */
@@ -18,7 +23,5 @@ export function formatDateTime(value) {
   if (!value) {
     return '—'
   }
-  return new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-  }).format(new Date(value))
+  return dateTimeFormatter.format(new Date(value))
 }

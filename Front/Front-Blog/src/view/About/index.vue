@@ -9,9 +9,14 @@ const { articleTitle, articleMeta } = inject('setHero')
 
 const info = computed(() => blogStore.personalInfo)
 
+function loadSocialLinks() {
+  void blogStore.ensureSocialLinks().catch(() => {})
+}
+
 onMounted(() => {
   articleTitle.value = '关于'
   articleMeta.value = '关于我和这个博客'
+  loadSocialLinks()
 })
 </script>
 
@@ -91,6 +96,13 @@ onMounted(() => {
               联系我
             </h3>
             <div class="contact-list">
+              <p v-if="blogStore.optionalState.social.loading" class="contact-status" role="status">
+                正在加载社交链接…
+              </p>
+              <p v-else-if="blogStore.optionalState.social.error" class="contact-status" role="alert">
+                社交链接加载失败：{{ blogStore.optionalState.social.error }}
+                <button type="button" class="contact-retry" @click="loadSocialLinks">重试</button>
+              </p>
               <a
                 v-for="link in blogStore.socialLinks"
                 :key="link.socialId"
@@ -153,7 +165,7 @@ onMounted(() => {
               </div>
               <p v-if="info.github" class="github-hint">
                 如果你喜欢这样的风格或对部分功能感兴趣，欢迎去
-                <a :href="safeLink(info.github)" target="_blank" rel="noopener" class="inline-link">
+                <a :href="safeLink(info.github)" target="_blank" rel="noopener noreferrer" class="inline-link">
                   <svg
                     viewBox="0 0 24 24"
                     width="14"
@@ -280,6 +292,21 @@ onMounted(() => {
 }
 .contact-link:hover {
   border-bottom-style: solid;
+}
+.contact-status {
+  margin: 0;
+  font-size: 13px;
+  color: var(--blog-text3, #909399);
+}
+.contact-retry {
+  margin-left: 8px;
+  padding: 2px 10px;
+  border: 1px solid var(--blog-border, #e4e7ed);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--blog-text, #303133);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* 技术栈 */
