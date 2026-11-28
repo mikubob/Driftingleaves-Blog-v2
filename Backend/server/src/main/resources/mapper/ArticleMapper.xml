@@ -419,6 +419,13 @@
         WHERE article_id = #{id}
     </update>
 
+    <!-- 在同一事务内读取原子累加后的文章阅读量 -->
+    <select id="viewCount" resultType="java.math.BigInteger">
+        SELECT view_count
+        FROM blog_article
+        WHERE article_id = #{id}
+    </select>
+
     <!-- 按 UTC 月份倒序分页统计公开文章归档 -->
     <select id="archives" resultType="com.xuan.vo.ArchiveVO">
         SELECT

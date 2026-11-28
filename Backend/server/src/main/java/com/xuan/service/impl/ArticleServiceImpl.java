@@ -268,7 +268,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setLikeCount(row.getLikeCount());
         value.setCommentCount(commentCount(row.getArticleId()));
         articles.incrementViews(row.getArticleId());
-        value.setViewCount(row.getViewCount().add(BigInteger.ONE));
+        BigInteger latestViews = articles.viewCount(row.getArticleId());
+        value.setViewCount(latestViews == null ? row.getViewCount().add(BigInteger.ONE) : latestViews);
         return value;
     }
 

@@ -24,7 +24,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 配置分级 Redis 缓存，主缓存管理器服务强一致公开查询，轻量缓存管理器服务统计报表、IP 封禁和后台授权。
+ * 配置分级 Redis 缓存，主缓存管理器服务强一致公开查询，轻量缓存管理器服务后台统计报表。
  */
 @Slf4j
 @Configuration
@@ -135,12 +135,10 @@ public class PublicCacheConfig {
                 .serializeValuesWith(RedisSerializationContext.SerializationPair.fromSerializer(serializer))
                 .entryTtl(Duration.ofSeconds(60));
 
-        // 2. 为各轻量缓存域设置分级 TTL。
+        // 2. 为后台统计报表设置分级 TTL；IP 封禁与后台授权由 VersionedAccessCache 提供版本校验与失效兜底。
         Map<String, RedisCacheConfiguration> configs = new LinkedHashMap<>();
         configs.put(CacheNames.ADMIN_STATS, defaults.entryTtl(Duration.ofSeconds(60)));
         configs.put(CacheNames.ADMIN_STATS_HISTORY, defaults.entryTtl(Duration.ofMinutes(30)));
-        configs.put(CacheNames.IP_BLOCK, defaults.entryTtl(Duration.ofSeconds(60)));
-        configs.put(CacheNames.USER_AUTHZ, defaults.entryTtl(Duration.ofMinutes(5)));
 
         // 3. 包装单域缓存，在 Redis 异常时降级回源并记录告警，不中断后台正常操作。
         RedisCacheWriter writer = RedisCacheWriter.nonLockingRedisCacheWriter(factory, BatchStrategies.scan(100));

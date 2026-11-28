@@ -18,6 +18,7 @@ import lombok.Setter;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.math.BigInteger;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -287,6 +288,14 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      * @param id 文章 ID
      */
     void incrementViews(@Param("id") long id);
+
+    /**
+     * 在同一事务内读取文章当前阅读量，供原子累加后返回最新计数。
+     *
+     * @param id 文章 ID
+     * @return 当前阅读量，记录不存在时返回 null
+     */
+    BigInteger viewCount(@Param("id") long id);
 
     /**
      * 按 UTC 月份倒序分页查询公开文章归档
