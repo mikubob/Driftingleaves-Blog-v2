@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -46,6 +47,25 @@ public interface AuthorizationMapper {
      * @return 菜单授权候选列表
      */
     List<MenuGrant> menus(@Param("userId") long userId);
+
+    /**
+     * 批量查询一组用户的讨论区作者与管理员徽标，仅统计启用用户与启用角色。
+     *
+     * @param userIds 用户 ID 集合
+     * @return 用户徽标列表
+     */
+    List<DiscussionBadge> discussionBadgesByUsers(@Param("userIds") Collection<Long> userIds);
+
+    /**
+     * 讨论区用户作者与管理员徽标投影
+     */
+    @Data
+    class DiscussionBadge {
+
+        private Long userId;
+        private boolean siteAuthor;
+        private boolean siteAdmin;
+    }
 
     /**
      * 角色权限与数据范围明细

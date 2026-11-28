@@ -35,6 +35,9 @@ public class BlogMessage implements Serializable {
     // 父级ID
     private Long parentId;
 
+    // 所属会话根留言ID（根留言为 null）
+    private Long rootId;
+
     // 内容
     private String content;
 

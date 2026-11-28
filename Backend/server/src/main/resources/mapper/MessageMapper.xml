@@ -28,18 +28,77 @@
         </if>
     </sql>
 
-    <!-- 查询全部留言树节点，用于可见性校验 -->
-    <select id="nodes" resultType="com.xuan.model.MessageNode">
-        SELECT message_id, user_id, parent_id, status, is_secret, create_time
+    <!-- 分页查询对当前读者可见的顶层根留言节点 -->
+    <select id="visibleRootPage" resultType="com.xuan.model.MessageNode">
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
         FROM blog_message
+        WHERE parent_id IS NULL
+          AND (
+              (status = 1 AND is_secret = 0)
+              <if test="viewer != null">
+                  OR user_id = #{viewer}
+              </if>
+          )
         ORDER BY create_time, message_id
+    </select>
+
+    <!-- 批量查询指定根留言下的全部回复节点，走 idx_message_root 索引 -->
+    <select id="nodesByRoots" resultType="com.xuan.model.MessageNode">
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
+        FROM blog_message
+        WHERE root_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY create_time, message_id
+    </select>
+
+    <!-- 查询单棵留言会话树（根节点及全部回复），分别走主键与 idx_message_root 索引 -->
+    <select id="treeNodes" resultType="com.xuan.model.MessageNode">
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
+        FROM blog_message
+        WHERE message_id = #{rootId}
+        UNION ALL
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
+        FROM blog_message
+        WHERE root_id = #{rootId}
+        ORDER BY create_time, message_id
+    </select>
+
+    <!-- 批量查询多棵留言会话树（根节点及全部回复），供本人留言列表计算可见性 -->
+    <select id="treeNodesByRoots" resultType="com.xuan.model.MessageNode">
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
+        FROM blog_message
+        WHERE message_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        UNION ALL
+        SELECT message_id, user_id, parent_id, root_id, status, is_secret, create_time
+        FROM blog_message
+        WHERE root_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY create_time, message_id
+    </select>
+
+    <!-- 统计排在目标根留言之前的可见根留言数量，用于计算前台跳转页码 -->
+    <select id="visibleRootRank" resultType="long">
+        SELECT COUNT(*)
+        FROM blog_message
+        WHERE parent_id IS NULL
+          AND ((status = 1 AND is_secret = 0) OR user_id = #{viewer})
+          AND (
+              create_time &lt; #{createTime}
+              OR (create_time = #{createTime} AND message_id &lt; #{messageId})
+          )
     </select>
 
     <!-- 根据已筛选可见的留言 ID 列表查询留言详情 -->
     <select id="visibleRows" resultType="com.xuan.model.MessageRow">
         SELECT
             <include refid="columns"/>,
-            <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
             ru.nickname AS reply_to_nickname,
             LEFT(p.content, 120) AS reply_to_content
         FROM blog_message m
@@ -89,7 +148,6 @@
     <select id="adminPage" resultType="com.xuan.model.MessageRow">
         SELECT
             <include refid="columns"/>,
-            <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
             ru.nickname AS reply_to_nickname,
             LEFT(p.content, 120) AS reply_to_content,
             EXISTS (

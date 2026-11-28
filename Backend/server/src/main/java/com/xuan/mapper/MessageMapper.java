@@ -9,6 +9,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -18,11 +19,49 @@ import java.util.List;
 public interface MessageMapper extends BaseMapper<BlogMessage> {
 
     /**
-     * 查询全部留言的最小树节点信息，用于可见性校验。
+     * 分页查询对当前读者可见的顶层根留言节点，走 idx_message_public 索引。
      *
-     * @return 留言节点列表
+     * @param page 分页参数
+     * @param viewer 当前登录用户 ID，匿名访问为 null
+     * @return 可见根留言节点分页结果
      */
-    List<MessageNode> nodes();
+    IPage<MessageNode> visibleRootPage(IPage<MessageNode> page, @Param("viewer") Long viewer);
+
+    /**
+     * 批量查询指定根留言下的全部回复节点，走 idx_message_root 索引。
+     *
+     * @param rootIds 根留言 ID 集合
+     * @return 回复节点列表
+     */
+    List<MessageNode> nodesByRoots(@Param("rootIds") Collection<Long> rootIds);
+
+    /**
+     * 查询单棵留言会话树的全部节点（根节点及全部回复），用于回复分页、会话详情与删树。
+     *
+     * @param rootId 会话根留言 ID
+     * @return 会话树节点列表
+     */
+    List<MessageNode> treeNodes(@Param("rootId") long rootId);
+
+    /**
+     * 批量查询多棵留言会话树的全部节点（根节点及全部回复），供本人留言列表计算可见性。
+     *
+     * @param rootIds 会话根留言 ID 集合
+     * @return 多棵会话树节点列表
+     */
+    List<MessageNode> treeNodesByRoots(@Param("rootIds") Collection<Long> rootIds);
+
+    /**
+     * 统计指定根留言之前对当前用户可见的根留言数量，用于计算前台跳转页码。
+     *
+     * @param viewer 当前登录用户 ID
+     * @param createTime 目标根留言创建时间
+     * @param messageId 目标根留言 ID
+     * @return 排在目标之前的可见根留言条数
+     */
+    long visibleRootRank(@Param("viewer") long viewer,
+            @Param("createTime") LocalDateTime createTime,
+            @Param("messageId") long messageId);
 
     /**
      * 根据已确认可见的留言 ID 列表查询留言详情

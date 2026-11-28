@@ -1,6 +1,7 @@
 package com.xuan.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
@@ -113,8 +114,16 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<UserAdminVO> adminList(AdminUserQueryDTO query, Long roleId) {
         requireAdmin("sys:user:query");
-        return PageResult.from(users.adminPage(new Page<>(query.getPage(), query.getPageSize()), query, roleId)
-                .convert(this::adminView));
+        IPage<SysUser> page = users.adminPage(new Page<>(query.getPage(), query.getPageSize()), query, roleId);
+        if (page.getRecords().isEmpty()) {
+            return PageResult.from(page.convert(user -> adminView(user, List.of())));
+        }
+        List<Long> userIds = page.getRecords().stream().map(SysUser::getUserId).toList();
+        Map<Long, List<UserRoleVO>> rolesByUser = new HashMap<>();
+        for (UserMapper.UserRoleRow row : users.assignedRolesByUsers(userIds)) {
+            rolesByUser.computeIfAbsent(row.getUserId(), id -> new ArrayList<>()).add(row);
+        }
+        return PageResult.from(page.convert(user -> adminView(user, rolesByUser.getOrDefault(user.getUserId(), List.of()))));
     }
 
     /**
@@ -444,7 +453,17 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
      * @return 不含密码哈希、第三方身份和 Token 的后台资料
      */
     private UserAdminVO adminView(SysUser user) {
-        List<UserRoleVO> roles = users.assignedRoles(user.getUserId());
+        return adminView(user, users.assignedRoles(user.getUserId()));
+    }
+
+    /**
+     * 使用预加载的角色集合组装后台用户资料，避免分页列表逐行查角色。
+     *
+     * @param user 当前内部用户实体
+     * @param roles 预加载的用户角色列表
+     * @return 不含密码哈希、第三方身份和 Token 的后台资料
+     */
+    private UserAdminVO adminView(SysUser user, List<UserRoleVO> roles) {
         List<Long> roleIds = roles.stream().map(UserRoleVO::getRoleId).toList();
         return UserAdminVO.builder()
                 .userId(user.getUserId())

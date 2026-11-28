@@ -4,11 +4,13 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.entity.BlogComment;
 import com.xuan.entity.BlogSiteConfig;
+import com.xuan.mapper.ArticleMapper.CommentNode;
 import com.xuan.model.CommentRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -23,6 +25,72 @@ public interface CommentMapper extends BaseMapper<BlogComment> {
      * @return 评论配置记录
      */
     BlogSiteConfig lockConfig();
+
+    /**
+     * 分页查询文章下对当前读者可见的顶层根评论节点，按创建时间倒序排列。
+     *
+     * @param page 分页参数
+     * @param article 文章 ID
+     * @param viewer 当前登录用户 ID，匿名访问为 null
+     * @return 可见根评论节点分页结果
+     */
+    IPage<CommentNode> visibleRootPage(IPage<CommentNode> page,
+            @Param("article") long article,
+            @Param("viewer") Long viewer);
+
+    /**
+     * 批量查询文章下指定根评论的全部回复节点，走 idx_comment_root 索引。
+     *
+     * @param article 文章 ID
+     * @param rootIds 根评论 ID 集合
+     * @return 回复节点列表
+     */
+    List<CommentNode> nodesByRoots(@Param("article") long article,
+            @Param("rootIds") Collection<Long> rootIds);
+
+    /**
+     * 查询单棵评论会话树的全部节点（根节点及全部回复），用于回复分页、会话详情与回复校验。
+     *
+     * @param article 文章 ID
+     * @param rootId 会话根评论 ID
+     * @return 会话树节点列表
+     */
+    List<CommentNode> treeNodes(@Param("article") long article,
+            @Param("rootId") long rootId);
+
+    /**
+     * 批量查询文章下多棵评论会话树的全部节点（根节点及全部回复），供本人评论列表计算可见性。
+     *
+     * @param article 文章 ID
+     * @param rootIds 会话根评论 ID 集合
+     * @return 多棵会话树节点列表
+     */
+    List<CommentNode> treeNodesByRoots(@Param("article") long article,
+            @Param("rootIds") Collection<Long> rootIds);
+
+    /**
+     * 加行锁查询单棵评论会话树的全部节点，调用方须先持有文章行锁。
+     *
+     * @param article 文章 ID
+     * @param rootId 会话根评论 ID
+     * @return 锁定的会话树节点列表
+     */
+    List<CommentNode> lockTree(@Param("article") long article,
+            @Param("rootId") long rootId);
+
+    /**
+     * 统计指定根评论之前对当前用户可见的根评论数量（前台按时间倒序），用于计算跳转页码。
+     *
+     * @param article 文章 ID
+     * @param viewer 当前登录用户 ID
+     * @param createTime 目标根评论创建时间
+     * @param commentId 目标根评论 ID
+     * @return 排在目标之前的可见根评论条数
+     */
+    long visibleRootRank(@Param("article") long article,
+            @Param("viewer") long viewer,
+            @Param("createTime") LocalDateTime createTime,
+            @Param("commentId") long commentId);
 
     /**
      * 根据已筛选可见的评论 ID 列表查询前台评论详情

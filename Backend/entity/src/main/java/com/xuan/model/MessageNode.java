@@ -30,6 +30,9 @@ public class MessageNode implements Serializable {
     // 父留言ID
     private Long parentId;
 
+    // 所属会话根留言ID（根留言为 null）
+    private Long rootId;
+
     // 审核状态
     private Integer status;
 

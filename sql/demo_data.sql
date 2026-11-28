@@ -323,8 +323,8 @@ JOIN blog_message m ON m.user_id = u.user_id AND m.content = s.content
 WHERE s.kind = 'M' AND s.depth = 0;
 
 -- 先插入深度 1 的评论，再保存实际自增 ID，子节点不会占用固定业务主键。
-INSERT INTO blog_comment (article_id, user_id, parent_id, content, location, user_agent_os, user_agent_browser, status, create_time, update_time)
-SELECT a.article_id, u.user_id, p.comment_id, s.content, s.location, s.agent_os, s.agent_browser,
+INSERT INTO blog_comment (article_id, user_id, parent_id, root_id, content, location, user_agent_os, user_agent_browser, status, create_time, update_time)
+SELECT a.article_id, u.user_id, p.comment_id, p.comment_id, s.content, s.location, s.agent_os, s.agent_browser,
   s.status, DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY), DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 JOIN dl_demo_article_seed a ON a.seed_key = s.article_seed
@@ -338,9 +338,9 @@ JOIN blog_comment c ON c.article_id = a.article_id AND c.user_id = u.user_id AND
 WHERE s.kind = 'C' AND s.depth = 1;
 
 -- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
-INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
+INSERT INTO blog_message (user_id, parent_id, root_id, content, location, user_agent_os, user_agent_browser,
   content_format, is_secret, notify_reply, status, create_time, update_time)
-SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
+SELECT u.user_id, p.message_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
   s.content_format, s.is_secret, s.notify_reply, s.status,
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY),
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
@@ -354,12 +354,13 @@ JOIN blog_message m ON m.user_id = u.user_id AND m.content = s.content
 WHERE s.kind = 'M' AND s.depth = 1;
 
 -- 先插入深度 2 的评论，再保存实际自增 ID，子节点不会占用固定业务主键。
-INSERT INTO blog_comment (article_id, user_id, parent_id, content, location, user_agent_os, user_agent_browser, status, create_time, update_time)
-SELECT a.article_id, u.user_id, p.comment_id, s.content, s.location, s.agent_os, s.agent_browser,
+INSERT INTO blog_comment (article_id, user_id, parent_id, root_id, content, location, user_agent_os, user_agent_browser, status, create_time, update_time)
+SELECT a.article_id, u.user_id, p.comment_id, COALESCE(pc.root_id, pc.comment_id), s.content, s.location, s.agent_os, s.agent_browser,
   s.status, DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY), DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 JOIN dl_demo_article_seed a ON a.seed_key = s.article_seed
 LEFT JOIN dl_demo_comment_ids p ON p.seed_key = s.parent_key
+LEFT JOIN blog_comment pc ON pc.comment_id = p.comment_id
 WHERE s.kind = 'C' AND s.depth = 2 AND (s.parent_key IS NULL OR p.comment_id IS NOT NULL)
   AND NOT EXISTS (SELECT 1 FROM blog_comment c WHERE c.article_id = a.article_id AND c.user_id = u.user_id AND c.content = s.content);
 INSERT INTO dl_demo_comment_ids (seed_key, comment_id)
@@ -369,14 +370,15 @@ JOIN blog_comment c ON c.article_id = a.article_id AND c.user_id = u.user_id AND
 WHERE s.kind = 'C' AND s.depth = 2;
 
 -- 私密回复沿用上级留言的私密标记，显示时仍要检查全部上级留言。
-INSERT INTO blog_message (user_id, parent_id, content, location, user_agent_os, user_agent_browser,
+INSERT INTO blog_message (user_id, parent_id, root_id, content, location, user_agent_os, user_agent_browser,
   content_format, is_secret, notify_reply, status, create_time, update_time)
-SELECT u.user_id, p.message_id, s.content, s.location, s.agent_os, s.agent_browser,
+SELECT u.user_id, p.message_id, COALESCE(pm.root_id, pm.message_id), s.content, s.location, s.agent_os, s.agent_browser,
   s.content_format, s.is_secret, s.notify_reply, s.status,
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY),
   DATE_SUB(@dl_demo_anchor, INTERVAL s.created_days DAY)
 FROM dl_demo_discussion_seed s JOIN dl_demo_user_seed u ON u.seed_key = s.user_seed
 LEFT JOIN dl_demo_message_ids p ON p.seed_key = s.parent_key
+LEFT JOIN blog_message pm ON pm.message_id = p.message_id
 WHERE s.kind = 'M' AND s.depth = 2 AND (s.parent_key IS NULL OR p.message_id IS NOT NULL)
   AND NOT EXISTS (SELECT 1 FROM blog_message m WHERE m.user_id = u.user_id AND m.content = s.content);
 INSERT INTO dl_demo_message_ids (seed_key, message_id)

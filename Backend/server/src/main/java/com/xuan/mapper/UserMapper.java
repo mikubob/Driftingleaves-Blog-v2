@@ -6,9 +6,12 @@ import com.xuan.dto.AdminUserQueryDTO;
 import com.xuan.entity.SysRole;
 import com.xuan.entity.SysUser;
 import com.xuan.vo.UserRoleVO;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -44,6 +47,14 @@ public interface UserMapper extends BaseMapper<SysUser> {
      * @return 角色列表
      */
     List<UserRoleVO> assignedRoles(@Param("userId") long userId);
+
+    /**
+     * 批量查询多个用户已分配的全部角色（含禁用角色），按用户 ID 与角色 ID 升序排列。
+     *
+     * @param userIds 用户 ID 集合
+     * @return 带用户 ID 的角色列表
+     */
+    List<UserRoleRow> assignedRolesByUsers(@Param("userIds") Collection<Long> userIds);
 
     /**
      * 锁定初始化管理员角色行（role_id = 1），用于串行保护最后一个有效管理员。
@@ -161,4 +172,14 @@ public interface UserMapper extends BaseMapper<SysUser> {
      * @return 插入行数（成功为 1，member 角色不可用时为 0）
      */
     int assignMember(@Param("userId") long userId);
+
+    /**
+     * 批量查询用户角色时的关联投影
+     */
+    @Getter
+    @Setter
+    class UserRoleRow extends UserRoleVO {
+
+        private Long userId;
+    }
 }

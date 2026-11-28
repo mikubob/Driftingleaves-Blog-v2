@@ -1,5 +1,7 @@
 package com.xuan.service.impl;
 
+import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -16,12 +18,15 @@ import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
 import com.xuan.mapper.ArticleMapper.CommentNode;
 import com.xuan.mapper.ArticleMapper;
+import com.xuan.mapper.AuthorizationMapper;
+import com.xuan.mapper.AuthorizationMapper.DiscussionBadge;
 import com.xuan.mapper.CommentMapper;
 import com.xuan.mapper.UserMapper;
 import com.xuan.model.ArticleRow;
 import com.xuan.model.CommentRow;
 import com.xuan.model.ResourceVersion;
 import com.xuan.policy.CommentVisibilityPolicy;
+import com.xuan.policy.DiscussionConfigPolicy;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
 import com.xuan.security.AuthorizationProvider;
@@ -33,8 +38,8 @@ import com.xuan.utils.BatchUtils;
 import com.xuan.utils.DiscussionLocationUtils;
 import com.xuan.utils.IdUtils;
 import com.xuan.utils.IpUtils;
-import com.xuan.utils.TokenUtils;
 import com.xuan.utils.RevisionUtils;
+import com.xuan.utils.TokenUtils;
 import com.xuan.utils.UserAgentUtils;
 import com.xuan.vo.ArticlePublicVO.Author;
 import com.xuan.vo.BatchVersionsVO;
@@ -52,17 +57,16 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -75,9 +79,12 @@ import java.util.TreeSet;
 @RequiredArgsConstructor
 public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> implements ICommentService {
 
+    private static final int PUBLIC_ROOT_PAGE_SIZE = 10;
+
     private final CommentMapper comments;
     private final ObjectProvider<ICommentService> self;
     private final ArticleMapper articles;
+    private final AuthorizationMapper authorizationMapper;
     private final UserMapper users;
     private final IUserService identities;
     private final SessionManager sessions;
@@ -88,7 +95,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     private final AuthProperties authProperties;
 
     /**
-     * 分页查询根评论或整组回复，在同一只读事务中检查文章和全部上级评论。
+     * 分页查询根评论或整组回复，在同一只读事务中检查文章和所属会话树。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -101,8 +108,13 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         if (viewer != null) {
             return readPublicComments(article, query, viewer);
         }
-        if (parent != null && !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parent)) {
-            throw missing();
+        if (parent != null) {
+            BlogComment parentRow = comments.selectById(parent);
+            if (parentRow == null || parentRow.getArticleId() != article
+                    || !CommentVisibilityPolicy.visible(comments.treeNodes(article, resolveRootId(parentRow)))
+                            .contains(parent)) {
+                throw missing();
+            }
         }
         return self.getObject().cachedPublicComments(article, query);
     }
@@ -117,19 +129,94 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 整理可见回复与整组计数，只分页读取正文，保留真实的直接回复关系。
+     * 整理可见根评论或单棵会话树回复与计数，按 root_id 索引查询，避免加载整篇文章的全部评论。
      */
     private PageResult<CommentPublicVO> readPublicComments(long article, CommentPublicQueryDTO query, Long viewer) {
-        // 1. 加载文章评论节点，计算当前读者可见集合与可回复集合。
         Long parent = IdUtils.parse(query.getParentId());
-        List<CommentNode> nodes = articles.commentNodes(article);
-        Set<Long> visible = CommentVisibilityPolicy.visible(nodes, viewer);
-        Set<Long> replyable = viewer == null ? visible : CommentVisibilityPolicy.visible(nodes);
-        if (parent != null && !visible.contains(parent)) {
+        if (parent == null) {
+            return readPublicRoots(article, query, viewer);
+        }
+        return readPublicReplies(article, query, parent, viewer);
+    }
+
+    /**
+     * 分页查询文章下可见顶层根评论，仅按当前页根 ID 批量加载回复树统计可见回复数。
+     */
+    private PageResult<CommentPublicVO> readPublicRoots(long article, CommentPublicQueryDTO query, Long viewer) {
+        IPage<CommentNode> rootPage = comments.visibleRootPage(
+                new Page<>(query.getPage(), query.getPageSize()), article, viewer);
+        List<CommentNode> roots = rootPage.getRecords();
+        if (roots.isEmpty()) {
+            return new PageResult<>(query.getPage(), query.getPageSize(),
+                    Long.toString(rootPage.getTotal()), Long.toString(rootPage.getPages()), List.of());
+        }
+
+        List<Long> rootIds = roots.stream().map(CommentNode::getCommentId).toList();
+        List<CommentNode> nodes = new ArrayList<>(roots);
+        nodes.addAll(comments.nodesByRoots(article, rootIds));
+
+        TreeMetrics metrics = analyzeTree(nodes, viewer);
+        List<CommentRow> fetched = comments.publicRows(article, rootIds, false);
+        applyBadges(fetched);
+        List<CommentPublicVO> records = new ArrayList<>(fetched.size());
+        for (CommentRow row : fetched) {
+            row.setReplyCount(metrics.replyCounts().getOrDefault(row.getCommentId(), 0L));
+            CommentPublicVO value = publicView(row);
+            value.setReplyable(metrics.replyable().contains(row.getCommentId()));
+            records.add(value);
+        }
+        return new PageResult<>(query.getPage(), query.getPageSize(),
+                Long.toString(rootPage.getTotal()), Long.toString(rootPage.getPages()), records);
+    }
+
+    /**
+     * 按目标父评论所属的单一会话根加载该树节点，再校验可见性并分页返回回复。
+     */
+    private PageResult<CommentPublicVO> readPublicReplies(long article, CommentPublicQueryDTO query, long parent,
+            Long viewer) {
+        BlogComment parentRow = comments.selectById(parent);
+        if (parentRow == null || parentRow.getArticleId() != article) {
+            throw missing();
+        }
+        List<CommentNode> nodes = comments.treeNodes(article, resolveRootId(parentRow));
+        TreeMetrics metrics = analyzeTree(nodes, viewer);
+        if (!metrics.visible().contains(parent)) {
             throw missing();
         }
 
-        // 2. 构建可见评论树，从最深层向上统计每条评论的全部可见后代回复数。
+        List<CommentNode> selected = new ArrayList<>(metrics.children().getOrDefault(parent, List.of()));
+        for (int index = 0; index < selected.size(); index++) {
+            selected.addAll(metrics.children().getOrDefault(selected.get(index).getCommentId(), List.of()));
+        }
+        Set<Long> selectedIds = new HashSet<>();
+        for (CommentNode node : selected) {
+            selectedIds.add(node.getCommentId());
+        }
+        List<Long> visibleIds = nodes.stream().map(CommentNode::getCommentId).filter(selectedIds::contains).toList();
+        int from = Math.min(visibleIds.size(), (query.getPage() - 1) * query.getPageSize());
+        List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.getPageSize()));
+
+        List<CommentPublicVO> records = new ArrayList<>();
+        if (!pageIds.isEmpty()) {
+            List<CommentRow> fetched = comments.publicRows(article, pageIds, true);
+            applyBadges(fetched);
+            for (CommentRow row : fetched) {
+                row.setReplyCount(metrics.replyCounts().getOrDefault(row.getCommentId(), 0L));
+                CommentPublicVO value = publicView(row);
+                value.setReplyable(metrics.replyable().contains(row.getCommentId()));
+                records.add(value);
+            }
+        }
+        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visibleIds.size()),
+                Long.toString((visibleIds.size() + (long) query.getPageSize() - 1) / query.getPageSize()), records);
+    }
+
+    /**
+     * 统计评论节点集合中的可见集合、可回复集合及自底向上累计的可见回复数。
+     */
+    private TreeMetrics analyzeTree(List<CommentNode> nodes, Long viewer) {
+        Set<Long> visible = CommentVisibilityPolicy.visible(nodes, viewer);
+        Set<Long> replyable = viewer == null ? visible : CommentVisibilityPolicy.visible(nodes);
         Map<Long, List<CommentNode>> children = new HashMap<>();
         for (CommentNode node : nodes) {
             if (visible.contains(node.getCommentId())) {
@@ -147,37 +234,14 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
                 replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getCommentId(), 0L) + 1, Long::sum);
             }
         }
+        return new TreeMetrics(visible, replyable, children, replyCounts);
+    }
 
-        // 3. 筛选目标层级（顶层评论或指定父评论下的全部可见回复）并按时间切出当前页 ID。
-        List<CommentNode> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
-        if (parent != null) {
-            for (int index = 0; index < selected.size(); index++) {
-                selected.addAll(children.getOrDefault(selected.get(index).getCommentId(), List.of()));
-            }
-        }
-        Set<Long> selectedIds = new HashSet<>();
-        for (CommentNode node : selected) {
-            selectedIds.add(node.getCommentId());
-        }
-        List<Long> visibleIds = nodes.stream().map(CommentNode::getCommentId).filter(selectedIds::contains).toList();
-        if (parent == null) {
-            visibleIds = visibleIds.reversed();
-        }
-        int from = Math.min(visibleIds.size(), (query.getPage() - 1) * query.getPageSize());
-        List<Long> pageIds = visibleIds.subList(from, Math.min(visibleIds.size(), from + query.getPageSize()));
-
-        // 4. 仅针对当前页 ID 查询正文和用户信息，拼装分页结果返回。
-        List<CommentPublicVO> records = new ArrayList<>();
-        if (!pageIds.isEmpty()) {
-            for (CommentRow row : comments.publicRows(article, pageIds, parent != null)) {
-                row.setReplyCount(replyCounts.getOrDefault(row.getCommentId(), 0L));
-                CommentPublicVO value = publicView(row);
-                value.setReplyable(replyable.contains(row.getCommentId()));
-                records.add(value);
-            }
-        }
-        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visibleIds.size()),
-                Long.toString((visibleIds.size() + (long) query.getPageSize() - 1) / query.getPageSize()), records);
+    /**
+     * 评论树可见性分析结果。
+     */
+    private record TreeMetrics(Set<Long> visible, Set<Long> replyable,
+            Map<Long, List<CommentNode>> children, Map<Long, Long> replyCounts) {
     }
 
     /**
@@ -221,29 +285,32 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
             comments.scoped(parentId, null, null, true);
         }
 
-        // 3. 拿齐全部锁后复核当前身份、评论开关及父评论可见性。
+        // 3. 拿齐全部锁后复核当前身份、评论开关及父评论所属会话树的可见性。
         requireMember("blog:comment:create");
         ArticleRow current = requirePublic(article);
         JsonNode policy = policy(config);
         if (!policy.get("enabled").asBoolean() || current.getAllowComment() != 1) {
             throw conflict("评论已关闭");
         }
+        Long rootId = null;
         if (parentId != null) {
             CommentRow parent = requireComment(comments.scoped(parentId, null, null, false));
             if (parent.getArticleId() != article) {
                 throw missing();
             }
+            rootId = resolveRootId(parent);
             if (parent.getStatus() != 1
-                    || !CommentVisibilityPolicy.visible(articles.commentNodes(article)).contains(parentId)) {
+                    || !CommentVisibilityPolicy.visible(comments.treeNodes(article, rootId)).contains(parentId)) {
                 throw conflict("父评论已不可回复");
             }
         }
 
-        // 4. 组装纯文本评论与环境信息，根据审核策略和角色决定初始状态后保存。
+        // 4. 组装纯文本评论与环境信息，记录所属会话根评论 ID，根据审核策略和角色决定初始状态后保存。
         BlogComment comment = BlogComment.builder()
                 .articleId(article)
                 .userId(actor)
                 .parentId(parentId)
+                .rootId(rootId)
                 .build();
         // 纯文本原样保存，尖括号也是文字；响应没有 HTML 字段，展示端用文本节点渲染。
         comment.setContent(request.getContent());
@@ -260,7 +327,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 查询本人评论及其前台跳转位置，下架文章的历史评论仍可读取。
+     * 查询本人评论及其前台跳转位置，仅加载当前页涉及的评论会话树与根评论页码，下架文章的历史评论仍可读取。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -274,26 +341,38 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
         Map<Long, CommentOwnVO> records = new HashMap<>();
         for (var entry : byArticle.entrySet()) {
-            List<CommentNode> nodes = articles.commentNodes(entry.getKey());
-            Map<Long, CommentNode> index = new HashMap<>();
-            for (CommentNode node : nodes) {
-                index.put(node.getCommentId(), node);
-            }
+            long articleId = entry.getKey();
             boolean publicArticle = entry.getValue().getFirst().getArticleSlug() != null;
-            Set<Long> visible = publicArticle ? CommentVisibilityPolicy.visible(nodes, actor) : Set.of();
-            List<Long> roots = nodes.reversed().stream()
-                    .filter(node -> node.getParentId() == null && visible.contains(node.getCommentId()))
-                    .map(CommentNode::getCommentId)
-                    .toList();
-            Map<Long, Integer> pages = DiscussionLocationUtils.rootPages(roots);
+            Set<Long> rootIds = new HashSet<>();
+            for (CommentRow row : entry.getValue()) {
+                rootIds.add(resolveRootId(row));
+            }
+            Map<Long, CommentNode> index = new HashMap<>();
+            Set<Long> visible = Set.of();
+            if (publicArticle) {
+                List<CommentNode> nodes = comments.treeNodesByRoots(articleId, rootIds);
+                for (CommentNode node : nodes) {
+                    index.put(node.getCommentId(), node);
+                }
+                visible = CommentVisibilityPolicy.visible(nodes, actor);
+            }
+            Map<Long, Integer> rootPages = new HashMap<>();
             for (CommentRow row : entry.getValue()) {
                 CommentOwnVO value = ownView(row, new CommentOwnVO());
-                Long root = DiscussionLocationUtils.rootId(row.getCommentId(), index, CommentNode::getParentId);
+                long rootId = resolveRootId(row);
                 value.setArticleTitle(row.getArticleTitle());
                 value.setArticleSlug(row.getArticleSlug());
-                value.setRootParentId(row.getParentId() == null ? null : root);
-                if (root != null && row.getStatus() == 1 && visible.contains(row.getCommentId())) {
-                    value.setPage(pages.get(root));
+                value.setRootParentId(row.getParentId() == null ? null : rootId);
+                if (publicArticle && row.getStatus() == 1 && visible.contains(row.getCommentId())) {
+                    value.setPage(rootPages.computeIfAbsent(rootId, id -> {
+                        CommentNode rootNode = index.get(id);
+                        if (rootNode == null) {
+                            return null;
+                        }
+                        long rank = comments.visibleRootRank(articleId, actor,
+                                rootNode.getCreateTime(), rootNode.getCommentId());
+                        return (int) (rank / PUBLIC_ROOT_PAGE_SIZE) + 1;
+                    }));
                 }
                 records.put(row.getCommentId(), value);
             }
@@ -338,20 +417,21 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         if (parent != null && parent != 0L) {
             requireComment(comments.scoped(parent, author, null, false));
         }
-        return PageResult.from(comments.adminPage(new Page<>(query.getPage(), query.getPageSize()),
-                        IdUtils.parse(query.getArticleId()), IdUtils.parse(query.getUserId()), query.getStatus(), author, parent)
-                .convert(this::adminView));
+        IPage<CommentRow> page = comments.adminPage(new Page<>(query.getPage(), query.getPageSize()),
+                IdUtils.parse(query.getArticleId()), IdUtils.parse(query.getUserId()), query.getStatus(), author, parent);
+        applyBadges(page.getRecords());
+        return PageResult.from(page.convert(this::adminView));
     }
 
     /**
-     * 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。
+     * 查询主记录及整组回复，仅加载当前会话树与当前页正文；未传页码时定位选中的记录。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public DiscussionConversationVO<CommentAdminVO> conversation(long id, DiscussionConversationQueryDTO query) {
         Long author = requireAdmin("query");
         var target = requireComment(comments.scoped(id, author, null, false));
-        List<CommentNode> nodes = articles.commentNodes(target.getArticleId());
+        List<CommentNode> nodes = comments.treeNodes(target.getArticleId(), resolveRootId(target));
         var page = DiscussionLocationUtils.conversationPage(
                 id, nodes, CommentNode::getCommentId, CommentNode::getParentId, query);
         if (page == null) {
@@ -359,9 +439,16 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
         }
 
         List<Long> replies = page.replyIds();
-        List<CommentAdminVO> records = replies.isEmpty() ? List.of()
-                : comments.publicRows(target.getArticleId(), replies, true).stream().map(this::adminView).toList();
-        return new DiscussionConversationVO<>(adminView(requireComment(comments.scoped(page.rootId(), author, null, false))),
+        CommentRow rootRow = requireComment(comments.scoped(page.rootId(), author, null, false));
+        List<CommentRow> replyRows = replies.isEmpty() ? List.of()
+                : comments.publicRows(target.getArticleId(), replies, true);
+        List<CommentRow> allRows = new ArrayList<>(1 + replyRows.size());
+        allRows.add(rootRow);
+        allRows.addAll(replyRows);
+        applyBadges(allRows);
+
+        List<CommentAdminVO> records = replyRows.stream().map(this::adminView).toList();
+        return new DiscussionConversationVO<>(adminView(rootRow),
                 page.page(), query.getPageSize(), page.total(), page.totalPages(), records);
     }
 
@@ -371,20 +458,9 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CommentProfileVO detail(long id) {
-        return profile(requireComment(comments.scoped(id, requireAdmin("query"), null, false)));
-    }
-
-    /**
-     * 审核评论，即使状态不变也先检查版本；驳回父评论后不用逐条修改下级回复，查询时会重新判断是否可见。
-     */
-    private CommentProfileVO review(long id, int status, String expected) {
-        CommentRow row = lockComment(id, "review", false);
-        checkRevision(row, expected);
-        if (row.getStatus() != status) {
-            row.setStatus(status);
-            comments.change(row, requireAdmin("review"), null);
-        }
-        return profile(comments.scoped(id, requireAdmin("review"), null, false));
+        CommentRow row = requireComment(comments.scoped(id, requireAdmin("query"), null, false));
+        applyBadges(List.of(row));
+        return profile(row);
     }
 
     /**
@@ -421,20 +497,36 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
      * 只接受现有两项布尔策略，错误配置拒绝新增，不把内部 JSON 回显给用户。
      */
     private JsonNode policy(BlogSiteConfig config) {
-        String value = config.getConfigValue();
-        if (value != null && value.getBytes(StandardCharsets.UTF_8).length <= 16 * 1024 && config.getIsPublic() == 0) {
-            try {
-                JsonNode node = json.readTree(value);
-                if (node != null && node.isObject() && node.size() == 2 && node.has("enabled")
-                        && node.get("enabled").isBoolean() && node.has("reviewRequired")
-                        && node.get("reviewRequired").isBoolean()) {
-                    return node;
-                }
-            } catch (JacksonException exception) {
-                throw new BusinessException(503, "SERVICE_UNAVAILABLE", "评论配置不可用");
-            }
+        return DiscussionConfigPolicy.parse(config, json, "评论配置不可用");
+    }
+
+    /**
+     * 解析评论所属会话的顶层根评论 ID，根评论返回自身 ID。
+     */
+    private static long resolveRootId(BlogComment row) {
+        return row.getRootId() != null ? row.getRootId() : row.getCommentId();
+    }
+
+    /**
+     * 按页批量查询并回填评论作者的站内作者/管理员徽标，替代逐行关联子查询。
+     */
+    private void applyBadges(List<CommentRow> rows) {
+        if (CollUtil.isEmpty(rows)) {
+            return;
         }
-        throw new BusinessException(503, "SERVICE_UNAVAILABLE", "评论配置不可用");
+        Set<Long> userIds = new HashSet<>();
+        for (CommentRow row : rows) {
+            userIds.add(row.getUserId());
+        }
+        Map<Long, DiscussionBadge> badges = new HashMap<>();
+        for (DiscussionBadge badge : authorizationMapper.discussionBadgesByUsers(userIds)) {
+            badges.put(badge.getUserId(), badge);
+        }
+        for (CommentRow row : rows) {
+            DiscussionBadge badge = badges.get(row.getUserId());
+            row.setSiteAuthor(badge != null && badge.isSiteAuthor());
+            row.setSiteAdmin(badge != null && badge.isSiteAdmin());
+        }
     }
 
     /**
@@ -479,10 +571,10 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 删除评论及全部子回复，配置和文章锁阻止新增回复；锁住评论并重新检查权限后，从子回复向父评论依次删除。
+     * 删除评论及全部子回复，仅锁定所属会话树节点并重新检查权限，从子回复向父评论依次删除。
      */
     private void deleteTree(CommentRow row, boolean own) {
-        var nodes = articles.lockComments(row.getArticleId());
+        var nodes = comments.lockTree(row.getArticleId(), resolveRootId(row));
         Long author = own ? null : requireAdmin("moderate");
         Long user = own ? requireMember("blog:comment:deleteOwn") : null;
         requireComment(comments.scoped(row.getCommentId(), author, user, false));
@@ -614,7 +706,7 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     }
 
     /**
-     * 批量审核评论，先加锁并检查全部目标，结果按原来的选择顺序返回。
+     * 批量审核评论，先加锁并检查全部目标，第二轮直接复用已加锁实体写入，结果按原来的选择顺序返回。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -623,16 +715,22 @@ public class CommentServiceImpl extends ServiceImpl<CommentMapper, BlogComment> 
     public BatchVersionsVO reviewBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
         lockBatchArticles(items.stream().map(item -> IdUtils.parse(item.getId())).toList(), "review");
+        Map<Long, CommentRow> lockedRows = new LinkedHashMap<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
-            String expected = item.getRevision();
             CommentRow row = lockComment(id, "review", false);
-            checkRevision(row, expected);
+            checkRevision(row, item.getRevision());
+            lockedRows.put(id, row);
         }
+        Long author = requireAdmin("review");
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            versions.put(id, review(id, status, item.getRevision()).getRevision());
+        for (var entry : lockedRows.entrySet()) {
+            CommentRow row = entry.getValue();
+            if (row.getStatus() != status) {
+                row.setStatus(status);
+                comments.change(row, author, null);
+            }
+            versions.put(entry.getKey(), revision(row));
         }
         return BatchUtils.versions(items, versions);
     }

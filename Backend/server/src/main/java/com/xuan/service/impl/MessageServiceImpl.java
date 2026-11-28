@@ -1,6 +1,7 @@
 package com.xuan.service.impl;
 
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
@@ -17,6 +18,8 @@ import com.xuan.entity.BlogMessage;
 import com.xuan.entity.BlogSiteConfig;
 import com.xuan.exception.BusinessException;
 import com.xuan.location.IpLocationResolver;
+import com.xuan.mapper.AuthorizationMapper;
+import com.xuan.mapper.AuthorizationMapper.DiscussionBadge;
 import com.xuan.mapper.MessageMapper;
 import com.xuan.mapper.SiteConfigMapper;
 import com.xuan.mapper.UserMapper;
@@ -24,6 +27,7 @@ import com.xuan.model.MessageNode;
 import com.xuan.model.MessageRow;
 import com.xuan.model.ResourceVersion;
 import com.xuan.notification.SubscriptionNotifier;
+import com.xuan.policy.DiscussionConfigPolicy;
 import com.xuan.policy.MessageVisibilityPolicy;
 import com.xuan.properties.AuthProperties;
 import com.xuan.result.PageResult;
@@ -55,11 +59,9 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.core.JacksonException;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -78,6 +80,8 @@ import java.util.Set;
 @RequiredArgsConstructor
 public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> implements IMessageService {
 
+    private static final int PUBLIC_ROOT_PAGE_SIZE = 10;
+
     private static final MessagePublicQueryDTO ANONYMOUS_HOME = MessagePublicQueryDTO.builder()
             .page(1)
             .pageSize(10)
@@ -85,6 +89,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
             .build();
 
     private final MessageMapper messages;
+    private final AuthorizationMapper authorizationMapper;
     private final SiteConfigMapper configs;
     private final UserMapper users;
     private final IUserService identities;
@@ -151,18 +156,90 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     }
 
     /**
-     * 按读者身份筛选留言及回复，再分页组装结果。
+     * 按读者身份筛选根留言或单棵会话树回复，避免全表加载 blog_message。
      */
     private PageResult<MessagePublicVO> loadPublicMessages(MessagePublicQueryDTO query, Long viewer) {
-        // 1. 加载全部留言节点并建立索引，校验目标父留言对当前读者可见。
         Long parent = IdUtils.parse(query.getParentId());
-        List<MessageNode> nodes = messages.nodes();
+        if (parent == null) {
+            return loadPublicRoots(query, viewer);
+        }
+        return loadPublicReplies(query, parent, viewer);
+    }
+
+    /**
+     * 分页查询顶层可见根留言，仅按当前页根 ID 批量加载回复树统计可见回复数。
+     */
+    private PageResult<MessagePublicVO> loadPublicRoots(MessagePublicQueryDTO query, Long viewer) {
+        IPage<MessageNode> rootPage = messages.visibleRootPage(
+                new Page<>(query.getPage(), query.getPageSize()), viewer);
+        List<MessageNode> roots = rootPage.getRecords();
+        if (roots.isEmpty()) {
+            return new PageResult<>(query.getPage(), query.getPageSize(),
+                    Long.toString(rootPage.getTotal()), Long.toString(rootPage.getPages()), List.of());
+        }
+
+        List<Long> rootIds = roots.stream().map(MessageNode::getMessageId).toList();
+        List<MessageNode> nodes = new ArrayList<>(roots);
+        nodes.addAll(messages.nodesByRoots(rootIds));
+
+        TreeMetrics metrics = analyzeTree(nodes, viewer);
+        List<MessageRow> fetched = messages.visibleRows(rootIds);
+        applyBadges(fetched);
+        List<MessagePublicVO> rows = fetched.stream().map(row -> {
+            row.setReplyCount(metrics.replyCounts().getOrDefault(row.getMessageId(), 0L));
+            row.setReplyable(metrics.replyable().contains(row.getMessageId()));
+            return publicView(row, viewer);
+        }).toList();
+        return new PageResult<>(query.getPage(), query.getPageSize(),
+                Long.toString(rootPage.getTotal()), Long.toString(rootPage.getPages()), rows);
+    }
+
+    /**
+     * 按目标父留言所属的单一会话根加载该树节点，再校验可见性并分页返回回复。
+     */
+    private PageResult<MessagePublicVO> loadPublicReplies(MessagePublicQueryDTO query, long parent, Long viewer) {
+        BlogMessage parentRow = messages.selectById(parent);
+        if (parentRow == null) {
+            throw missing();
+        }
+        long rootId = resolveRootId(parentRow);
+        List<MessageNode> nodes = messages.treeNodes(rootId);
         Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
-        if (parent != null && !MessageVisibilityPolicy.visible(parent, index, viewer)) {
+        if (!MessageVisibilityPolicy.visible(parent, index, viewer)) {
             throw missing();
         }
 
-        // 2. 构建可见留言树，计算可回复集合并自底向上累计可见回复数。
+        TreeMetrics metrics = analyzeTree(nodes, viewer);
+        List<Long> selected = new ArrayList<>(metrics.children().getOrDefault(parent, List.of()));
+        for (int position = 0; position < selected.size(); position++) {
+            selected.addAll(metrics.children().getOrDefault(selected.get(position), List.of()));
+        }
+        Set<Long> selectedIds = new HashSet<>(selected);
+        List<Long> visible = nodes.stream().map(MessageNode::getMessageId).filter(selectedIds::contains).toList();
+        int from = Math.min(visible.size(), (query.getPage() - 1) * query.getPageSize());
+        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.getPageSize()));
+
+        List<MessagePublicVO> rows;
+        if (CollUtil.isEmpty(ids)) {
+            rows = List.of();
+        } else {
+            List<MessageRow> fetched = messages.visibleRows(ids);
+            applyBadges(fetched);
+            rows = fetched.stream().map(row -> {
+                row.setReplyCount(metrics.replyCounts().getOrDefault(row.getMessageId(), 0L));
+                row.setReplyable(metrics.replyable().contains(row.getMessageId()));
+                return publicView(row, viewer);
+            }).toList();
+        }
+        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visible.size()),
+                Long.toString((visible.size() + (long) query.getPageSize() - 1) / query.getPageSize()), rows);
+    }
+
+    /**
+     * 统计节点集合中的可见子节点关系、可回复集合以及自底向上累计的可见回复数。
+     */
+    private TreeMetrics analyzeTree(List<MessageNode> nodes, Long viewer) {
+        Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
         Map<Long, List<Long>> children = new HashMap<>();
         for (MessageNode node : nodes) {
             if (MessageVisibilityPolicy.visible(node.getMessageId(), index, viewer)) {
@@ -185,26 +262,13 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
                 replyCounts.merge(node.getParentId(), replyCounts.getOrDefault(node.getMessageId(), 0L) + 1, Long::sum);
             }
         }
+        return new TreeMetrics(children, replyable, replyCounts);
+    }
 
-        // 3. 切出当前页留言 ID，批量查询详情后组装分页结果。
-        List<Long> selected = new ArrayList<>(children.getOrDefault(parent, List.of()));
-        if (parent != null) {
-            for (int position = 0; position < selected.size(); position++) {
-                selected.addAll(children.getOrDefault(selected.get(position), List.of()));
-            }
-        }
-        Set<Long> selectedIds = new HashSet<>(selected);
-        List<Long> visible = nodes.stream().map(MessageNode::getMessageId).filter(selectedIds::contains).toList();
-        int from = Math.min(visible.size(), (query.getPage() - 1) * query.getPageSize());
-        List<Long> ids = visible.subList(from, Math.min(visible.size(), from + query.getPageSize()));
-        List<MessagePublicVO> rows = CollUtil.isEmpty(ids) ? List.of() : messages.visibleRows(ids).stream()
-                .map(row -> {
-                    row.setReplyCount(replyCounts.getOrDefault(row.getMessageId(), 0L));
-                    row.setReplyable(replyable.contains(row.getMessageId()));
-                    return publicView(row, viewer);
-                }).toList();
-        return new PageResult<>(query.getPage(), query.getPageSize(), Integer.toString(visible.size()),
-                Long.toString((visible.size() + (long) query.getPageSize() - 1) / query.getPageSize()), rows);
+    /**
+     * 留言树可见性分析结果。
+     */
+    private record TreeMetrics(Map<Long, List<Long>> children, Set<Long> replyable, Map<Long, Long> replyCounts) {
     }
 
     /**
@@ -226,10 +290,11 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         List<BlogMessage> path = lockPath(request.getParentId(), "create", false);
         requireReplyable(path, actor, false);
 
-        // 3. 作者取当前会话，管理员免审，其余按站点配置决定审核状态。
+        // 3. 作者取当前会话，管理员免审，其余按站点配置决定审核状态；回复记录顶层根留言 ID。
         BlogMessage row = BlogMessage.builder()
                 .userId(actor)
                 .parentId(request.getParentId())
+                .rootId(path.isEmpty() ? null : path.getFirst().getMessageId())
                 .content(request.getContent())
                 .contentFormat(request.getContentFormat())
                 .notifyReply(request.getNotifyReply())
@@ -251,7 +316,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     }
 
     /**
-     * 分页查询本人留言及其前台跳转位置。
+     * 分页查询本人留言及其前台跳转位置，只加载当前页涉及的会话树与根留言排序位置。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
@@ -262,22 +327,31 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         if (result.getRecords().isEmpty()) {
             return PageResult.from(result.convert(row -> privateView(row, actor)));
         }
-        List<MessageNode> nodes = messages.nodes();
+
+        // 1. 只加载当前页留言所属的会话树节点，检查每条留言对本人的可见性。
+        Set<Long> rootIds = new HashSet<>();
+        for (MessageRow row : result.getRecords()) {
+            rootIds.add(resolveRootId(row));
+        }
+        List<MessageNode> nodes = messages.treeNodesByRoots(rootIds);
         Map<Long, MessageNode> index = MessageVisibilityPolicy.index(nodes);
-        List<Long> roots = nodes.stream()
-                .filter(node -> node.getParentId() == null
-                        && MessageVisibilityPolicy.visible(node.getMessageId(), index, actor))
-                .map(MessageNode::getMessageId)
-                .toList();
-        Map<Long, Integer> pages = DiscussionLocationUtils.rootPages(roots);
+
+        // 2. 仅对当前页中已通过审核且可见的根留言按索引统计前台页码。
+        Map<Long, Integer> rootPages = new HashMap<>();
         return PageResult.from(result.convert(row -> {
-            Long root = DiscussionLocationUtils.rootId(row.getMessageId(), index, MessageNode::getParentId);
+            long rootId = resolveRootId(row);
             Integer page = null;
-            if (root != null && row.getStatus() == 1
-                    && MessageVisibilityPolicy.visible(row.getMessageId(), index, actor)) {
-                page = pages.get(root);
+            if (row.getStatus() == 1 && MessageVisibilityPolicy.visible(row.getMessageId(), index, actor)) {
+                page = rootPages.computeIfAbsent(rootId, id -> {
+                    MessageNode rootNode = index.get(id);
+                    if (rootNode == null) {
+                        return null;
+                    }
+                    long rank = messages.visibleRootRank(actor, rootNode.getCreateTime(), rootNode.getMessageId());
+                    return (int) (rank / PUBLIC_ROOT_PAGE_SIZE) + 1;
+                });
             }
-            return privateView(row, actor, row.getParentId() == null ? null : root, page);
+            return privateView(row, actor, row.getParentId() == null ? null : rootId, page);
         }));
     }
 
@@ -304,9 +378,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         lockConfig();
         requireMember("deleteOwn");
         required(messages.scoped(id, actor));
-        lockPath(id, "deleteOwn", false);
+        List<BlogMessage> path = lockPath(id, "deleteOwn", false);
         required(messages.scoped(id, requireMember("deleteOwn")));
-        deleteTree(id, true);
+        deleteTree(id, path.getFirst().getMessageId(), true);
     }
 
     /**
@@ -328,21 +402,21 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         LocalDateTime begin = QueryTimeUtils.parse(query.getBegin());
         LocalDateTime end = QueryTimeUtils.parse(query.getEnd());
         QueryTimeUtils.requireRange(begin, end);
-        return PageResult.from(
-                messages.adminPage(new Page<>(query.getPage(), query.getPageSize()), IdUtils.parse(query.getUserId()),
-                                query.getStatus(), query.getIsSecret(), begin, end, parent)
-                        .convert(row -> privateView(row, actor)));
+        IPage<MessageRow> page = messages.adminPage(new Page<>(query.getPage(), query.getPageSize()),
+                IdUtils.parse(query.getUserId()), query.getStatus(), query.getIsSecret(), begin, end, parent);
+        applyBadges(page.getRecords());
+        return PageResult.from(page.convert(row -> privateView(row, actor)));
     }
 
     /**
-     * 查询主记录及整组回复，只读取当前页正文；未传页码时定位选中的记录。
+     * 查询主记录及整组回复，只加载当前会话树与当前页正文；未传页码时定位选中的记录。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public DiscussionConversationVO<MessagePrivateVO> conversation(long id, DiscussionConversationQueryDTO query) {
         long actor = requireAdmin("query");
-        required(messages.scoped(id, null));
-        List<MessageNode> nodes = messages.nodes();
+        MessageRow target = required(messages.scoped(id, null));
+        List<MessageNode> nodes = messages.treeNodes(resolveRootId(target));
         var page = DiscussionLocationUtils.conversationPage(
                 id, nodes, MessageNode::getMessageId, MessageNode::getParentId, query);
         if (page == null) {
@@ -350,9 +424,15 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
 
         List<Long> replies = page.replyIds();
-        List<MessagePrivateVO> records = replies.isEmpty() ? List.of()
-                : messages.visibleRows(replies).stream().map(row -> privateView(row, actor)).toList();
-        return new DiscussionConversationVO<>(privateView(messages.visibleRows(List.of(page.rootId())).getFirst(), actor),
+        List<MessageRow> rootRows = messages.visibleRows(List.of(page.rootId()));
+        List<MessageRow> replyRows = replies.isEmpty() ? List.of() : messages.visibleRows(replies);
+        List<MessageRow> allRows = new ArrayList<>(1 + replyRows.size());
+        allRows.addAll(rootRows);
+        allRows.addAll(replyRows);
+        applyBadges(allRows);
+
+        List<MessagePrivateVO> records = replyRows.stream().map(row -> privateView(row, actor)).toList();
+        return new DiscussionConversationVO<>(privateView(rootRows.getFirst(), actor),
                 page.page(), query.getPageSize(), page.total(), page.totalPages(), records);
     }
 
@@ -364,7 +444,9 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     public ResourceVersion<MessagePrivateVO> adminDetail(long id) {
         long actor = requireAdmin("query");
         required(messages.scoped(id, null));
-        return profile(messages.visibleRows(List.of(id)).getFirst(), actor);
+        List<MessageRow> rows = messages.visibleRows(List.of(id));
+        applyBadges(rows);
+        return profile(rows.getFirst(), actor);
     }
 
     /**
@@ -386,10 +468,11 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         List<BlogMessage> path = lockPath(id, "review", true);
         requireReplyable(path, actor, true);
 
-        // 2. 作者取实际操作人，保留上级留言的私密限制，后台回复直接设为审核通过。
+        // 2. 作者取实际操作人，保留上级留言的私密限制，后台回复直接设为审核通过并记录根留言 ID。
         BlogMessage row = BlogMessage.builder()
                 .userId(actor)
                 .parentId(id)
+                .rootId(path.getFirst().getMessageId())
                 .content(request.getContent())
                 .contentFormat(request.getContentFormat())
                 .notifyReply(request.getNotifyReply())
@@ -457,16 +540,29 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     }
 
     /**
-     * 检查留言能否回复，普通用户必须能看到全部上级留言；后台也不能回复待审或驳回的目标。
+     * 检查留言能否回复，直接复用已锁定的祖先链做可见性校验，不再全表查询；后台也不能回复待审或驳回的目标。
      */
     private void requireReplyable(List<BlogMessage> path, long actor, boolean admin) {
         if (CollUtil.isEmpty(path)) {
             return;
         }
         BlogMessage target = path.getLast();
-        if (!admin && !MessageVisibilityPolicy.visible(target.getMessageId(), MessageVisibilityPolicy.index(messages.nodes()),
-                actor)) {
-            throw missing();
+        if (!admin) {
+            Map<Long, MessageNode> chain = new HashMap<>(path.size());
+            for (BlogMessage row : path) {
+                chain.put(row.getMessageId(), MessageNode.builder()
+                        .messageId(row.getMessageId())
+                        .userId(row.getUserId())
+                        .parentId(row.getParentId())
+                        .rootId(row.getRootId())
+                        .status(row.getStatus())
+                        .isSecret(row.getIsSecret())
+                        .createTime(row.getCreateTime())
+                        .build());
+            }
+            if (!MessageVisibilityPolicy.visible(target.getMessageId(), chain, actor)) {
+                throw missing();
+            }
         }
         if (target.getStatus() != 1 || path.stream().anyMatch(row -> row.getStatus() != 1)) {
             throw conflict();
@@ -495,19 +591,7 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
      * 两项布尔值之外都算部署错误，不能用默认值悄悄放开留言。
      */
     private JsonNode policy(BlogSiteConfig row) {
-        try {
-            if (row.getIsPublic() != 0 || row.getConfigValue().getBytes(StandardCharsets.UTF_8).length > 16384) {
-                throw unavailable();
-            }
-            JsonNode node = json.readTree(row.getConfigValue());
-            if (!node.isObject() || node.size() != 2 || !node.path("enabled").isBoolean() || !node.path(
-                    "reviewRequired").isBoolean()) {
-                throw unavailable();
-            }
-            return node;
-        } catch (JacksonException error) {
-            throw unavailable();
-        }
+        return DiscussionConfigPolicy.parse(row, json, "留言配置不可用");
     }
 
     /**
@@ -544,11 +628,11 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     }
 
     /**
-     * 删除留言及全部子回复，配置锁阻止新增回复；锁住待删留言并重新检查权限后，从子回复向父留言依次删除。
+     * 删除留言及全部子回复，仅加载所属会话树节点，锁住待删留言并重新检查权限后从子回复向父留言依次删除。
      */
-    private void deleteTree(long id, boolean own) {
+    private void deleteTree(long id, long rootId, boolean own) {
         Map<Long, List<Long>> children = new HashMap<>();
-        for (MessageNode node : messages.nodes()) {
+        for (MessageNode node : messages.treeNodes(rootId)) {
             children.computeIfAbsent(node.getParentId(), key -> new ArrayList<>()).add(node.getMessageId());
         }
         List<Long> ids = new ArrayList<>();
@@ -566,6 +650,35 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
         }
         for (long target : ids.reversed()) {
             messages.deleteById(target);
+        }
+    }
+
+    /**
+     * 解析留言所属会话的顶层根留言 ID，根留言返回自身 ID。
+     */
+    private static long resolveRootId(BlogMessage row) {
+        return row.getRootId() != null ? row.getRootId() : row.getMessageId();
+    }
+
+    /**
+     * 按页批量查询并回填留言作者的站内作者/管理员徽标，替代逐行关联子查询。
+     */
+    private void applyBadges(List<MessageRow> rows) {
+        if (CollUtil.isEmpty(rows)) {
+            return;
+        }
+        Set<Long> userIds = new HashSet<>();
+        for (MessageRow row : rows) {
+            userIds.add(row.getUserId());
+        }
+        Map<Long, DiscussionBadge> badges = new HashMap<>();
+        for (DiscussionBadge badge : authorizationMapper.discussionBadgesByUsers(userIds)) {
+            badges.put(badge.getUserId(), badge);
+        }
+        for (MessageRow row : rows) {
+            DiscussionBadge badge = badges.get(row.getUserId());
+            row.setSiteAuthor(badge != null && badge.isSiteAuthor());
+            row.setSiteAdmin(badge != null && badge.isSiteAdmin());
         }
     }
 
@@ -750,13 +863,15 @@ public class MessageServiceImpl extends ServiceImpl<MessageMapper, BlogMessage> 
     @CacheEvict(cacheNames = "messages", allEntries = true)
     public void deleteBatch(List<String> ids) {
         var sorted = BatchUtils.ids(ids);
+        Map<Long, Long> roots = new HashMap<>();
         for (long id : sorted) {
-            lockAdmin(id, "moderate");
+            List<BlogMessage> path = lockAdmin(id, "moderate");
             required(messages.scoped(id, null));
+            roots.put(id, path.getFirst().getMessageId());
         }
         for (long id : sorted) {
             if (messages.selectById(id) != null) {
-                deleteTree(id, false);
+                deleteTree(id, roots.get(id), false);
             }
         }
     }

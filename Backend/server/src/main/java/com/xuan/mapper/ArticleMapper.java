@@ -13,10 +13,13 @@ import com.xuan.vo.ArchiveVO;
 import com.xuan.vo.ArticlePublicVO.Navigation;
 import com.xuan.vo.AuthorPublicVO;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -134,12 +137,28 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     BlogArticleContent content(@Param("id") long id);
 
     /**
+     * 批量查询多篇文章的正文内容
+     *
+     * @param ids 文章 ID 列表
+     * @return 文章正文列表
+     */
+    List<BlogArticleContent> contentsByIds(@Param("ids") Collection<Long> ids);
+
+    /**
      * 根据文章 ID 查询关联的标签列表，按标签 ID 升序排列。
      *
      * @param id 文章 ID
      * @return 标签列表
      */
     List<BlogTag> tags(@Param("id") long id);
+
+    /**
+     * 批量查询多篇文章关联的标签，按文章 ID 与标签 ID 升序排列。
+     *
+     * @param ids 文章 ID 列表
+     * @return 带文章 ID 的标签关联列表
+     */
+    List<ArticleTagRow> tagsByArticles(@Param("ids") Collection<Long> ids);
 
     /**
      * 加共享锁查询文章当前关联的标签 ID 列表，防止检查版本后标签被级联删除。
@@ -156,6 +175,14 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
      * @return 分类记录，不存在时返回 null
      */
     BlogCategory category(@Param("id") long id);
+
+    /**
+     * 批量查询多个分类记录
+     *
+     * @param ids 分类 ID 集合
+     * @return 分类列表
+     */
+    List<BlogCategory> categoriesByIds(@Param("ids") Collection<Long> ids);
 
     /**
      * 加共享锁检查分类是否存在
@@ -216,12 +243,43 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
     void clearTags(@Param("id") long id);
 
     /**
-     * 新增一条文章与标签的复合主键关联记录
+     * 批量新增文章与标签的复合主键关联记录
      *
      * @param id 文章 ID
-     * @param tag 标签 ID
+     * @param tags 标签 ID 集合
      */
-    void addTag(@Param("id") long id, @Param("tag") long tag);
+    void addTags(@Param("id") long id, @Param("tags") Collection<Long> tags);
+
+    /**
+     * 查询文章引用的全部站内文件 ID，按文件 ID 升序排列。
+     *
+     * @param id 文章 ID
+     * @return 文件 ID 列表
+     */
+    List<Long> fileIds(@Param("id") long id);
+
+    /**
+     * 批量查询多篇文章引用的去重站内文件 ID，按文件 ID 升序排列。
+     *
+     * @param ids 文章 ID 集合
+     * @return 文件 ID 列表
+     */
+    List<Long> fileIdsByArticles(@Param("ids") Collection<Long> ids);
+
+    /**
+     * 清空文章的全部站内文件引用关联
+     *
+     * @param id 文章 ID
+     */
+    void clearFiles(@Param("id") long id);
+
+    /**
+     * 批量新增文章与站内文件的复合主键关联记录
+     *
+     * @param id 文章 ID
+     * @param files 文件 ID 集合
+     */
+    void addFiles(@Param("id") long id, @Param("files") Collection<Long> files);
 
     /**
      * 原子累加一次公开文章阅读量，保持原更新时间不变。
@@ -298,6 +356,18 @@ public interface ArticleMapper extends BaseMapper<BlogArticle> {
         private Long articleId;
         private Long userId;
         private Long parentId;
+        private Long rootId;
         private Integer status;
+        private LocalDateTime createTime;
+    }
+
+    /**
+     * 批量查询文章标签时的关联投影
+     */
+    @Getter
+    @Setter
+    class ArticleTagRow extends BlogTag {
+
+        private Long articleId;
     }
 }

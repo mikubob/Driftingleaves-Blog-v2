@@ -2,8 +2,10 @@ package com.xuan.service.impl;
 
 import cn.hutool.core.bean.BeanUtil;
 import cn.hutool.core.collection.CollUtil;
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.xuan.annotation.ArticleCacheEvict;
 import com.xuan.annotation.OperationLog;
 import com.xuan.annotation.PublicCacheRead;
 import com.xuan.dto.AdminArticleQueryDTO;
@@ -17,6 +19,7 @@ import com.xuan.entity.BlogCategory;
 import com.xuan.entity.BlogFile;
 import com.xuan.entity.BlogTag;
 import com.xuan.exception.BusinessException;
+import com.xuan.mapper.ArticleMapper.ArticleTagRow;
 import com.xuan.mapper.ArticleMapper.CommentNode;
 import com.xuan.mapper.ArticleMapper;
 import com.xuan.mapper.UserMapper;
@@ -51,7 +54,6 @@ import com.xuan.vo.HotArticleVO;
 import com.xuan.vo.LikedArticleVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
@@ -69,13 +71,15 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 文章写入先锁操作者，再升序锁文件、锁文章；原会话要重查，正文、标签和成功日志一起提交。
+ * 文章写入先锁操作者，再升序锁文件、锁文章；原会话要重查，正文、标签、文件引用和成功日志一起提交。
  */
 @Service
 @RequiredArgsConstructor
@@ -143,12 +147,9 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         }
 
         // 3. 实时计算每篇文章的可见评论总数并补齐到结果中。
-        Map<Long, List<CommentNode>> comments = new HashMap<>();
-        for (CommentNode node : articles.commentNodesByArticles(ids)) {
-            comments.computeIfAbsent(node.getArticleId(), id -> new ArrayList<>()).add(node);
-        }
+        Map<Long, Long> commentCounts = batchCommentCounts(ids);
         for (ArticlePublicVO value : page.records()) {
-            value.setCommentCount(commentCount(comments.getOrDefault(value.getArticleId(), List.of())));
+            value.setCommentCount(commentCounts.getOrDefault(value.getArticleId(), 0L));
         }
         return page;
     }
@@ -171,7 +172,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 直接从数据库分页查询公开文章，评论数由列表入口按页补充。
+     * 直接从数据库分页查询公开文章并批量装载分类与标签，评论数由列表入口按页补充。
      */
     private PageResult<ArticlePublicVO> loadPublicArticles(ArticleQueryDTO query) {
         YearMonth month = query.getMonth() == null ? null : YearMonth.parse(query.getMonth());
@@ -189,8 +190,14 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 .until(upper(month))
                 .now(now())
                 .build();
-        return PageResult.from(articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter)
-                .convert(row -> publicView(row, new ArticlePublicVO())));
+        IPage<ArticleRow> raw = articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter);
+        if (raw.getRecords().isEmpty()) {
+            return PageResult.from(raw.convert(row -> new ArticlePublicVO()));
+        }
+        Map<Long, BlogCategory> categories = batchCategories(raw.getRecords());
+        Map<Long, List<BlogTag>> tags = batchTags(raw.getRecords());
+        return PageResult.from(raw.convert(row -> publicView(row, new ArticlePublicVO(),
+                categories.get(row.getCategoryId()), tags.getOrDefault(row.getArticleId(), List.of()))));
     }
 
     /**
@@ -218,19 +225,27 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 查询本人点赞的文章，使用当前点赞用户，不要求后台权限或点赞写权限。
+     * 查询本人点赞的文章，批量装载分类、标签与评论计数，不要求后台权限或点赞写权限。
      */
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResult<LikedArticleVO> likedArticles(PageQueryDTO query) {
         long actor = identities.requireCurrent();
         sessions.requireActive(sessions.currentToken(), actor);
-        return PageResult.from(articles.likedPage(new Page<>(query.getPage(), query.getPageSize()), actor, now())
-                .convert(row -> {
-                    ArticlePublicVO value = publicView(row, new ArticlePublicVO());
-                    value.setCommentCount(commentCount(row.getArticleId()));
-                    return LikedArticleVO.builder().likedAt(row.getLikedAt()).article(value).build();
-                }));
+        IPage<ArticleRow> raw = articles.likedPage(new Page<>(query.getPage(), query.getPageSize()), actor, now());
+        if (raw.getRecords().isEmpty()) {
+            return PageResult.from(raw.convert(row -> LikedArticleVO.builder().build()));
+        }
+        List<Long> ids = raw.getRecords().stream().map(ArticleRow::getArticleId).toList();
+        Map<Long, BlogCategory> categories = batchCategories(raw.getRecords());
+        Map<Long, List<BlogTag>> tags = batchTags(raw.getRecords());
+        Map<Long, Long> commentCounts = batchCommentCounts(ids);
+        return PageResult.from(raw.convert(row -> {
+            ArticlePublicVO value = publicView(row, new ArticlePublicVO(),
+                    categories.get(row.getCategoryId()), tags.getOrDefault(row.getArticleId(), List.of()));
+            value.setCommentCount(commentCounts.getOrDefault(row.getArticleId(), 0L));
+            return LikedArticleVO.builder().likedAt(row.getLikedAt()).article(value).build();
+        }));
     }
 
     /**
@@ -245,9 +260,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     public ArticlePublicDetailVO publicDetail(String slug) {
         LocalDateTime at = now();
         ArticleRow row = requireArticle(articles.publicBySlug(slug, at, false));
-        // 先读取正文、校验附件并查询关联和互动，最后原子累加阅读量，避免并发阅读被行锁串行化。
+        // 附件合法性已在文章保存时校验并落库到 blog_article_file，详情读取不再重复解析全文。
         String markdown = content(row.getArticleId()).getMarkdownContent();
-        resources.inspect(row.getArticleId(), markdown, row.getCoverUrl());
         ArticlePublicDetailVO cached = self.getObject().cachedPublicDetail(row, markdown);
         ArticlePublicDetailVO value = BeanUtil.copyProperties(cached, ArticlePublicDetailVO.class);
         value.setMarkdownContent(markdown);
@@ -259,14 +273,15 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态、正文和附件，并查询当前互动数。
+     * 缓存公开文章详情中不随互动变化的内容，每次请求仍重新检查文章公开状态和正文，并查询当前互动数。
      */
     @Override
     @Cacheable(cacheNames = "articleDetail", key = "T(com.xuan.utils.TokenUtils).digest(#row.slug + ':' + #row.articleId + ':' + #markdown + ':' + #row.coverUrl)")
     public ArticlePublicDetailVO cachedPublicDetail(ArticleRow row, String markdown) {
         LocalDateTime at = now();
         ArticleContent parsed = MarkdownUtils.article(markdown);
-        ArticlePublicDetailVO value = publicView(row, new ArticlePublicDetailVO());
+        BlogCategory category = row.getCategoryId() == null ? null : articles.category(row.getCategoryId());
+        ArticlePublicDetailVO value = publicView(row, new ArticlePublicDetailVO(), category, articles.tags(row.getArticleId()));
         value.setWordCount(parsed.wordCount());
         value.setReadingMinutes(parsed.readingMinutes());
         value.setPrevArticle(articles.adjacent(row, true, at));
@@ -293,7 +308,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 分页查询后台文章，先检查后台入口和查询权限，再由 SQL 限制作者；authorId 只能缩小范围，不能扩大 SELF。
+     * 分页查询后台文章并批量装载分类、标签与评论计数；authorId 只能缩小范围，不能扩大 SELF。
      *
      * @param query 后台分页、状态、回收站及字面关键词
      * @return 修改时间及ID倒序列表，不携带正文或版本
@@ -316,8 +331,17 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 .until(null)
                 .now(now())
                 .build();
-        return PageResult.from(articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter)
-                .convert(row -> adminView(row, new ArticleAdminVO())));
+        IPage<ArticleRow> raw = articles.articlePage(new Page<>(query.getPage(), query.getPageSize()), filter);
+        if (raw.getRecords().isEmpty()) {
+            return PageResult.from(raw.convert(row -> new ArticleAdminVO()));
+        }
+        List<Long> ids = raw.getRecords().stream().map(ArticleRow::getArticleId).toList();
+        Map<Long, BlogCategory> categories = batchCategories(raw.getRecords());
+        Map<Long, List<BlogTag>> tags = batchTags(raw.getRecords());
+        Map<Long, Long> commentCounts = batchCommentCounts(ids);
+        return PageResult.from(raw.convert(row -> adminView(row, new ArticleAdminVO(),
+                categories.get(row.getCategoryId()), tags.getOrDefault(row.getArticleId(), List.of()),
+                commentCounts.getOrDefault(row.getArticleId(), 0L))));
     }
 
     /**
@@ -341,20 +365,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "create", target = "blog:article", permission = "blog:article:create")
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public ArticleProfileVO create(ArticleWriteDTO request) {
         // 1. 锁住操作者后检查创建权限，再校验正文、封面和关联字典。
         users.lockById(sessions.currentUserId());
@@ -366,7 +377,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         // 2. 字典行也可能等待，拿齐锁后不能沿用等待前的 Token 和权限。
         requireAdmin("create");
 
-        // 3. 以当前用户创建草稿，正文、标签和成功审计在同一事务提交。
+        // 3. 以当前用户创建草稿，正文、标签、文件引用和成功审计在同一事务提交。
         BlogArticle article = BlogArticle.builder()
                 .authorId(sessions.currentUserId())
                 .status(0)
@@ -374,7 +385,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
                 .build();
         apply(article, request, references.coverUrl());
         articles.insert(article);
-        saveBody(article.getArticleId(), request, references.html());
+        saveBody(article.getArticleId(), request, references.html(), references.fileIds());
         return profile(articles.scoped(article.getArticleId(), null, false));
     }
 
@@ -389,20 +400,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "update", target = "blog:article", permission = "blog:article:update", targetIdArgument = 0)
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public ArticleProfileVO update(long id, ArticleWriteDTO request, String revision) {
         // 1. 校验请求内容并解析正文和封面中引用的站内文件。
         validateWrite(request);
@@ -420,28 +418,18 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         validateFiles(next.fileIds(), locked.files());
         lockAssociations(request.getCategoryId(), request.getTagIds());
 
-        // 4. 更新文章元数据与正文、标签关联，返回最新详情与版本。
+        // 4. 更新文章元数据与正文、标签及文件引用关联，返回最新详情与版本。
         apply(article, request, next.coverUrl());
         articles.updateArticle(article, requireAdmin("update"));
-        saveBody(id, request, next.html());
+        saveBody(id, request, next.html(), next.fileIds());
         return profile(articles.scoped(id, null, false));
     }
 
     /**
-     * 根据id发布或下架文章，加锁后检查发布权限范围和版本；状态只允许 0→1、1→2、2→1 或保持不变。
-     *
-     * @param id 目标文章
-     * @param status 入口保证1或2
-     * @param revision 当前业务版本
-     * @return 新详情及版本；首次发布写当前UTC，后续保留，回收站拒绝变更
+     * 对已加锁且通过校验的文章执行发布或下架写入；首次发布写当前 UTC，后续保留。
      */
-    private ArticleProfileVO changeStatus(long id, int status, String revision) {
-        // 1. 锁定文章并复核发布权限、版本及状态流转合法性。
-        LockedArticle locked = lockArticle(id, "publish", revision, Set.of());
-        validateStatusChange(id, status, locked);
-        ArticleRow article = locked.article();
-
-        // 2. 首次发布时记录 UTC 发布时间，更新文章状态。
+    private ArticleProfileVO applyStatusChange(ArticleRow article, int status) {
+        long id = article.getArticleId();
         boolean firstPublic = status == 1 && article.getPublishTime() == null && article.getVisibility() == 1;
         if (status == 1 && article.getPublishTime() == null) {
             article.setPublishTime(now());
@@ -449,7 +437,6 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         article.setStatus(status);
         articles.updateArticle(article, requireAdmin("publish"));
 
-        // 3. 首次公开发布提交后异步通知订阅者。
         if (firstPublic) {
             notifications.afterArticlePublished(id);
         }
@@ -475,50 +462,12 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 根据id将文章移入回收站，加锁后检查删除权限范围和版本，只更新回收时间，保留正文、关联和互动记录。
-     *
-     * @param id 目标文章
-     * @param revision 当前版本；已回收仍先检查该版本
+     * 对已加锁的回收站文章执行永久删除，先锁住全部评论并自底向上删除，最后删除文章主记录。
      */
-    private void recycle(long id, String revision) {
-        ArticleRow article = lockArticle(id, "delete", revision, Set.of()).article();
-        if (article.getDeletedAt() == null) {
-            article.setDeletedAt(now());
-            articles.updateArticle(article, requireAdmin("delete"));
-        }
-    }
-
-    /**
-     * 根据id恢复回收站文章，加锁后检查恢复权限范围、版本和回收状态，恢复后设为下架，不自动公开。
-     *
-     * @param id 目标文章
-     * @param revision 当前回收站版本
-     * @return 清空deletedAt后的详情，首次发布时间保留，非回收站409
-     */
-    private ArticleProfileVO restore(long id, String revision) {
-        ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
-        if (article.getDeletedAt() == null) {
-            throw new BusinessException(409, "STATE_CONFLICT", "文章不在回收站");
-        }
-        article.setDeletedAt(null);
-        article.setStatus(2);
-        articles.updateArticle(article, requireAdmin("restore"));
-        return profile(articles.scoped(id, null, false));
-    }
-
-    /**
-     * 永久删除文章前，先锁住全部评论，再从子回复到父评论依次删除；保留文件，成功日志和文章相关记录一起提交。
-     */
-    private void purge(long id, String revision) {
-        // 1. 锁定文章并确认位于回收站，随后锁定该文章全部评论并复核删除权限。
-        ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
-        if (article.getDeletedAt() == null) {
-            throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
-        }
+    private void applyPurge(long id) {
         List<CommentNode> nodes = articles.lockComments(id);
         requireArticle(articles.scoped(id, requireAdmin("purge"), false));
 
-        // 2. 拓扑排序自底向上从叶子回复删到顶层评论，避免外键约束冲突。
         Map<Long, Long> parents = new HashMap<>();
         Map<Long, Integer> children = new HashMap<>();
         for (CommentNode node : nodes) {
@@ -542,7 +491,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
             }
         }
 
-        // 3. 删除文章主记录（正文与标签关联随数据库级联清理，保留附件文件）。
+        // 正文、标签和文件引用关联随数据库外键级联清理，保留附件文件。
         articles.deleteScoped(id, requireAdmin("purge"));
     }
 
@@ -603,9 +552,8 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     private LockedArticle lockArticle(long id, String operation, String revision, Set<Long> added) {
         // 1. 锁住操作者，汇总新旧引用的站内文件并按 ID 升序加锁。
         users.lockById(sessions.currentUserId());
-        ArticleRow located = requireArticle(articles.scoped(id, requireAdmin(operation), false));
-        References old = resources.inspect(id, content(id).getMarkdownContent(), located.getCoverUrl());
-        Set<Long> locked = new TreeSet<>(old.fileIds());
+        requireArticle(articles.scoped(id, requireAdmin(operation), false));
+        Set<Long> locked = new TreeSet<>(articles.fileIds(id));
         locked.addAll(added);
         Map<Long, BlogFile> lockedFiles = new HashMap<>();
         for (long file : locked) {
@@ -623,8 +571,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
 
         // 3. 校验编辑版本并确认等锁期间未新增未锁定的文件引用。
         checkRevision(current, revision);
-        References latest = resources.inspect(id, content(id).getMarkdownContent(), current.getCoverUrl());
-        if (!locked.containsAll(latest.fileIds())) {
+        if (!locked.containsAll(articles.fileIds(id))) {
             throw new BusinessException(412, "REVISION_CONFLICT", "文章引用已变化，请重新获取");
         }
         return new LockedArticle(current, lockedFiles);
@@ -717,17 +664,23 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 调用方事务里完整替换正文和升序标签，插入或成功日志失败就整笔回滚。
+     * 调用方事务里完整替换正文、升序标签及站内文件引用，插入或成功日志失败就整笔回滚。
      *
      * @param id 新建或已锁定文章ID
      * @param request 完整正文和标签集合，字典已锁定
      * @param html 服务端生成并清理后的公开 HTML
+     * @param fileIds 正文与封面引用的站内文件ID集合
      */
-    private void saveBody(long id, ArticleWriteDTO request, String html) {
+    private void saveBody(long id, ArticleWriteDTO request, String html, Set<Long> fileIds) {
         articles.saveContent(id, request.getMarkdownContent(), html);
         articles.clearTags(id);
-        for (long tag : new TreeSet<>(request.getTagIds())) {
-            articles.addTag(id, tag);
+        Set<Long> sortedTags = new TreeSet<>(request.getTagIds());
+        if (!sortedTags.isEmpty()) {
+            articles.addTags(id, sortedTags);
+        }
+        articles.clearFiles(id);
+        if (CollUtil.isNotEmpty(fileIds)) {
+            articles.addFiles(id, new TreeSet<>(fileIds));
         }
     }
 
@@ -776,7 +729,10 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      * @return 后台Markdown及带引号版本，不包含计数、审计时间和根据正文计算的阅读信息
      */
     private ArticleProfileVO profile(ArticleRow row) {
-        ArticleAdminDetailVO value = adminView(row, new ArticleAdminDetailVO());
+        BlogCategory category = row.getCategoryId() == null ? null : articles.category(row.getCategoryId());
+        List<BlogTag> tags = articles.tags(row.getArticleId());
+        ArticleAdminDetailVO value = adminView(row, new ArticleAdminDetailVO(), category, tags,
+                commentCount(row.getArticleId()));
         String markdown = content(row.getArticleId()).getMarkdownContent();
         value.setCategoryId(row.getCategoryId());
         value.setTagIds(value.getTags().stream().map(BlogTag::getTagId).toList());
@@ -817,20 +773,75 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
+     * 按页批量查询文章所属分类，避免分页列表 N+1 查询。
+     */
+    private Map<Long, BlogCategory> batchCategories(List<ArticleRow> rows) {
+        Set<Long> categoryIds = new HashSet<>();
+        for (ArticleRow row : rows) {
+            if (row.getCategoryId() != null) {
+                categoryIds.add(row.getCategoryId());
+            }
+        }
+        if (categoryIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, BlogCategory> result = new HashMap<>();
+        for (BlogCategory category : articles.categoriesByIds(categoryIds)) {
+            result.put(category.getCategoryId(), category);
+        }
+        return result;
+    }
+
+    /**
+     * 按页批量查询文章关联标签，按标签 ID 升序分组。
+     */
+    private Map<Long, List<BlogTag>> batchTags(List<ArticleRow> rows) {
+        List<Long> ids = rows.stream().map(ArticleRow::getArticleId).toList();
+        if (ids.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, List<BlogTag>> result = new HashMap<>();
+        for (ArticleTagRow tag : articles.tagsByArticles(ids)) {
+            result.computeIfAbsent(tag.getArticleId(), key -> new ArrayList<>()).add(tag);
+        }
+        return result;
+    }
+
+    /**
+     * 按页批量统计多篇文章的公开可见评论数。
+     */
+    private Map<Long, Long> batchCommentCounts(List<Long> articleIds) {
+        if (CollUtil.isEmpty(articleIds)) {
+            return Map.of();
+        }
+        Map<Long, List<CommentNode>> byArticle = new HashMap<>();
+        for (CommentNode node : articles.commentNodesByArticles(articleIds)) {
+            byArticle.computeIfAbsent(node.getArticleId(), key -> new ArrayList<>()).add(node);
+        }
+        Map<Long, Long> counts = new HashMap<>();
+        for (var entry : byArticle.entrySet()) {
+            counts.put(entry.getKey(), commentCount(entry.getValue()));
+        }
+        return counts;
+    }
+
+    /**
      * 前台只返回约定字段，隐藏分类给 null，标签升序，作者不带邮箱或后台资料。
      *
      * @param row 符合公开条件的文章资料和作者公开资料
      * @param value 公开列表或详情模型
-     * @return 同一个只读事务或加锁事务中填充的公开字段，不输出Markdown源
+     * @param category 预加载的分类记录，可为空
+     * @param tags 预加载的标签列表
+     * @return 填充后的公开字段，不输出Markdown源
      */
-    private <T extends ArticlePublicVO> T publicView(ArticleRow row, T value) {
+    private <T extends ArticlePublicVO> T publicView(ArticleRow row, T value, BlogCategory category,
+            List<BlogTag> tags) {
         value.setArticleId(row.getArticleId());
         value.setAuthor(ArticlePublicVO.Author.builder()
                 .userId(row.getAuthorId())
                 .nickname(row.getAuthorNickname())
                 .avatar(row.getAuthorAvatar())
                 .build());
-        BlogCategory category = row.getCategoryId() == null ? null : articles.category(row.getCategoryId());
         value.setCategory(category == null || category.getStatus() != 1 ? null : ArticlePublicVO.Category.builder()
                 .categoryId(category.getCategoryId())
                 .categoryName(category.getCategoryName())
@@ -851,7 +862,7 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setPublishTime(row.getPublishTime());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
-        value.setTags(articles.tags(row.getArticleId()).stream()
+        value.setTags(tags.stream()
                 .map(tag -> ArticlePublicVO.Tag.builder()
                         .tagId(tag.getTagId())
                         .tagName(tag.getTagName())
@@ -865,16 +876,20 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
      *
      * @param row 当前操作SQL范围内的文章
      * @param value 后台列表或详情模型
+     * @param category 预加载的分类记录，可为空
+     * @param tags 预加载的标签列表
+     * @param commentCount 预统计的公开评论数
      * @return 含回收状态和真实互动计数的约定字段，不含作者私人资料
      */
-    private <T extends ArticleAdminVO> T adminView(ArticleRow row, T value) {
+    private <T extends ArticleAdminVO> T adminView(ArticleRow row, T value, BlogCategory category,
+            List<BlogTag> tags, long commentCount) {
         value.setArticleId(row.getArticleId());
         value.setAuthorId(row.getAuthorId());
         value.setAuthor(ArticleAdminVO.Author.builder()
                 .userId(row.getAuthorId())
                 .nickname(row.getAuthorNickname())
                 .build());
-        value.setCategory(row.getCategoryId() == null ? null : articles.category(row.getCategoryId()));
+        value.setCategory(category);
         value.setTitle(row.getTitle());
         value.setSlug(row.getSlug());
         value.setSummary(row.getSummary());
@@ -887,12 +902,12 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
         value.setAllowComment(row.getAllowComment());
         value.setViewCount(row.getViewCount());
         value.setLikeCount(row.getLikeCount());
-        value.setCommentCount(commentCount(row.getArticleId()));
+        value.setCommentCount(commentCount);
         value.setPublishTime(row.getPublishTime());
         value.setDeletedAt(row.getDeletedAt());
         value.setCreateTime(row.getCreateTime());
         value.setUpdateTime(row.getUpdateTime());
-        value.setTags(articles.tags(row.getArticleId()));
+        value.setTags(tags);
         return value;
     }
 
@@ -935,164 +950,123 @@ public class ArticleServiceImpl extends ServiceImpl<ArticleMapper, BlogArticle> 
     }
 
     /**
-     * 批量发布或下架文章，先锁住并检查全部目标，版本按原选择顺序返回。
+     * 批量发布或下架文章，先锁住并检查全部目标，第二轮直接复用已加锁实体写入，版本按原选择顺序返回。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-status", target = "blog:article", permission = "blog:article:publish")
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "publish");
+        Map<Long, LockedArticle> lockedArticles = new LinkedHashMap<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             LockedArticle locked = lockArticle(id, "publish", item.getRevision(), Set.of());
             validateStatusChange(id, status, locked);
+            lockedArticles.put(id, locked);
         }
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            versions.put(id, changeStatus(id, status, item.getRevision()).getRevision());
+        for (var entry : lockedArticles.entrySet()) {
+            versions.put(entry.getKey(), applyStatusChange(entry.getValue().article(), status).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
 
     /**
-     * 批量将文章移入回收站，先锁住并检查全部目标，任一失败则整批回滚。
+     * 批量将文章移入回收站，先锁住并检查全部目标，第二轮直接复用已加锁实体写入，任一失败则整批回滚。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-delete", target = "blog:article", permission = "blog:article:delete")
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public void recycleBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "delete");
+        List<ArticleRow> lockedArticles = new ArrayList<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
-            String revision = item.getRevision();
-            lockArticle(id, "delete", revision, Set.of());
+            lockedArticles.add(lockArticle(id, "delete", item.getRevision(), Set.of()).article());
         }
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            recycle(id, item.getRevision());
+        LocalDateTime deletedAt = now();
+        for (ArticleRow article : lockedArticles) {
+            if (article.getDeletedAt() == null) {
+                article.setDeletedAt(deletedAt);
+                articles.updateArticle(article, requireAdmin("delete"));
+            }
         }
     }
 
     /**
-     * 批量恢复回收站文章，先锁住并检查全部目标，版本按原选择顺序返回。
+     * 批量恢复回收站文章，先锁住并检查全部目标，第二轮直接复用已加锁实体写入，版本按原选择顺序返回。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-restore", target = "blog:article", permission = "blog:article:restore")
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public BatchVersionsVO restoreBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "restore");
+        List<ArticleRow> lockedArticles = new ArrayList<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
-            String revision = item.getRevision();
-            ArticleRow article = lockArticle(id, "restore", revision, Set.of()).article();
+            ArticleRow article = lockArticle(id, "restore", item.getRevision(), Set.of()).article();
             if (article.getDeletedAt() == null) {
                 throw new BusinessException(409, "STATE_CONFLICT", "文章不在回收站");
             }
+            lockedArticles.add(article);
         }
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            versions.put(id, restore(id, item.getRevision()).getRevision());
+        for (ArticleRow article : lockedArticles) {
+            article.setDeletedAt(null);
+            article.setStatus(2);
+            articles.updateArticle(article, requireAdmin("restore"));
+            versions.put(article.getArticleId(), profile(articles.scoped(article.getArticleId(), null, false)).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }
 
     /**
-     * 批量永久删除回收站文章，先锁住并检查全部目标，任一失败则整批回滚。
+     * 批量永久删除回收站文章，先锁住并检查全部目标，第二轮直接复用已加锁实体删除，任一失败则整批回滚。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     @OperationLog(type = "batch-purge", target = "blog:article", permission = "blog:article:purge")
-    @Caching(evict = {
-            @CacheEvict(cacheNames = "articles", allEntries = true),
-            @CacheEvict(cacheNames = "search", allEntries = true),
-            @CacheEvict(cacheNames = "articleDetail", allEntries = true),
-            @CacheEvict(cacheNames = "archives", allEntries = true),
-            @CacheEvict(cacheNames = "rankings", allEntries = true),
-            @CacheEvict(cacheNames = "categories", allEntries = true),
-            @CacheEvict(cacheNames = "tags", allEntries = true),
-            @CacheEvict(cacheNames = "authors", allEntries = true),
-            @CacheEvict(cacheNames = "statistics", allEntries = true),
-            @CacheEvict(cacheNames = "rss", allEntries = true),
-            @CacheEvict(cacheNames = "sitemap", allEntries = true),
-            @CacheEvict(cacheNames = "comments", allEntries = true)
-    })
+    @ArticleCacheEvict
     public void purgeBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         lockBatchFiles(sorted, "purge");
+        List<Long> lockedIds = new ArrayList<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
-            String revision = item.getRevision();
-            ArticleRow article = lockArticle(id, "purge", revision, Set.of()).article();
+            ArticleRow article = lockArticle(id, "purge", item.getRevision(), Set.of()).article();
             if (article.getDeletedAt() == null) {
                 throw new BusinessException(409, "STATE_CONFLICT", "仅允许永久删除回收站文章");
             }
+            lockedIds.add(id);
         }
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            purge(id, item.getRevision());
+        for (long id : lockedIds) {
+            applyPurge(id);
         }
     }
 
     /**
-     * 多篇文章先锁全部引用文件，再锁文章，保持文件引用与删除的既有锁顺序。
+     * 多篇文章先按关联表批量查出全部引用文件并升序加锁，再锁文章，保持文件引用与删除的既有锁顺序。
      */
     private void lockBatchFiles(List<BatchItemDTO> items, String operation) {
         users.lockById(sessions.currentUserId());
-        Set<Long> files = new TreeSet<>();
+        Long scope = requireAdmin(operation);
+        List<Long> articleIds = new ArrayList<>(items.size());
         for (var item : items) {
             long id = IdUtils.parse(item.getId());
-            ArticleRow row = requireArticle(articles.scoped(id, requireAdmin(operation), false));
-            files.addAll(resources.inspect(id, content(id).getMarkdownContent(), row.getCoverUrl()).fileIds());
+            requireArticle(articles.scoped(id, scope, false));
+            articleIds.add(id);
         }
-        for (long id : files) {
-            articles.lockFile(id);
+        if (articleIds.isEmpty()) {
+            return;
+        }
+        for (long fileId : articles.fileIdsByArticles(articleIds)) {
+            articles.lockFile(fileId);
         }
     }
 

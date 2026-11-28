@@ -42,6 +42,10 @@ public class BlogComment implements Serializable {
     @TableField("parent_id")
     private Long parentId;
 
+    // 所属会话根评论ID（根评论为 null）
+    @TableField("root_id")
+    private Long rootId;
+
     // 纯文本或只保留安全标签的内容
     @TableField("content")
     private String content;

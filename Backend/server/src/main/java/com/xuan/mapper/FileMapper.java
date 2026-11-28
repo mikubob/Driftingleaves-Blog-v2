@@ -4,11 +4,8 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.FileQueryDTO;
 import com.xuan.entity.BlogFile;
-import lombok.Data;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
-
-import java.util.List;
 
 /**
  * 文件数据访问接口
@@ -40,21 +37,19 @@ public interface FileMapper extends BaseMapper<BlogFile> {
     int deleteScoped(@Param("id") long id, @Param("uploader") Long uploader);
 
     /**
-     * 按文章主键游标分批扫描全部文章封面与正文，用于检查文件引用。
+     * 检查文件是否仍被任意文章引用，走 blog_article_file 索引查询。
      *
-     * @param after 上一批最大文章 ID
-     * @return 文章引用信息列表
+     * @param fileId 文件 ID
+     * @return 是否存在文章引用
      */
-    List<ArticleReference> referencesAfter(@Param("after") long after);
+    boolean hasArticleReference(@Param("fileId") long fileId);
 
     /**
-     * 文章文件引用检查模型
+     * 检查指定文章是否引用了指定文件，走 blog_article_file 主键查询。
+     *
+     * @param articleId 文章 ID
+     * @param fileId 文件 ID
+     * @return 是否存在引用关系
      */
-    @Data
-    class ArticleReference {
-
-        private Long articleId;
-        private String coverUrl;
-        private String markdownContent;
-    }
+    boolean hasArticleFileReference(@Param("articleId") long articleId, @Param("fileId") long fileId);
 }

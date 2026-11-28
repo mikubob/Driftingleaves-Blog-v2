@@ -31,7 +31,9 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * PUBLIC变更即时反映在Feed与地图，不维护另一个缓存或计数。
@@ -68,14 +70,23 @@ public class FeedServiceImpl implements IFeedService {
                 "<rss version=\"2.0\" xmlns:content=\"http://purl.org/rss/1.0/modules/content/\"><channel>");
         xml.append(tag("title", value.path("title").asString())).append(tag("link", base))
                 .append(tag("description", value.path("description").asString()));
-        for (BlogArticle row : feeds.recent(now())) {
+        List<BlogArticle> recent = feeds.recent(now());
+        Map<Long, BlogArticleContent> contents = new HashMap<>();
+        if (CollUtil.isNotEmpty(recent)) {
+            List<Long> ids = recent.stream().map(BlogArticle::getArticleId).toList();
+            for (BlogArticleContent item : articles.contentsByIds(ids)) {
+                contents.put(item.getArticleId(), item);
+            }
+        }
+        for (BlogArticle row : recent) {
             String link = sites.articleUrl(row.getSlug());
             xml.append("<item>").append(tag("title", row.getTitle())).append(tag("link", link))
                     .append("<guid isPermaLink=\"true\">").append(escape(link)).append("</guid>")
                     .append(tag("pubDate",
                             DateTimeFormatter.RFC_1123_DATE_TIME.format(row.getPublishTime().atOffset(ZoneOffset.UTC))))
                     .append(tag("description", row.getSummary()))
-                    .append(tag("content:encoded", articleHtml(row, link))).append("</item>");
+                    .append(tag("content:encoded", articleHtml(row, contents.get(row.getArticleId()), link)))
+                    .append("</item>");
         }
         return xml.append("</channel></rss>").toString();
     }
@@ -152,14 +163,15 @@ public class FeedServiceImpl implements IFeedService {
     }
 
     /**
-     * 复用文章详情的正文和附件检查，订阅地址使用公开配置，不增加阅读量。
+     * 优先复用已渲染清理的 HTML 缓存，缺失时回退重新解析正文，并将站内与相对链接补全为绝对地址。
      */
-    private String articleHtml(BlogArticle row, String link) {
-        BlogArticleContent content = articles.content(row.getArticleId());
+    private String articleHtml(BlogArticle row, BlogArticleContent content, String link) {
         if (content == null) {
             throw new BusinessException(503, "SERVICE_UNAVAILABLE", "文章正文不可用");
         }
-        String html = attachments.inspect(row.getArticleId(), content.getMarkdownContent(), row.getCoverUrl()).html();
+        String html = StrUtil.isNotBlank(content.getHtmlContent())
+                ? content.getHtmlContent()
+                : attachments.inspect(row.getArticleId(), content.getMarkdownContent(), row.getCoverUrl()).html();
         Document document = Jsoup.parseBodyFragment(html, link);
         for (Element element : document.select("a[href], img[src]")) {
             String attribute = element.normalName().equals("a") ? "href" : "src";

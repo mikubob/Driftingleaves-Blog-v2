@@ -190,6 +190,7 @@ CREATE TABLE blog_article (
   KEY idx_article_public (status, visibility, deleted_at, is_top DESC, publish_time DESC, article_id DESC),
   KEY idx_article_category (category_id, status, visibility, deleted_at, publish_time DESC, article_id DESC),
   KEY idx_article_author (author_id, deleted_at, status, create_time DESC, article_id DESC),
+  KEY idx_article_admin_update (deleted_at, is_top DESC, update_time DESC, article_id DESC),
   CONSTRAINT fk_article_author FOREIGN KEY (author_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_article_category FOREIGN KEY (category_id) REFERENCES blog_category (category_id) ON DELETE SET NULL,
   CONSTRAINT ck_article_type CHECK (article_type IN (1, 2, 3)),
@@ -224,6 +225,7 @@ CREATE TABLE blog_comment (
   article_id BIGINT NOT NULL COMMENT '所属文章ID，关联blog_article.article_id',
   user_id BIGINT NOT NULL COMMENT '仅登录用户评论',
   parent_id BIGINT DEFAULT NULL COMMENT '被回复的评论ID，必须属于同一文章',
+  root_id BIGINT DEFAULT NULL COMMENT '所属会话根评论ID；根评论为NULL，回复指向同文章顶层根评论ID',
   content TEXT NOT NULL COMMENT '纯文本或经过白名单过滤的内容',
   location VARCHAR(192) DEFAULT NULL COMMENT '发布时的省市或国家，不含完整IP',
   user_agent_os VARCHAR(64) DEFAULT NULL COMMENT '发布时的操作系统类型',
@@ -235,11 +237,14 @@ CREATE TABLE blog_comment (
   UNIQUE KEY uk_comment_article (comment_id, article_id),
   KEY idx_comment_article (article_id, status, create_time, comment_id),
   KEY idx_comment_parent (parent_id, article_id),
+  KEY idx_comment_root (article_id, root_id, create_time, comment_id),
   KEY idx_comment_user (user_id, create_time DESC),
   KEY idx_comment_review (status, create_time, comment_id),
   CONSTRAINT fk_comment_article FOREIGN KEY (article_id) REFERENCES blog_article (article_id) ON DELETE RESTRICT,
   CONSTRAINT fk_comment_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_comment_parent FOREIGN KEY (parent_id, article_id) REFERENCES blog_comment (comment_id, article_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_comment_root FOREIGN KEY (root_id, article_id) REFERENCES blog_comment (comment_id, article_id) ON DELETE RESTRICT,
+  CONSTRAINT ck_comment_root CHECK ((parent_id IS NULL AND root_id IS NULL) OR (parent_id IS NOT NULL AND root_id IS NOT NULL)),
   CONSTRAINT ck_comment_status CHECK (status IN (0, 1, 2)),
   CONSTRAINT ck_comment_content CHECK (CHAR_LENGTH(TRIM(content)) BETWEEN 1 AND 2000)
 ) ENGINE=InnoDB COMMENT='文章评论与回复；删除时物理删除目标及全部子回复';
@@ -304,6 +309,15 @@ CREATE TABLE blog_file (
   )),
   CONSTRAINT fk_file_uploader FOREIGN KEY (uploader_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT
 ) ENGINE=InnoDB COMMENT='上传文件元数据；私有对象由服务端鉴权后签发地址';
+
+CREATE TABLE blog_article_file (
+  article_id BIGINT NOT NULL COMMENT '文章ID，关联blog_article.article_id',
+  file_id BIGINT NOT NULL COMMENT '文件ID，关联blog_file.file_id',
+  PRIMARY KEY (article_id, file_id),
+  KEY idx_article_file_file (file_id, article_id),
+  CONSTRAINT fk_article_file_article FOREIGN KEY (article_id) REFERENCES blog_article (article_id) ON DELETE CASCADE,
+  CONSTRAINT fk_article_file_file FOREIGN KEY (file_id) REFERENCES blog_file (file_id) ON DELETE RESTRICT
+) ENGINE=InnoDB COMMENT='文章正文与封面引用的站内文件；删除文章时级联清理，删除文件时由引用检查及外键保护';
 
 CREATE TABLE blog_site_config (
   config_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL COMMENT '唯一配置键，如site、comment',
@@ -390,6 +404,7 @@ CREATE TABLE blog_message (
   message_id BIGINT NOT NULL AUTO_INCREMENT COMMENT '留言ID',
   user_id BIGINT NOT NULL COMMENT '留言或回复作者，从当前登录会话读取',
   parent_id BIGINT DEFAULT NULL COMMENT '被回复的留言ID；创建后不可修改，应用防止环',
+  root_id BIGINT DEFAULT NULL COMMENT '所属会话根留言ID；根留言为NULL，回复指向顶层根留言ID',
   content TEXT NOT NULL COMMENT '纯文本或Markdown原文',
   location VARCHAR(192) DEFAULT NULL COMMENT '发布时的省市或国家，不含完整IP',
   user_agent_os VARCHAR(64) DEFAULT NULL COMMENT '发布时的操作系统类型',
@@ -403,10 +418,13 @@ CREATE TABLE blog_message (
   update_time DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '最后更新时间',
   PRIMARY KEY (message_id),
   KEY idx_message_public (parent_id, status, is_secret, create_time, message_id),
+  KEY idx_message_root (root_id, create_time, message_id),
   KEY idx_message_user (user_id, create_time DESC, message_id),
   KEY idx_message_review (status, create_time, message_id),
   CONSTRAINT fk_message_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE RESTRICT,
   CONSTRAINT fk_message_parent FOREIGN KEY (parent_id) REFERENCES blog_message (message_id) ON DELETE RESTRICT,
+  CONSTRAINT fk_message_root FOREIGN KEY (root_id) REFERENCES blog_message (message_id) ON DELETE RESTRICT,
+  CONSTRAINT ck_message_root CHECK ((parent_id IS NULL AND root_id IS NULL) OR (parent_id IS NOT NULL AND root_id IS NOT NULL)),
   CONSTRAINT ck_message_status CHECK (status IN (0, 1, 2)),
   CONSTRAINT ck_message_format CHECK (content_format IN (0, 1)),
   CONSTRAINT ck_message_secret CHECK (is_secret IN (0, 1)),
@@ -506,6 +524,8 @@ CREATE TABLE blog_page_view (
   KEY idx_view_user (user_id, view_time DESC),
   KEY idx_view_article (article_id, view_time DESC),
   KEY idx_view_site_path (site_code, page_path(191), view_time),
+  KEY idx_view_site_time_visitor (site_code, view_time, visitor_id),
+  KEY idx_view_site_time_article (site_code, view_time, article_id),
   CONSTRAINT fk_view_visitor FOREIGN KEY (visitor_id) REFERENCES blog_visitor (visitor_id) ON DELETE SET NULL,
   CONSTRAINT fk_view_user FOREIGN KEY (user_id) REFERENCES sys_user (user_id) ON DELETE SET NULL,
   CONSTRAINT fk_view_article FOREIGN KEY (article_id) REFERENCES blog_article (article_id) ON DELETE SET NULL,

@@ -38,14 +38,23 @@
         </if>
     </delete>
 
-    <!-- 按主键游标分批扫描全部状态文章的封面与正文，用于检查文件引用 -->
-    <select id="referencesAfter" resultType="com.xuan.mapper.FileMapper$ArticleReference">
-        SELECT a.article_id, a.cover_url, c.markdown_content
-        FROM blog_article a
-        LEFT JOIN blog_article_content c ON c.article_id = a.article_id
-        WHERE a.article_id &gt; #{after}
-        ORDER BY a.article_id
-        LIMIT 100
+    <!-- 检查文件是否仍被任意文章引用，走 idx_article_file_file 索引 -->
+    <select id="hasArticleReference" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM blog_article_file
+            WHERE file_id = #{fileId}
+        )
+    </select>
+
+    <!-- 检查指定文章是否引用了指定文件，走主键精确查找 -->
+    <select id="hasArticleFileReference" resultType="boolean">
+        SELECT EXISTS (
+            SELECT 1
+            FROM blog_article_file
+            WHERE article_id = #{articleId}
+              AND file_id = #{fileId}
+        )
     </select>
 
 </mapper>

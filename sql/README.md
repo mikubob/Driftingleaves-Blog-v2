@@ -25,7 +25,8 @@ ALTER TABLE blog_visitor
 ## 文件与执行
 
 - [demo_data.sql](demo_data.sql)：V2 通用演示数据，含文章、评论/留言回复链、属地与设备、访客与浏览统计、友链、隐藏音乐、订阅和虚构日志；只补充缺失的演示记录，不覆盖已有数据。数量、初始化要求、导入方法和验证见 [DEMO_DATA.md](DEMO_DATA.md)。
-- [drifting_leaves_v2.sql](drifting_leaves_v2.sql)：29 张表、基础角色、指定的初始管理员、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
+- [drifting_leaves_v2.sql](drifting_leaves_v2.sql)：30 张表、基础角色、指定的初始管理员、权限字典、后台菜单和站点配置；这是要求空库的初始化基线，不是增量迁移脚本。
+- [migrations/20261128_phase4_indexes_and_relations.sql](migrations/20261128_phase4_indexes_and_relations.sql)：已有 V2 库的增量迁移脚本（在目标库执行一次），新增 `blog_article_file` 关联表、为 `blog_comment` 与 `blog_message` 增加 `root_id` 列与会话树索引、为 `blog_article` 与 `blog_page_view` 补充复合索引。
 - [cv_demo_data.sql](cv_demo_data.sql)：已有 V2 表结构上的虚构简历演示数据，目标库为 `driftingleaves`，补充个人资料、社交链接、教育、工作、项目经历和技能；可重复执行，跳过已有个人资料、相同 URL 的社交链接、同类型同标题的经历及同名技能，不覆盖这些记录。
 
 在 MySQL 客户端执行（路径可按实际位置修改）：
@@ -59,7 +60,7 @@ SOURCE D:/CodingFiles/Blog/DriftingLeavesV2/sql/cv_demo_data.sql;
 | 角色 | `sys_role`、`sys_user_role` | 多角色、状态、内容数据范围 |
 | 接口权限 | `sys_permission`、`sys_role_permission` | 独立权限码及角色授权，接口可复用同一权限码 |
 | 后台菜单 | `sys_menu`、`sys_role_menu` | 目录、页面、按钮树及角色可访问节点 |
-| 文章 | `blog_article`、`blog_article_content` | 元数据、正文一对一；草稿/发布/下架、公开/私密、回收站 |
+| 文章 | `blog_article`、`blog_article_content`、`blog_article_file` | 元数据、正文一对一、文章引用站内文件关联；草稿/发布/下架、公开/私密、回收站 |
 | 分类标签 | `blog_category`、`blog_tag`、`blog_article_tag` | 一篇文章一个可选分类、多个标签 |
 | 互动 | `blog_comment`、`blog_article_like` | 登录评论、同文章回复、审核、每用户每文章一次点赞 |
 | 站点 | `blog_friend_link`、`blog_friend_link_quota`、`blog_file`、`blog_site_config` | 友链和申请额度、文件元数据、显式可公开的配置 |
@@ -92,6 +93,8 @@ erDiagram
     blog_article ||--o{ blog_article_like : likes
     sys_user ||--o{ blog_article_like : likes
     sys_user ||--o{ blog_file : uploads
+    blog_article ||--o{ blog_article_file : attaches
+    blog_file ||--o{ blog_article_file : linked
 ```
 
 `blog_article_content` 的外键只保证正文对应文章，无法反向保证每篇文章都有正文；创建/编辑文章、正文与标签必须在一个业务事务中完成。
@@ -181,7 +184,7 @@ WHERE u.user_id = ? AND u.status = 1;
 - 普通启停状态统一为 `0禁用/隐藏、1启用/展示`，文章、评论、友链的流程状态在字段注释中分别定义。
 - 仅文章使用 `deleted_at` 回收站；账号停用、角色/权限启停，关联表直接物理增删，不叠加逻辑删除标志。回收站文章的 slug 不复用，恢复时不会与新文章冲突。
 - 外键使用 RESTRICT 保护作者、评论、菜单引用；纯关联表及文章正文随主记录 CASCADE 删除；分类删除后文章分类 SET NULL。文章永久清理须先按回复链从叶子清理评论，再删除文章；应用普通删除只写回收站时间。
-- 评论父节点使用 `(parent_id, article_id)` 复合外键，阻止跨文章回复；父节点写入时由服务端验证已通过审核且可见，回复关系创建后不允许修改，避免环。删除评论时物理移除目标及全部子回复；前台只展示审核通过且祖先可见的内容。
+- 评论父节点使用 `(parent_id, article_id)` 复合外键，根节点使用 `(root_id, article_id)` 复合外键与 `idx_comment_root` 索引（根评论 `root_id` 为 `NULL`，回复指向同文章顶层根评论 ID），阻止跨文章回复并支持按会话树查询；父节点写入时由服务端验证已通过审核且可见，回复关系创建后不允许修改，避免环。删除评论时物理移除目标及全部子回复；前台只展示审核通过且祖先可见的内容。
 - 点赞/用户角色/角色菜单/角色权限/文章标签都用复合主键去重；不维护易失真的点赞数和评论数副本，按明细统计。浏览数可原子递增。
 - 评论与点赞使用真实明细：评论写入先锁操作者、comment配置、文章及评论；点赞先锁操作者再锁文章，全部写事务为 READ COMMITTED。锁后复核原Token、独立操作范围和状态。comment配置只接受不公开、最多16KiB的两项布尔值enabled/reviewRequired，缺失或格式异常返回503；后台提供配置维护HTTP，与评论写入锁同一配置行。公开评论、回复入口和文章计数共用完整祖先链；0/2隐藏分支，计数只含审核通过且全部祖先可见的记录。本人删除固定user_id，后台query/review/moderate分别在SQL限制文章author_id。审核版本包含持久化业务字段，两种分支删除无版本要求。blog_article_like按完整复合键幂等插入/删除，文章列表、详情和热门榜实时取数，互动不改变文章X-Revision。
 - 时间统一由应用/连接使用约定时区（建议 UTC）；DATETIME 不自动转换时区，部署时连接、应用和展示要保持一致。发布状态必须有发布时间；禁止未来发布时间的规则由发布接口验证。

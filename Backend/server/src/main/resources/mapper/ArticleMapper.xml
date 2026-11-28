@@ -239,6 +239,16 @@
         WHERE article_id = #{id}
     </select>
 
+    <!-- 批量查询多篇文章的正文内容 -->
+    <select id="contentsByIds" resultType="com.xuan.entity.BlogArticleContent">
+        SELECT *
+        FROM blog_article_content
+        WHERE article_id IN
+        <foreach collection="ids" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+    </select>
+
     <!-- 查询文章关联的标签列表，按标签 ID 升序排列 -->
     <select id="tags" resultType="com.xuan.entity.BlogTag">
         SELECT t.*
@@ -246,6 +256,18 @@
         JOIN blog_article_tag r ON r.tag_id = t.tag_id
         WHERE r.article_id = #{id}
         ORDER BY t.tag_id
+    </select>
+
+    <!-- 批量查询多篇文章关联的标签，按文章 ID 与标签 ID 升序排列 -->
+    <select id="tagsByArticles" resultType="com.xuan.mapper.ArticleMapper$ArticleTagRow">
+        SELECT r.article_id, t.*
+        FROM blog_article_tag r
+        JOIN blog_tag t ON t.tag_id = r.tag_id
+        WHERE r.article_id IN
+        <foreach collection="ids" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY r.article_id, t.tag_id
     </select>
 
     <!-- 加共享锁查询文章当前关联的标签 ID，防止版本检查后标签被级联删除 -->
@@ -263,6 +285,16 @@
         SELECT *
         FROM blog_category
         WHERE category_id = #{id}
+    </select>
+
+    <!-- 批量查询多个分类记录 -->
+    <select id="categoriesByIds" resultType="com.xuan.entity.BlogCategory">
+        SELECT *
+        FROM blog_category
+        WHERE category_id IN
+        <foreach collection="ids" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
     </select>
 
     <!-- 加共享锁检查分类是否存在，防止保存文章期间分类被删除 -->
@@ -336,10 +368,47 @@
         WHERE article_id = #{id}
     </delete>
 
-    <!-- 新增一条文章与标签的复合主键关联 -->
-    <insert id="addTag">
+    <!-- 批量新增文章与标签的复合主键关联 -->
+    <insert id="addTags">
         INSERT INTO blog_article_tag (article_id, tag_id)
-        VALUES (#{id}, #{tag})
+        VALUES
+        <foreach collection="tags" item="tag" separator=", ">
+            (#{id}, #{tag})
+        </foreach>
+    </insert>
+
+    <!-- 查询文章引用的全部站内文件 ID，按文件 ID 升序排列 -->
+    <select id="fileIds" resultType="long">
+        SELECT file_id
+        FROM blog_article_file
+        WHERE article_id = #{id}
+        ORDER BY file_id
+    </select>
+
+    <!-- 批量查询多篇文章引用的去重站内文件 ID，按文件 ID 升序排列 -->
+    <select id="fileIdsByArticles" resultType="long">
+        SELECT DISTINCT file_id
+        FROM blog_article_file
+        WHERE article_id IN
+        <foreach collection="ids" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY file_id
+    </select>
+
+    <!-- 清空文章的全部站内文件引用关联 -->
+    <delete id="clearFiles">
+        DELETE FROM blog_article_file
+        WHERE article_id = #{id}
+    </delete>
+
+    <!-- 批量新增文章与站内文件的复合主键关联 -->
+    <insert id="addFiles">
+        INSERT INTO blog_article_file (article_id, file_id)
+        VALUES
+        <foreach collection="files" item="file" separator=", ">
+            (#{id}, #{file})
+        </foreach>
     </insert>
 
     <!-- 原子累加公开文章阅读量，保持原 update_time 不变 -->

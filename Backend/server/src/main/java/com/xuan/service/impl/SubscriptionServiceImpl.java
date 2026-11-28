@@ -44,6 +44,7 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -237,11 +238,9 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     }
 
     /**
-     * 根据id修改订阅状态。
+     * 对已加锁且通过版本与邮箱校验的订阅执行状态变更并返回最新资料与版本。
      */
-    private ResourceVersion<BlogRssSubscription> changeStatus(long id, int status, String revision) {
-        BlogRssSubscription row = lockAdmin(id, "update");
-        RevisionUtils.check(profile(row).getRevision(), revision);
+    private ResourceVersion<BlogRssSubscription> applyStatusChange(BlogRssSubscription row, int status) {
         if (row.getStatus() != status) {
             if (status == 2) {
                 cancel(row);
@@ -249,11 +248,11 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
                 row.setStatus(1);
                 row.setSubscribeTime(now());
                 row.setUnsubscribeTime(null);
-                tickets.newDeliveryRound(id);
+                tickets.newDeliveryRound(row.getSubscriptionId());
                 subscriptions.replace(row);
             }
         }
-        return profile(subscriptions.selectById(id));
+        return profile(subscriptions.selectById(row.getSubscriptionId()));
     }
 
     /** 后台只能启用当前账号仍在使用且已验证的邮箱。 */
@@ -411,7 +410,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     }
 
     /**
-     * 批量修改订阅状态，先锁住全部所属用户并检查权限和版本，再更新状态及邮件轮次。
+     * 批量修改订阅状态，先锁住全部所属用户并检查权限和版本，第二轮直接复用已加锁实体更新状态及邮件轮次。
      */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -419,6 +418,7 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
     public BatchVersionsVO changeStatusBatch(List<BatchItemDTO> items, int status) {
         var sorted = BatchUtils.sorted(items);
         lockBatchUsers(sorted, "update");
+        Map<Long, BlogRssSubscription> lockedRows = new LinkedHashMap<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             String revision = item.getRevision();
@@ -427,11 +427,11 @@ public class SubscriptionServiceImpl extends ServiceImpl<SubscriptionMapper, Blo
             if (status == 1) {
                 requireVerifiedCurrentEmail(row);
             }
+            lockedRows.put(id, row);
         }
         Map<Long, String> versions = new HashMap<>();
-        for (var item : sorted) {
-            long id = IdUtils.parse(item.getId());
-            versions.put(id, changeStatus(id, status, item.getRevision()).getRevision());
+        for (var entry : lockedRows.entrySet()) {
+            versions.put(entry.getKey(), applyStatusChange(entry.getValue(), status).getRevision());
         }
         return BatchUtils.versions(items, versions);
     }

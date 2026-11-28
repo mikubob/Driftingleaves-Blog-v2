@@ -29,88 +29,84 @@
         </if>
     </sql>
 
-    <!-- 查询博客端公开统计汇总 -->
+    <!-- 查询博客端公开统计汇总，合并同表聚合减少扫描次数 -->
     <select id="publicStatistics" resultType="com.xuan.vo.PublicStatisticsVO">
         SELECT
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_article a
-                WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
-            ) AS CHAR) AS article_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_category
-                WHERE status = 1
-            ) AS CHAR) AS category_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_tag
-            ) AS CHAR) AS tag_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_page_view
-                WHERE site_code = 'blog'
-            ) AS CHAR) AS page_view_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_page_view
-                WHERE site_code = 'blog'
-                  AND view_time &gt;= #{today}
-                  AND view_time &lt; #{tomorrow}
-            ) AS CHAR) AS today_page_view_count,
-            CAST((
-                SELECT COUNT(DISTINCT visitor_id)
-                FROM blog_page_view
-                WHERE site_code = 'blog'
-            ) AS CHAR) AS visitor_count
+            CAST(a.article_count AS CHAR) AS article_count,
+            CAST(c.category_count AS CHAR) AS category_count,
+            CAST(t.tag_count AS CHAR) AS tag_count,
+            CAST(pv.page_view_count AS CHAR) AS page_view_count,
+            CAST(pv.today_page_view_count AS CHAR) AS today_page_view_count,
+            CAST(pv.visitor_count AS CHAR) AS visitor_count
+        FROM (
+            SELECT COUNT(*) AS article_count
+            FROM blog_article a
+            WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
+        ) a
+        CROSS JOIN (
+            SELECT COUNT(*) AS category_count
+            FROM blog_category
+            WHERE status = 1
+        ) c
+        CROSS JOIN (
+            SELECT COUNT(*) AS tag_count
+            FROM blog_tag
+        ) t
+        CROSS JOIN (
+            SELECT
+                COUNT(*) AS page_view_count,
+                COALESCE(SUM(CASE WHEN view_time &gt;= #{today} AND view_time &lt; #{tomorrow} THEN 1 ELSE 0 END), 0) AS today_page_view_count,
+                COUNT(DISTINCT visitor_id) AS visitor_count
+            FROM blog_page_view
+            WHERE site_code = 'blog'
+        ) pv
     </select>
 
-    <!-- 查询管理端统计总览 -->
+    <!-- 查询管理端统计总览，将同表标量子查询合并为单次条件聚合 -->
     <select id="overview" resultType="com.xuan.vo.AdminStatisticsVO">
         SELECT
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_page_view v
-                WHERE <include refid="viewsRange"/>
-            ) AS CHAR) AS page_view_count,
-            CAST((
-                SELECT COUNT(DISTINCT v.visitor_id)
-                FROM blog_page_view v
-                WHERE <include refid="viewsRange"/>
-            ) AS CHAR) AS visitor_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_visitor x
-                WHERE <include refid="firstRange"/>
-            ) AS CHAR) AS new_visitor_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_article
-                WHERE deleted_at IS NULL
-            ) AS CHAR) AS article_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_article a
-                WHERE <include refid="com.xuan.mapper.ArticleMapper.publicCondition"/>
-            ) AS CHAR) AS published_article_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_comment
-            ) AS CHAR) AS comment_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_message
-            ) AS CHAR) AS message_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_comment
-                WHERE status = 0
-            ) AS CHAR) AS pending_comment_count,
-            CAST((
-                SELECT COUNT(*)
-                FROM blog_message
-                WHERE status = 0
-            ) AS CHAR) AS pending_message_count
+            CAST(pv.page_view_count AS CHAR) AS page_view_count,
+            CAST(pv.visitor_count AS CHAR) AS visitor_count,
+            CAST(nv.new_visitor_count AS CHAR) AS new_visitor_count,
+            CAST(art.article_count AS CHAR) AS article_count,
+            CAST(art.published_article_count AS CHAR) AS published_article_count,
+            CAST(cmt.comment_count AS CHAR) AS comment_count,
+            CAST(msg.message_count AS CHAR) AS message_count,
+            CAST(cmt.pending_comment_count AS CHAR) AS pending_comment_count,
+            CAST(msg.pending_message_count AS CHAR) AS pending_message_count
+        FROM (
+            SELECT
+                COUNT(*) AS page_view_count,
+                COUNT(DISTINCT v.visitor_id) AS visitor_count
+            FROM blog_page_view v
+            WHERE <include refid="viewsRange"/>
+        ) pv
+        CROSS JOIN (
+            SELECT COUNT(*) AS new_visitor_count
+            FROM blog_visitor x
+            WHERE <include refid="firstRange"/>
+        ) nv
+        CROSS JOIN (
+            SELECT
+                COUNT(*) AS article_count,
+                COALESCE(SUM(CASE
+                    WHEN a.status = 1 AND a.visibility = 1 AND a.publish_time IS NOT NULL AND a.publish_time &lt;= #{now}
+                    THEN 1 ELSE 0 END), 0) AS published_article_count
+            FROM blog_article a
+            WHERE a.deleted_at IS NULL
+        ) art
+        CROSS JOIN (
+            SELECT
+                COUNT(*) AS comment_count,
+                COALESCE(SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END), 0) AS pending_comment_count
+            FROM blog_comment
+        ) cmt
+        CROSS JOIN (
+            SELECT
+                COUNT(*) AS message_count,
+                COALESCE(SUM(CASE WHEN status = 0 THEN 1 ELSE 0 END), 0) AS pending_message_count
+            FROM blog_message
+        ) msg
     </select>
 
     <!-- 按日期统计每日浏览量与独立访客数 -->

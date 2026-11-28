@@ -32,11 +32,94 @@
         FOR UPDATE
     </select>
 
+    <!-- 分页查询文章下对当前读者可见的顶层根评论节点，按时间倒序排列 -->
+    <select id="visibleRootPage" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND parent_id IS NULL
+          AND (
+              status = 1
+              <if test="viewer != null">
+                  OR user_id = #{viewer}
+              </if>
+          )
+        ORDER BY create_time DESC, comment_id DESC
+    </select>
+
+    <!-- 批量查询文章下指定根评论的全部回复节点，走 idx_comment_root 索引 -->
+    <select id="nodesByRoots" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND root_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY create_time, comment_id
+    </select>
+
+    <!-- 查询单棵评论会话树（根节点及全部回复），分别走主键与 idx_comment_root 索引 -->
+    <select id="treeNodes" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND comment_id = #{rootId}
+        UNION ALL
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND root_id = #{rootId}
+        ORDER BY create_time, comment_id
+    </select>
+
+    <!-- 批量查询文章下多棵评论会话树（根节点及全部回复），供本人评论列表计算可见性 -->
+    <select id="treeNodesByRoots" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND comment_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        UNION ALL
+        SELECT comment_id, article_id, user_id, parent_id, root_id, status, create_time
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND root_id IN
+        <foreach collection="rootIds" item="id" open="(" separator=", " close=")">
+            #{id}
+        </foreach>
+        ORDER BY create_time, comment_id
+    </select>
+
+    <!-- 加行锁查询单棵评论会话树节点，按主键升序加锁，调用方须先持有文章锁 -->
+    <select id="lockTree" resultType="com.xuan.mapper.ArticleMapper$CommentNode">
+        SELECT comment_id, parent_id, status
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND (comment_id = #{rootId} OR root_id = #{rootId})
+        ORDER BY comment_id
+        FOR UPDATE
+    </select>
+
+    <!-- 统计排在目标根评论之前的可见根评论数量（前台按时间倒序），用于计算跳转页码 -->
+    <select id="visibleRootRank" resultType="long">
+        SELECT COUNT(*)
+        FROM blog_comment
+        WHERE article_id = #{article}
+          AND parent_id IS NULL
+          AND (status = 1 OR user_id = #{viewer})
+          AND (
+              create_time &gt; #{createTime}
+              OR (create_time = #{createTime} AND comment_id &gt; #{commentId})
+          )
+    </select>
+
     <!-- 根据已筛选可见的评论 ID 列表查询前台评论详情 -->
     <select id="publicRows" resultType="com.xuan.model.CommentRow">
         SELECT
             <include refid="columns"/>,
-            <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
             ru.nickname AS reply_to_nickname,
             LEFT(p.content, 120) AS reply_to_content
         FROM blog_comment c
@@ -77,7 +160,6 @@
     <select id="adminPage" resultType="com.xuan.model.CommentRow">
         SELECT
             <include refid="columns"/>,
-            <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
             ru.nickname AS reply_to_nickname,
             LEFT(p.content, 120) AS reply_to_content,
             EXISTS (
@@ -118,7 +200,6 @@
             <otherwise>
                 SELECT
                     <include refid="columns"/>,
-                    <include refid="com.xuan.mapper.AuthorizationMapper.discussionBadges"/>,
                     ru.nickname AS reply_to_nickname,
                     LEFT(p.content, 120) AS reply_to_content
                 FROM blog_comment c

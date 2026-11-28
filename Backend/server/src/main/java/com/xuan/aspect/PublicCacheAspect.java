@@ -14,6 +14,7 @@ import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Caching;
 import org.springframework.context.expression.MethodBasedEvaluationContext;
 import org.springframework.core.DefaultParameterNameDiscoverer;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.annotation.Order;
 import org.springframework.expression.EvaluationContext;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
@@ -40,13 +41,13 @@ public class PublicCacheAspect {
      */
     @Around("@annotation(org.springframework.cache.annotation.Cacheable) || " +
             "@annotation(org.springframework.cache.annotation.CacheEvict) || @annotation(org.springframework.cache.annotation.Caching) || " +
-            "@annotation(com.xuan.annotation.PublicCacheRead)")
+            "@annotation(com.xuan.annotation.ArticleCacheEvict) || @annotation(com.xuan.annotation.PublicCacheRead)")
     public Object around(ProceedingJoinPoint point) throws Throwable {
-        // 1. 解析目标方法上的公开缓存失效注解并计算 SpEL 条件，轻量缓存域不参与公开写保护。
+        // 1. 解析目标方法上的公开缓存失效注解（含组合注解）并计算 SpEL 条件，轻量缓存域不参与公开写保护。
         var method = AopUtils.getMostSpecificMethod(((MethodSignature) point.getSignature()).getMethod(), point.getTarget().getClass());
         Set<String> evictions = new LinkedHashSet<>();
-        CacheEvict single = method.getAnnotation(CacheEvict.class);
-        Caching multiple = method.getAnnotation(Caching.class);
+        CacheEvict single = AnnotatedElementUtils.findMergedAnnotation(method, CacheEvict.class);
+        Caching multiple = AnnotatedElementUtils.findMergedAnnotation(method, Caching.class);
         var arguments = new MethodBasedEvaluationContext(null, method, point.getArgs(), PARAMETERS);
         if (single != null && isPublicManager(single.cacheManager()) && applies(single, arguments)) {
             evictions.addAll(Arrays.asList(single.cacheNames()));
