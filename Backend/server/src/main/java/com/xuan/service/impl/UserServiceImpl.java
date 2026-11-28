@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.cache.UserAuthzCache;
 import com.xuan.client.OAuthProviderClient;
 import com.xuan.dto.AdminEmailCodeDTO;
 import com.xuan.dto.AdminUserCreateDTO;
@@ -90,6 +91,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
     private final OAuthBindingMapper oauth;
     private final AuthorizationMapper authorization;
     private final AuthorizationProvider permissions;
+    private final UserAuthzCache userAuthzCache;
     private final BCryptPasswordEncoder encoder;
     private final SessionManager sessions;
     private final OAuthProviderClient providers;
@@ -251,8 +253,9 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
                 requireRemainingAdmin();
             }
 
-            // 4. 权限和菜单实时查询，不用旧缓存；全部会话撤销成功后才能提交。
+            // 4. 全部会话撤销成功后才能提交，并在提交后精准失效该用户的授权缓存。
             sessions.revokeAll(userId);
+            userAuthzCache.evictAfterCommit(userId);
         }
         return adminProfile(users.selectById(userId));
     }
@@ -292,11 +295,12 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
             requireRemainingAdmin();
         }
 
-        // 3. 撤销被禁用用户的全部会话并按原请求顺序返回新版本。
+        // 3. 撤销被禁用用户的全部会话，并在提交后失效全部目标用户的授权缓存。
         // 主动撤销本人的会话后不再复核当前 Token，否则合法的自我禁用会必然回滚。
         for (long userId : revoked) {
             sessions.revokeAll(userId);
         }
+        userAuthzCache.evictAfterCommit(targets.keySet());
         return BatchUtils.versions(items, versions);
     }
 
@@ -321,6 +325,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, SysUser> implements
         for (long userId : targets.keySet()) {
             sessions.revokeAll(userId);
         }
+        userAuthzCache.evictAfterCommit(targets.keySet());
     }
 
     /**

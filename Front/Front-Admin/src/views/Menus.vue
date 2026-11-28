@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -111,49 +111,72 @@ async function load() {
   }
 }
 
+let editController
+
+/** 取消未完成的菜单详情拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
+onBeforeUnmount(cancelEditLoad)
+onDeactivated(cancelEditLoad)
+
 async function edit(row) {
+  cancelEditLoad()
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    initialStatus.value = 1
+    Object.assign(form, {
+      parentId: null,
+      menuCode: '',
+      menuName: '',
+      menuType: 'M',
+      routeName: '',
+      path: '',
+      component: '',
+      icon: '',
+      permissionId: null,
+      sortOrder: 0,
+      isVisible: 1,
+      keepAlive: 0,
+      status: 1,
+    })
+    dialog.value = true
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.menuId || ''
-    if (row) {
-      const result = await request(`/admin/menus/${row.menuId}`)
-      revision.value = result.revision
-      const data = result.data
-      initialStatus.value = data.status
-      Object.assign(form, {
-        parentId: data.parentId,
-        menuCode: data.menuCode,
-        menuName: data.menuName,
-        menuType: data.menuType,
-        routeName: data.routeName || '',
-        path: data.path || '',
-        component: data.component || '',
-        icon: data.icon || '',
-        permissionId: data.permissionId,
-        sortOrder: data.sortOrder,
-        isVisible: data.isVisible,
-        keepAlive: data.keepAlive,
-        status: data.status,
-      })
-    } else {
-      initialStatus.value = 1
-      Object.assign(form, {
-        parentId: null,
-        menuCode: '',
-        menuName: '',
-        menuType: 'M',
-        routeName: '',
-        path: '',
-        component: '',
-        icon: '',
-        permissionId: null,
-        sortOrder: 0,
-        isVisible: 1,
-        keepAlive: 0,
-        status: 1,
-      })
+    const result = await request(`/admin/menus/${row.menuId}`, { signal: controller.signal })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.menuId
+    revision.value = result.revision
+    const data = result.data
+    initialStatus.value = data.status
+    Object.assign(form, {
+      parentId: data.parentId,
+      menuCode: data.menuCode,
+      menuName: data.menuName,
+      menuType: data.menuType,
+      routeName: data.routeName || '',
+      path: data.path || '',
+      component: data.component || '',
+      icon: data.icon || '',
+      permissionId: data.permissionId,
+      sortOrder: data.sortOrder,
+      isVisible: data.isVisible,
+      keepAlive: data.keepAlive,
+      status: data.status,
+    })
     dialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }

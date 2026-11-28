@@ -1,6 +1,8 @@
 package com.xuan.security;
 
+import cn.dev33.satoken.context.SaHolder;
 import cn.dev33.satoken.stp.StpInterface;
+import com.xuan.cache.UserAuthzCache;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.AuthorizationMapper.MenuGrant;
 import com.xuan.mapper.AuthorizationMapper;
@@ -18,14 +20,15 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeMap;
 
 /**
- * 用户授权查询，在同一个只读事务中实时读取角色、权限和菜单。
+ * 用户授权查询，拦截器阶段复用单次请求缓存与 Redis 授权缓存，写操作范围复核保持直查数据库。
  */
 @Component
 @RequiredArgsConstructor
 public class AuthorizationProvider implements StpInterface {
+
+    private static final String REQUEST_CAPABILITIES_PREFIX = "authz:capabilities:";
 
     /**
      * 只有这些初始化系统管理权限参与最后管理员保护，新增字典项不自动加进来。
@@ -104,48 +107,45 @@ public class AuthorizationProvider implements StpInterface {
             "sys:log:query",
             "sys:log:delete");
     private final AuthorizationMapper mapper;
+    private final UserAuthzCache userAuthzCache;
 
     /**
-     * 按当前启用的用户、角色和权限，为 Sa-Token 返回有效权限码。
+     * 按当前启用的用户、角色和权限，为 Sa-Token 返回有效权限码；同一次请求内复用缓存，避免拦截器重复查询。
      */
     @Override
     public List<String> getPermissionList(Object loginId, String loginType) {
-        return capabilities(Long.parseLong(loginId.toString())).getPermissionCodes();
+        return requestCapabilities(Long.parseLong(loginId.toString())).getPermissionCodes();
     }
 
     /**
-     * 只返回该用户当前有效的角色码，不复用登录时的旧授权。
+     * 返回该用户当前有效的角色码，复用单次请求缓存与 Redis 授权缓存。
      */
     @Override
     public List<String> getRoleList(Object loginId, String loginType) {
-        return mapper.roleCodes(Long.parseLong(loginId.toString()));
+        return requestCapabilities(Long.parseLong(loginId.toString())).getRoleCodes();
     }
 
     /**
-     * 查询当前用户的有效权限，只合并实际授予该权限的角色范围，不能借用无关角色的 ALL。
+     * 查询当前用户的有效权限，通过独立缓存组件读取，避免同类自调用绕过代理。
      */
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public CapabilitiesVO capabilities(long userId) {
-        // 1. 按权限码合并真正授予它的角色范围，用 TreeMap 让响应按字典序排列。
-        Map<String, String> scopes = new TreeMap<>();
-        for (AuthorizationMapper.Grant grant : mapper.grants(userId)) {
-            scopes.merge(grant.getPermissionCode(), grant.getDataScope(),
-                    (left, right) -> "ALL".equals(left) || "ALL".equals(right) ? "ALL" : "SELF");
-        }
-
-        // 2. 返回有效角色、权限和各自范围，不能按角色名给通配权限。
-        return CapabilitiesVO.builder()
-                .roleCodes(mapper.roleCodes(userId))
-                .permissionCodes(List.copyOf(scopes.keySet()))
-                .dataScopes(scopes)
-                .build();
+        return userAuthzCache.loadCapabilities(userId);
     }
 
     /**
-     * 获取操作权限范围，Mapper 仍需在 SQL 中限制归属，不能只依赖这里的检查。
+     * 直查数据库获取操作权限范围，确保锁内写操作复核权限不受缓存延迟影响；Mapper 仍需在 SQL 中限制归属。
      */
     public String requireScope(long userId, String permission) {
-        String scope = capabilities(userId).getDataScopes().get(permission);
+        String scope = null;
+        for (AuthorizationMapper.Grant grant : mapper.grants(userId)) {
+            if (!permission.equals(grant.getPermissionCode())) {
+                continue;
+            }
+            if ("ALL".equals(grant.getDataScope())) {
+                return "ALL";
+            }
+            scope = "SELF";
+        }
         if (scope == null) {
             throw new BusinessException(403, "FORBIDDEN", "没有操作权限");
         }
@@ -158,7 +158,7 @@ public class AuthorizationProvider implements StpInterface {
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<MenuNodeVO> menus(long userId) {
         // 1. 先查后台入口权限，普通 member 不返回后台菜单。
-        CapabilitiesVO capabilities = capabilities(userId);
+        CapabilitiesVO capabilities = userAuthzCache.loadCapabilities(userId);
         if (!capabilities.getPermissionCodes().contains("admin:access")) {
             return List.of();
         }
@@ -187,6 +187,23 @@ public class AuthorizationProvider implements StpInterface {
 
         // 4. 逐层排序并组装菜单树，没有可访问页面的空目录去掉。
         return build(roots, children);
+    }
+
+    /**
+     * 优先从当前请求的 SaHolder 存储复用授权结果，未命中时再读取 Redis 授权缓存。
+     */
+    private CapabilitiesVO requestCapabilities(long userId) {
+        if (!SaHolder.getContext().isValid()) {
+            return userAuthzCache.loadCapabilities(userId);
+        }
+        String key = REQUEST_CAPABILITIES_PREFIX + userId;
+        Object cached = SaHolder.getStorage().get(key);
+        if (cached instanceof CapabilitiesVO capabilities) {
+            return capabilities;
+        }
+        CapabilitiesVO loaded = userAuthzCache.loadCapabilities(userId);
+        SaHolder.getStorage().set(key, loaded);
+        return loaded;
     }
 
     /**

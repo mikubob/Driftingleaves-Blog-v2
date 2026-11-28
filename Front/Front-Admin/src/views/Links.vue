@@ -3,7 +3,7 @@ import ResourceDetail from '../components/ResourceDetail.vue'
 import UserDetail from '../components/UserDetail.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 import DisplayImageField from '../components/DisplayImageField.vue'
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onBeforeUnmount, onDeactivated, onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -91,40 +91,64 @@ async function loadUsers() {
   }
 }
 
+let editController
+
+/** 取消未完成的友链详情拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
+onBeforeUnmount(cancelEditLoad)
+onDeactivated(cancelEditLoad)
+
 async function edit(row) {
+  cancelEditLoad()
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    currentApplicant.value = null
+    initialStatus.value = 0
+    Object.assign(form, {
+      linkName: '',
+      url: '',
+      avatar: '',
+      description: '',
+      sortOrder: 0,
+      status: 0,
+      applicantId: '',
+    })
+    dialog.value = true
+    loadUsers()
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.linkId || ''
-    if (row) {
-      const result = await request(`/admin/links/${row.linkId}`)
-      revision.value = result.revision
-      const data = result.data
-      currentApplicant.value = data.applicant
-      initialStatus.value = data.status
-      Object.assign(form, {
-        linkName: data.linkName,
-        url: data.url,
-        avatar: data.avatar || '',
-        description: data.description || '',
-        sortOrder: data.sortOrder,
-        status: data.status,
-        applicantId: data.applicant?.userId || '',
-      })
-    } else {
-      currentApplicant.value = null
-      initialStatus.value = 0
-      Object.assign(form, {
-        linkName: '',
-        url: '',
-        avatar: '',
-        description: '',
-        sortOrder: 0,
-        status: 0,
-        applicantId: '',
-      })
+    const result = await request(`/admin/links/${row.linkId}`, { signal: controller.signal })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.linkId
+    revision.value = result.revision
+    const data = result.data
+    currentApplicant.value = data.applicant
+    initialStatus.value = data.status
+    Object.assign(form, {
+      linkName: data.linkName,
+      url: data.url,
+      avatar: data.avatar || '',
+      description: data.description || '',
+      sortOrder: data.sortOrder,
+      status: data.status,
+      applicantId: data.applicant?.userId || '',
+    })
     dialog.value = true
     loadUsers()
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }

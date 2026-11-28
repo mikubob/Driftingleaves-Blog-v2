@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.cache.IpBlockCache;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
@@ -51,6 +52,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
+    private final IpBlockCache ipBlockCache;
     private final JsonMapper json;
     private final Clock clock;
 
@@ -166,6 +168,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
     public void deleteBatch(List<BatchItemDTO> items) {
         var sorted = BatchUtils.sorted(items);
         LocalDateTime at = now();
+        List<String> affectedIps = new ArrayList<>();
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             String revision = item.getRevision();
@@ -174,11 +177,15 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             if (row.getBlockedIpAddress() != null && isRestrictionActive(row.getIsBlocked(), row.getBlockedUntil(), at)) {
                 throw new BusinessException(409, "RESOURCE_IN_USE", "请先解除该记录的 IP 封禁再删除");
             }
+            if (row.getBlockedIpAddress() != null) {
+                affectedIps.add(row.getBlockedIpAddress());
+            }
         }
         for (var item : sorted) {
             long id = IdUtils.parse(item.getId());
             visitors.deleteById(id);
         }
+        ipBlockCache.evictAfterCommit(affectedIps);
     }
 
     /**
@@ -191,6 +198,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
         // 1. 按 ID 升序锁定全部目标访客，检查版本并提取规范化 IP 地址。
         var sorted = BatchUtils.sorted(items);
         List<BlogVisitor> rows = new ArrayList<>();
+        List<String> affectedIps = new ArrayList<>();
         LocalDateTime end = QueryTimeUtils.parse(until);
         LocalDateTime at = now();
         for (var item : sorted) {
@@ -210,9 +218,10 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             row.setBlockedUntil(end);
             row.setBlockedIpAddress(ip);
             rows.add(row);
+            affectedIps.add(ip);
         }
 
-        // 2. 校验封禁截止时间，全部通过后统一落库并返回新版本。
+        // 2. 校验封禁截止时间，全部通过后统一落库并在提交后精准失效 IP 封禁缓存。
         if (end != null && !end.isAfter(at)) {
             throw new BusinessException(400, "VALIDATION_ERROR", "限制结束时间须晚于当前UTC时间");
         }
@@ -221,6 +230,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             visitors.restriction(row);
             versions.put(row.getVisitorId(), restrictionRevision(visitors.selectById(row.getVisitorId()), at));
         }
+        ipBlockCache.evictAfterCommit(affectedIps);
         return BatchUtils.versions(items, versions);
     }
 
@@ -241,8 +251,12 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             rows.add(row);
         }
         Map<Long, String> versions = new HashMap<>();
+        List<String> affectedIps = new ArrayList<>();
         for (BlogVisitor row : rows) {
             if (Integer.valueOf(1).equals(row.getIsBlocked())) {
+                if (row.getBlockedIpAddress() != null) {
+                    affectedIps.add(row.getBlockedIpAddress());
+                }
                 row.setIsBlocked(0);
                 row.setBlockedUntil(null);
                 row.setBlockedIpAddress(null);
@@ -250,6 +264,7 @@ public class VisitorServiceImpl extends ServiceImpl<VisitorMapper, BlogVisitor> 
             }
             versions.put(row.getVisitorId(), restrictionRevision(row, at));
         }
+        ipBlockCache.evictAfterCommit(affectedIps);
         return BatchUtils.versions(items, versions);
     }
 

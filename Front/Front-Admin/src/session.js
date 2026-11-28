@@ -52,23 +52,23 @@ export async function acceptSession(data) {
 /** 刷新后向后端核验身份和权限。 */
 export async function restoreSession() {
   try {
-    await loadSession()
+    await loadSession({ fatalFailure: true })
   } catch {
-    // 未登录时继续启动，网络和服务错误由请求层报告。
+    // 未登录时继续启动，初始化阶段的网络和服务错误由请求层报告为全局异常。
   }
 }
 
 /** 登录和刷新共用同一套服务端核验。 */
-async function loadSession() {
+async function loadSession({ fatalFailure = false } = {}) {
   try {
-    const me = await request('/admin/me', { expectedUserId: null })
+    const me = await request('/admin/me', { expectedUserId: null, fatalFailure })
     const expectedUserId = me.data?.userId
     if (!isId(expectedUserId)) {
       throw new Error('服务器返回的账号资料无效。')
     }
     const [capabilities, menus] = await Promise.all([
-      request('/admin/me/capabilities', { expectedUserId }),
-      request('/admin/me/menus', { expectedUserId }),
+      request('/admin/me/capabilities', { expectedUserId, fatalFailure }),
+      request('/admin/me/menus', { expectedUserId, fatalFailure }),
     ])
     if (
       !Array.isArray(capabilities.data?.permissionCodes) ||

@@ -1,5 +1,6 @@
 package com.xuan.service.impl;
 
+import com.xuan.cache.AdminStatisticsCache;
 import com.xuan.dto.StatisticsQueryDTO;
 import com.xuan.exception.BusinessException;
 import com.xuan.mapper.StatisticsMapper;
@@ -24,25 +25,22 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.context.request.RequestContextHolder;
 
-import java.math.BigInteger;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
- * 查询统计报表，在同一个只读事务中读取；按 UTC 日期统计时包含起止两天，明细 SQL 的时间范围包含开始时刻、不包含结束时刻。
+ * 查询统计报表，按 UTC 日期统计时包含起止两天，明细 SQL 的时间范围包含开始时刻、不包含结束时刻。
  */
 @Service
 @RequiredArgsConstructor
 public class StatisticsServiceImpl implements IStatisticsService {
     private final StatisticsMapper statistics;
+    private final AdminStatisticsCache adminStatisticsCache;
     private final IUserService identities;
     private final SessionManager sessions;
     private final AuthorizationProvider authorization;
@@ -65,95 +63,78 @@ public class StatisticsServiceImpl implements IStatisticsService {
      * 查询后台统计总览。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public AdminStatisticsVO overview(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.overview(range.lower(), range.upper(), query.getSiteCode(), now());
+        return adminStatisticsCache.overview(range.begin(), range.end(), range.lower(), range.upper(), query.getSiteCode(), now());
     }
 
     /**
      * 查询每日浏览量。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ViewTrendVO> viewTrend(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        Map<LocalDate, ViewTrendVO> rows = new HashMap<>();
-        statistics.viewTrend(range.lower(), range.upper(), query.getSiteCode()).forEach(row -> rows.put(row.getDate(), row));
-        List<ViewTrendVO> result = new ArrayList<>();
-        for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) {
-            result.add(rows.getOrDefault(day, ViewTrendVO.builder()
-                    .date(day)
-                    .pageViewCount("0")
-                    .visitorCount("0")
-                    .build()));
-        }
-        return result;
+        return adminStatisticsCache.viewTrend(range.begin(), range.end(), range.lower(), range.upper(),
+                query.getSiteCode(), isHistorical(range));
     }
 
     /**
      * 查询每日新增及累计访客数。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<VisitorTrendVO> visitorTrend(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        Map<LocalDate, VisitorTrendVO> rows = new HashMap<>();
-        statistics.visitorTrend(range.lower(), range.upper(), query.getSiteCode()).forEach(row -> rows.put(row.getDate(), row));
-        List<VisitorTrendVO> result = new ArrayList<>();
-        BigInteger cumulative = BigInteger.ZERO;
-        for (LocalDate day = range.begin(); !day.isAfter(range.end()); day = day.plusDays(1)) {
-            String count = rows.containsKey(day) ? rows.get(day).getNewVisitorCount() : "0";
-            cumulative = cumulative.add(new BigInteger(count));
-            result.add(VisitorTrendVO.builder()
-                    .date(day)
-                    .newVisitorCount(count)
-                    .cumulativeNewVisitorCount(cumulative.toString())
-                    .build());
-        }
-        return result;
+        return adminStatisticsCache.visitorTrend(range.begin(), range.end(), range.lower(), range.upper(),
+                query.getSiteCode(), isHistorical(range));
     }
 
     /**
      * 按省份统计访客数。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ProvinceMetricVO> provinces(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.provinces(range.lower(), range.upper(), query.getSiteCode());
+        return adminStatisticsCache.provinces(range.begin(), range.end(), range.lower(), range.upper(),
+                query.getSiteCode(), isHistorical(range));
     }
 
     /**
      * 查询指定日期内的文章访问排行。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<ArticleViewMetricVO> articles(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.articles(range.lower(), range.upper(), query.getLimit());
+        return adminStatisticsCache.articles(range.begin(), range.end(), range.lower(), range.upper(),
+                query.getLimit(), isHistorical(range));
     }
 
     /**
      * 查询指定日期内的访问来源域名排行。
      */
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public List<RefererMetricVO> referers(StatisticsQueryDTO query) {
         requireAdmin();
         Range range = range(query);
         limitReport();
-        return statistics.referers(range.lower(), range.upper(), query.getSiteCode(), query.getLimit());
+        return adminStatisticsCache.referers(range.begin(), range.end(), range.lower(), range.upper(),
+                query.getSiteCode(), query.getLimit(), isHistorical(range));
+    }
+
+    /**
+     * 判断统计结束日期是否早于今日 UTC，用于区分历史长缓存与实时短缓存。
+     */
+    private boolean isHistorical(Range range) {
+        return range.end().isBefore(LocalDate.ofInstant(clock.instant(), ZoneOffset.UTC));
     }
 
     /**

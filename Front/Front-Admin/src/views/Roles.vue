@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onBeforeUnmount, onDeactivated, onMounted, reactive, ref, computed } from 'vue'
 import {
   ElAlert,
   ElButton,
@@ -61,33 +61,56 @@ const permissionIds = ref([])
 const menuIds = ref([])
 const form = reactive({ roleCode: '', roleName: '', description: '', dataScope: 'SELF', status: 1 })
 
+let editController
+
+/** 取消未完成的角色详情或授权拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
+onBeforeUnmount(cancelEditLoad)
+onDeactivated(cancelEditLoad)
+
 async function edit(row) {
+  cancelEditLoad()
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    initialStatus.value = 1
+    Object.assign(form, {
+      roleCode: '',
+      roleName: '',
+      description: '',
+      dataScope: 'SELF',
+      status: 1,
+    })
+    dialog.value = true
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.roleId || ''
-    if (row) {
-      const result = await request(`/admin/roles/${row.roleId}`)
-      revision.value = result.revision
-      const data = result.data
-      initialStatus.value = data.status
-      Object.assign(form, {
-        roleCode: data.roleCode,
-        roleName: data.roleName,
-        description: data.description || '',
-        dataScope: data.dataScope,
-        status: data.status,
-      })
-    } else {
-      initialStatus.value = 1
-      Object.assign(form, {
-        roleCode: '',
-        roleName: '',
-        description: '',
-        dataScope: 'SELF',
-        status: 1,
-      })
+    const result = await request(`/admin/roles/${row.roleId}`, { signal: controller.signal })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.roleId
+    revision.value = result.revision
+    const data = result.data
+    initialStatus.value = data.status
+    Object.assign(form, {
+      roleCode: data.roleCode,
+      roleName: data.roleName,
+      description: data.description || '',
+      dataScope: data.dataScope,
+      status: data.status,
+    })
     dialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }
@@ -129,12 +152,18 @@ async function save() {
 }
 
 async function grant(row) {
+  cancelEditLoad()
+  const controller = new AbortController()
+  editController = controller
   try {
     const [current, dictionary, menuResult] = await Promise.all([
-      request(`/admin/roles/${row.roleId}`),
-      getOptions('/admin/permissions'),
-      request('/admin/menus'),
+      request(`/admin/roles/${row.roleId}`, { signal: controller.signal }),
+      getOptions('/admin/permissions', {}, controller.signal),
+      request('/admin/menus', { signal: controller.signal }),
     ])
+    if (controller.signal.aborted) {
+      return
+    }
     id.value = row.roleId
     revision.value = current.revision
     permissions.value = dictionary
@@ -143,6 +172,9 @@ async function grant(row) {
     menuIds.value = [...current.data.menuIds]
     grantsDialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }

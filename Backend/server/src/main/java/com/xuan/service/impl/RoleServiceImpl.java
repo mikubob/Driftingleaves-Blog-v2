@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.cache.UserAuthzCache;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.RoleCreateDTO;
 import com.xuan.dto.RoleGrantDTO;
@@ -53,6 +54,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     private final UserMapper users;
     private final IUserService identities;
     private final AuthorizationProvider authorization;
+    private final UserAuthzCache userAuthzCache;
     private final SessionManager sessions;
     private final JsonMapper json;
 
@@ -267,7 +269,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
     }
 
     /**
-     * 锁住全部目标用户后逐个撤销所有会话，权限和菜单实时查库，不用旧授权缓存。
+     * 锁住全部目标用户后逐个撤销所有会话，并在事务提交后失效这些用户的授权缓存。
      *
      * @param affected 已锁定的关联用户；Redis 任一失败直接抛出以回滚数据库
      */
@@ -275,6 +277,7 @@ public class RoleServiceImpl extends ServiceImpl<RoleMapper, SysRole> implements
         for (long userId : affected) {
             sessions.revokeAll(userId);
         }
+        userAuthzCache.evictAfterCommit(affected);
     }
 
     /**

@@ -2,7 +2,7 @@
 import AccountEmailField from '../components/AccountEmailField.vue'
 import DisplayImageField from '../components/DisplayImageField.vue'
 import UserDetail from '../components/UserDetail.vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onDeactivated, onMounted, reactive, ref } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -90,40 +90,63 @@ const form = reactive({
   status: 1,
 })
 
+let editController
+
+/** 取消未完成的用户详情或角色拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
+onBeforeUnmount(cancelEditLoad)
+onDeactivated(cancelEditLoad)
+
 async function edit(row) {
+  cancelEditLoad()
   form.password = ''
   form.emailCode = ''
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    initialStatus.value = 1
+    initialEmail.value = ''
+    Object.assign(form, {
+      username: '',
+      password: '',
+      nickname: '',
+      email: '',
+      avatar: '',
+      intro: '',
+      status: 1,
+    })
+    dialog.value = true
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.userId || ''
-    if (row) {
-      const result = await request(`/admin/users/${row.userId}`)
-      revision.value = result.revision
-      const user = result.data
-      initialStatus.value = user.status
-      initialEmail.value = user.email || ''
-      Object.assign(form, {
-        username: user.username,
-        nickname: user.nickname,
-        email: user.email || '',
-        avatar: user.avatar || '',
-        intro: user.intro || '',
-        status: user.status,
-      })
-    } else {
-      initialStatus.value = 1
-      initialEmail.value = ''
-      Object.assign(form, {
-        username: '',
-        password: '',
-        nickname: '',
-        email: '',
-        avatar: '',
-        intro: '',
-        status: 1,
-      })
+    const result = await request(`/admin/users/${row.userId}`, { signal: controller.signal })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.userId
+    revision.value = result.revision
+    const user = result.data
+    initialStatus.value = user.status
+    initialEmail.value = user.email || ''
+    Object.assign(form, {
+      username: user.username,
+      nickname: user.nickname,
+      email: user.email || '',
+      avatar: user.avatar || '',
+      intro: user.intro || '',
+      status: user.status,
+    })
     dialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }
@@ -184,17 +207,26 @@ async function save() {
 }
 
 async function assignRoles(row) {
+  cancelEditLoad()
+  const controller = new AbortController()
+  editController = controller
   try {
     const [current, options] = await Promise.all([
-      request(`/admin/users/${row.userId}`),
-      getOptions('/admin/roles'),
+      request(`/admin/users/${row.userId}`, { signal: controller.signal }),
+      getOptions('/admin/roles', {}, controller.signal),
     ])
+    if (controller.signal.aborted) {
+      return
+    }
     id.value = row.userId
     revision.value = current.revision
     roles.value = options
     roleIds.value = [...current.data.roleIds]
     roleDialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }

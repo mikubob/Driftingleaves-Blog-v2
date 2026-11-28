@@ -3,7 +3,7 @@ import DisplayImageField from '../components/DisplayImageField.vue'
 import ImagePreview from '../components/ImagePreview.vue'
 import MarkdownPreview from '../components/MarkdownPreview.vue'
 import ResourceDetail from '../components/ResourceDetail.vue'
-import { onMounted, reactive, ref, computed } from 'vue'
+import { onBeforeUnmount, onDeactivated, onMounted, reactive, ref, computed } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -60,6 +60,7 @@ const experienceTypeMeta = {
   1: { label: '工作 / 实习', tone: 'is-success', titleLabel: '公司名称', subtitleLabel: '职位 / 部门' },
   2: { label: '项目经历', tone: 'is-warning', titleLabel: '项目名称', subtitleLabel: '担任角色 / 技术栈' },
 }
+const listTypeMeta = computed(() => experienceTypeMeta[filters.experienceType])
 const detailId = ref('')
 const dialog = ref(false)
 const saving = ref(false)
@@ -88,41 +89,66 @@ function switchType(type) {
   load(true)
 }
 
+let editController
+
+/** 取消未完成的经历详情拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
+onBeforeUnmount(cancelEditLoad)
+onDeactivated(cancelEditLoad)
+
 async function edit(row) {
+  cancelEditLoad()
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    initialStatus.value = 1
+    Object.assign(form, {
+      experienceType: 0,
+      title: '',
+      subtitle: '',
+      logoUrl: '',
+      content: '',
+      startDate: '',
+      endDate: '',
+      sortOrder: 0,
+      status: 1,
+    })
+    dialog.value = true
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.experienceId || ''
-    if (row) {
-      const result = await request(`/admin/cv/experiences/${row.experienceId}`)
-      revision.value = result.revision
-      const data = result.data
-      initialStatus.value = data.status
-      Object.assign(form, {
-        experienceType: data.experienceType,
-        title: data.title,
-        subtitle: data.subtitle || '',
-        logoUrl: data.logoUrl || '',
-        content: data.content,
-        startDate: data.startDate,
-        endDate: data.endDate || '',
-        sortOrder: data.sortOrder,
-        status: data.status,
-      })
-    } else {
-      initialStatus.value = 1
-      Object.assign(form, {
-        experienceType: 0,
-        title: '',
-        subtitle: '',
-        logoUrl: '',
-        content: '',
-        startDate: '',
-        endDate: '',
-        sortOrder: 0,
-        status: 1,
-      })
+    const result = await request(`/admin/cv/experiences/${row.experienceId}`, {
+      signal: controller.signal,
+    })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.experienceId
+    revision.value = result.revision
+    const data = result.data
+    initialStatus.value = data.status
+    Object.assign(form, {
+      experienceType: data.experienceType,
+      title: data.title,
+      subtitle: data.subtitle || '',
+      logoUrl: data.logoUrl || '',
+      content: data.content,
+      startDate: data.startDate,
+      endDate: data.endDate || '',
+      sortOrder: data.sortOrder,
+      status: data.status,
+    })
     dialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }
@@ -257,7 +283,7 @@ const batchActions = computed(() => {
         <el-input
           v-model="filters.keyword"
           aria-label="搜索关键词"
-          placeholder="搜索学校、公司、项目或专业"
+          :placeholder="`搜索${listTypeMeta?.titleLabel ?? '经历名称'}`"
           maxlength="100"
           clearable
         />
@@ -304,11 +330,15 @@ const batchActions = computed(() => {
         </el-table-column>
         <el-table-column
           prop="title"
-          label="学校 / 公司 / 项目"
+          :label="listTypeMeta?.titleLabel ?? '学校 / 公司 / 项目'"
           min-width="190"
           show-overflow-tooltip
         />
-        <el-table-column label="专业 / 职位 / 角色" min-width="170" show-overflow-tooltip>
+        <el-table-column
+          :label="listTypeMeta?.subtitleLabel ?? '专业 / 职位 / 角色'"
+          min-width="170"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">{{ row.subtitle || '—' }}</template>
         </el-table-column>
         <el-table-column label="起止时间" min-width="200" align="center">

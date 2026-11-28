@@ -88,7 +88,8 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
             current();
         }
 
-        // 2. 文章详情路径即使没传关联 ID 也要核验 PUBLIC，避免记录私密或不存在的文章。
+        // 2. 文章详情路径即使没传关联 ID 也要核验 PUBLIC，避免记录私密或不存在的文章，并统一落库解析出的文章 ID。
+        Long articleId = null;
         String prefix = "blog".equals(request.getSiteCode()) ? sites.base("blog").getPath() + "/articles/" : "";
         if ("blog".equals(request.getSiteCode()) && path.startsWith(prefix)) {
             String slug = path.substring(prefix.length());
@@ -101,6 +102,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
                     || request.getArticleId() != null && !request.getArticleId().equals(article.getArticleId())) {
                 throw invalid();
             }
+            articleId = article.getArticleId();
         } else if (request.getArticleId() != null) {
             throw invalid();
         }
@@ -138,7 +140,7 @@ public class AnalyticsServiceImpl implements IAnalyticsService {
         BlogPageView row = BlogPageView.builder()
                 .visitorId(visitor.getVisitorId())
                 .userId(actor)
-                .articleId(request.getArticleId())
+                .articleId(articleId)
                 .siteCode(request.getSiteCode())
                 .pagePath(path)
                 .pageTitle(request.getPageTitle())

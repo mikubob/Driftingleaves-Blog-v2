@@ -58,6 +58,18 @@
         )
     </select>
 
+    <!-- 汇总指定 IP 当前生效中的手动封禁记录数、永久封禁数和最晚到期时间 -->
+    <select id="activeIpBlockSummary" resultType="com.xuan.mapper.VisitorMapper$IpBlockSummary">
+        SELECT
+            COUNT(*) AS active_count,
+            COALESCE(SUM(CASE WHEN blocked_until IS NULL THEN 1 ELSE 0 END), 0) AS permanent_count,
+            MAX(blocked_until) AS latest_until
+        FROM blog_visitor
+        WHERE blocked_ip_address = #{ip}
+          AND is_blocked = 1
+          AND (blocked_until IS NULL OR blocked_until &gt; #{now})
+    </select>
+
     <!-- 访客资料及关联浏览次数查询公共片段 -->
     <sql id="visitorWithViews">
         SELECT

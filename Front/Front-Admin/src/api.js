@@ -67,7 +67,8 @@ function validateNumbers(value, key = '') {
 
 /** 发送后台请求，统一处理登录状态、Result 响应、版本和限流提示；失败后不自动重试。 */
 export async function request(path, {
-  body, revision, captcha, expectedUserId = sessionUserId(), blob = false, rateLimitInForm = false, ...options
+  body, revision, captcha, expectedUserId = sessionUserId(), blob = false, rateLimitInForm = false,
+  fatalFailure = false, ...options
 } = {}) {
   const headers = new Headers({ Accept: blob ? '*/*' : 'application/json' })
   setCaptchaHeaders(headers, captcha)
@@ -99,7 +100,7 @@ export async function request(path, {
     if (error.name === 'AbortError') {
       throw error
     }
-    throw reportRequestFailure(new Error('无法连接服务器，请检查网络后重试。'), path)
+    throw reportRequestFailure(new Error('无法连接服务器，请检查网络后重试。'), path, { fatal: fatalFailure })
   }
   if (response.status === 429) {
     const seconds = response.headers.get('Retry-After')
@@ -108,7 +109,7 @@ export async function request(path, {
       : '请求过于频繁，请稍后重试。'
     const error = new ApiError(message, 429, 'RATE_LIMITED')
     error.retryAfter = Number(seconds) || 60
-    throw rateLimitInForm ? error : reportRequestFailure(error, path)
+    throw rateLimitInForm ? error : reportRequestFailure(error, path, { fatal: fatalFailure })
   }
   if (blob && response.ok) {
     const file = await response.blob()
@@ -126,7 +127,9 @@ export async function request(path, {
       throw failure
     }
     const error = new Error(`服务器返回异常（HTTP ${response.status}）。`)
-    throw response.ok || response.status >= 500 ? reportRequestFailure(error, path) : error
+    throw response.ok || response.status >= 500
+      ? reportRequestFailure(error, path, { fatal: fatalFailure })
+      : error
   }
   if (!response.ok || result?.code !== 'OK') {
     let message =
@@ -151,7 +154,9 @@ export async function request(path, {
       message = '缺少编辑版本，请重新加载详情后操作。'
     }
     const error = new ApiError(message, response.status, result?.code, errors)
-    throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED' ? reportRequestFailure(error, path) : error
+    throw response.status >= 500 || result?.code === 'ACCESS_BLOCKED'
+      ? reportRequestFailure(error, path, { fatal: fatalFailure })
+      : error
   }
   if (!Object.hasOwn(result, 'data') || !Array.isArray(result.errors)) {
     throw new Error('服务器返回的数据异常，请刷新页面后重试；仍失败时请联系站点管理员。')

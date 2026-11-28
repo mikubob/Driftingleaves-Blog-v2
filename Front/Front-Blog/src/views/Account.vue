@@ -23,6 +23,7 @@ const tab = ref('liked-articles')
 const statusFilter = ref(null)
 const page = ref(1)
 const busy = ref(false)
+const signingOut = ref(false)
 const sendingEmailCode = ref(false)
 const { secondsLeft, startCooldown } = useEmailCodeCooldown()
 const deleting = shallowRef(null)
@@ -50,12 +51,19 @@ const emailCodeButtonLabel = computed(() => {
   return sendingEmailCode.value ? '正在发送…' : '发送验证码到新邮箱'
 })
 
+/** 退出当前登录会话并返回首页，退出中禁止重复点击。 */
 async function signOut() {
+  if (signingOut.value) {
+    return
+  }
+  signingOut.value = true
   try {
     await logout()
     await router.push('/')
   } catch (failure) {
-    error.value = failure.message
+    ElMessage.error(failure.message)
+  } finally {
+    signingOut.value = false
   }
 }
 
@@ -370,7 +378,7 @@ function messageTarget(item) {
             </div>
             <div class="profile-actions">
               <button type="button" @click="openEditSheet">编辑资料</button>
-              <button type="button" @click="signOut">退出</button>
+              <button type="button" :disabled="signingOut" @click="signOut">退出</button>
             </div>
           </div>
 

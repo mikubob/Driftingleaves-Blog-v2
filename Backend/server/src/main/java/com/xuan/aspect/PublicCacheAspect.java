@@ -2,6 +2,7 @@ package com.xuan.aspect;
 
 import com.xuan.annotation.PublicCacheRead;
 import com.xuan.cache.PublicCacheContext;
+import com.xuan.constant.CacheNames;
 import com.xuan.store.PublicCacheStore;
 import lombok.RequiredArgsConstructor;
 import org.aspectj.lang.ProceedingJoinPoint;
@@ -42,34 +43,36 @@ public class PublicCacheAspect {
             "@annotation(org.springframework.cache.annotation.CacheEvict) || @annotation(org.springframework.cache.annotation.Caching) || " +
             "@annotation(com.xuan.annotation.PublicCacheRead)")
     public Object around(ProceedingJoinPoint point) throws Throwable {
-        // 1. 解析目标方法上的失效注解并计算 SpEL 条件，汇总本次调用需要保护的缓存域。
+        // 1. 解析目标方法上的公开缓存失效注解并计算 SpEL 条件，轻量缓存域不参与公开写保护。
         var method = AopUtils.getMostSpecificMethod(((MethodSignature) point.getSignature()).getMethod(), point.getTarget().getClass());
         Set<String> evictions = new LinkedHashSet<>();
         CacheEvict single = method.getAnnotation(CacheEvict.class);
         Caching multiple = method.getAnnotation(Caching.class);
         var arguments = new MethodBasedEvaluationContext(null, method, point.getArgs(), PARAMETERS);
-        if (single != null && applies(single, arguments)) {
+        if (single != null && isPublicManager(single.cacheManager()) && applies(single, arguments)) {
             evictions.addAll(Arrays.asList(single.cacheNames()));
         }
         if (multiple != null) {
             for (CacheEvict evict : multiple.evict()) {
-                if (applies(evict, arguments)) {
+                if (isPublicManager(evict.cacheManager()) && applies(evict, arguments)) {
                     evictions.addAll(Arrays.asList(evict.cacheNames()));
                 }
             }
         }
 
-        // 2. 打开当前层缓存上下文，并在事务首次查询前记录各读缓存域的起始版本。
+        // 2. 打开当前层缓存上下文（同时为 JSON 反序列化提供方法返回类型），仅对公开缓存域记录起始版本。
         PublicCacheContext.open(method.getGenericReturnType(), evictions);
         try {
             Set<String> reads = new LinkedHashSet<>();
             var read = method.getAnnotation(Cacheable.class);
-            if (read != null) {
+            if (read != null && isPublicManager(read.cacheManager())) {
                 reads.addAll(Arrays.asList(read.cacheNames()));
             }
             if (multiple != null) {
                 for (var rule : multiple.cacheable()) {
-                    reads.addAll(Arrays.asList(rule.cacheNames()));
+                    if (isPublicManager(rule.cacheManager())) {
+                        reads.addAll(Arrays.asList(rule.cacheNames()));
+                    }
                 }
             }
             PublicCacheRead entry = method.getAnnotation(PublicCacheRead.class);
@@ -82,6 +85,13 @@ public class PublicCacheAspect {
             // 3. 无论成功或异常都关闭当前层上下文，避免线程复用串扰。
             PublicCacheContext.close();
         }
+    }
+
+    /**
+     * 判断注解是否使用默认公开缓存管理器，轻量缓存管理器不接入 PublicCacheStore 写保护。
+     */
+    private boolean isPublicManager(String cacheManager) {
+        return !CacheNames.SIMPLE_CACHE_MANAGER.equals(cacheManager);
     }
 
     /**

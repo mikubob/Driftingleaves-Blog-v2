@@ -13,6 +13,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Duration;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -27,35 +28,47 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class PublicCacheStore {
     private static final Object TRANSACTION = new Object();
+    // 使用独立的 ZSET 键名保存带超时时间的写保护令牌，避免与旧版 SET 键类型冲突。
+    private static final String WRITERS_SUFFIX = "writers:v2";
+    private static final long WRITER_TTL_MS = Duration.ofMinutes(2).toMillis();
+
     private static final DefaultRedisScript<String> BEGIN = new DefaultRedisScript<>("""
             local gen = redis.call('GET', KEYS[1])
             if not gen then gen = ARGV[1]; redis.call('SET', KEYS[1], gen) end
-            if redis.call('SCARD', KEYS[2]) > 0 then return '' end
+            redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', ARGV[2])
+            if redis.call('ZCARD', KEYS[2]) > 0 then return '' end
             return gen
             """, String.class);
     private static final DefaultRedisScript<List> READ = new DefaultRedisScript<>("""
             local gen = redis.call('GET', KEYS[1])
             if not gen then gen = ARGV[1]; redis.call('SET', KEYS[1], gen) end
-            if redis.call('SCARD', KEYS[2]) > 0 then return {'', ''} end
+            redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', ARGV[4])
+            if redis.call('ZCARD', KEYS[2]) > 0 then return {'', ''} end
             return {gen, redis.call('GET', ARGV[2] .. gen .. ':' .. ARGV[3]) or ''}
             """, List.class);
     private static final DefaultRedisScript<Long> PUT = new DefaultRedisScript<>("""
-            if redis.call('GET', KEYS[1]) ~= ARGV[1] or redis.call('SCARD', KEYS[2]) > 0 then return 0 end
+            redis.call('ZREMRANGEBYSCORE', KEYS[2], '-inf', ARGV[4])
+            if redis.call('GET', KEYS[1]) ~= ARGV[1] or redis.call('ZCARD', KEYS[2]) > 0 then return 0 end
             redis.call('SET', KEYS[3], ARGV[2], 'PX', ARGV[3]); return 1
             """, Long.class);
     private static final DefaultRedisScript<Long> PROTECT = new DefaultRedisScript<>("""
-            for _, key in ipairs(KEYS) do redis.call('SADD', key, ARGV[1]) end
+            for _, key in ipairs(KEYS) do
+                redis.call('ZREMRANGEBYSCORE', key, '-inf', ARGV[2])
+                redis.call('ZADD', key, ARGV[3], ARGV[1])
+                redis.call('PEXPIRE', key, ARGV[4])
+            end
             return 1
             """, Long.class);
     private static final DefaultRedisScript<Long> INVALIDATE = new DefaultRedisScript<>("""
             redis.call('SET', KEYS[1], ARGV[1])
-            if ARGV[2] ~= '' then redis.call('SREM', KEYS[2], ARGV[2]) end
+            if ARGV[2] ~= '' then redis.call('ZREM', KEYS[2], ARGV[2]) end
             return 1
             """, Long.class);
 
     private final StringRedisTemplate redis;
     private final AuthProperties auth;
     private final PublicCacheSerializer serializer;
+    private final Clock clock;
 
     /**
      * 当前事务只移除自己的写标记，不能解除其他事务的保护。
@@ -80,7 +93,8 @@ public class PublicCacheStore {
         }
         String prefix = prefix(domain);
         try {
-            String gen = redis.execute(BEGIN, List.of(prefix + "generation", prefix + "writers"), UUID.randomUUID().toString());
+            String gen = redis.execute(BEGIN, List.of(prefix + "generation", writersKey(domain)),
+                    UUID.randomUUID().toString(), nowMillis());
             frame.generations().put(slot, gen == null ? "" : gen);
         } catch (RuntimeException cacheUnavailable) {
             frame.generations().put(slot, "");
@@ -88,7 +102,7 @@ public class PublicCacheStore {
     }
 
     /**
-     * 读取缓存时同时检查版本和全部写入标记；缓存未命中时，记下查数据库前的缓存版本。
+     * 读取缓存时同时检查版本和未过期写入标记；缓存未命中时，记下查数据库前的缓存版本。
      */
     public Object read(String domain, Object key) {
         var frame = PublicCacheContext.current();
@@ -100,8 +114,8 @@ public class PublicCacheStore {
         String slot = domain + ":" + query;
         frame.generations().remove(slot);
         try {
-            List<?> result = redis.execute(READ, List.of(prefix + "generation", prefix + "writers"),
-                    UUID.randomUUID().toString(), prefix, query);
+            List<?> result = redis.execute(READ, List.of(prefix + "generation", writersKey(domain)),
+                    UUID.randomUUID().toString(), prefix, query, nowMillis());
             if (result == null || result.get(0).toString().isEmpty() ||
                     !result.get(0).toString().equals(frame.generations().get("start:" + domain))) {
                 return null;
@@ -129,15 +143,16 @@ public class PublicCacheStore {
         }
         String prefix = prefix(domain);
         try {
-            redis.execute(PUT, List.of(prefix + "generation", prefix + "writers", prefix + gen + ":" + key),
-                    gen, new String(serializer.serialize(value), StandardCharsets.UTF_8), Long.toString(ttl.toMillis()));
+            redis.execute(PUT, List.of(prefix + "generation", writersKey(domain), prefix + gen + ":" + key),
+                    gen, new String(serializer.serialize(value), StandardCharsets.UTF_8),
+                    Long.toString(ttl.toMillis()), nowMillis());
         } catch (RuntimeException cacheUnavailable) {
             /* 回填失败直接返回已读取的数据库结果。 */
         }
     }
 
     /**
-     * 首次真正执行 INSERT/UPDATE/DELETE 前登记，SELECT FOR UPDATE 不会提前登记。
+     * 首次真正执行 INSERT/UPDATE/DELETE 前登记带超时时间的写保护令牌，SELECT FOR UPDATE 不会提前登记。
      */
     public void beforeMutation() {
         Set<String> domains = PublicCacheContext.evictions();
@@ -154,18 +169,29 @@ public class PublicCacheStore {
             Write owned = write;
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 /**
-                 * 事务结束后解绑写入记录，回滚时尝试解除受影响缓存的保护。
+                 * 事务结束后解绑写入记录；回滚时移除令牌，状态未知时先轮换版本再移除令牌防止旧缓存复活。
                  */
                 @Override
                 public void afterCompletion(int status) {
                     TransactionSynchronizationManager.unbindResourceIfPossible(TRANSACTION);
                     if (status == STATUS_ROLLED_BACK) {
-                        // 失败时不替换原业务异常；Redis 故障留下保护供运维确认后恢复。
+                        // 失败时不替换原业务异常；清理失败的令牌也会在超时后自动过期。
                         for (String domain : owned.domains()) {
                             try {
-                                redis.opsForSet().remove(prefix(domain) + "writers", owned.token());
+                                redis.opsForZSet().remove(writersKey(domain), owned.token());
                             } catch (RuntimeException failedCleanup) {
-                                log.error("公开缓存回滚保护清理失败，保留保护并按运行说明恢复");
+                                log.error("公开缓存回滚保护清理失败，令牌将在超时后自动失效: domain={}", domain, failedCleanup);
+                            }
+                        }
+                        return;
+                    }
+                    if (status == STATUS_UNKNOWN) {
+                        // 提交状态未知时可能已落库，必须先轮换版本再移除保护令牌，不能直接放行旧缓存。
+                        for (String domain : owned.domains()) {
+                            try {
+                                rotateAndRemove(domain, owned.token());
+                            } catch (RuntimeException failedCleanup) {
+                                log.error("公开缓存未知事务状态轮换失败，令牌将在超时后自动失效: domain={}", domain, failedCleanup);
                             }
                         }
                     }
@@ -176,8 +202,11 @@ public class PublicCacheStore {
         if (domains.isEmpty()) {
             return;
         }
+        long now = clock.millis();
+        long expireAt = now + WRITER_TTL_MS;
         try {
-            Long result = redis.execute(PROTECT, domains.stream().map(d -> prefix(d) + "writers").toList(), write.token());
+            Long result = redis.execute(PROTECT, domains.stream().map(this::writersKey).toList(),
+                    write.token(), Long.toString(now), Long.toString(expireAt), Long.toString(WRITER_TTL_MS));
             if (!Long.valueOf(1).equals(result)) {
                 throw new IllegalStateException("保护登记失败");
             }
@@ -192,16 +221,37 @@ public class PublicCacheStore {
      */
     public void invalidate(String domain) {
         Write write = (Write) TransactionSynchronizationManager.getResource(TRANSACTION);
-        String prefix = prefix(domain);
         try {
-            Long result = redis.execute(INVALIDATE, List.of(prefix + "generation", prefix + "writers"),
-                    UUID.randomUUID().toString(), write == null ? "" : write.token());
-            if (!Long.valueOf(1).equals(result)) {
-                throw new IllegalStateException("失效失败");
-            }
+            rotateAndRemove(domain, write == null ? "" : write.token());
         } catch (RuntimeException failure) {
             throw unavailable();
         }
+    }
+
+    /**
+     * 轮换缓存版本并移除指定写保护令牌。
+     */
+    private void rotateAndRemove(String domain, String token) {
+        String prefix = prefix(domain);
+        Long result = redis.execute(INVALIDATE, List.of(prefix + "generation", writersKey(domain)),
+                UUID.randomUUID().toString(), token == null ? "" : token);
+        if (!Long.valueOf(1).equals(result)) {
+            throw new IllegalStateException("失效失败");
+        }
+    }
+
+    /**
+     * 返回指定缓存域的写保护 ZSET 键名。
+     */
+    private String writersKey(String domain) {
+        return prefix(domain) + WRITERS_SUFFIX;
+    }
+
+    /**
+     * 返回当前 UTC 毫秒时间戳字符串。
+     */
+    private String nowMillis() {
+        return Long.toString(clock.millis());
     }
 
     /**

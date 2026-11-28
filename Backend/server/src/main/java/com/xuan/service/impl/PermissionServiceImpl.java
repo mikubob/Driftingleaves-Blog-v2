@@ -3,6 +3,7 @@ package com.xuan.service.impl;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.xuan.annotation.OperationLog;
+import com.xuan.cache.UserAuthzCache;
 import com.xuan.dto.BatchItemDTO;
 import com.xuan.dto.PermissionCreateDTO;
 import com.xuan.dto.PermissionQueryDTO;
@@ -48,6 +49,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     private final UserMapper users;
     private final IUserService identities;
     private final AuthorizationProvider authorization;
+    private final UserAuthzCache userAuthzCache;
     private final SessionManager sessions;
     private final JsonMapper json;
 
@@ -162,7 +164,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
     }
 
     /**
-     * 全部目标用户锁到后再撤销会话，权限和菜单都实时查库，不沿用旧缓存。
+     * 全部目标用户锁到后再撤销会话，并在事务提交后失效这些用户的授权缓存。
      *
      * @param affected 已去重的关联用户；Redis 失败直接抛出使数据库事务回滚
      */
@@ -170,6 +172,7 @@ public class PermissionServiceImpl extends ServiceImpl<PermissionMapper, SysPerm
         for (long userId : affected) {
             sessions.revokeAll(userId);
         }
+        userAuthzCache.evictAfterCommit(affected);
     }
 
     /**

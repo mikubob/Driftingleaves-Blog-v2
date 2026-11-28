@@ -217,9 +217,13 @@ export function createOnlineConnection({ apiRoot, requestTicket, payload, onStat
     suspended = true
     pause()
   }
-  function show() {
+  function show(event) {
+    // 首次加载触发的 pageshow 不重复建连，仅在隐藏恢复或 bfcache 还原时重连。
+    const shouldRestart = suspended || Boolean(event?.persisted)
     suspended = false
-    restart()
+    if (shouldRestart) {
+      restart()
+    }
   }
   function start() {
     if (active) {

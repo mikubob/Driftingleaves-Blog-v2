@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.xuan.dto.VisitorQueryDTO;
 import com.xuan.entity.BlogVisitor;
 import com.xuan.vo.VisitorVO;
+import lombok.Data;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -65,6 +66,37 @@ public interface VisitorMapper extends BaseMapper<BlogVisitor> {
      * @return 是否已被封禁
      */
     boolean hasActiveIpBlock(@Param("ip") String ip, @Param("now") LocalDateTime now);
+
+    /**
+     * 汇总指定 IP 当前生效中的手动封禁状态及最晚到期时间，供 IP 封禁缓存使用。
+     *
+     * @param ip 客户端 IP
+     * @param now 当前 UTC 时间
+     * @return 生效封禁汇总信息
+     */
+    IpBlockSummary activeIpBlockSummary(@Param("ip") String ip, @Param("now") LocalDateTime now);
+
+    /**
+     * IP 生效封禁汇总结果。
+     */
+    @Data
+    class IpBlockSummary {
+
+        /**
+         * 当前生效封禁记录数。
+         */
+        private long activeCount;
+
+        /**
+         * 永久封禁记录数（blocked_until 为 NULL）。
+         */
+        private long permanentCount;
+
+        /**
+         * 限时封禁中的最晚到期 UTC 时间。
+         */
+        private LocalDateTime latestUntil;
+    }
 
     /**
      * 分页查询访客列表及浏览次数统计，封禁筛选按当前时刻是否生效判断。

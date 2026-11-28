@@ -1,7 +1,7 @@
 <script setup>
 import ImagePreview from '../components/ImagePreview.vue'
 import FileUploadButton from '../components/FileUploadButton.vue'
-import { onBeforeUnmount, onMounted, reactive, ref, computed, watch } from 'vue'
+import { onBeforeUnmount, onDeactivated, onMounted, reactive, ref, computed, watch } from 'vue'
 import {
   ElButton,
   ElCard,
@@ -89,41 +89,61 @@ async function upload(file, kind) {
   }
 }
 
+let editController
+
+/** 取消未完成的音乐详情拉取请求，防止快速切换记录时旧响应覆盖表单。 */
+function cancelEditLoad() {
+  editController?.abort()
+  editController = undefined
+}
+
 async function edit(row) {
+  cancelEditLoad()
+  if (!row) {
+    id.value = ''
+    revision.value = ''
+    initialStatus.value = 1
+    Object.assign(form, {
+      title: '',
+      artist: '',
+      durationSeconds: null,
+      coverUrl: '',
+      audioUrl: '',
+      lyricUrl: '',
+      lyricType: '',
+      sortOrder: 0,
+      status: 1,
+    })
+    dialog.value = true
+    return
+  }
+  const controller = new AbortController()
+  editController = controller
   try {
-    id.value = row?.musicId || ''
-    if (row) {
-      const result = await request(`/admin/music/${row.musicId}`)
-      revision.value = result.revision
-      const data = result.data
-      initialStatus.value = data.status
-      Object.assign(form, {
-        title: data.title,
-        artist: data.artist || '',
-        durationSeconds: data.durationSeconds,
-        coverUrl: data.coverUrl || '',
-        audioUrl: data.audioUrl,
-        lyricUrl: data.lyricUrl || '',
-        lyricType: data.lyricType || '',
-        sortOrder: data.sortOrder,
-        status: data.status,
-      })
-    } else {
-      initialStatus.value = 1
-      Object.assign(form, {
-        title: '',
-        artist: '',
-        durationSeconds: null,
-        coverUrl: '',
-        audioUrl: '',
-        lyricUrl: '',
-        lyricType: '',
-        sortOrder: 0,
-        status: 1,
-      })
+    const result = await request(`/admin/music/${row.musicId}`, { signal: controller.signal })
+    if (controller.signal.aborted) {
+      return
     }
+    id.value = row.musicId
+    revision.value = result.revision
+    const data = result.data
+    initialStatus.value = data.status
+    Object.assign(form, {
+      title: data.title,
+      artist: data.artist || '',
+      durationSeconds: data.durationSeconds,
+      coverUrl: data.coverUrl || '',
+      audioUrl: data.audioUrl,
+      lyricUrl: data.lyricUrl || '',
+      lyricType: data.lyricType || '',
+      sortOrder: data.sortOrder,
+      status: data.status,
+    })
     dialog.value = true
   } catch (failure) {
+    if (failure?.name === 'AbortError' || controller.signal.aborted) {
+      return
+    }
     ElMessage.error(failure.message)
   }
 }
@@ -254,7 +274,14 @@ function formatDuration(seconds) {
 }
 
 watch(rows, stopAudio)
-onBeforeUnmount(stopAudio)
+onBeforeUnmount(() => {
+  cancelEditLoad()
+  stopAudio()
+})
+onDeactivated(() => {
+  cancelEditLoad()
+  stopAudio()
+})
 
 /** 切换顶部展示状态分栏并立即查询第一页。 */
 function switchStatus(status) {

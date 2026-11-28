@@ -1,13 +1,14 @@
 package com.xuan.filter;
 
+import com.xuan.cache.IpBlockCache;
 import com.xuan.constant.ErrorCode;
 import com.xuan.constant.HttpConstants;
 import com.xuan.exception.BusinessException;
-import com.xuan.mapper.VisitorMapper;
 import com.xuan.properties.AuthProperties;
 import com.xuan.ratelimit.NotFoundRateLimiter;
 import com.xuan.result.Result;
 import com.xuan.utils.IpUtils;
+import com.xuan.utils.TokenUtils;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,8 +23,6 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.io.IOException;
 import java.time.Clock;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 
 /**
  * 在读取请求体和执行业务前检查客户端 IP 封禁。
@@ -34,7 +33,7 @@ import java.time.ZoneOffset;
 public class AccessBlockFilter extends OncePerRequestFilter {
 
     private final NotFoundRateLimiter guard;
-    private final VisitorMapper visitors;
+    private final IpBlockCache ipBlockCache;
     private final AuthProperties properties;
     private final JsonMapper json;
     private final Clock clock;
@@ -56,10 +55,12 @@ public class AccessBlockFilter extends OncePerRequestFilter {
         try {
             String ip = IpUtils.clientIp(request, properties.getTrustedProxies());
             guard.check(ip);
-            // 手动封禁保留后台入口，管理员可以从同一网络解封。
-            if (!request.getServletPath().startsWith("/admin/")
-                    && visitors.hasActiveIpBlock(ip, LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC))) {
-                throw new BusinessException(403, ErrorCode.ACCESS_BLOCKED, "当前 IP 已被封禁");
+            // 手动封禁保留后台入口，管理员可以从同一网络解封；优先读取 Redis 封禁缓存并按到期时间判定。
+            if (!request.getServletPath().startsWith("/admin/")) {
+                IpBlockCache.IpBlockState state = ipBlockCache.getState(TokenUtils.digest(ip), ip);
+                if (state.isActiveAt(clock.millis())) {
+                    throw new BusinessException(403, ErrorCode.ACCESS_BLOCKED, "当前 IP 已被封禁");
+                }
             }
         } catch (DataAccessException exception) {
             reject(response, new BusinessException(503, ErrorCode.SERVICE_UNAVAILABLE, "请求保护暂不可用"));

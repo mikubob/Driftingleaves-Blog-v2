@@ -139,7 +139,7 @@ const goArticle = (slug) => router.push('/articles/' + slug)
               </div>
             </div>
           </div>
-          <p v-else class="empty">暂无热门文章</p>
+          <p v-else-if="!listing.error" class="empty">暂无热门文章</p>
         </div>
       </div>
       <SidebarCard />
