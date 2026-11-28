@@ -4,7 +4,7 @@
 
 部署步骤见 [Docker 部署说明](../../DockerForDriftingLeaves/README.md)。
 
-文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及语法差异见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
+文章通过 MdPreview 展示公开 Markdown，保留代码高亮、复制、折叠与目录。网页与 RSS 的解析职责及清理约定见 [接口开发约定](../../docs/API_CONTRACT.md#models)。
 
 直接迁移并复用 `D:/CodingFiles/Blog/DriftingLeavesOfFront/Frontend-Blog/` 的 UI 源码，适配本仓库 [博客端接口文档](../../docs/API_BLOG.md) 和后端实现。原项目保持只读；没有迁移旧访客凭据、业务数据、真实部署配置或构建产物。
 
@@ -86,7 +86,7 @@ pnpm preview
 
 图形验证码复用 `src/shared/CaptchaField.vue`：通过本端 `/auth/captcha` 获取六位数字圆圈验证码，120 秒有效。账密登录、邮箱登录、注册和发送邮件验证码提交 `X-Captcha-Id`、`X-Captcha-Code`；博客评论、留言创建和回复使用独立的算术验证码；后台留言回复不要求图形验证码，仍执行后台登录、权限和限流。提交需验证码的请求后刷新题目或图片，失败保留正文。第三方登录发起按 IP 和浏览器分别限制为 60 秒内最多三次。写请求按所属端校验 Origin，缺失时才解析 Referer；OAuth BIND、回调和兑换使用独立的流程 Cookie，详见[接口文档](../../docs/API.md#captcha)。
 
-文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过同源 API 读取并在切换/卸载时释放临时 URL。详见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
+文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过同源 API 读取并在切换/卸载时释放临时 URL。详见 [接口开发约定](../../docs/API_CONTRACT.md#models)。
 
 阅读主题选择复用 Element Plus 并跟随网站明暗配色；正文背景透明，夜间不再嵌套纯黑内容块。Markdown 与旧 HTML 文章都使用相同的代码工具栏和本地高亮配色，保留行号、复制和折叠。
 

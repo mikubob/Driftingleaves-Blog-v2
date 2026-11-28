@@ -99,7 +99,7 @@
 - [完整接口索引](API_INDEX.md)：先按端，再按业务名称或完整路径查找。
 - [文章场景速查](API_BLOG.md#article-scenarios)：删除、分类/标签/作者筛选、搜索、归档、回收和恢复。
 - [后台统一操作（38 个入口）](API_ADMIN.md#admin-batch)：参数、响应、权限和整批失败规则集中在 1.22，单个目标也走同一协议。
-- 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，配置与当前检查入口见 [后端运行说明](后端运行说明.md)。
+- 字段与状态、锁顺序、事务及平台接入的完整开发约定见 [接口开发约定](API_CONTRACT.md)，构建与部署配置见 [Docker 部署](../DockerForDriftingLeaves/README.md)。
 
 ### 邮箱验证与登录方式
 
@@ -245,7 +245,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 
 ### 0.7 Redis 业务缓存范围
 
-**本节已接入实现，验证记录见[运行说明](后端运行说明.md#spring-cache-redis)**，参考 FeiTwnd-Website 的按业务分区、差异TTL、读未命中回源和写后失效方式，适配本站Sa-Token、PUBLIC、ALL/SELF、审核与阅读计数规则。下列为服务端Redis缓存，与浏览器/CDN缓存独立；现有 `Cache-Control: no-store` 保持不变。TTL从成功写入起算，命中不续期；正常业务写入必须主动失效，不能等TTL才反映下架或资料变化。
+**本节已接入实现，验收清单见[接口开发约定](API_CONTRACT.md#cache-contract)**，参考 FeiTwnd-Website 的按业务分区、差异TTL、读未命中回源和写后失效方式，适配本站Sa-Token、PUBLIC、ALL/SELF、审核与阅读计数规则。下列为服务端Redis缓存，与浏览器/CDN缓存独立；现有 `Cache-Control: no-store` 保持不变。TTL从成功写入起算，命中不续期；正常业务写入必须主动失效，不能等TTL才反映下架或资料变化。
 
 **实现方式明确采用Spring Cache注解缓存，Redis作为缓存后端。** 主页、社交链接、简历、友链、音乐、公开配置等简单查询在Service公开查询方法使用 `@Cacheable`；新增、更新、删除使用 `@CacheEvict`，有分页或多种筛选的业务使用 `allEntries=true`；需要同时清理多个业务域时使用 `@Caching(evict={...})`。不为这些简单缓存逐个编写RedisTemplate读写流程。统一通过 `@EnableCaching` 启用，由 `RedisCacheManager` 配置各业务TTL、键前缀和序列化；注解放置、事务与代理要求见[Spring Cache注解开发约定](API_CONTRACT.md#spring-cache-annotations)。当前已启用并新增 server 的 Boot cache starter；沿用现有 Redis 连接。
 
@@ -412,7 +412,7 @@ SPA 未知路由未必请求后端，Blog 与 Admin 在每次成功进入兜底�
 
 ### 23. 实时在线人数
 
-Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点统计”卡片展示三项人数。Admin 不参与。首期仅单后端实例，在线成员不写 MySQL，不改变 PV/UV 或文章阅读数。完整去重、消息和生命周期约定见[在线说明](实时在线人数接口说明.md)。
+Home、Blog、Cv 建立在线连接参与全站合计，只有 Blog 的“站点统计”卡片展示三项人数。Admin 不参与。首期仅单后端实例，在线成员不写 MySQL，不改变 PV/UV 或文章阅读数。完整去重、消息和生命周期约定见[在线连接与统计身份](API_CONTRACT.md#23-在线连接与统计身份)。
 
 <a id="models"></a>
 
@@ -817,4 +817,4 @@ Cache-Control: no-store
 
 <a id="delivery"></a>
 
-接口实施状态以本文标记为准；配置与当前检查入口见 [后端运行说明](后端运行说明.md)。
+接口实施状态以本文标记为准；构建与部署配置见 [Docker 部署](../DockerForDriftingLeaves/README.md)。

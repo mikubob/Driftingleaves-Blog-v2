@@ -115,6 +115,17 @@
 
     <build>
         <plugins>
+            <!-- 打包 JAR 时排除本地环境配置，避免含凭据的 application-*.yml 进入交付产物；本地开发与测试仍可读取 target/classes 下的配置。 -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>application-*.yml</exclude>
+                        <exclude>application-*.yaml</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
             <!-- 只有 server 用 Boot 打包插件，沿用父配置的 repackage，通过实际启动类生成可执行 jar；Lombok 不放进运行包。 -->
             <plugin>
                 <groupId>org.springframework.boot</groupId>

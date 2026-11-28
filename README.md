@@ -8,7 +8,7 @@
 
 | 模块 | 默认开发端口 | 说明 |
 | --- | --- | --- |
-| 后端 | 5922 | [配置与构建](docs/后端运行说明.md) |
+| 后端 | 5922 | [父 POM](Backend/pom.xml)（构建：`mvn -B -ntp -f Backend/pom.xml verify`） |
 | Home | 5173 | [个人主页](Front/Front-Home/README.md) |
 | Blog | 5174 | [博客](Front/Front-Blog/README.md) |
 | Cv | 5175 | [简历](Front/Front-Cv/README.md) |
@@ -27,7 +27,7 @@ Home、Blog、Cv、Admin 四端各自维护源码、资源、配置和依赖，�
 - [接口开发约定](docs/API_CONTRACT.md)：鉴权、事务、并发与资源访问规则。
 - [数据库说明](sql/README.md)与[演示数据](sql/DEMO_DATA.md)。
 - [Docker 部署](DockerForDriftingLeaves/README.md)。
-- [后端依赖与模块](docs/后端依赖与模块说明.md)。
-- [实时在线人数](docs/实时在线人数接口说明.md)与[Markdown 阅读展示](docs/Markdown阅读说明.md)。
+- [后端依赖与模块](Backend/pom.xml)。
+- [实时在线人数共用规则](docs/API.md#group-23)与[Markdown 解析与安全约定](docs/API_CONTRACT.md#models)。
 
 文档只描述当前实现及使用方法。构建成功不代表外部平台联调、正式部署或上线验收完成。

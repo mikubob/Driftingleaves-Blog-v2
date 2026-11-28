@@ -1,0 +1,62 @@
+# 生产环境外部配置模板；部署时复制为 config/application-prd.yml（已被 .gitignore 忽略），所有参数统一由 .env 注入。
+spring:
+  datasource:
+    url: "${DB_URL:}"
+    username: "${DB_USERNAME:}"
+    password: "${DB_PASSWORD:}"
+  data:
+    redis:
+      host: "${REDIS_HOST:}"
+      port: "${REDIS_PORT:6379}"
+      password: "${REDIS_PASSWORD:}"
+      database: "${REDIS_DATABASE:0}"
+  mail:
+    host: "${SMTP_HOST:}"
+    port: "${SMTP_PORT:587}"
+    username: "${SMTP_USERNAME:}"
+    password: "${SMTP_PASSWORD:}"
+app:
+  sites:
+    home-base-url: "${HOME_BASE_URL:}"
+    blog-base-url: "${BLOG_BASE_URL:}"
+    admin-base-url: "${ADMIN_BASE_URL:}"
+    cv-base-url: "${CV_BASE_URL:}"
+    api-base-url: "${PUBLIC_API_BASE_URL:${app.sites.blog-base-url}/api/v1}"
+  mail:
+    enabled: ${MAIL_ENABLED:true}
+    from: ${MAIL_FROM:${spring.mail.username}}
+    from-name: "${MAIL_FROM_NAME:DriftingLeaves}"
+    confirm-url: ${MAIL_CONFIRM_URL:${app.sites.blog-base-url}/subscription/confirm}
+    unsubscribe-url: ${MAIL_UNSUBSCRIBE_URL:${app.sites.blog-base-url}/subscription/unsubscribe}
+  files:
+    local-root: ${UPLOAD_ROOT:/app/uploads}
+    public-origins: ${FILE_PUBLIC_ORIGINS:}
+  oss:
+    enabled: ${OSS_ENABLED:true}
+    endpoint: "${OSS_ENDPOINT:}"
+    region: "${OSS_REGION:}"
+    bucket: "${OSS_BUCKET:}"
+    access-key-id: "${OSS_ACCESS_KEY_ID:}"
+    access-key-secret: "${OSS_ACCESS_KEY_SECRET:}"
+    security-token: ${OSS_SECURITY_TOKEN:}
+    key-prefix: ${OSS_KEY_PREFIX:}
+  auth:
+    allowed-origins: "${FRONTEND_ORIGINS:}"
+    redis-prefix: ${REDIS_KEY_PREFIX:dl:v2:}
+    trusted-proxies: ${TRUSTED_PROXIES:}
+    providers:
+      GITHUB:
+        enabled: ${OAUTH_GITHUB_ENABLED:false}
+        client-id: ${OAUTH_GITHUB_CLIENT_ID:}
+        client-secret: ${OAUTH_GITHUB_CLIENT_SECRET:}
+        redirect-uri: ${OAUTH_GITHUB_REDIRECT_URI:}
+      GITEE:
+        enabled: ${OAUTH_GITEE_ENABLED:false}
+        client-id: ${OAUTH_GITEE_CLIENT_ID:}
+        client-secret: ${OAUTH_GITEE_CLIENT_SECRET:}
+        redirect-uri: ${OAUTH_GITEE_REDIRECT_URI:}
+      QQ:
+        enabled: ${OAUTH_QQ_ENABLED:false}
+        client-id: ${OAUTH_QQ_CLIENT_ID:}
+        client-secret: ${OAUTH_QQ_CLIENT_SECRET:}
+        redirect-uri: "${OAUTH_QQ_REDIRECT_URI:}"

@@ -4,7 +4,7 @@
 
 部署步骤见 [Docker 部署说明](../../DockerForDriftingLeaves/README.md)。
 
-已保存正文预览与博客共用代码高亮、复制、折叠和阅读样式，仍保留通过后台会话读取私密图片与临时 URL 清理，见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。编辑器实时预览继续独立用于编辑。
+已保存正文预览与博客共用代码高亮、复制、折叠和阅读样式，仍保留通过后台会话读取私密图片与临时 URL 清理，解析与安全约定见 [接口开发约定](../../docs/API_CONTRACT.md#models)。编辑器实时预览继续独立用于编辑。
 
 独立的 Vue 3 + Vite + Element Plus 工程，UI 复用 `DriftingLeaves-Website/Frontend-Admin`：公共主题、系统字体栈、iconfont 字体、侧栏与顶栏、统计卡片，以及菜单悬停、侧栏折叠和页面切换动画。登录页保留当前设计。迁移后的样式为原生 CSS，不新增 Sass 依赖。接口依据[管理端接口文档](../../docs/API_ADMIN.md)及实际后端实现。
 
@@ -117,7 +117,7 @@ UI 资源位于 `src/assets/`；管理区保留持久登录与动态权限菜单
 
 两类详情共用 DiscussionDetail：桌面双列、手机单列，展示当前接口已有的账号、记录 ID、状态、属地、系统、浏览器和时间；留言另含可见性、内容格式及通知意愿。正文置于带边框的内容区，纯文本保留换行，Markdown 沿用后端安全 HTML 与私密图片读取。SafeHtml 等待容器挂载后填入内容，修复首次打开详情时 Markdown 正文为空的问题。后台回复继续无需验证码。
 
-文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过同源 API 读取并在切换/卸载时释放临时 URL。详见 [Markdown 阅读说明](../../docs/Markdown阅读说明.md)。
+文章排版支持 default、github、vuepress、mk-cute、smart-blue、cyanosis。作者编辑/已保存预览与读者阅读偏好使用不同浏览器键；博客明暗仅跟随网站已有黑白天开关及系统主题，不另设正文按钮，管理端编辑和预览固定亮色，不提供明暗按钮。偏好不写入文章，保存仍只提交原文和版本。受管附件继续走 API；后台私密图片通过同源 API 读取并在切换/卸载时释放临时 URL。详见 [接口开发约定](../../docs/API_CONTRACT.md#models)。
 
 文章代码高亮使用本地 highlight.js 实例及显式加载的 `src/shared/markdown-code.css`，修复只有高亮标记却没有配色的问题；管理端使用本端的亮色代码块样式。
 

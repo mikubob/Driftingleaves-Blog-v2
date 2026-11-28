@@ -1083,7 +1083,7 @@ GET /api/v1/blog/articles/first-leaf
 
 每次成功原子增加 view_count；失败不计数，这是阅读次数而非独立访客。详情返回 `markdownContent` 原文供网页 MdPreview 渲染；列表不增加正文字段。原文在锁定文章、再次确认 PUBLIC 并检查正文附件后返回。携带 Token 也不能读取私密、草稿、下架、回收站或未到发布时间的正文；不满足条件仍返回 404。字数/阅读时长、上下篇和相关推荐见 [文章导航与阅读统计](API_CONTRACT.md#model-12-15)，所有关联文章也必须PUBLIC。
 
-原文不是可信 HTML，网页仍需清理本地渲染结果；写入接口继续仅接收 Markdown，由后端 CommonMark + jsoup 生成 HTML，不接受前端生成的 `htmlContent`。作者/读者排版偏好仅保存在各自浏览器，不属于请求或响应模型；博客正文明暗仅跟随现有网站黑白天开关/系统主题，管理端编辑和预览固定亮色。正文必须包含字符串类型的 markdownContent，缺失或类型错误均拒绝响应；空字符串是有效正文。解析差异见 [Markdown 阅读说明](Markdown阅读说明.md)。
+原文不是可信 HTML，网页仍需清理本地渲染结果；写入接口继续仅接收 Markdown，由后端 CommonMark + jsoup 生成 HTML，不接受前端生成的 `htmlContent`。作者/读者排版偏好仅保存在各自浏览器，不属于请求或响应模型；博客正文明暗仅跟随现有网站黑白天开关/系统主题，管理端编辑和预览固定亮色。正文必须包含字符串类型的 markdownContent，缺失或类型错误均拒绝响应；空字符串是有效正文。解析与清理约定见 [接口开发约定](API_CONTRACT.md#models)。
 
 已实现的[详情缓存](API.md#public-cache)只复用公开内容片段，命中仍执行上述成功计数及当前PUBLIC校验；详情与[公开GET限流](API.md#request-protection)同样适用于缓存命中，不引入访客去重口径。
 
@@ -2978,7 +2978,7 @@ Content-Type: application/rss+xml; charset=UTF-8
 <rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/"><channel><title>DriftingLeaves</title><link>https://blog.example.test/</link><description>记录与分享</description><item><title>第一片落叶</title><link>https://blog.example.test/articles/first-leaf</link><guid isPermaLink="true">https://blog.example.test/articles/first-leaf</guid><pubDate>Fri, 30 Oct 2026 02:00:00 GMT</pubDate><description>记录与分享</description><content:encoded>&lt;h1 id="第一片落叶"&gt;第一片落叶&lt;/h1&gt;</content:encoded></item></channel></rss>
 ```
 
-成功Content-Type=application/rss+xml; charset=UTF-8，返回RSS2.0而非Result。取最近20篇PUBLIC文章，publishTime DESC,articleId DESC；guid使用稳定本站文章URL，link使用规范slug，pubDate为RFC822日期。description继续输出转义后的摘要；content:encoded输出经XML转义的正式HTML全文，复用文章详情的Markdown渲染、清理和附件检查，不输出原始Markdown、私密正文或邮箱。标题id按服务端规则生成并保留代码原文；网页使用另一套解析器，支持范围与差异见[Markdown阅读说明](Markdown阅读说明.md)；页内锚点和相对链接补全为文章地址，受管附件使用app.sites.api-base-url（含/api/v1）补全为公开接口地址，仍校验PUBLIC与附件引用。读取RSS不增加文章阅读量。配置的公开博客基址由app.sites.blog-base-url提供，文章前端规范路径为/articles/{slug}，不能信任任意Host头。
+成功Content-Type=application/rss+xml; charset=UTF-8，返回RSS2.0而非Result。取最近20篇PUBLIC文章，publishTime DESC,articleId DESC；guid使用稳定本站文章URL，link使用规范slug，pubDate为RFC822日期。description继续输出转义后的摘要；content:encoded输出经XML转义的正式HTML全文，复用文章详情的Markdown渲染、清理和附件检查，不输出原始Markdown、私密正文或邮箱。标题id按服务端规则生成并保留代码原文；网页使用另一套解析器，支持范围与清理约定见[接口开发约定](API_CONTRACT.md#models)；页内锚点和相对链接补全为文章地址，受管附件使用app.sites.api-base-url（含/api/v1）补全为公开接口地址，仍校验PUBLIC与附件引用。读取RSS不增加文章阅读量。配置的公开博客基址由app.sites.blog-base-url提供，文章前端规范路径为/articles/{slug}，不能信任任意Host头。
 
 ---
 
